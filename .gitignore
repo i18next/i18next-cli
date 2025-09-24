@@ -1,0 +1,13 @@
+node_modules
+.DS_Store
+npm-debug.log
+package-lock.json
+types
+#scripts
+!dist/
+dist/*
+!dist/deno/
+
+.env.*
+
+tryme.js

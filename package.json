@@ -1,0 +1,81 @@
+{
+  "name": "i18next-toolkit",
+  "version": "0.9.0",
+  "description": "A unified, high-performance i18next CLI.",
+  "type": "module",
+  "bin": {
+    "i18next-toolkit": "./dist/esm/cli.js"
+  },
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "browser": "./dist/umd/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./types/index.d.ts",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
+    },
+    "./cjs": {
+      "types": "./types/index.d.ts",
+      "default": "./dist/cjs/index.js"
+    },
+    "./esm": {
+      "types": "./types/index.d.ts",
+      "default": "./dist/esm/index.js"
+    }
+  },
+  "scripts": {
+    "build": "npm run update-cli-meta && rm -rf dist && rollup -c && echo '{\"type\":\"commonjs\"}' > dist/cjs/package.json && rm -rf types && tsc -d --declarationDir types --declarationMap --emitDeclarationOnly",
+    "lint": "eslint .",
+    "test": "npm run lint && vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "update-cli-meta": "node ./scripts/updateCliMeta.js",
+    "preversion": "npm run test && npm run build",
+    "postversion": "npm run build && git add . && git commit -m 'build' && git push && git push --tags"
+  },
+  "keywords": [
+    "i18next",
+    "swc",
+    "cli"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/i18next/i18next-toolkit.git"
+  },
+  "homepage": "https://github.com/i18next/i18next-toolkit",
+  "bugs": {
+    "url": "https://github.com/i18next/i18next-toolkit/issues"
+  },
+  "devDependencies": {
+    "@rollup/plugin-terser": "0.4.4",
+    "@swc/core": "1.13.5",
+    "@types/inquirer": "9.0.9",
+    "@types/node": "20.19.17",
+    "@types/react": "19.1.13",
+    "@vitest/coverage-v8": "3.2.4",
+    "eslint": "9.36.0",
+    "eslint-plugin-import": "2.32.0",
+    "glob": "^10.3.12",
+    "i18next-resources-for-ts": "^1.6.0",
+    "memfs": "4.43.0",
+    "neostandard": "0.12.2",
+    "rollup-plugin-typescript2": "0.36.0",
+    "swc-walk": "^1.0.0-rc.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5",
+    "unplugin-swc": "1.5.7",
+    "vitest": "3.2.4"
+  },
+  "dependencies": {
+    "chalk": "5.6.2",
+    "chokidar": "4.0.3",
+    "commander": "14.0.1",
+    "execa": "9.6.0",
+    "inquirer": "12.9.6",
+    "ora": "9.0.0"
+  }
+}

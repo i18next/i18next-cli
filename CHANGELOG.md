@@ -1,0 +1,42 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0](https://github.com/i18next/i18next-toolkit/compare/v0.9.0...v1.0.0) - 2025-xx-yy
+
+
+
+## [0.9.0] - 2025-09-24
+
+### Added
+
+This is the initial public release of `i18next-toolkit`, a complete, high-performance replacement for `i18next-parser` and `i18next-scanner`.
+
+#### Core Engine & Extractor
+-   Initial high-performance, SWC-based parsing engine for JavaScript and TypeScript.
+-   Advanced, scope-aware AST analysis for intelligent key extraction.
+-   Support for `t()` functions, `<Trans>` components, `useTranslation` hooks (including `keyPrefix` and aliasing), and `getFixedT`.
+-   Handles complex i18next features: namespaces (via ns-separator, options, and hooks), plurals, and context.
+-   Support for the type-safe selector API (`t($=>$.key.path)`).
+-   Extraction from commented-out code to support documentation-driven keys.
+
+#### Commands
+-   **`init`**: Interactive wizard to create a new configuration file (`i18next.config.ts` or `.js`).
+-   **`extract`**: Extracts keys and updates translation files, with `--watch` and `--ci` modes.
+-   **`types`**: Generates TypeScript definitions for type-safe i18next usage and autocompletion.
+-   **`sync`**: Synchronizes secondary language files with a primary language file, adding missing keys and removing unused ones.
+-   **`lint`**: Lints the codebase for potential issues like hardcoded strings.
+-   **`status`**: Displays a project health dashboard with translation progress for each locale.
+-   **`migrate-config`**: Provides an automatic migration path from a legacy `i18next-parser.config.js`.
+-   **`locize-*`**: Full suite of commands (`sync`, `download`, `migrate`) for seamless integration with the locize TMS, including an interactive setup for credentials.
+
+#### Configuration & DX
+-   Fully-typed configuration file (`i18next.config.ts`) with a `defineConfig` helper for autocompletion.
+-   `preservePatterns` option to support dynamic keys by preserving existing keys that match a glob pattern.
+-   Robust and modern dual CJS/ESM package support.
+
+#### Plugin System
+-   Initial plugin architecture with `setup`, `onLoad`, `onVisitNode`, and `onEnd` hooks, allowing for custom extraction logic and support for other file types (e.g., HTML, Handlebars).
