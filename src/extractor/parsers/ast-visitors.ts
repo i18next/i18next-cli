@@ -470,7 +470,7 @@ export class ASTVisitors {
   private handleJSXElement (node: JSXElement): void {
     const elementName = this.getElementName(node)
 
-    if (elementName && (this.config.extract.transComponents || []).includes(elementName)) {
+    if (elementName && (this.config.extract.transComponents || ['Trans']).includes(elementName)) {
       const extractedKey = extractFromTransComponent(node, this.config)
       if (extractedKey) {
       // If ns is not explicitly set on the component, try to find it from the `t` prop

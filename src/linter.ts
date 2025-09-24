@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { parse } from '@swc/core'
 import { ancestor } from 'swc-walk'
 import chalk from 'chalk'
+import ora from 'ora'
 import type { I18nextToolkitConfig } from './types'
 
 /**
@@ -36,30 +37,42 @@ import type { I18nextToolkitConfig } from './types'
  * ```
  */
 export async function runLinter (config: I18nextToolkitConfig) {
-  console.log('Running i18next linter...')
-  const sourceFiles = await glob(config.extract.input)
-  let totalIssues = 0
+  const spinner = ora('Analyzing source files...\n').start()
 
-  for (const file of sourceFiles) {
-    const code = await readFile(file, 'utf-8')
-    const ast = await parse(code, { syntax: 'typescript', tsx: true })
+  try {
+    const sourceFiles = await glob(config.extract.input)
+    let totalIssues = 0
+    const issuesByFile = new Map<string, HardcodedString[]>()
 
-    const hardcodedStrings = findHardcodedStrings(ast, code, config)
+    for (const file of sourceFiles) {
+      const code = await readFile(file, 'utf-8')
+      const ast = await parse(code, { syntax: 'typescript', tsx: true })
+      const hardcodedStrings = findHardcodedStrings(ast, code, config)
 
-    if (hardcodedStrings.length > 0) {
-      console.log(chalk.yellow(`\n${file}`))
-      hardcodedStrings.forEach(({ text, line }) => {
-        totalIssues++
-        console.log(`  ${chalk.gray(`${line}:`)} ${chalk.red('Error:')} Found hardcoded string: "${text}"`)
-      })
+      if (hardcodedStrings.length > 0) {
+        totalIssues += hardcodedStrings.length
+        issuesByFile.set(file, hardcodedStrings)
+      }
     }
-  }
 
-  if (totalIssues > 0) {
-    console.log(chalk.red.bold(`\n✖ Found ${totalIssues} potential issues.`))
+    if (totalIssues > 0) {
+      spinner.fail(chalk.red.bold(`Linter found ${totalIssues} potential issues.`))
+
+      // Print detailed report after spinner fails
+      for (const [file, issues] of issuesByFile.entries()) {
+        console.log(chalk.yellow(`\n${file}`))
+        issues.forEach(({ text, line }) => {
+          console.log(`  ${chalk.gray(`${line}:`)} ${chalk.red('Error:')} Found hardcoded string: "${text}"`)
+        })
+      }
+      process.exit(1)
+    } else {
+      spinner.succeed(chalk.green.bold('No issues found.'))
+    }
+  } catch (error) {
+    spinner.fail(chalk.red('Linter failed to run.'))
+    console.error(error)
     process.exit(1)
-  } else {
-    console.log(chalk.green.bold('\n✅ No issues found.'))
   }
 }
 
@@ -115,13 +128,17 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
    */
   const getLineNumber = (pos: number): number => {
     let line = 1
-    for (const start of lineStarts) {
-      if (pos > start) line++; else break
+    for (let i = 0; i < lineStarts.length; i++) {
+      if (lineStarts[i] > pos) break
+      line = i + 1
     }
-    return line - 1
+    return line
   }
 
   const transComponents = config.extract.transComponents || ['Trans']
+  const defaultIgnoredAttributes = ['className', 'key', 'id', 'style', 'href', 'i18nKey', 'defaults', 'type']
+  const customIgnoredAttributes = config.extract.ignoredAttributes || []
+  const ignoredAttributes = new Set([...defaultIgnoredAttributes, ...customIgnoredAttributes])
 
   ancestor(ast, {
     /**
@@ -138,6 +155,14 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
         return
       }
 
+      const isIgnored = ancestors.some(ancestorNode => {
+        if (ancestorNode.type !== 'JSXElement') return false
+        const elementName = ancestorNode.opening?.name?.value
+        return transComponents.includes(elementName) || ['script', 'style', 'code'].includes(elementName)
+      })
+
+      if (isIgnored) return
+
       const text = node.value.trim()
       if (text && isNaN(Number(text)) && !text.startsWith('{{')) {
         issues.push({ text, line: getLineNumber(node.span.start) })
@@ -153,7 +178,8 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
     StringLiteral (node: any, ancestors: any[]) {
       const parent = ancestors[ancestors.length - 2]
 
-      if (parent?.type === 'JSXAttribute') {
+      // This check now uses the new combined Set
+      if (parent?.type === 'JSXAttribute' && !ignoredAttributes.has(parent.name.value)) {
         const text = node.value.trim()
         if (text && isNaN(Number(text))) {
           issues.push({ text, line: getLineNumber(node.span.start) })

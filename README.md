@@ -21,14 +21,14 @@ A unified, high-performance i18next CLI toolchain, powered by SWC.
 
 ## Features
 
-- **Key Extraction**: Extract translation keys from JavaScript/TypeScript files with advanced AST analysis
-- **Type Safety**: Generate TypeScript definitions for full autocomplete and type safety
-- **Locale Synchronization**: Keep all language files in sync with your primary language
-- **Code Linting**: Tries to detect hardcoded strings and translation best practices violations
-- **Translation Status**: Get a high-level overview of your project's translation completeness
-- **Plugin System**: Extensible architecture for custom extraction patterns and file types (e.g., HTML, Handlebars)
-- **Legacy Migration**: Automatic migration from `i18next-parser` configurations
-- **Cloud Integration**: Seamless integration with [locize](https://www.locize.com) translation management platform
+- **Key Extraction**: Extract translation keys from JavaScript/TypeScript files with advanced AST analysis.
+- **Type Safety**: Generate TypeScript definitions for full autocomplete and type safety.
+- **Locale Synchronization**: Keep all language files in sync with your primary language.
+- **Accurate Code Linting**: Detect hardcoded strings with high precision and configurable rules.
+- **Translation Status**: Get a high-level overview or a detailed, key-by-key report of your project's translation completeness.
+- **Plugin System**: Extensible architecture for custom extraction patterns and file types (e.g., HTML, Handlebars).
+- **Legacy Migration**: Automatic migration from `i18next-parser` configurations.
+- **Cloud Integration**: Seamless integration with the [locize](https://locize.com) translation management platform.
 
 ## Installation
 
@@ -112,12 +112,12 @@ npx i18next-toolkit extract --watch
 npx i18next-toolkit extract --ci
 ```
 
-### `status`
-Displays a health check of your project's translation status, showing the completeness of each language against the primary language.
+### `status [locale]`
 
-```bash
-npx i18next-toolkit status
-```
+Displays a health check of your project's translation status. Can run without a config file.
+
+  - Run `npx i18next-toolkit status` for a high-level summary.
+  - Run `npx i18next-toolkit status <locale>` for a detailed, key-by-key report grouped by namespace.
 
 This command provides:
 - Total number of translation keys found in your source code
@@ -142,7 +142,7 @@ npx i18next-toolkit sync
 ```
 
 ### `lint`
-Analyzes your source code for internationalization issues like hardcoded strings.
+Analyzes your source code for internationalization issues like hardcoded strings. Can run without a config file.
 
 ```bash
 npx i18next-toolkit lint
@@ -233,6 +233,9 @@ export default defineConfig({
     
     // useTranslation hook variations
     useTranslationNames: ['useTranslation', 'useAppTranslation'],
+
+    // Add custom JSX attributes to ignore during linting
+    ignoredAttributes: ['data-testid', 'aria-label'],
     
     // Namespace and key configuration
     defaultNS: 'translation',

@@ -47,7 +47,7 @@ export async function runExtractor (
 
   validateExtractorConfig(config)
 
-  const spinner = ora('Running i18next key extractor...').start()
+  const spinner = ora('Running i18next key extractor...\n').start()
 
   try {
     const allKeys = await findKeys(config, logger)

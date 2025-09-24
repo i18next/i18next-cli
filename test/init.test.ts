@@ -42,8 +42,8 @@ describe('init', () => {
 
     expect(content).toContain('import { defineConfig } from')
     expect(content).toContain('export default defineConfig')
-    expect(content).toContain('"locales": [\n    "en",\n    "de"\n  ]')
-    expect(content).toContain('"input": "src/**/*.tsx"')
+    expect(content).toContain('locales: [\n    "en",\n    "de"\n  ]')
+    expect(content).toContain('input: "src/**/*.tsx"')
   })
 
   it('should create a JavaScript (CJS) config file', async () => {

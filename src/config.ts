@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { access } from 'node:fs/promises'
+import { createJiti } from 'jiti'
 import type { I18nextToolkitConfig } from './types'
 
 /**
@@ -78,16 +79,23 @@ export async function loadConfig (): Promise<I18nextToolkitConfig | null> {
   const configPath = await findConfigFile()
 
   if (!configPath) {
-    console.error(`Error: Configuration file not found. Please create one of the following: ${CONFIG_FILES.join(', ')}`)
+    // QUIETLY RETURN NULL: The caller will handle the "not found" case.
     return null
   }
 
   try {
-    // Use pathToFileURL to ensure correct path resolution on all OSes for ESM
-    const configUrl = pathToFileURL(configPath).href
-    // Append a timestamp to bust the cache in watch mode
-    const configModule = await import(`${configUrl}?t=${Date.now()}`)
-    const config = configModule.default
+    let config: any
+
+    // Use jiti for TypeScript files, native import for JavaScript
+    if (configPath.endsWith('.ts')) {
+      const jiti = createJiti(import.meta.url)
+      const configModule = await jiti.import(configPath, { default: true })
+      config = configModule
+    } else {
+      const configUrl = pathToFileURL(configPath).href
+      const configModule = await import(`${configUrl}?t=${Date.now()}`)
+      config = configModule.default
+    }
 
     if (!config) {
       console.error(`Error: No default export found in ${configPath}`)
@@ -95,9 +103,9 @@ export async function loadConfig (): Promise<I18nextToolkitConfig | null> {
     }
 
     // Set default sync options
-    if (!config.extract) config.extract = {}
-    if (!config.extract.primaryLanguage) config.extract.primaryLanguage = config.locales[0] || 'en'
-    if (!config.extract.secondaryLanguages) config.extract.secondaryLanguages = config.locales.filter((l: string) => l !== config.extract.primaryLanguage)
+    config.extract ||= {}
+    config.extract.primaryLanguage ||= config.locales[0] || 'en'
+    config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config.extract.primaryLanguage)
 
     return config
   } catch (error) {

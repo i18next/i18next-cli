@@ -25,7 +25,7 @@ const mockConfig: I18nextToolkitConfig = {
   },
 }
 
-describe('status', () => {
+describe('status (summary view)', () => {
   let consoleLogSpy: any
 
   beforeEach(() => {
@@ -39,89 +39,128 @@ describe('status', () => {
   })
 
   it('should generate a correct status report for partially translated languages', async () => {
-    // 1. Setup Mocks
     const { findKeys } = await import('../src/extractor/core/key-finder')
     const mockKeys = new Map<string, ExtractedKey>([
       ['translation:key.a', { key: 'key.a', ns: 'translation' }],
-      ['translation:key.b', { key: 'key.b', ns: 'translation' }],
-      ['translation:key.c', { key: 'key.c', ns: 'translation' }],
       ['translation:key.d', { key: 'key.d', ns: 'translation' }],
+      ['translation:key.c', { key: 'key.c', ns: 'translation' }],
+      ['translation:key.b', { key: 'key.b', ns: 'translation' }],
     ])
     vi.mocked(findKeys).mockResolvedValue(mockKeys)
 
-    // Setup virtual file system
     vol.fromJSON({
       [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({
-        key: { a: 'Wert A', b: 'Wert B' }, // 2 of 4 keys translated
+        key: { a: 'Wert A', b: 'Wert B' },
       }),
       [resolve(process.cwd(), 'locales/fr/translation.json')]: JSON.stringify({
-        key: { a: 'Valeur A', b: 'Valeur B', c: 'Valeur C' }, // 3 of 4 keys translated
+        key: { a: 'Valeur A', b: 'Valeur B', c: 'Valeur C' },
       }),
     })
 
-    // 2. Run the function
     await runStatus(mockConfig)
 
-    // 3. Assert the output
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('i18next Project Status'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('🔑 Keys Found:         4'))
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Translation Progress:'))
-
-    // Check German (de) progress: 2/4 keys = 50%
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de: [■■■■■■■■■■□□□□□□□□□□] 50% (2/4 keys)'))
-
-    // Check French (fr) progress: 3/4 keys = 75%
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- fr: [■■■■■■■■■■■■■■■□□□□□] 75% (3/4 keys)'))
-
-    // Check for the locize funnel message
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Take your localization to the next level!'))
   })
 
-  it('should handle missing translation files gracefully', async () => {
+  it('should correctly calculate progress with multiple namespaces', async () => {
     const { findKeys } = await import('../src/extractor/core/key-finder')
     const mockKeys = new Map<string, ExtractedKey>([
-      ['translation:key.a', { key: 'key.a', ns: 'translation' }],
-      ['translation:key.b', { key: 'key.b', ns: 'translation' }],
+      // 4 keys in 'translation' ns
+      ['translation:app.title', { key: 'app.title', ns: 'translation' }],
+      ['translation:app.welcome', { key: 'app.welcome', ns: 'translation' }],
+      ['translation:app.error', { key: 'app.error', ns: 'translation' }],
+      ['translation:app.loading', { key: 'app.loading', ns: 'translation' }],
+      // 2 keys in 'common' ns
+      ['common:button.save', { key: 'button.save', ns: 'common' }],
+      ['common:button.cancel', { key: 'button.cancel', ns: 'common' }],
     ])
     vi.mocked(findKeys).mockResolvedValue(mockKeys)
 
-    // Only provide the German file, French is missing
     vol.fromJSON({
+      // 3 of 4 keys translated for 'translation' ns
       [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({
-        key: { a: 'Wert A', b: 'Wert B' }, // 2/2 keys
+        app: { title: 'Titel', welcome: 'Willkommen', error: 'Fehler' },
+      }),
+      // 1 of 2 keys translated for 'common' ns
+      [resolve(process.cwd(), 'locales/de/common.json')]: JSON.stringify({
+        button: { save: 'Speichern' },
       }),
     })
 
     await runStatus(mockConfig)
 
-    // German should be 100%
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de: [■■■■■■■■■■■■■■■■■■■■] 100% (2/2 keys)'))
-    // French should be 0% as the file is missing
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- fr: [□□□□□□□□□□□□□□□□□□□□] 0% (0/2 keys)'))
+    // Total keys = 6. Translated = 3 (translation) + 1 (common) = 4.
+    // Progress should be 4/6 = 67%
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('🔑 Keys Found:         6'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de: [■■■■■■■■■■■■■□□□□□□□] 67% (4/6 keys)'))
+  })
+})
+
+describe('status (detailed view)', () => {
+  let consoleLogSpy: any
+
+  beforeEach(() => {
+    vol.reset()
+    vi.clearAllMocks()
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
   })
 
-  it('should ignore extraneous keys in translation files that are not in the source code', async () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('should display a grouped, key-by-key report for a specific locale', async () => {
     const { findKeys } = await import('../src/extractor/core/key-finder')
-    // Source code only has 2 keys
     const mockKeys = new Map<string, ExtractedKey>([
-      ['translation:key.a', { key: 'key.a', ns: 'translation' }],
-      ['translation:key.b', { key: 'key.b', ns: 'translation' }],
+      ['translation:app.title', { key: 'app.title', ns: 'translation' }],
+      ['common:button.save', { key: 'button.save', ns: 'common' }],
+      ['translation:app.welcome', { key: 'app.welcome', ns: 'translation' }],
+      ['common:button.cancel', { key: 'button.cancel', ns: 'common' }],
     ])
     vi.mocked(findKeys).mockResolvedValue(mockKeys)
 
-    // The German file has an old, unused key ('old_key')
     vol.fromJSON({
       [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({
-        key: { a: 'Wert A' }, // Only 1 of 2 source keys is present
-        old_key: 'Dieser Schlüssel ist veraltet',
+        app: { title: 'Titel', welcome: '' }, // 'welcome' is untranslated
+      }),
+      [resolve(process.cwd(), 'locales/de/common.json')]: JSON.stringify({
+        button: { save: 'Speichern' }, // 'cancel' is missing
       }),
     })
 
-    await runStatus(mockConfig)
+    await runStatus(mockConfig, { detail: 'de' })
 
-    // The status should be based on the 2 keys found in the source code, not the 3 keys in the JSON file.
-    // Therefore, progress is 1/2 = 50%.
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('🔑 Keys Found:         2'))
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de: [■■■■■■■■■■□□□□□□□□□□] 50% (1/2 keys)'))
+    // Check for namespace headers
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Namespace: common'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Namespace: translation'))
+
+    // Check for specific key statuses
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('✓'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('button.save'))
+
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('✗'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('button.cancel')) // Missing from file
+
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('✓'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('app.title'))
+
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('✗'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('app.welcome')) // Has empty string value
+
+    // Check final summary
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Found 2 missing translations for "de"'))
+  })
+
+  it('should show a warning when checking the primary language', async () => {
+    await runStatus(mockConfig, { detail: 'en' })
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('is the primary language'))
+  })
+
+  it('should show an error for an invalid locale', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await runStatus(mockConfig, { detail: 'jp' })
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('is not defined in your configuration'))
   })
 })

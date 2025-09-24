@@ -1,5 +1,6 @@
 import { execa } from 'execa'
 import chalk from 'chalk'
+import ora from 'ora'
 import inquirer from 'inquirer'
 import { resolve } from 'node:path'
 import type { I18nextToolkitConfig } from './types'
@@ -186,6 +187,8 @@ function cliOptionsToArgs (command: 'sync' | 'download' | 'migrate', cliOptions:
 async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', config: I18nextToolkitConfig, cliOptions: any = {}) {
   await checkLocizeCliExists()
 
+  const spinner = ora(`Running 'locize ${command}'...\n`).start()
+
   const locizeConfig = config.locize || {}
   const { projectId, apiKey, version } = locizeConfig
   let commandArgs: string[] = [command]
@@ -203,6 +206,7 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
   try {
     console.log(chalk.cyan(`\nRunning 'locize ${commandArgs.join(' ')}'...`))
     const result = await execa('locize', commandArgs, { stdio: 'pipe' })
+    spinner.succeed(chalk.green(`'locize ${command}' completed successfully.`))
     if (result?.stdout) console.log(result.stdout) // Print captured output on success
   } catch (error: any) {
     const stderr = error.stderr || ''
@@ -219,20 +223,22 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
         commandArgs.push(...cliOptionsToArgs(command, cliOptions, locizeConfig))
         commandArgs.push('--path', basePath)
         try {
-          console.log(chalk.cyan('\nRetrying with new credentials...'))
+          spinner.start('Retrying with new credentials...') // Restart spinner
           const result = await execa('locize', commandArgs, { stdio: 'pipe' })
+          spinner.succeed(chalk.green('Retry successful!'))
           if (result?.stdout) console.log(result.stdout) // Print captured output on success
         } catch (retryError: any) {
-          console.error(chalk.red('\nError during retry:'))
+          spinner.fail(chalk.red('Error during retry.'))
           console.error(retryError.stderr || retryError.message)
           process.exit(1)
         }
       } else {
+        spinner.fail('Operation cancelled.')
         process.exit(1) // User aborted the prompt
       }
     } else {
       // Handle other errors
-      console.error(chalk.red(`\nError executing 'locize ${command}':`))
+      spinner.fail(chalk.red(`Error executing 'locize ${command}'.`))
       console.error(stderr || error.message)
       process.exit(1)
     }

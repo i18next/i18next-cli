@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { resolve, dirname } from 'path'
 import chalk from 'chalk'
+import ora from 'ora'
 import type { I18nextToolkitConfig } from './types'
 import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-object'
 import { getOutputPath } from './utils/file-utils'
@@ -36,13 +37,14 @@ import { getOutputPath } from './utils/file-utils'
  * ```
  */
 export async function runSyncer (config: I18nextToolkitConfig) {
-  console.log('Running i18next locale synchronizer...')
+  const spinner = ora('Running i18next locale synchronizer...\n').start()
 
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
   const { primaryLanguage } = config.extract
   const secondaryLanguages = config.locales.filter(l => l !== primaryLanguage)
   const keySeparator = config.extract.keySeparator ?? '.'
 
+  const logMessages: string[] = []
   let wasAnythingSynced = false
 
   // Assume sync operates on the default namespace for simplicity
@@ -93,11 +95,14 @@ export async function runSyncer (config: I18nextToolkitConfig) {
       wasAnythingSynced = true
       await mkdir(dirname(fullSecondaryPath), { recursive: true })
       await writeFile(fullSecondaryPath, newContent)
-      console.log(`Synchronized: ${secondaryPath}`)
+      logMessages.push(`  ${chalk.green('✓')} Synchronized: ${secondaryPath}`)
     } else {
-      console.log(`Already synchronized: ${secondaryPath}`)
+      logMessages.push(`  ${chalk.gray('-')} Already in sync: ${secondaryPath}`)
     }
   }
+
+  spinner.succeed(chalk.bold('Synchronization complete!'))
+  logMessages.forEach(msg => console.log(msg))
 
   if (wasAnythingSynced) {
     console.log(chalk.green.bold('\n✅ Sync complete.'))

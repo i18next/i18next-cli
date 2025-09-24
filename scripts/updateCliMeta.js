@@ -12,7 +12,7 @@ const version = pkg.version || ''
 
 const cliRaw = await readFile(cliPath, 'utf8')
 
-const replacement = `program\n    .name('${name}')\n    .description('${description}')\n    .version('${version}')`
+const replacement = `program\n  .name('${name}')\n  .description('${description}')\n  .version('${version}')`
 
 // 1) Prefer replacing an existing chain that starts with "program" followed directly by a dot (.name).
 //    This prevents matching the "program" token that appears inside "const program = ..."

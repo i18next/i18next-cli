@@ -1,4 +1,3 @@
-import './cli'
 export { defineConfig } from './config'
 export type { I18nextToolkitConfig } from './types'
 export * as config from './config'

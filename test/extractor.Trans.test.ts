@@ -111,4 +111,45 @@ describe('extractor: advanced Trans features', () => {
       userMessagesUnread_other: expectedDefaultValue,
     })
   })
+
+  it('should extract Trans with inline <code> and t(...) calls in the same file', async () => {
+    const sampleCode = `
+      import React from 'react';
+      import { useTranslation, Trans } from 'react-i18next';
+
+      function Comp1() {
+        const { t } = useTranslation();
+
+        return (
+          <div className="App">
+            <p>
+              <Trans i18nKey="title">
+                Welcome to react using <code>react-i18next</code> fully type-safe
+              </Trans>
+            </p>
+            <p>{t('description.part1')}</p>
+            <p>{t('description.part2')}</p>
+          </div>
+        );
+      }
+
+      export default Comp1;
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedTitle = 'Welcome to react using <1>react-i18next</1> fully type-safe'
+
+    expect(translationFile!.newTranslations).toEqual({
+      title: expectedTitle,
+      description: {
+        part1: 'description.part1',
+        part2: 'description.part2',
+      },
+    })
+  })
 })

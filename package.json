@@ -8,7 +8,6 @@
   },
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
-  "browser": "./dist/umd/index.js",
   "types": "./types/index.d.ts",
   "exports": {
     "./package.json": "./package.json",
@@ -27,7 +26,7 @@
     }
   },
   "scripts": {
-    "build": "npm run update-cli-meta && rm -rf dist && rollup -c && echo '{\"type\":\"commonjs\"}' > dist/cjs/package.json && rm -rf types && tsc -d --declarationDir types --declarationMap --emitDeclarationOnly",
+    "build": "npm run update-cli-meta && rm -rf dist && rollup -c && chmod +x dist/esm/cli.js && chmod +x dist/cjs/cli.js && echo '{\"type\":\"commonjs\"}' > dist/cjs/package.json && rm -rf types && tsc -d --declarationDir types --declarationMap --emitDeclarationOnly",
     "lint": "eslint .",
     "test": "npm run lint && vitest run",
     "test:watch": "vitest",
@@ -76,6 +75,7 @@
     "commander": "14.0.1",
     "execa": "9.6.0",
     "inquirer": "12.9.6",
+    "jiti": "2.6.0",
     "ora": "9.0.0"
   }
 }

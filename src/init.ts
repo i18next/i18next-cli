@@ -99,21 +99,54 @@ export async function runInit () {
     },
   }
 
+  // Helper to serialize a JS value as a JS literal:
+  function toJs (value: any, indent = 2, level = 0): string {
+    const pad = (n: number) => ' '.repeat(n * indent)
+    const currentPad = pad(level)
+    const nextPad = pad(level + 1)
+
+    if (value === null || typeof value === 'number' || typeof value === 'boolean') {
+      return JSON.stringify(value)
+    }
+    if (typeof value === 'string') {
+      return JSON.stringify(value) // keeps double quotes and proper escaping
+    }
+    if (Array.isArray(value)) {
+      if (value.length === 0) return '[]'
+      const items = value.map(v => `${nextPad}${toJs(v, indent, level + 1)}`).join(',\n')
+      return `[\n${items}\n${currentPad}]`
+    }
+    if (typeof value === 'object') {
+      const keys = Object.keys(value)
+      if (keys.length === 0) return '{}'
+      const entries = keys.map(key => {
+        // Use unquoted key if it's a valid identifier otherwise JSON.stringify(key)
+        const validId = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
+        const printedKey = validId ? key : JSON.stringify(key)
+        return `${nextPad}${printedKey}: ${toJs(value[key], indent, level + 1)}`
+      }).join(',\n')
+      return `{\n${entries}\n${currentPad}}`
+    }
+
+    // Fallback
+    return JSON.stringify(value)
+  }
+
   let fileContent = ''
   if (isTypeScript) {
     fileContent = `import { defineConfig } from 'i18next-toolkit';
 
-export default defineConfig(${JSON.stringify(configObject, null, 2)});`
+export default defineConfig(${toJs(configObject)});`
   } else if (isEsm) {
     fileContent = `import { defineConfig } from 'i18next-toolkit';
 
 /** @type {import('i18next-toolkit').I18nextToolkitConfig} */
-export default defineConfig(${JSON.stringify(configObject, null, 2)});`
+export default defineConfig(${toJs(configObject)});`
   } else { // CJS
     fileContent = `const { defineConfig } = require('i18next-toolkit');
 
 /** @type {import('i18next-toolkit').I18nextToolkitConfig} */
-module.exports = defineConfig(${JSON.stringify(configObject, null, 2)});`
+module.exports = defineConfig(${toJs(configObject)});`
   }
 
   const outputPath = resolve(process.cwd(), fileName)
