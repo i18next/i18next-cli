@@ -4,7 +4,7 @@ import { Command } from 'commander'
 import chokidar from 'chokidar'
 import { glob } from 'glob'
 import chalk from 'chalk'
-import { loadConfig } from './config'
+import { loadConfig, ensureConfig } from './config'
 import { detectConfig } from './heuristic-config'
 import { runExtractor } from './extractor'
 import { runTypesGenerator } from './types-generator'
@@ -29,10 +29,7 @@ program
   .option('-w, --watch', 'Watch for file changes and re-run the extractor.')
   .option('--ci', 'Exit with a non-zero status code if any files are updated.')
   .action(async (options) => {
-    const config = await loadConfig()
-    if (!config) {
-      process.exit(1)
-    }
+    const config = await ensureConfig()
 
     const run = async () => {
       const filesWereUpdated = await runExtractor(config)
@@ -82,10 +79,7 @@ program
   .description('Generate TypeScript definitions from translation resource files.')
   .option('-w, --watch', 'Watch for file changes and re-run the type generator.')
   .action(async (options) => {
-    const config = await loadConfig()
-    if (!config) {
-      process.exit(1)
-    }
+    const config = await ensureConfig()
 
     const run = () => runTypesGenerator(config)
     await run()
@@ -106,10 +100,7 @@ program
   .command('sync')
   .description('Synchronize secondary language files with the primary language file.')
   .action(async () => {
-    const config = await loadConfig()
-    if (!config) {
-      process.exit(1)
-    }
+    const config = await ensureConfig()
     await runSyncer(config)
   })
 
@@ -152,8 +143,7 @@ program
   .option('--compare-mtime', 'Compare modification times when syncing.')
   .option('--dry-run', 'Run the command without making any changes.')
   .action(async (options) => {
-    const config = await loadConfig()
-    if (!config) process.exit(1)
+    const config = await ensureConfig()
     await runLocizeSync(config, options)
   })
 
@@ -161,8 +151,7 @@ program
   .command('locize-download')
   .description('Download all translations from your locize project.')
   .action(async (options) => {
-    const config = await loadConfig()
-    if (!config) process.exit(1)
+    const config = await ensureConfig()
     await runLocizeDownload(config, options)
   })
 
@@ -170,8 +159,7 @@ program
   .command('locize-migrate')
   .description('Migrate local translation files to a new locize project.')
   .action(async (options) => {
-    const config = await loadConfig()
-    if (!config) process.exit(1)
+    const config = await ensureConfig()
     await runLocizeMigrate(config, options)
   })
 
