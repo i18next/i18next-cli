@@ -9,6 +9,18 @@ A unified, high-performance i18next CLI toolchain, powered by SWC.
 
 `i18next-toolkit` is a complete reimagining of the static analysis toolchain for the i18next ecosystem. It consolidates key extraction, type safety generation, locale syncing, linting, and cloud integrations into a single, cohesive, and blazing-fast CLI.
 
+> ### 🚀 Try it Now - Zero Config!
+> You can get an instant analysis of your existing i18next project **without any configuration**. Just run this command in your repository's root directory:
+>
+> ```bash
+> npx i18next-toolkit status
+> ```
+> Or find hardcoded strings:
+>
+> ```bash
+> npx i18next-toolkit lint
+> ```
+
 ## Why i18next-toolkit?
 
 `i18next-toolkit` is built from the ground up to meet the demands of modern web development.
