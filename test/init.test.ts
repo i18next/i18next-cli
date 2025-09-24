@@ -62,7 +62,7 @@ describe('init', () => {
     const configPath = resolve('/', 'i18next.config.js')
     const content = await vol.promises.readFile(configPath, 'utf-8')
 
-    expect(content).toContain('/** @type {import(\'i18next-toolkit\').I18nextToolkitConfig} */')
+    expect(content).toContain('/** @type {import(\'i18next-cli\').I18nextToolkitConfig} */')
     expect(content).toContain('module.exports =')
     expect(content).not.toContain('export default')
   })
@@ -83,7 +83,7 @@ describe('init', () => {
     const configPath = resolve('/', 'i18next.config.js')
     const content = await vol.promises.readFile(configPath, 'utf-8')
 
-    expect(content).toContain('/** @type {import(\'i18next-toolkit\').I18nextToolkitConfig} */')
+    expect(content).toContain('/** @type {import(\'i18next-cli\').I18nextToolkitConfig} */')
     expect(content).toContain('export default')
     expect(content).not.toContain('module.exports')
   })

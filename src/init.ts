@@ -30,7 +30,7 @@ async function isEsmProject (): Promise<boolean> {
 }
 
 /**
- * Interactive setup wizard for creating a new i18next-toolkit configuration file.
+ * Interactive setup wizard for creating a new i18next-cli configuration file.
  *
  * This function provides a guided setup experience that:
  * 1. Asks the user for their preferred configuration file type (TypeScript or JavaScript)
@@ -57,7 +57,7 @@ async function isEsmProject (): Promise<boolean> {
  * ```
  */
 export async function runInit () {
-  console.log('Welcome to the i18next-toolkit setup wizard!')
+  console.log('Welcome to the i18next-cli setup wizard!')
 
   const answers = await inquirer.prompt([
     {
@@ -134,18 +134,18 @@ export async function runInit () {
 
   let fileContent = ''
   if (isTypeScript) {
-    fileContent = `import { defineConfig } from 'i18next-toolkit';
+    fileContent = `import { defineConfig } from 'i18next-cli';
 
 export default defineConfig(${toJs(configObject)});`
   } else if (isEsm) {
-    fileContent = `import { defineConfig } from 'i18next-toolkit';
+    fileContent = `import { defineConfig } from 'i18next-cli';
 
-/** @type {import('i18next-toolkit').I18nextToolkitConfig} */
+/** @type {import('i18next-cli').I18nextToolkitConfig} */
 export default defineConfig(${toJs(configObject)});`
   } else { // CJS
-    fileContent = `const { defineConfig } = require('i18next-toolkit');
+    fileContent = `const { defineConfig } = require('i18next-cli');
 
-/** @type {import('i18next-toolkit').I18nextToolkitConfig} */
+/** @type {import('i18next-cli').I18nextToolkitConfig} */
 module.exports = defineConfig(${toJs(configObject)});`
   }
 

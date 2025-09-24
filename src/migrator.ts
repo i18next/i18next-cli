@@ -24,7 +24,7 @@ const POSSIBLE_NEW_CONFIGS = [
 
 /**
  * Migrates a legacy i18next-parser.config.js configuration file to the new
- * i18next-toolkit configuration format.
+ * i18next-cli configuration format.
  *
  * This function:
  * 1. Checks if a legacy config file exists
@@ -123,7 +123,7 @@ export async function runMigrator () {
 
   // Generate the new file content as a string
   const newConfigFileContent = `
-import { defineConfig } from 'i18next-toolkit';
+import { defineConfig } from 'i18next-cli';
 
 export default defineConfig(${JSON.stringify(newConfig, null, 2)});
 `

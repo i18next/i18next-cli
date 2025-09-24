@@ -12,7 +12,7 @@ import { findKeys } from '../src/extractor/core/key-finder'
  * It demonstrates extending the toolkit for non-JS/TS files.
  * The plugin finds all `data-i18n` attributes in HTML files.
  *
- * @returns A configured i18next-toolkit Plugin object.
+ * @returns A configured i18next-cli Plugin object.
  */
 const htmlPlugin = (): Plugin => ({
   name: 'html-plugin',

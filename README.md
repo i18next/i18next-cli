@@ -1,29 +1,29 @@
-# i18next-toolkit 🚀
+# i18next-cli 🚀
 
 A unified, high-performance i18next CLI toolchain, powered by SWC.
 
-[![Tests](https://github.com/i18next/i18next-toolkit/workflows/node/badge.svg)](https://github.com/i18next/i18next-toolkit/actions?query=workflow%3Anode)
-[![npm version](https://img.shields.io/npm/v/i18next-toolkit.svg?style=flat-square)](https://www.npmjs.com/package/i18next-toolkit)
+[![Tests](https://github.com/i18next/i18next-cli/workflows/node/badge.svg)](https://github.com/i18next/i18next-cli/actions?query=workflow%3Anode)
+[![npm version](https://img.shields.io/npm/v/i18next-cli.svg?style=flat-square)](https://www.npmjs.com/package/i18next-cli)
 
 ---
 
-`i18next-toolkit` is a complete reimagining of the static analysis toolchain for the i18next ecosystem. It consolidates key extraction, type safety generation, locale syncing, linting, and cloud integrations into a single, cohesive, and blazing-fast CLI.
+`i18next-cli` is a complete reimagining of the static analysis toolchain for the i18next ecosystem. It consolidates key extraction, type safety generation, locale syncing, linting, and cloud integrations into a single, cohesive, and blazing-fast CLI.
 
 > ### 🚀 Try it Now - Zero Config!
 > You can get an instant analysis of your existing i18next project **without any configuration**. Just run this command in your repository's root directory:
 >
 > ```bash
-> npx i18next-toolkit status
+> npx i18next-cli status
 > ```
 > Or find hardcoded strings:
 >
 > ```bash
-> npx i18next-toolkit lint
+> npx i18next-cli lint
 > ```
 
-## Why i18next-toolkit?
+## Why i18next-cli?
 
-`i18next-toolkit` is built from the ground up to meet the demands of modern web development.
+`i18next-cli` is built from the ground up to meet the demands of modern web development.
 
 - **🚀 Performance:** By leveraging a native Rust-based parser (SWC), it delivers orders-of-magnitude faster performance than JavaScript-based parsers.
 - **🧠 Intelligence:** A stateful, scope-aware analyzer correctly understands complex patterns like `useTranslation('ns1', { keyPrefix: '...' })`, `getFixedT`, and aliased `t` functions, minimizing the need for manual workarounds.
@@ -45,7 +45,7 @@ A unified, high-performance i18next CLI toolchain, powered by SWC.
 ## Installation
 
 ```bash
-npm install --save-dev i18next-toolkit
+npm install --save-dev i18next-cli
 ```
 
 ## Quick Start
@@ -55,13 +55,13 @@ npm install --save-dev i18next-toolkit
 Create a configuration interactively:
 
 ```bash
-npx i18next-toolkit init
+npx i18next-cli init
 ```
 
 Or manually create `i18next.config.ts` in your project root:
 
 ```typescript
-import { defineConfig } from 'i18next-toolkit';
+import { defineConfig } from 'i18next-cli';
 
 export default defineConfig({
   locales: ['en', 'de'],
@@ -77,19 +77,19 @@ export default defineConfig({
 Get an overview of your project's localization health:
 
 ```bash
-npx i18next-toolkit status
+npx i18next-cli status
 ```
 
 ### 3. Extract Translation Keys
 
 ```bash
-npx i18next-toolkit extract
+npx i18next-cli extract
 ```
 
 ### 4. Generate Types (Optional)
 
 ```bash
-npx i18next-toolkit types
+npx i18next-cli types
 ```
 
 ## Commands
@@ -98,14 +98,14 @@ npx i18next-toolkit types
 Interactive setup wizard to create your configuration file.
 
 ```bash
-npx i18next-toolkit init
+npx i18next-cli init
 ```
 
 ### `extract`
 Parses source files, extracts keys, and updates your JSON translation files.
 
 ```bash
-npx i18next-toolkit extract [options]
+npx i18next-cli extract [options]
 ```
 
 **Options:**
@@ -115,21 +115,21 @@ npx i18next-toolkit extract [options]
 **Examples:**
 ```bash
 # One-time extraction
-npx i18next-toolkit extract
+npx i18next-cli extract
 
 # Watch mode for development
-npx i18next-toolkit extract --watch
+npx i18next-cli extract --watch
 
 # CI mode (fails if files changed)
-npx i18next-toolkit extract --ci
+npx i18next-cli extract --ci
 ```
 
 ### `status [locale]`
 
 Displays a health check of your project's translation status. Can run without a config file.
 
-  - Run `npx i18next-toolkit status` for a high-level summary.
-  - Run `npx i18next-toolkit status <locale>` for a detailed, key-by-key report grouped by namespace.
+  - Run `npx i18next-cli status` for a high-level summary.
+  - Run `npx i18next-cli status <locale>` for a detailed, key-by-key report grouped by namespace.
 
 This command provides:
 - Total number of translation keys found in your source code
@@ -140,7 +140,7 @@ This command provides:
 Generates TypeScript definitions from your translation files for full type-safety and autocompletion.
 
 ```bash
-npx i18next-toolkit types [options]
+npx i18next-cli types [options]
 ```
 
 **Options:**
@@ -150,21 +150,21 @@ npx i18next-toolkit types [options]
 Synchronizes secondary language files against your primary language file, adding missing keys and removing extraneous ones.
 
 ```bash
-npx i18next-toolkit sync
+npx i18next-cli sync
 ```
 
 ### `lint`
 Analyzes your source code for internationalization issues like hardcoded strings. Can run without a config file.
 
 ```bash
-npx i18next-toolkit lint
+npx i18next-cli lint
 ```
 
 ### `migrate-config`
 Automatically migrates a legacy `i18next-parser.config.js` file to the new `i18next.config.ts` format.
 
 ```bash
-npx i18next-toolkit migrate-config
+npx i18next-cli migrate-config
 ```
 
 ### Locize Integration
@@ -180,13 +180,13 @@ Sync translations with the Locize translation management platform:
 
 ```bash
 # Download translations from Locize
-npx i18next-toolkit locize-download
+npx i18next-cli locize-download
 
 # Upload/sync translations to Locize  
-npx i18next-toolkit locize-sync
+npx i18next-cli locize-sync
 
 # Migrate local translations to Locize
-npx i18next-toolkit locize-migrate
+npx i18next-cli locize-migrate
 ```
 
 **Locize Command Options:**
@@ -194,7 +194,7 @@ npx i18next-toolkit locize-migrate
 The `locize-sync` command supports additional options:
 
 ```bash
-npx i18next-toolkit locize-sync [options]
+npx i18next-cli locize-sync [options]
 ```
 
 **Options:**
@@ -213,7 +213,7 @@ The configuration file supports both TypeScript (`.ts`) and JavaScript (`.js`) f
 
 ```typescript
 // i18next.config.ts
-import { defineConfig } from 'i18next-toolkit';
+import { defineConfig } from 'i18next-cli';
 
 export default defineConfig({
   locales: ['en', 'de', 'fr'],
@@ -227,7 +227,7 @@ export default defineConfig({
 ### Advanced Configuration
 
 ```typescript
-import { defineConfig } from 'i18next-toolkit';
+import { defineConfig } from 'i18next-cli';
 
 export default defineConfig({
   locales: ['en', 'de', 'fr'],
@@ -302,7 +302,7 @@ export default defineConfig({
 Create custom plugins to extend extraction capabilities. The plugin system is powerful enough to support non-JavaScript files (e.g., HTML, Handlebars) by using the `onEnd` hook with custom parsers.
 
 ```typescript
-import { defineConfig, Plugin } from 'i18next-toolkit';
+import { defineConfig, Plugin } from 'i18next-cli';
 
 const myCustomPlugin = (): Plugin => ({
   name: 'my-custom-plugin',
@@ -383,7 +383,7 @@ Extract keys from comments for documentation or edge cases:
 Automatically migrate from legacy `i18next-parser.config.js`:
 
 ```bash
-npx i18next-toolkit migrate-config
+npx i18next-cli migrate-config
 ```
 
 This will:
@@ -399,7 +399,7 @@ Use the `--ci` flag to fail builds when translations are outdated:
 ```yaml
 # GitHub Actions example
 - name: Check translations
-  run: npx i18next-toolkit extract --ci
+  run: npx i18next-cli extract --ci
 ```
 
 ## Watch Mode
@@ -407,7 +407,7 @@ Use the `--ci` flag to fail builds when translations are outdated:
 For development, use watch mode to automatically update translations:
 
 ```bash
-npx i18next-toolkit extract --watch
+npx i18next-cli extract --watch
 ```
 
 ## Type Safety

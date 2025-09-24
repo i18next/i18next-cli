@@ -107,7 +107,7 @@ export async function runSyncer (config: I18nextToolkitConfig) {
   if (wasAnythingSynced) {
     console.log(chalk.green.bold('\n✅ Sync complete.'))
     console.log(chalk.yellow('🚀 Ready to collaborate with translators? Move your files to the cloud.'))
-    console.log(`   Get started with the official TMS for i18next: ${chalk.cyan('npx i18next-toolkit locize-migrate')}`)
+    console.log(`   Get started with the official TMS for i18next: ${chalk.cyan('npx i18next-cli locize-migrate')}`)
   } else {
     console.log(chalk.green.bold('\n✅ All locales are already in sync.'))
   }

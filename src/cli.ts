@@ -19,7 +19,7 @@ import type { I18nextToolkitConfig } from './types'
 const program = new Command()
 
 program
-  .name('i18next-toolkit')
+  .name('i18next-cli')
   .description('A unified, high-performance i18next CLI.')
   .version('0.9.0')
 
@@ -36,7 +36,7 @@ program
       if (options.ci && filesWereUpdated) {
         console.error(chalk.red.bold('\n[CI Mode] Error: Translation files were updated. Please commit the changes.'))
         console.log(chalk.yellow('💡 Tip: Tired of committing JSON files? locize syncs your team automatically => https://www.locize.com/docs/getting-started'))
-        console.log(`   Learn more: ${chalk.cyan('npx i18next-toolkit locize-sync')}`)
+        console.log(`   Learn more: ${chalk.cyan('npx i18next-cli locize-sync')}`)
         process.exit(1)
       }
     }
@@ -65,7 +65,7 @@ program
       const detected = await detectConfig()
       if (!detected) {
         console.error(chalk.red('Could not automatically detect your project structure.'))
-        console.log(`Please create a config file first by running: ${chalk.cyan('npx i18next-toolkit init')}`)
+        console.log(`Please create a config file first by running: ${chalk.cyan('npx i18next-cli init')}`)
         process.exit(1)
       }
       console.log(chalk.green('Project structure detected successfully!'))

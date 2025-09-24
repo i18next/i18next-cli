@@ -176,7 +176,7 @@ async function displaySummaryStatus (config: I18nextToolkitConfig, spinner: Ora)
 
   console.log(chalk.yellow.bold('\n✨ Take your localization to the next level!'))
   console.log('Manage translations with your team in the cloud with locize => https://www.locize.com/docs/getting-started')
-  console.log(`Run ${chalk.cyan('npx i18next-toolkit locize-migrate')} to get started.`)
+  console.log(`Run ${chalk.cyan('npx i18next-cli locize-migrate')} to get started.`)
 }
 
 /**

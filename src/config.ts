@@ -18,7 +18,7 @@ const CONFIG_FILES = [
 ]
 
 /**
- * A helper function for defining the i18next-toolkit config with type-safety.
+ * A helper function for defining the i18next-cli config with type-safety.
  *
  * @param config - The configuration object to define
  * @returns The same configuration object with type safety
