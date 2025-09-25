@@ -478,6 +478,11 @@ t('key', { ns: 'namespace' })
 // With interpolation
 t('key', { name: 'John' })
 
+// With plurals and context
+t('key', { count: 1 });
+t('keyWithContext', { context: 'male' });
+t('keyWithDynContext', { context: isMale ? 'male' : 'female' });
+
 // With key fallbacks
 t(['key.primary', 'key.fallback']);
 t(['key.primary', 'key.fallback'], 'The fallback value');
@@ -487,11 +492,15 @@ t(['key.primary', 'key.fallback'], { defaultValue: 'The fallback value' });
 t('countries', { returnObjects: true });
 ```
 
+The extractor correctly handles pluralization (`count`) and context options, generating all necessary suffixed keys (e.g., `key_one`, `key_other`, `keyWithContext_male`). It can even statically analyze ternary expressions in the `context` option to extract all possible variations.
+
 ### React Components
 ```jsx
 // Trans component
 <Trans i18nKey="welcome">Welcome {{name}}</Trans>
 <Trans ns="common">user.greeting</Trans>
+<Trans count={num}>You have {{num}} message</Trans>
+<Trans context={isMale ? 'male' : 'female'}>A friend</Trans>
 
 // useTranslation hook
 const { t } = useTranslation('namespace');

@@ -1,4 +1,4 @@
-import type { Module, Node, CallExpression, VariableDeclarator, JSXElement, ArrowFunctionExpression, ObjectExpression } from '@swc/core'
+import type { Module, Node, CallExpression, VariableDeclarator, JSXElement, ArrowFunctionExpression, ObjectExpression, Expression } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, Logger } from '../../types'
 import { extractFromTransComponent } from './jsx-parser'
 
@@ -359,8 +359,26 @@ export class ASTVisitors {
 
     if (keysToProcess.length === 0) return
 
-    const options = node.arguments.length > 1 ? node.arguments[1].expression : undefined
-    const defaultValue = this.getDefaultValue(node, keysToProcess[keysToProcess.length - 1])
+    let defaultValue: string | undefined
+    let options: ObjectExpression | undefined
+
+    if (node.arguments.length > 1) {
+      const arg2 = node.arguments[1].expression
+      if (arg2.type === 'ObjectExpression') {
+        options = arg2
+      } else if (arg2.type === 'StringLiteral') {
+        defaultValue = arg2.value
+      }
+    }
+    if (node.arguments.length > 2) {
+      const arg3 = node.arguments[2].expression
+      if (arg3.type === 'ObjectExpression') {
+        options = arg3
+      }
+    }
+
+    const defaultValueFromOptions = options ? this.getObjectPropValue(options, 'defaultValue') : undefined
+    const finalDefaultValue = (typeof defaultValueFromOptions === 'string' ? defaultValueFromOptions : defaultValue)
 
     // Loop through each key found (could be one or more) and process it
     for (let i = 0; i < keysToProcess.length; i++) {
@@ -391,35 +409,50 @@ export class ASTVisitors {
       // The explicit defaultValue only applies to the LAST key in the fallback array.
       // For all preceding keys, their own key is their fallback.
       const isLastKey = i === keysToProcess.length - 1
-      const dv = isLastKey ? defaultValue : key
+      const dv = isLastKey ? (finalDefaultValue || key) : key
 
       // Handle plurals, context, and returnObjects
-      let keyHandled = false
       if (options?.type === 'ObjectExpression') {
-        // Handle context
+        const contextProp = this.getObjectProperty(options, 'context')
+
+        // 1. Handle Dynamic Context (Ternary) first
+        if (contextProp?.value?.type === 'ConditionalExpression') {
+          const contextValues = this.resolvePossibleStringValues(contextProp.value)
+          const contextSeparator = this.config.extract.contextSeparator ?? '_'
+
+          if (contextValues.length > 0) {
+            contextValues.forEach(context => {
+              this.pluginContext.addKey({ key: `${finalKey}${contextSeparator}${context}`, ns, defaultValue: dv })
+            })
+            // For dynamic context, also add the base key as a fallback
+            this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv })
+            continue // This key is fully handled, move to the next in the array
+          }
+        }
+
+        // 2. Handle Static Context
         const contextValue = this.getObjectPropValue(options, 'context')
         if (typeof contextValue === 'string' && contextValue) {
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
           this.pluginContext.addKey({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv })
-          keyHandled = true
+          continue // This key is fully handled
         }
 
-        // Handle plurals
-        if (!keyHandled && this.getObjectPropValue(options, 'count') !== undefined) {
+        // 3. Handle Plurals
+        if (this.getObjectPropValue(options, 'count') !== undefined) {
           this.handlePluralKeys(finalKey, dv, ns)
-          keyHandled = true
+          continue // This key is fully handled
         }
 
-        // Handle returnObjects
-        if (!keyHandled && this.getObjectPropValue(options, 'returnObjects') === true) {
+        // 4. Handle returnObjects
+        if (this.getObjectPropValue(options, 'returnObjects') === true) {
           this.objectKeys.add(finalKey)
-          // We still add the base key itself
+          // Fall through to add the base key itself
         }
       }
 
-      if (!keyHandled) {
-        this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv })
-      }
+      // 5. Default case: Add the simple key
+      this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv })
     }
   }
 
@@ -453,39 +486,6 @@ export class ASTVisitors {
       this.logger.warn(`Could not determine plural rules for language "${this.config.extract?.primaryLanguage}". Falling back to simple key extraction.`)
       this.pluginContext.addKey({ key, defaultValue, ns })
     }
-  }
-
-  /**
-   * Extracts default value from translation function call arguments.
-   *
-   * Supports multiple patterns:
-   * - String as second argument: `t('key', 'Default')`
-   * - Object with defaultValue: `t('key', { defaultValue: 'Default' })`
-   * - Falls back to the key itself if no default found
-   *
-   * @param node - Call expression node
-   * @param fallback - Fallback value if no default found
-   * @returns Extracted default value
-   *
-   * @private
-   */
-  private getDefaultValue (node: CallExpression, fallback: string): string {
-    if (node.arguments.length <= 1) return fallback
-
-    const secondArg = node.arguments[1].expression
-
-    if (secondArg.type === 'StringLiteral') {
-      return secondArg.value || fallback
-    }
-
-    if (secondArg.type === 'ObjectExpression') {
-      const val = this.getObjectPropValue(secondArg, 'defaultValue')
-      if (typeof val === 'string') return val || fallback
-      if (typeof val === 'number' || typeof val === 'boolean') return String(val)
-      return fallback
-    }
-
-    return fallback
   }
 
   /**
@@ -532,11 +532,20 @@ export class ASTVisitors {
           extractedKey.ns = this.config.extract.defaultNS
         }
 
-        // If the component has a `count` prop, use the plural handler
-        if (extractedKey.hasCount) {
+        if (extractedKey.contextExpression) {
+          const contextValues = this.resolvePossibleStringValues(extractedKey.contextExpression)
+          const contextSeparator = this.config.extract.contextSeparator ?? '_'
+
+          if (contextValues.length > 0) {
+            for (const context of contextValues) {
+              this.pluginContext.addKey({ key: `${extractedKey.key}${contextSeparator}${context}`, ns: extractedKey.ns, defaultValue: extractedKey.defaultValue })
+            }
+            // Add the base key as well
+            this.pluginContext.addKey(extractedKey)
+          }
+        } else if (extractedKey.hasCount) {
           this.handlePluralKeys(extractedKey.key, extractedKey.defaultValue, extractedKey.ns)
         } else {
-        // Otherwise, add the key as-is
           this.pluginContext.addKey(extractedKey)
         }
       // The duplicated addKey call has been removed.
@@ -670,5 +679,66 @@ export class ASTVisitors {
     }
 
     return null
+  }
+
+  /**
+   * Resolves an expression to one or more possible string values that can be
+   * determined statically from the AST.
+   *
+   * Supports:
+   * - StringLiteral -> single value
+   * - ConditionalExpression (ternary) -> union of consequent and alternate resolved values
+   * - The identifier `undefined` -> empty array
+   *
+   * For any other expression types (identifiers, function calls, member expressions,
+   * etc.) the value cannot be determined statically and an empty array is returned.
+   *
+   * @private
+   * @param expression - The SWC AST expression node to resolve
+   * @returns An array of possible string values that the expression may produce.
+   */
+  private resolvePossibleStringValues (expression: Expression): string[] {
+    if (expression.type === 'StringLiteral') {
+      return [expression.value]
+    }
+
+    if (expression.type === 'ConditionalExpression') { // This is a ternary operator
+      const consequentValues = this.resolvePossibleStringValues(expression.consequent)
+      const alternateValues = this.resolvePossibleStringValues(expression.alternate)
+      return [...consequentValues, ...alternateValues]
+    }
+
+    if (expression.type === 'Identifier' && expression.value === 'undefined') {
+      return [] // Handle the `undefined` case
+    }
+
+    // We can't statically determine the value of other expressions (e.g., variables, function calls)
+    return []
+  }
+
+  /**
+   * Finds and returns the full property node (KeyValueProperty) for the given
+   * property name from an ObjectExpression.
+   *
+   * Matches both identifier keys (e.g., { ns: 'value' }) and string literal keys
+   * (e.g., { 'ns': 'value' }).
+   *
+   * This helper returns the full property node rather than just its primitive
+   * value so callers can inspect expression types (ConditionalExpression, etc.).
+   *
+   * @private
+   * @param object - The SWC ObjectExpression to search
+   * @param propName - The property name to locate
+   * @returns The matching KeyValueProperty node if found, otherwise undefined.
+   */
+  private getObjectProperty (object: ObjectExpression, propName: string): any {
+    return (object.properties).find(
+      (p) =>
+        p.type === 'KeyValueProperty' &&
+        (
+          (p.key?.type === 'Identifier' && p.key.value === propName) ||
+          (p.key?.type === 'StringLiteral' && p.key.value === propName)
+        )
+    )
   }
 }

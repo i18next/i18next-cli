@@ -1,4 +1,4 @@
-import type { Node } from '@swc/core'
+import type { Node, Expression } from '@swc/core'
 
 /**
  * Main configuration interface for the i18next toolkit.
@@ -223,6 +223,9 @@ export interface ExtractedKey {
 
   /** Whether this key is used with pluralization (count parameter) */
   hasCount?: boolean;
+
+  /** hold the raw context expression from the AST */
+  contextExpression?: Expression;
 }
 
 /**

@@ -196,6 +196,27 @@ describe('extractor: advanced t features', () => {
       expect(commonFile).toBeDefined()
       expect(commonFile!.newTranslations).toEqual({ button: { submit: 'Submit' } })
     })
+
+    it('should extract all possible keys from a ternary in the context option', async () => {
+      const sampleCode = `
+        const isMale = true;
+        t('friend', 'A friend', { context: isMale ? 'male' : 'female' });
+        t('alert', 'An alert', { context: isImportant ? 'important' : undefined });
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      // This expectation is correct: for dynamic context, we need the base key and all variants.
+      expect(translationFile!.newTranslations).toEqual({
+        friend: 'A friend', // base key
+        friend_male: 'A friend',
+        friend_female: 'A friend',
+        alert: 'An alert', // base key
+        alert_important: 'An alert', // undefined is ignored
+      })
+    })
   })
 
   describe('getFixedT support', () => {

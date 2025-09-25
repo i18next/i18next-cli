@@ -152,4 +152,21 @@ describe('extractor: advanced Trans features', () => {
       },
     })
   })
+
+  it('should extract all possible keys from a ternary in the context prop', async () => {
+    const sampleCode = `
+        const isMale = true;
+        <Trans i18nKey="friend" context={isMale ? 'male' : 'female'}>A friend</Trans>
+      `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+    expect(translationFile!.newTranslations).toEqual({
+      friend: 'A friend',
+      friend_male: 'A friend',
+      friend_female: 'A friend',
+    })
+  })
 })

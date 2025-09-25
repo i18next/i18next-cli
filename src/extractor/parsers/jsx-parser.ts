@@ -55,6 +55,16 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
   )
   const hasCount = !!countAttr
 
+  const contextAttr = node.opening.attributes?.find(
+    (attr) =>
+      attr.type === 'JSXAttribute' &&
+      attr.name.type === 'Identifier' &&
+      attr.name.value === 'context'
+  )
+  const contextExpression = (contextAttr?.type === 'JSXAttribute' && contextAttr.value?.type === 'JSXExpressionContainer')
+    ? contextAttr.value.expression
+    : undefined
+
   let key: string
   if (i18nKeyAttr?.type === 'JSXAttribute' && i18nKeyAttr.value?.type === 'StringLiteral') {
     key = i18nKeyAttr.value.value
@@ -81,7 +91,7 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
     defaultValue = serializeJSXChildren(node.children, config)
   }
 
-  return { key, ns, defaultValue: defaultValue || key, hasCount }
+  return { key, ns, defaultValue: defaultValue || key, hasCount, contextExpression }
 }
 
 /**
