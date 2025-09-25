@@ -9,10 +9,13 @@ const HEURISTIC_PATTERNS = [
   'locales/dev/*.json',
   'src/locales/dev/*.json',
   'src/assets/locales/dev/*.json',
+  'app/i18n/locales/dev/*.json',
+
   'public/locales/en/*.json',
   'locales/en/*.json',
   'src/locales/en/*.json',
   'src/assets/locales/en/*.json',
+  'app/i18n/locales/en/*.json',
 ]
 
 /**
