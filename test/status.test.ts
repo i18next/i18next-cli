@@ -1,7 +1,7 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { runStatus } from '../src/status'
-import type { I18nextToolkitConfig, ExtractedKey } from '../src/types'
+import type { I18nextToolkitConfig, ExtractedKey } from '../src/index'
 import { resolve } from 'path'
 
 // Mock dependencies

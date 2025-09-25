@@ -1,9 +1,9 @@
 import { glob } from 'glob'
 import { readFile } from 'node:fs/promises'
-import type { Plugin, ExtractedKey, I18nextToolkitConfig } from '../src/types'
+import type { Plugin, ExtractedKey, I18nextToolkitConfig } from '../src/index'
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
-import { findKeys } from '../src/extractor/core/key-finder'
+import { findKeys } from '../src/index'
 
 /**
  * An example plugin to extract translation keys from HTML files.

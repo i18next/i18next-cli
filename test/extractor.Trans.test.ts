@@ -1,7 +1,7 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
-import { extract } from '../src/extractor/index'
-import type { I18nextToolkitConfig } from '../src/types'
+import { extract } from '../src/index'
+import type { I18nextToolkitConfig } from '../src/index'
 
 // Mocks
 vi.mock('fs/promises', async () => {

@@ -1,11 +1,12 @@
+export type {
+  I18nextToolkitConfig,
+  Plugin,
+  PluginContext,
+  ExtractedKey
+} from './types'
 export { defineConfig } from './config'
-export type { I18nextToolkitConfig } from './types'
-export * as config from './config'
-export * as extractor from './extractor'
-export * as syncer from './syncer'
-export * as typesGenerator from './types-generator'
-export * as migrator from './migrator'
-export * as types from './types'
-export * as locize from './locize'
-export * as linter from './linter'
-export * as init from './init'
+export {
+  extract,
+  findKeys,
+  getTranslations
+} from './extractor'

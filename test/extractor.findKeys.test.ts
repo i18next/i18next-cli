@@ -1,7 +1,7 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
-import { findKeys } from '../src/extractor'
-import type { I18nextToolkitConfig } from '../src/types'
+import { findKeys } from '../src/index'
+import type { I18nextToolkitConfig } from '../src/index'
 
 vi.mock('fs/promises', async () => {
   const memfs = await vi.importActual<typeof import('memfs')>('memfs')

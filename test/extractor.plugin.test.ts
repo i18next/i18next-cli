@@ -1,7 +1,7 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
-import { findKeys } from '../src/extractor'
-import type { I18nextToolkitConfig, Plugin, PluginContext } from '../src/types'
+import { findKeys } from '../src/index'
+import type { I18nextToolkitConfig, Plugin, PluginContext } from '../src/index'
 import type { CallExpression } from '@swc/core'
 
 export const logI18nPlugin = (): Plugin => ({

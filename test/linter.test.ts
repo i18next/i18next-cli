@@ -1,7 +1,7 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { runLinter } from '../src/linter'
-import type { I18nextToolkitConfig } from '../src/types'
+import type { I18nextToolkitConfig } from '../src/index'
 
 // --- MOCKS ---
 vi.mock('fs/promises', async () => {

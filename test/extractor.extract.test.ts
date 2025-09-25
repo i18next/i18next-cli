@@ -1,8 +1,8 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 // Fix import path based on actual module location
-import { extract } from '../src/extractor' // Verify this path exists
-import type { I18nextToolkitConfig } from '../src/types'
+import { extract } from '../src/index' // Verify this path exists
+import type { I18nextToolkitConfig } from '../src/index'
 
 vi.mock('fs/promises', async () => {
   const memfs = await vi.importActual<typeof import('memfs')>('memfs')

@@ -1,7 +1,7 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { runExtractor } from '../src/extractor'
-import type { I18nextToolkitConfig } from '../src/types'
+import type { I18nextToolkitConfig } from '../src/index'
 import { resolve } from 'path'
 
 // Mock the 'fs/promises' module to use our in-memory file system from 'memfs'
