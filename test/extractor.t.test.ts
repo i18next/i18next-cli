@@ -141,6 +141,29 @@ describe('extractor: advanced t features', () => {
       expect(headerFile!.newTranslations).toEqual({ title: 'A Header' })
     })
 
+    it('should detect the correct namespace from multiple useTranslation calls', async () => {
+      const sampleCode = `
+        function NotificationItem() {
+          const { t } = useTranslation('clip')
+          t('changes')
+        }
+
+        function NotificationContent() {
+          const { t } = useTranslation('common')
+          t('news')
+        }
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const clipFile = results.find(r => r.path.endsWith('/locales/en/clip.json'))
+      expect(clipFile).toBeDefined()
+      expect(clipFile!.newTranslations).toEqual({ changes: 'changes' })
+      const commonFile = results.find(r => r.path.endsWith('/locales/en/common.json'))
+      expect(commonFile).toBeDefined()
+      expect(commonFile!.newTranslations).toEqual({ news: 'news' })
+    })
+
     it('should handle keyPrefix from useTranslation options', async () => {
       const sampleCode = `
         const { t } = useTranslation('translation', { keyPrefix: 'very.deeply.nested' });
