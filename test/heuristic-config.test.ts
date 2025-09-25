@@ -32,7 +32,12 @@ describe('heuristic-config', () => {
     expect(config?.locales).toEqual(['en', 'de', 'fr'])
     expect(config?.extract?.output).toBe('locales/{{language}}/{{namespace}}.json')
     expect(config?.extract?.primaryLanguage).toBe('en')
-    expect(config?.extract?.input).toEqual(['src/**/*.{js,jsx,ts,tsx}'])
+    expect(config?.extract?.input).toEqual([
+      'src/**/*.{js,jsx,ts,tsx}',
+      'app/**/*.{js,jsx,ts,tsx}',
+      'pages/**/*.{js,jsx,ts,tsx}',
+      'components/**/*.{js,jsx,ts,tsx}'
+    ])
   })
 
   it('should return null if no recognizable structure is found', async () => {

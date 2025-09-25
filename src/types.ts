@@ -54,7 +54,7 @@ export interface I18nextToolkitConfig {
     /** JSX component names to extract translations from (default: ['Trans']) */
     transComponents?: string[];
 
-    /** Hook function names that return translation functions (default: ['useTranslation']) */
+    /** Hook function names that return translation functions (default: ['useTranslation', 'getT', 'useT']) */
     useTranslationNames?: string[];
 
     /** A list of JSX attribute names to ignore when linting for hardcoded strings. */

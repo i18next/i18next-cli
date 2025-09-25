@@ -204,7 +204,7 @@ export class ASTVisitors {
     const callee = node.init.callee
 
     // Handle: const { t } = useTranslation(...)
-    if (callee.type === 'Identifier' && (this.config.extract.useTranslationNames || ['useTranslation']).indexOf(callee.value) > -1) {
+    if (callee.type === 'Identifier' && (this.config.extract.useTranslationNames || ['useTranslation', 'getT', 'useT']).indexOf(callee.value) > -1) {
       this.handleUseTranslationDeclarator(node)
       return
     }

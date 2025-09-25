@@ -51,7 +51,12 @@ export async function detectConfig (): Promise<Partial<I18nextToolkitConfig> | n
           return {
             locales,
             extract: {
-              input: ['src/**/*.{js,jsx,ts,tsx}'],
+              input: [
+                'src/**/*.{js,jsx,ts,tsx}',
+                'app/**/*.{js,jsx,ts,tsx}',
+                'pages/**/*.{js,jsx,ts,tsx}',
+                'components/**/*.{js,jsx,ts,tsx}'
+              ],
               output: join(basePath, '{{language}}', '{{namespace}}.json'),
               primaryLanguage: locales.includes('en') ? 'en' : locales[0],
             },

@@ -244,7 +244,7 @@ export default defineConfig({
     transComponents: ['Trans', 'Translation'],
     
     // useTranslation hook variations
-    useTranslationNames: ['useTranslation', 'useAppTranslation'],
+    useTranslationNames: ['useTranslation', 'getT', 'useT', 'useAppTranslation'],
 
     // Add custom JSX attributes to ignore during linting
     ignoredAttributes: ['data-testid', 'aria-label'],
