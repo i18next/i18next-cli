@@ -60,6 +60,9 @@ export interface I18nextToolkitConfig {
     /** A list of JSX attribute names to ignore when linting for hardcoded strings. */
     ignoredAttributes?: string[];
 
+    /** A list of JSX tag names whose content should be ignored when linting (e.g., 'code', 'pre'). */
+    ignoredTags?: string[];
+
     /** HTML tags to preserve in Trans component serialization (default: ['br', 'strong', 'i']) */
     transKeepBasicHtmlNodesFor?: string[];
 

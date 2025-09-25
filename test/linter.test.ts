@@ -220,4 +220,35 @@ describe('linter', () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1)
   })
+
+  it('should respect custom ignoredTags from config', async () => {
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        ignoredTags: ['blockquote'], // Tell the linter to ignore content inside <blockquote>
+      },
+    }
+
+    const sampleCode = `
+      <div>
+        <p>This should be flagged.</p>
+        <blockquote>This text should be ignored.</blockquote>
+      </div>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    await runLinter(customConfig)
+
+    // It should find exactly 1 issue
+    expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
+
+    // It should report the text from the <p> tag
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Found hardcoded string: "This should be flagged."'))
+
+    // It should NOT report the text from the <blockquote> tag
+    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('This text should be ignored.'))
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+  })
 })

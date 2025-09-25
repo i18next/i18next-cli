@@ -283,6 +283,9 @@ export default defineConfig({
 
     // Add custom JSX attributes to ignore during linting
     ignoredAttributes: ['data-testid', 'aria-label'],
+
+    // JSX tag names whose content should be ignored when linting
+    ignoredTags: ['pre'],
     
     // Namespace and key configuration
     defaultNS: 'translation',

@@ -85,6 +85,8 @@ interface HardcodedString {
   line: number;
 }
 
+const isUrlOrPath = (text: string) => /^(https|http|\/\/|^\/)/.test(text)
+
 /**
  * Analyzes an AST to find potentially hardcoded strings that should be translated.
  *
@@ -123,6 +125,9 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
 
   const transComponents = config.extract.transComponents || ['Trans']
   const defaultIgnoredAttributes = ['className', 'key', 'id', 'style', 'href', 'i18nKey', 'defaults', 'type', 'target']
+  const defaultIgnoredTags = ['script', 'style', 'code']
+  const customIgnoredTags = config.extract.ignoredTags || []
+  const allIgnoredTags = new Set([...transComponents, ...defaultIgnoredTags, ...customIgnoredTags])
   const customIgnoredAttributes = config.extract.ignoredAttributes || []
   const ignoredAttributes = new Set([...defaultIgnoredAttributes, ...customIgnoredAttributes])
 
@@ -136,13 +141,12 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
       const isIgnored = currentAncestors.some(ancestorNode => {
         if (ancestorNode.type !== 'JSXElement') return false
         const elementName = ancestorNode.opening?.name?.value
-        return transComponents.includes(elementName) || ['script', 'style', 'code', 'small'].includes(elementName)
+        return allIgnoredTags.has(elementName)
       })
 
       if (!isIgnored) {
         const text = node.value.trim()
-        const isUrlOrPath = /^(https|http|\/\/|^\/)/.test(text)
-        if (text && text.length > 1 && !isUrlOrPath && isNaN(Number(text)) && !text.startsWith('{{')) {
+        if (text && text.length > 1 && !isUrlOrPath(text) && isNaN(Number(text)) && !text.startsWith('{{')) {
           nodesToLint.push(node) // Collect the node
         }
       }
@@ -152,8 +156,7 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
       const parent = currentAncestors[currentAncestors.length - 2]
       if (parent?.type === 'JSXAttribute' && !ignoredAttributes.has(parent.name.value)) {
         const text = node.value.trim()
-        const isUrlOrPath = /^(https|http|\/\/|^\/)/.test(text)
-        if (text && !isUrlOrPath && isNaN(Number(text))) {
+        if (text && !isUrlOrPath(text) && isNaN(Number(text))) {
           nodesToLint.push(node) // Collect the node
         }
       }
