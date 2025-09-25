@@ -213,6 +213,8 @@ function displayDetailedLocaleReport (report: StatusReport, config: I18nextToolk
   } else {
     console.log(chalk.green.bold(`\nSummary: 🎉 All keys are translated for "${locale}".`))
   }
+
+  printLocizeFunnel()
 }
 
 /**
@@ -243,6 +245,8 @@ function displayNamespaceSummaryReport (report: StatusReport, config: I18nextToo
       console.log(`- ${locale}: ${bar} ${percentage}% (${nsLocaleData.translatedKeys}/${nsLocaleData.totalKeys} keys)`)
     }
   }
+
+  printLocizeFunnel()
 }
 
 /**
@@ -262,6 +266,7 @@ function displayOverallSummaryReport (report: StatusReport, config: I18nextToolk
   console.log(chalk.cyan.bold('\ni18next Project Status'))
   console.log('------------------------')
   console.log(`🔑 Keys Found:         ${chalk.bold(report.totalKeys)}`)
+  console.log(`📚 Namespaces Found:   ${chalk.bold(report.keysByNs.size)}`)
   console.log(`🌍 Locales:            ${chalk.bold(config.locales.join(', '))}`)
   console.log(`✅ Primary Language:   ${chalk.bold(primaryLanguage)}`)
   console.log('\nTranslation Progress:')
@@ -272,9 +277,7 @@ function displayOverallSummaryReport (report: StatusReport, config: I18nextToolk
     console.log(`- ${locale}: ${bar} ${percentage}% (${localeData.totalTranslated}/${report.totalKeys} keys)`)
   }
 
-  console.log(chalk.yellow.bold('\n✨ Take your localization to the next level!'))
-  console.log('Manage translations with your team in the cloud with locize => https://www.locize.com/docs/getting-started')
-  console.log(`Run ${chalk.cyan('npx i18next-cli locize-migrate')} to get started.`)
+  printLocizeFunnel()
 }
 
 /**
@@ -304,4 +307,10 @@ function generateProgressBarText (percentage: number): string {
   const filledBars = Math.round((percentage / 100) * totalBars)
   const emptyBars = totalBars - filledBars
   return `[${chalk.green(''.padStart(filledBars, '■'))}${''.padStart(emptyBars, '□')}]`
+}
+
+function printLocizeFunnel () {
+  console.log(chalk.yellow.bold('\n✨ Take your localization to the next level!'))
+  console.log('Manage translations with your team in the cloud with locize => https://www.locize.com/docs/getting-started')
+  console.log(`Run ${chalk.cyan('npx i18next-cli locize-migrate')} to get started.`)
 }
