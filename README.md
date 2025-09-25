@@ -477,6 +477,11 @@ t('key', { ns: 'namespace' })
 
 // With interpolation
 t('key', { name: 'John' })
+
+// With key fallbacks
+t(['key.primary', 'key.fallback']);
+t(['key.primary', 'key.fallback'], 'The fallback value');
+t(['key.primary', 'key.fallback'], { defaultValue: 'The fallback value' });
 ```
 
 ### React Components

@@ -333,66 +333,77 @@ export class ASTVisitors {
     const callee = node.callee
     if (callee.type !== 'Identifier') return
 
-    const isConfiguredFunction = (this.config.extract.functions || []).includes(callee.value)
     const scopeInfo = this.getVarFromScope(callee.value)
-    const isScopedFunction = scopeInfo !== undefined
-
-    if (!isConfiguredFunction && !isScopedFunction) return
-    if (node.arguments.length === 0) return
+    const isFunctionToParse = (this.config.extract.functions || []).includes(callee.value) || scopeInfo !== undefined
+    if (!isFunctionToParse || node.arguments.length === 0) return
 
     const firstArg = node.arguments[0].expression
-    let key: string | null = null
+    const keysToProcess: string[] = []
 
+    // --- NEW: Handle ArrayExpression for key fallbacks ---
     if (firstArg.type === 'StringLiteral') {
-      key = firstArg.value
+      keysToProcess.push(firstArg.value)
     } else if (firstArg.type === 'ArrowFunctionExpression') {
-      key = this.extractKeyFromSelector(firstArg)
+      const key = this.extractKeyFromSelector(firstArg)
+      if (key) keysToProcess.push(key)
+    } else if (firstArg.type === 'ArrayExpression') {
+      for (const element of firstArg.elements) {
+        // We only extract static string literals from the array
+        if (element?.expression.type === 'StringLiteral') {
+          keysToProcess.push(element.expression.value)
+        }
+      }
     }
 
-    if (!key) return // Could not statically extract a key
+    if (keysToProcess.length === 0) return
 
-    let ns: string | undefined
-    let finalKey = key
     const options = node.arguments.length > 1 ? node.arguments[1].expression : undefined
+    const defaultValue = this.getDefaultValue(node, keysToProcess[keysToProcess.length - 1])
 
-    // Determine namespace (explicit ns > scope ns > ns:key > default)
-    if (options?.type === 'ObjectExpression') ns = this.getObjectPropValue(options, 'ns')
-    if (!ns && scopeInfo?.defaultNs) ns = scopeInfo.defaultNs
+    // Loop through each key found (could be one or more) and process it
+    for (let i = 0; i < keysToProcess.length; i++) {
+      let key = keysToProcess[i]
+      let ns: string | undefined
 
-    const nsSeparator = this.config.extract.nsSeparator ?? ':'
-    const contextSeparator = this.config.extract.contextSeparator ?? '_'
-    if (!ns && nsSeparator && key.includes(nsSeparator)) {
-      const parts = key.split(nsSeparator)
-      ns = parts.shift()
-      key = parts.join(nsSeparator)
-      finalKey = key
-    }
-    if (!ns) ns = this.config.extract.defaultNS
+      // Determine namespace (explicit ns > scope ns > ns:key > default)
+      if (options?.type === 'ObjectExpression') ns = this.getObjectPropValue(options, 'ns')
+      if (!ns && scopeInfo?.defaultNs) ns = scopeInfo.defaultNs
 
-    // Prepend keyPrefix from scope if it exists
-    if (scopeInfo?.keyPrefix) {
-      const keySeparator = this.config.extract.keySeparator ?? '.'
-      finalKey = `${scopeInfo.keyPrefix}${keySeparator}${key}`
-    }
-
-    // For selectors, defaultValue is the key. For strings, parse it.
-    const defaultValue = (firstArg.type === 'StringLiteral') ? this.getDefaultValue(node, key) : key
-
-    // Plural/Context logic
-    if (options?.type === 'ObjectExpression') {
-      const contextValue = this.getObjectPropValue(options, 'context')
-      if (contextValue) {
-        this.pluginContext.addKey({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue })
-        return
+      const nsSeparator = this.config.extract.nsSeparator ?? ':'
+      if (!ns && nsSeparator && key.includes(nsSeparator)) {
+        const parts = key.split(nsSeparator)
+        ns = parts.shift()
+        key = parts.join(nsSeparator)
       }
-      if (this.getObjectPropValue(options, 'count') !== undefined) {
-        this.handlePluralKeys(finalKey, defaultValue, ns)
-        return
-      }
-    }
+      if (!ns) ns = this.config.extract.defaultNS
 
-    // Standard key
-    this.pluginContext.addKey({ key: finalKey, ns, defaultValue })
+      let finalKey = key
+      if (scopeInfo?.keyPrefix) {
+        const keySeparator = this.config.extract.keySeparator ?? '.'
+        finalKey = `${scopeInfo.keyPrefix}${keySeparator}${key}`
+      }
+
+      // The explicit defaultValue only applies to the LAST key in the fallback array.
+      // For all preceding keys, their own key is their fallback.
+      const isLastKey = i === keysToProcess.length - 1
+      const dv = isLastKey ? defaultValue : key
+
+      // Handle plurals and context for each key
+      if (options?.type === 'ObjectExpression') {
+        const contextValue = this.getObjectPropValue(options, 'context')
+        const contextSeparator = this.config.extract.contextSeparator ?? '_'
+        if (contextValue) {
+          this.pluginContext.addKey({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv })
+          continue // This key is handled, move to the next one in the array
+        }
+        if (this.getObjectPropValue(options, 'count') !== undefined) {
+          this.handlePluralKeys(finalKey, dv, ns)
+          continue // This key is handled, move to the next one in the array
+        }
+      }
+
+      this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv })
+    }
   }
 
   /**

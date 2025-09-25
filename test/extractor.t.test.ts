@@ -316,4 +316,31 @@ describe('extractor: advanced t features', () => {
       })
     })
   })
+
+  describe('key fallbacks', () => {
+    it('should extract all static keys from an array', async () => {
+      const sampleCode = `
+        t(['key.primary', 'key.fallback'], 'The fallback value');
+        // This one has a dynamic key that will be ignored, but a static fallback that will be extracted
+        t([errorKey, 'error.unspecific']);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      const results = await extract(mockConfig)
+      const file = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(file).toBeDefined()
+      expect(file!.newTranslations).toEqual({
+        key: {
+          // The first key's default value is itself
+          primary: 'key.primary',
+          // The second key gets the explicit default value
+          fallback: 'The fallback value',
+        },
+        error: {
+          // The static fallback key is correctly extracted
+          unspecific: 'error.unspecific',
+        },
+      })
+    })
+  })
 })
