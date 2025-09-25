@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - not yet released
 
+## [0.9.4] - 2025-09-25
+
+### Added
+- **Status Command:** Added a `--namespace` option to filter the status report by a single namespace.
+
+### Fixed
+- **Linter:** Corrected a persistent bug causing inaccurate line number reporting for found issues.
+- **Linter:** Significantly improved accuracy by adding heuristics to ignore URLs, paths, symbols, and common non-translatable JSX attributes (like `className`, `type`, etc.).
+
 ## [0.9.3] - 2025-09-25
 
 - improved heuristic-config

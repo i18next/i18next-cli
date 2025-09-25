@@ -191,4 +191,33 @@ describe('linter', () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1)
   })
+
+  it('should report correct line numbers for issues', async () => {
+    // Define the code as an array of strings and join with newlines.
+    // This creates a "clean" string without ambiguous leading/trailing whitespace
+    // from a template literal, ensuring the parser's byte offsets are accurate.
+    const sampleCode = [
+      '// Line 1',
+      'function MyComponent() {', // Line 2
+      '  return (', // Line 3
+      '    <div>A string on line 4</div>', // Line 4
+      '  );', // Line 5
+      '}', // Line 6
+      'const el = <p title="An attribute on line 7"></p>;', // Line 7
+    ].join('\n')
+
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    await runLinter(mockConfig)
+
+    expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 2 potential issues'))
+
+    const loggedMessages = consoleLogSpy.mock.calls.flat().join('\n')
+
+    // Assert that the line numbers are now correct
+    expect(loggedMessages).toContain('4: Error: Found hardcoded string: "A string on line 4"')
+    expect(loggedMessages).toContain('7: Error: Found hardcoded string: "An attribute on line 7"')
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+  })
 })

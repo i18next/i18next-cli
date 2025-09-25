@@ -1,7 +1,6 @@
 import { glob } from 'glob'
 import { readFile } from 'node:fs/promises'
 import { parse } from '@swc/core'
-import { ancestor } from 'swc-walk'
 import chalk from 'chalk'
 import ora from 'ora'
 import type { I18nextToolkitConfig } from './types'
@@ -115,77 +114,82 @@ interface HardcodedString {
  */
 function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitConfig): HardcodedString[] {
   const issues: HardcodedString[] = []
-  const lineStarts: number[] = [0]
-  for (let i = 0; i < code.length; i++) {
-    if (code[i] === '\n') lineStarts.push(i + 1)
-  }
+  // A list of AST nodes that have been identified as potential issues.
+  const nodesToLint: any[] = []
 
-  /**
-   * Converts a character position to a line number.
-   *
-   * @param pos - Character position in the source code
-   * @returns Line number (1-based)
-   */
   const getLineNumber = (pos: number): number => {
-    let line = 1
-    for (let i = 0; i < lineStarts.length; i++) {
-      if (lineStarts[i] > pos) break
-      line = i + 1
-    }
-    return line
+    return code.substring(0, pos).split('\n').length
   }
 
   const transComponents = config.extract.transComponents || ['Trans']
-  const defaultIgnoredAttributes = ['className', 'key', 'id', 'style', 'href', 'i18nKey', 'defaults', 'type']
+  const defaultIgnoredAttributes = ['className', 'key', 'id', 'style', 'href', 'i18nKey', 'defaults', 'type', 'target']
   const customIgnoredAttributes = config.extract.ignoredAttributes || []
   const ignoredAttributes = new Set([...defaultIgnoredAttributes, ...customIgnoredAttributes])
 
-  ancestor(ast, {
-    /**
-     * Processes JSX text nodes to identify hardcoded content.
-     *
-     * @param node - JSX text node
-     * @param ancestors - Array of ancestor nodes for context
-     */
-    JSXText (node: any, ancestors: any[]) {
-      const parent = ancestors[ancestors.length - 2]
-      const parentName = parent?.opening?.name?.value
+  // --- PHASE 1: Collect all potentially problematic nodes ---
+  const walk = (node: any, ancestors: any[]) => {
+    if (!node || typeof node !== 'object') return
 
-      if (parentName && (transComponents.includes(parentName) || parentName === 'script' || parentName === 'style')) {
-        return
-      }
+    const currentAncestors = [...ancestors, node]
 
-      const isIgnored = ancestors.some(ancestorNode => {
+    if (node.type === 'JSXText') {
+      const isIgnored = currentAncestors.some(ancestorNode => {
         if (ancestorNode.type !== 'JSXElement') return false
         const elementName = ancestorNode.opening?.name?.value
-        return transComponents.includes(elementName) || ['script', 'style', 'code'].includes(elementName)
+        return transComponents.includes(elementName) || ['script', 'style', 'code', 'small'].includes(elementName)
       })
 
-      if (isIgnored) return
-
-      const text = node.value.trim()
-      if (text && isNaN(Number(text)) && !text.startsWith('{{')) {
-        issues.push({ text, line: getLineNumber(node.span.start) })
-      }
-    },
-
-    /**
-     * Processes string literals in JSX attributes.
-     *
-     * @param node - String literal node
-     * @param ancestors - Array of ancestor nodes for context
-     */
-    StringLiteral (node: any, ancestors: any[]) {
-      const parent = ancestors[ancestors.length - 2]
-
-      // This check now uses the new combined Set
-      if (parent?.type === 'JSXAttribute' && !ignoredAttributes.has(parent.name.value)) {
+      if (!isIgnored) {
         const text = node.value.trim()
-        if (text && isNaN(Number(text))) {
-          issues.push({ text, line: getLineNumber(node.span.start) })
+        const isUrlOrPath = /^(https|http|\/\/|^\/)/.test(text)
+        if (text && text.length > 1 && !isUrlOrPath && isNaN(Number(text)) && !text.startsWith('{{')) {
+          nodesToLint.push(node) // Collect the node
         }
       }
-    },
-  })
+    }
+
+    if (node.type === 'StringLiteral') {
+      const parent = currentAncestors[currentAncestors.length - 2]
+      if (parent?.type === 'JSXAttribute' && !ignoredAttributes.has(parent.name.value)) {
+        const text = node.value.trim()
+        const isUrlOrPath = /^(https|http|\/\/|^\/)/.test(text)
+        if (text && !isUrlOrPath && isNaN(Number(text))) {
+          nodesToLint.push(node) // Collect the node
+        }
+      }
+    }
+
+    // Recurse into children
+    for (const key of Object.keys(node)) {
+      if (key === 'span') continue
+      const child = node[key]
+      if (Array.isArray(child)) {
+        child.forEach(item => walk(item, currentAncestors))
+      } else if (child && typeof child === 'object') {
+        walk(child, currentAncestors)
+      }
+    }
+  }
+
+  walk(ast, []) // Run the walk to collect nodes
+
+  // --- PHASE 2: Find line numbers using a tracked search on the raw source code ---
+  let lastSearchIndex = 0
+  for (const node of nodesToLint) {
+    // For StringLiterals, the `raw` property includes the quotes ("..."), which is
+    // much more unique for searching than the plain `value`.
+    const searchText = node.raw ?? node.value
+
+    const position = code.indexOf(searchText, lastSearchIndex)
+
+    if (position > -1) {
+      issues.push({
+        text: node.value.trim(),
+        line: getLineNumber(position),
+      })
+      lastSearchIndex = position + searchText.length
+    }
+  }
+
   return issues
 }

@@ -128,13 +128,48 @@ npx i18next-cli extract --ci
 
 Displays a health check of your project's translation status. Can run without a config file.
 
-  - Run `npx i18next-cli status` for a high-level summary.
-  - Run `npx i18next-cli status <locale>` for a detailed, key-by-key report grouped by namespace.
+**Options:**
+- `--namespace <ns>, -n <ns>`: Filter the report by a specific namespace.
 
-This command provides:
-- Total number of translation keys found in your source code
-- Translation progress for each secondary language with visual progress bars
-- Percentage and key counts for easy tracking
+**Usage Examples:**
+
+```bash
+# Get a high-level summary for all locales and namespaces
+npx i18next-cli status
+
+# Get a detailed, key-by-key report for the 'de' locale
+npx i18next-cli status de
+
+# Get a summary for only the 'common' namespace across all locales
+npx i18next-cli status --namespace common
+
+# Get a detailed report for the 'de' locale, showing only the 'common' namespace
+npx i18next-cli status de --namespace common
+```
+
+The detailed view provides a rich, at-a-glance summary for each namespace, followed by a list of every key and its translation status.
+
+**Example Output (`npx i18next-cli status de`):**
+
+```bash
+Key Status for "de":
+
+Overall: [■■■■■■■■■■■■■■■■■■■■] 100% (12/12)
+
+Namespace: common
+Namespace Progress: [■■■■■■■■■■■■■■■■■■■■] 100% (4/4)
+  ✓ button.save
+  ✓ button.cancel
+  ✓ greeting
+  ✓ farewell
+
+Namespace: translation
+Namespace Progress: [■■■■■■■■■■■■■■■■□□□□] 80% (8/10)
+  ✓ app.title
+  ✓ app.welcome
+  ✗ app.description
+  ...
+```
 
 ### `types`
 Generates TypeScript definitions from your translation files for full type-safety and autocompletion.

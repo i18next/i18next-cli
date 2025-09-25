@@ -1,14 +1,44 @@
 import chalk from 'chalk'
-import ora, { Ora } from 'ora'
+import ora from 'ora'
 import { resolve } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { findKeys } from './extractor/core/key-finder'
-import { getNestedKeys, getNestedValue } from './utils/nested-object'
+import { getNestedValue } from './utils/nested-object'
 import type { I18nextToolkitConfig, ExtractedKey } from './types'
 import { getOutputPath } from './utils/file-utils'
 
+/**
+ * Options for configuring the status report display.
+ */
 interface StatusOptions {
+  /** Locale code to display detailed information for a specific language */
   detail?: string;
+  /** Namespace to filter the report by */
+  namespace?: string;
+}
+
+/**
+ * Structured report containing all translation status data.
+ */
+interface StatusReport {
+  /** Total number of extracted keys across all namespaces */
+  totalKeys: number;
+  /** Map of namespace names to their extracted keys */
+  keysByNs: Map<string, ExtractedKey[]>;
+  /** Map of locale codes to their translation status data */
+  locales: Map<string, {
+    /** Total number of translated keys for this locale */
+    totalTranslated: number;
+    /** Map of namespace names to their translation details for this locale */
+    namespaces: Map<string, {
+      /** Total number of keys in this namespace */
+      totalKeys: number;
+      /** Number of translated keys in this namespace */
+      translatedKeys: number;
+      /** Detailed status for each key in this namespace */
+      keyDetails: Array<{ key: string; isTranslated: boolean }>;
+    }>;
+  }>;
 }
 
 /**
@@ -22,16 +52,17 @@ interface StatusOptions {
  * 5. Serving as a value-driven funnel to introduce the locize commercial service.
  *
  * @param config - The i18next toolkit configuration object.
- * @param options Options object, may contain a `detail` property with a locale string.
+ * @param options - Options object, may contain a `detail` property with a locale string.
+ * @throws {Error} When unable to extract keys or read translation files
  */
 export async function runStatus (config: I18nextToolkitConfig, options: StatusOptions = {}) {
+  if (!config.extract.primaryLanguage) config.extract.primaryLanguage = config.locales[0] || 'en'
+  if (!config.extract.secondaryLanguages) config.extract.secondaryLanguages = config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
   const spinner = ora('Analyzing project localization status...\n').start()
   try {
-    if (options.detail) {
-      await displayDetailedStatus(config, options.detail, spinner)
-    } else {
-      await displaySummaryStatus(config, spinner)
-    }
+    const report = await generateStatusReport(config)
+    spinner.succeed('Analysis complete.')
+    displayStatusReport(report, config, options)
   } catch (error) {
     spinner.fail('Failed to generate status report.')
     console.error(error)
@@ -39,36 +70,24 @@ export async function runStatus (config: I18nextToolkitConfig, options: StatusOp
 }
 
 /**
- * Displays a detailed, key-by-key translation status for a specific locale,
- * grouped by namespace.
- * @param config The toolkit configuration.
- * @param locale The locale to display the detailed status for.
- * @internal
+ * Gathers all translation data and compiles it into a structured report.
+ *
+ * This function:
+ * - Extracts all keys from source code using the configured extractor
+ * - Groups keys by namespace
+ * - Reads translation files for each secondary language
+ * - Compares extracted keys against existing translations
+ * - Compiles translation statistics for each locale and namespace
+ *
+ * @param config - The i18next toolkit configuration object
+ * @returns Promise that resolves to a complete status report
+ * @throws {Error} When key extraction fails or configuration is invalid
  */
-async function displayDetailedStatus (config: I18nextToolkitConfig, locale: string, spinner: Ora) {
-  const { primaryLanguage, keySeparator = '.', defaultNS = 'translation' } = config.extract
-
-  if (!config.locales.includes(locale)) {
-    console.error(chalk.red(`Error: Locale "${locale}" is not defined in your configuration.`))
-    return
-  }
-  if (locale === primaryLanguage) {
-    console.log(chalk.yellow(`Locale "${locale}" is the primary language, so all keys are considered present.`))
-    return
-  }
-
-  console.log(`Analyzing detailed status for locale: ${chalk.bold.cyan(locale)}...`)
-
+async function generateStatusReport (config: I18nextToolkitConfig): Promise<StatusReport> {
   const allExtractedKeys = await findKeys(config)
+  const { primaryLanguage, keySeparator = '.', defaultNS = 'translation' } = config.extract
+  const secondaryLanguages = config.locales.filter(l => l !== primaryLanguage)
 
-  spinner.succeed('Analysis complete.')
-
-  if (allExtractedKeys.size === 0) {
-    console.log(chalk.green('No keys found in source code.'))
-    return
-  }
-
-  // Group keys by namespace to read the correct files
   const keysByNs = new Map<string, ExtractedKey[]>()
   for (const key of allExtractedKeys.values()) {
     const ns = key.ns || defaultNS
@@ -76,102 +95,181 @@ async function displayDetailedStatus (config: I18nextToolkitConfig, locale: stri
     keysByNs.get(ns)!.push(key)
   }
 
-  const translationsByNs = new Map<string, Record<string, any>>()
-  for (const ns of keysByNs.keys()) {
-    const langFilePath = getOutputPath(config.extract.output, locale, ns)
-    try {
-      const content = await readFile(resolve(process.cwd(), langFilePath), 'utf-8')
-      translationsByNs.set(ns, JSON.parse(content))
-    } catch {
-      translationsByNs.set(ns, {}) // File not found, treat as empty
-    }
+  const report: StatusReport = {
+    totalKeys: allExtractedKeys.size,
+    keysByNs,
+    locales: new Map(),
   }
 
-  let missingCount = 0
-  console.log(chalk.bold(`\nKey Status for "${locale}":`))
+  for (const locale of secondaryLanguages) {
+    let totalTranslatedForLocale = 0
+    const namespaces = new Map<string, any>()
 
-  // 1. Get and sort the namespace names alphabetically
-  const sortedNamespaces = Array.from(keysByNs.keys()).sort()
+    for (const [ns, keysInNs] of keysByNs.entries()) {
+      const langFilePath = getOutputPath(config.extract.output, locale, ns)
+      let translations: Record<string, any> = {}
+      try {
+        const content = await readFile(resolve(process.cwd(), langFilePath), 'utf-8')
+        translations = JSON.parse(content)
+      } catch {}
 
-  // 2. Loop through each namespace
-  for (const ns of sortedNamespaces) {
-    console.log(chalk.cyan.bold(`\nNamespace: ${ns}`))
+      let translatedInNs = 0
+      const keyDetails = keysInNs.map(({ key }) => {
+        const value = getNestedValue(translations, key, keySeparator ?? '.')
+        const isTranslated = !!value
+        if (isTranslated) translatedInNs++
+        return { key, isTranslated }
+      })
 
-    const keysForNs = keysByNs.get(ns) || []
-    const sortedKeysForNs = keysForNs.sort((a, b) => a.key.localeCompare(b.key))
-    const translations = translationsByNs.get(ns) || {}
-
-    // 3. Loop through the keys within the current namespace
-    for (const { key } of sortedKeysForNs) {
-      const value = getNestedValue(translations, key, keySeparator ?? '.')
-
-      if (value) {
-        console.log(`  ${chalk.green('✓')} ${key}`)
-      } else {
-        missingCount++
-        console.log(`  ${chalk.red('✗')} ${key}`)
-      }
+      namespaces.set(ns, {
+        totalKeys: keysInNs.length,
+        translatedKeys: translatedInNs,
+        keyDetails,
+      })
+      totalTranslatedForLocale += translatedInNs
     }
+    report.locales.set(locale, { totalTranslated: totalTranslatedForLocale, namespaces })
   }
 
-  if (missingCount > 0) {
-    console.log(chalk.yellow.bold(`\n\nSummary: Found ${missingCount} missing translations for "${locale}".`))
+  return report
+}
+
+/**
+ * Main display router that calls the appropriate display function based on options.
+ *
+ * Routes to one of three display modes:
+ * - Detailed locale report: Shows per-key status for a specific locale
+ * - Namespace summary: Shows translation progress for all locales in a specific namespace
+ * - Overall summary: Shows high-level statistics across all locales and namespaces
+ *
+ * @param report - The generated status report data
+ * @param config - The i18next toolkit configuration object
+ * @param options - Display options determining which report type to show
+ */
+function displayStatusReport (report: StatusReport, config: I18nextToolkitConfig, options: StatusOptions) {
+  if (options.detail) {
+    displayDetailedLocaleReport(report, config, options.detail, options.namespace)
+  } else if (options.namespace) {
+    displayNamespaceSummaryReport(report, config, options.namespace)
   } else {
-    console.log(chalk.green.bold(`\n\nSummary: 🎉 All ${allExtractedKeys.size} keys are translated for "${locale}".`))
+    displayOverallSummaryReport(report, config)
   }
 }
 
 /**
- * Displays a high-level summary report of translation progress for all locales.
- * @param config The toolkit configuration.
- * @internal
+ * Displays the detailed, grouped report for a single locale.
+ *
+ * Shows:
+ * - Overall progress for the locale
+ * - Progress for each namespace (or filtered namespace)
+ * - Individual key status (translated/missing) with visual indicators
+ * - Summary message with total missing translations
+ *
+ * @param report - The generated status report data
+ * @param config - The i18next toolkit configuration object
+ * @param locale - The locale code to display details for
+ * @param namespaceFilter - Optional namespace to filter the display
  */
-async function displaySummaryStatus (config: I18nextToolkitConfig, spinner: Ora) {
-  console.log('Analyzing project localization status...')
+function displayDetailedLocaleReport (report: StatusReport, config: I18nextToolkitConfig, locale: string, namespaceFilter?: string) {
+  if (locale === config.extract.primaryLanguage) {
+    console.log(chalk.yellow(`Locale "${locale}" is the primary language. All keys are considered present.`))
+    return
+  }
+  if (!config.locales.includes(locale)) {
+    console.error(chalk.red(`Error: Locale "${locale}" is not defined in your configuration.`))
+    return
+  }
 
-  const allExtractedKeys = await findKeys(config)
-  const totalKeys = allExtractedKeys.size
+  const localeData = report.locales.get(locale)
 
-  const { primaryLanguage, keySeparator = '.', defaultNS = 'translation' } = config.extract
-  const secondaryLanguages = config.locales.filter(l => l !== primaryLanguage)
+  if (!localeData) {
+    console.error(chalk.red(`Error: Locale "${locale}" is not a valid secondary language.`))
+    return
+  }
 
-  const allNamespaces = new Set<string>(
-    Array.from(allExtractedKeys.values()).map(k => k.ns || defaultNS)
-  )
+  console.log(chalk.bold(`\nKey Status for "${chalk.cyan(locale)}":`))
 
-  spinner.succeed('Analysis complete.')
+  const totalKeysForLocale = Array.from(report.keysByNs.values()).flat().length
+  printProgressBar('Overall', localeData.totalTranslated, totalKeysForLocale)
+
+  const namespacesToDisplay = namespaceFilter ? [namespaceFilter] : Array.from(localeData.namespaces.keys()).sort()
+
+  for (const ns of namespacesToDisplay) {
+    const nsData = localeData.namespaces.get(ns)
+    if (!nsData) continue
+
+    console.log(chalk.cyan.bold(`\nNamespace: ${ns}`))
+    printProgressBar('Namespace Progress', nsData.translatedKeys, nsData.totalKeys)
+
+    nsData.keyDetails.forEach(({ key, isTranslated }) => {
+      const icon = isTranslated ? chalk.green('✓') : chalk.red('✗')
+      console.log(`  ${icon} ${key}`)
+    })
+  }
+
+  const missingCount = totalKeysForLocale - localeData.totalTranslated
+  if (missingCount > 0) {
+    console.log(chalk.yellow.bold(`\nSummary: Found ${missingCount} missing translations for "${locale}".`))
+  } else {
+    console.log(chalk.green.bold(`\nSummary: 🎉 All keys are translated for "${locale}".`))
+  }
+}
+
+/**
+ * Displays a summary report filtered by a single namespace.
+ *
+ * Shows translation progress for the specified namespace across all secondary locales,
+ * including percentage completion and translated/total key counts.
+ *
+ * @param report - The generated status report data
+ * @param config - The i18next toolkit configuration object
+ * @param namespace - The namespace to display summary for
+ */
+function displayNamespaceSummaryReport (report: StatusReport, config: I18nextToolkitConfig, namespace: string) {
+  const nsData = report.keysByNs.get(namespace)
+  if (!nsData) {
+    console.error(chalk.red(`Error: Namespace "${namespace}" was not found in your source code.`))
+    return
+  }
+
+  console.log(chalk.cyan.bold(`\nStatus for Namespace: "${namespace}"`))
+  console.log('------------------------')
+
+  for (const [locale, localeData] of report.locales.entries()) {
+    const nsLocaleData = localeData.namespaces.get(namespace)
+    if (nsLocaleData) {
+      const percentage = nsLocaleData.totalKeys > 0 ? Math.round((nsLocaleData.translatedKeys / nsLocaleData.totalKeys) * 100) : 100
+      const bar = generateProgressBarText(percentage)
+      console.log(`- ${locale}: ${bar} ${percentage}% (${nsLocaleData.translatedKeys}/${nsLocaleData.totalKeys} keys)`)
+    }
+  }
+}
+
+/**
+ * Displays the default, high-level summary report for all locales.
+ *
+ * Shows:
+ * - Project overview (total keys, locales, primary language)
+ * - Translation progress for each secondary locale with progress bars
+ * - Promotional message for locize service
+ *
+ * @param report - The generated status report data
+ * @param config - The i18next toolkit configuration object
+ */
+function displayOverallSummaryReport (report: StatusReport, config: I18nextToolkitConfig) {
+  const { primaryLanguage } = config.extract
 
   console.log(chalk.cyan.bold('\ni18next Project Status'))
   console.log('------------------------')
-  console.log(`🔑 Keys Found:         ${chalk.bold(totalKeys)}`)
+  console.log(`🔑 Keys Found:         ${chalk.bold(report.totalKeys)}`)
   console.log(`🌍 Locales:            ${chalk.bold(config.locales.join(', '))}`)
   console.log(`✅ Primary Language:   ${chalk.bold(primaryLanguage)}`)
   console.log('\nTranslation Progress:')
 
-  for (const lang of secondaryLanguages) {
-    let translatedKeysCount = 0
-
-    for (const ns of allNamespaces) {
-      const langFilePath = getOutputPath(config.extract.output, lang, ns)
-      try {
-        const content = await readFile(resolve(process.cwd(), langFilePath), 'utf-8')
-        const translations = JSON.parse(content)
-        const translatedKeysInFile = getNestedKeys(translations, keySeparator ?? '.')
-
-        const countForNs = translatedKeysInFile.filter(k => {
-          const value = getNestedValue(translations, k, keySeparator ?? '.')
-          // A key is counted if it has a non-empty value AND it was extracted from the source for this namespace
-          return !!value && allExtractedKeys.has(`${ns}:${k}`)
-        }).length
-        translatedKeysCount += countForNs
-      } catch {
-        // File not found for this namespace, so its contribution to the count is 0
-      }
-    }
-
-    const percentage = totalKeys > 0 ? Math.round((translatedKeysCount / totalKeys) * 100) : 100
-    const progressBar = generateProgressBar(percentage)
-    console.log(`- ${lang}: ${progressBar} ${percentage}% (${translatedKeysCount}/${totalKeys} keys)`)
+  for (const [locale, localeData] of report.locales.entries()) {
+    const percentage = report.totalKeys > 0 ? Math.round((localeData.totalTranslated / report.totalKeys) * 100) : 100
+    const bar = generateProgressBarText(percentage)
+    console.log(`- ${locale}: ${bar} ${percentage}% (${localeData.totalTranslated}/${report.totalKeys} keys)`)
   }
 
   console.log(chalk.yellow.bold('\n✨ Take your localization to the next level!'))
@@ -180,11 +278,28 @@ async function displaySummaryStatus (config: I18nextToolkitConfig, spinner: Ora)
 }
 
 /**
- * Generates a simple text-based progress bar.
- * @param percentage - The percentage to display (0-100).
- * @internal
+ * Prints a formatted progress bar with label, percentage, and counts.
+ *
+ * @param label - The label to display before the progress bar
+ * @param current - The current count (translated keys)
+ * @param total - The total count (all keys)
  */
-function generateProgressBar (percentage: number): string {
+function printProgressBar (label: string, current: number, total: number) {
+  const percentage = total > 0 ? Math.round((current / total) * 100) : 100
+  const bar = generateProgressBarText(percentage)
+  console.log(`${chalk.bold(label)}: ${bar} ${percentage}% (${current}/${total})`)
+}
+
+/**
+ * Generates a visual progress bar string based on percentage completion.
+ *
+ * Creates a 20-character progress bar using filled (■) and empty (□) squares,
+ * with the filled portion colored green.
+ *
+ * @param percentage - The completion percentage (0-100)
+ * @returns A formatted progress bar string with colors
+ */
+function generateProgressBarText (percentage: number): string {
   const totalBars = 20
   const filledBars = Math.round((percentage / 100) * totalBars)
   const emptyBars = totalBars - filledBars

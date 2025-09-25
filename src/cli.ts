@@ -58,7 +58,8 @@ program
 program
   .command('status [locale]')
   .description('Display translation status. Provide a locale for a detailed key-by-key view.')
-  .action(async (locale) => {
+  .option('-n, --namespace <ns>', 'Filter the status report by a specific namespace')
+  .action(async (locale, options) => {
     let config = await loadConfig()
     if (!config) {
       console.log(chalk.blue('No config file found. Attempting to detect project structure...'))
@@ -71,7 +72,7 @@ program
       console.log(chalk.green('Project structure detected successfully!'))
       config = detected as I18nextToolkitConfig
     }
-    await runStatus(config, { detail: locale })
+    await runStatus(config, { detail: locale, namespace: options.namespace })
   })
 
 program
