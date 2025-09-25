@@ -8,6 +8,9 @@ vi.mock('fs/promises', async () => {
   const memfs = await vi.importActual<typeof import('memfs')>('memfs')
   return memfs.fs.promises
 })
+vi.mock('glob', () => ({
+  glob: vi.fn(),
+}))
 
 const mockConfig: I18nextToolkitConfig = {
   locales: ['en', 'de'],
@@ -19,9 +22,16 @@ const mockConfig: I18nextToolkitConfig = {
 }
 
 describe('syncer', () => {
-  beforeEach(() => {
+  const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+  const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+  beforeEach(async () => {
     vol.reset()
     vi.clearAllMocks()
+
+    // Setup the glob mock to find the primary language file
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue([enPath])
   })
 
   it('should sync nested keys, adding missing and removing extra', async () => {
@@ -48,9 +58,6 @@ describe('syncer', () => {
         key: 'Bonus',
       },
     }
-
-    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
-    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
 
     vol.fromJSON({
       [enPath]: JSON.stringify(enTranslations),
@@ -90,13 +97,13 @@ describe('syncer', () => {
     }
 
     vol.fromJSON({
-      [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify(enTranslations),
-      [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify(deTranslations),
+      [enPath]: JSON.stringify(enTranslations),
+      [dePath]: JSON.stringify(deTranslations),
     })
 
     await runSyncer(configWithDefault)
 
-    const updatedDeContent = await vol.promises.readFile(resolve(process.cwd(), 'locales/de/translation.json'), 'utf-8')
+    const updatedDeContent = await vol.promises.readFile(dePath, 'utf-8')
     const updatedDeJson = JSON.parse(updatedDeContent as string)
 
     expect(updatedDeJson).toEqual({
@@ -114,12 +121,13 @@ describe('syncer', () => {
     }
 
     vol.fromJSON({
-      [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify(enTranslations),
+      [enPath]: JSON.stringify(enTranslations),
+      // The 'de' file does not exist yet, it should be created.
     })
 
     await runSyncer(configWithIndent)
 
-    const updatedDeContent = await vol.promises.readFile(resolve(process.cwd(), 'locales/de/translation.json'), 'utf-8')
+    const updatedDeContent = await vol.promises.readFile(dePath, 'utf-8')
 
     const expectedContent = JSON.stringify({ key: '' }, null, 4) // Expect 4 spaces
     expect(updatedDeContent).toBe(expectedContent)

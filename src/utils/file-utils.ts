@@ -1,5 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { createJiti } from 'jiti'
+import type { I18nextToolkitConfig } from '../types'
 
 /**
  * Ensures that the directory for a given file path exists.
@@ -73,9 +75,60 @@ export async function writeFileAsync (filePath: string, data: string): Promise<v
 export function getOutputPath (
   template: string,
   locale: string,
-  namespace: string
+  namespace: string = ''
 ): string {
   return template
     .replace('{{language}}', locale).replace('{{lng}}', locale)
     .replace('{{namespace}}', namespace).replace('{{ns}}', namespace)
+}
+
+/**
+ * Dynamically loads a translation file, supporting .json, .js, and .ts formats.
+ * @param filePath - The path to the translation file.
+ * @returns The parsed content of the file, or null if not found or failed to parse.
+ */
+export async function loadTranslationFile (filePath: string): Promise<Record<string, any> | null> {
+  try {
+    if (filePath.endsWith('.json')) {
+      const content = await readFile(filePath, 'utf-8')
+      return JSON.parse(content)
+    } else if (filePath.endsWith('.ts') || filePath.endsWith('.js')) {
+      const jiti = createJiti(import.meta.url)
+      const module = await jiti.import(filePath, { default: true })
+      return module as Record<string, any> | null
+    }
+  } catch (e) {
+    // File not found or parse error
+    return null
+  }
+  return null
+}
+
+/**
+ * Serializes a translation object into a string based on the desired format.
+ * @param data - The translation data object.
+ * @param format - The desired output format ('json', 'js-esm', etc.).
+ * @param indentation - The number of spaces for indentation.
+ * @returns The serialized file content as a string.
+ */
+export function serializeTranslationFile (
+  data: Record<string, any>,
+  format: I18nextToolkitConfig['extract']['outputFormat'] = 'json',
+  indentation: number = 2
+): string {
+  const jsonString = JSON.stringify(data, null, indentation)
+
+  switch (format) {
+    case 'js':
+    case 'js-esm':
+      return `export default ${jsonString};\n`
+    case 'js-cjs':
+      return `module.exports = ${jsonString};\n`
+    case 'ts':
+      // Using `as const` provides better type inference for TypeScript users
+      return `export default ${jsonString} as const;\n`
+    case 'json':
+    default:
+      return jsonString
+  }
 }

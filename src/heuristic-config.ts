@@ -1,6 +1,6 @@
 import { glob } from 'glob'
 import { readdir } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, extname } from 'node:path'
 import type { I18nextToolkitConfig } from './types'
 
 // A list of common glob patterns for the primary language ('en') or ('dev') translation files.
@@ -32,10 +32,20 @@ export async function detectConfig (): Promise<Partial<I18nextToolkitConfig> | n
     if (files.length > 0) {
       const firstFile = files[0]
       const basePath = dirname(dirname(firstFile))
+      const extension = extname(firstFile)
+
+      // Infer outputFormat from the file extension
+      let outputFormat: I18nextToolkitConfig['extract']['outputFormat'] = 'json'
+      if (extension === '.ts') {
+        outputFormat = 'ts'
+      } else if (extension === '.js') {
+        // We can't know if it's ESM or CJS, so we default to a safe choice.
+        // The tool's file loaders can handle both.
+        outputFormat = 'js'
+      }
 
       try {
         const allDirs = await readdir(basePath)
-        // CORRECTED REGEX: Now accepts 'dev' in addition to standard locale codes.
         let locales = allDirs.filter(dir => /^(dev|[a-z]{2}(-[A-Z]{2})?)$/.test(dir))
 
         if (locales.length > 0) {
@@ -57,7 +67,8 @@ export async function detectConfig (): Promise<Partial<I18nextToolkitConfig> | n
                 'pages/**/*.{js,jsx,ts,tsx}',
                 'components/**/*.{js,jsx,ts,tsx}'
               ],
-              output: join(basePath, '{{language}}', '{{namespace}}.json'),
+              output: join(basePath, '{{language}}', `{{namespace}}${extension}`),
+              outputFormat,
               primaryLanguage: locales.includes('en') ? 'en' : locales[0],
             },
           }

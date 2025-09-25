@@ -271,6 +271,13 @@ export default defineConfig({
   extract: {
     input: ['src/**/*.{ts,tsx}'],
     output: 'locales/{{language}}/{{namespace}}.json',
+
+    // Use '.ts' files with `export default` instead of '.json'
+    outputFormat: 'ts',
+
+    // Combine all namespaces into a single file per language (e.g., locales/en.ts)
+    // Note: `output` path must not contain `{{namespace}}` when this is true.
+    mergeNamespaces: false, 
     
     // Translation functions to detect
     functions: ['t', 'i18n.t', 'i18next.t'],
@@ -414,6 +421,59 @@ Extract keys from comments for documentation or edge cases:
 ```javascript
 // t('welcome.message', 'Welcome to our app!')
 // t('user.greeting', { defaultValue: 'Hello!', ns: 'common' })
+```
+
+### JavaScript & TypeScript Translation Files
+
+For projects that prefer to keep everything in a single module type, you can configure the CLI to output JavaScript or TypeScript files instead of JSON.
+
+Configuration (`i18next.config.ts`):
+
+```typescript
+export default defineConfig({
+  extract: {
+    output: 'src/locales/{{language}}/{{namespace}}.ts', // Note the .ts extension
+    outputFormat: 'ts', // Use TypeScript with ES Modules
+  }
+});
+```
+
+This will generate files like `src/locales/en/translation.ts` with the following content:
+
+```typescript
+export default {
+  "myKey": "My value"
+} as const;
+```
+
+### Merging Namespaces
+
+You can also combine all namespaces into a single file per language. This is useful for reducing the number of network requests in some application setups.
+
+Configuration (`i18next.config.ts`):
+
+```typescript
+export default defineConfig({
+  extract: {
+    // Note: The `output` path no longer contains the {{namespace}} placeholder
+    output: 'src/locales/{{language}}.ts',
+    outputFormat: 'ts',
+    mergeNamespaces: true,
+  }
+});
+```
+
+This will generate a single file per language, like `src/locales/en.ts`, with namespaces as top-level keys:
+
+```typescript
+export default {
+  "translation": {
+    "key1": "Value 1"
+  },
+  "common": {
+    "keyA": "Value A"
+  }
+} as const;
 ```
 
 ## Migration from i18next-parser

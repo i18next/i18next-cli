@@ -1,10 +1,11 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { resolve, dirname } from 'path'
+import { writeFile, mkdir } from 'node:fs/promises'
+import { resolve, dirname, basename } from 'path'
 import chalk from 'chalk'
 import ora from 'ora'
+import { glob } from 'glob'
 import type { I18nextToolkitConfig } from './types'
 import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-object'
-import { getOutputPath } from './utils/file-utils'
+import { getOutputPath, loadTranslationFile, serializeTranslationFile } from './utils/file-utils'
 
 /**
  * Synchronizes translation files across different locales by ensuring all secondary
@@ -38,77 +39,86 @@ import { getOutputPath } from './utils/file-utils'
  */
 export async function runSyncer (config: I18nextToolkitConfig) {
   const spinner = ora('Running i18next locale synchronizer...\n').start()
-
-  config.extract.primaryLanguage ||= config.locales[0] || 'en'
-  const { primaryLanguage } = config.extract
-  const secondaryLanguages = config.locales.filter(l => l !== primaryLanguage)
-  const keySeparator = config.extract.keySeparator ?? '.'
-
-  const logMessages: string[] = []
-  let wasAnythingSynced = false
-
-  // Assume sync operates on the default namespace for simplicity
-  const defaultNS = config.extract.defaultNS ?? 'translation'
-
-  // 1. Get all keys from the primary language file
-  const primaryPath = getOutputPath(config.extract.output, primaryLanguage, defaultNS)
-
-  const fullPrimaryPath = resolve(process.cwd(), primaryPath)
-
-  let primaryTranslations: Record<string, any>
   try {
-    const primaryContent = await readFile(fullPrimaryPath, 'utf-8')
-    primaryTranslations = JSON.parse(primaryContent)
-  } catch (e) {
-    console.error(`Primary language file not found at ${primaryPath}. Cannot sync.`)
-    return
-  }
+    const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
+    const secondaryLanguages = config.locales.filter((l) => l !== primaryLanguage)
+    const {
+      output,
+      keySeparator = '.',
+      outputFormat = 'json',
+      indentation = 2,
+      defaultValue = '',
+    } = config.extract
 
-  const primaryKeys = getNestedKeys(primaryTranslations, keySeparator)
+    const logMessages: string[] = []
+    let wasAnythingSynced = false
 
-  // 2. Iterate through secondary languages and sync them
-  for (const lang of secondaryLanguages) {
-    const secondaryPath = getOutputPath(config.extract.output, lang, defaultNS)
-    const fullSecondaryPath = resolve(process.cwd(), secondaryPath)
+    // 1. Find all namespace files for the primary language
+    const primaryNsPattern = getOutputPath(output, primaryLanguage, '*')
+    const primaryNsFiles = await glob(primaryNsPattern)
 
-    let secondaryTranslations: Record<string, any> = {}
-    let oldContent = ''
-    try {
-      oldContent = await readFile(fullSecondaryPath, 'utf-8')
-      secondaryTranslations = JSON.parse(oldContent)
-    } catch (e) { /* File doesn't exist, will be created */ }
-
-    const newSecondaryTranslations: Record<string, any> = {}
-
-    // Rebuild the secondary file based on the primary file's keys
-    for (const key of primaryKeys) {
-      const existingValue = getNestedValue(secondaryTranslations, key, keySeparator)
-      // If value exists in old file, keep it. Otherwise, add as empty string.
-      const valueToSet = existingValue ?? (config.extract?.defaultValue || '')
-      setNestedValue(newSecondaryTranslations, key, valueToSet, keySeparator)
+    if (primaryNsFiles.length === 0) {
+      spinner.warn(`No translation files found for primary language "${primaryLanguage}". Nothing to sync.`)
+      return
     }
 
-    const indentation = config.extract.indentation ?? 2
-    const newContent = JSON.stringify(newSecondaryTranslations, null, indentation)
+    // 2. Loop through each primary namespace file
+    for (const primaryPath of primaryNsFiles) {
+      const ns = basename(primaryPath).split('.')[0]
+      const primaryTranslations = await loadTranslationFile(primaryPath)
 
-    if (newContent !== oldContent) {
-      wasAnythingSynced = true
-      await mkdir(dirname(fullSecondaryPath), { recursive: true })
-      await writeFile(fullSecondaryPath, newContent)
-      logMessages.push(`  ${chalk.green('✓')} Synchronized: ${secondaryPath}`)
+      if (!primaryTranslations) {
+        logMessages.push(`  ${chalk.yellow('-')} Could not read primary file: ${primaryPath}`)
+        continue
+      }
+
+      const primaryKeys = getNestedKeys(primaryTranslations, keySeparator ?? '.')
+
+      // 3. For each secondary language, sync the current namespace
+      for (const lang of secondaryLanguages) {
+        const secondaryPath = getOutputPath(output, lang, ns)
+        const fullSecondaryPath = resolve(process.cwd(), secondaryPath)
+        const existingSecondaryTranslations = await loadTranslationFile(fullSecondaryPath) || {}
+        const newSecondaryTranslations: Record<string, any> = {}
+
+        for (const key of primaryKeys) {
+          const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
+          const valueToSet = existingValue ?? defaultValue
+          setNestedValue(newSecondaryTranslations, key, valueToSet, keySeparator ?? '.')
+        }
+
+        // Use JSON.stringify for a reliable object comparison, regardless of format
+        const oldContent = JSON.stringify(existingSecondaryTranslations)
+        const newContent = JSON.stringify(newSecondaryTranslations)
+
+        if (newContent !== oldContent) {
+          wasAnythingSynced = true
+          const serializedContent = serializeTranslationFile(newSecondaryTranslations, outputFormat, indentation)
+          await mkdir(dirname(fullSecondaryPath), { recursive: true })
+          await writeFile(fullSecondaryPath, serializedContent)
+          logMessages.push(`  ${chalk.green('✓')} Synchronized: ${secondaryPath}`)
+        } else {
+          logMessages.push(`  ${chalk.gray('-')} Already in sync: ${secondaryPath}`)
+        }
+      }
+    }
+
+    spinner.succeed(chalk.bold('Synchronization complete!'))
+    logMessages.forEach(msg => console.log(msg))
+
+    if (wasAnythingSynced) {
+      printLocizeFunnel()
     } else {
-      logMessages.push(`  ${chalk.gray('-')} Already in sync: ${secondaryPath}`)
+      console.log(chalk.green.bold('\n✅ All locales are already in sync.'))
     }
+  } catch (error) {
+    spinner.fail(chalk.red('Synchronization failed.'))
+    console.error(error)
   }
+}
 
-  spinner.succeed(chalk.bold('Synchronization complete!'))
-  logMessages.forEach(msg => console.log(msg))
-
-  if (wasAnythingSynced) {
-    console.log(chalk.green.bold('\n✅ Sync complete.'))
-    console.log(chalk.yellow('🚀 Ready to collaborate with translators? Move your files to the cloud.'))
-    console.log(`   Get started with the official TMS for i18next: ${chalk.cyan('npx i18next-cli locize-migrate')}`)
-  } else {
-    console.log(chalk.green.bold('\n✅ All locales are already in sync.'))
-  }
+function printLocizeFunnel () {
+  console.log(chalk.green.bold('\n✅ Sync complete.'))
+  console.log(chalk.yellow('🚀 Ready to collaborate with translators? Move your files to the cloud.'))
+  console.log(`   Get started with the official TMS for i18next: ${chalk.cyan('npx i18next-cli locize-migrate')}`)
 }

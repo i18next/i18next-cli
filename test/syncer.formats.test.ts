@@ -1,0 +1,100 @@
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { runSyncer } from '../src/syncer'
+import type { I18nextToolkitConfig } from '../src/index'
+import { resolve, dirname } from 'path'
+import { mkdir, writeFile, readFile, rm } from 'node:fs/promises'
+
+const TEMP_DIR = resolve(process.cwd(), 'test/temp_syncer_files')
+
+vi.mock('glob', () => ({ glob: vi.fn() }))
+
+describe('syncer: file formats and namespace merging', () => {
+  // Create a temporary directory for our real files before tests run
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    await mkdir(TEMP_DIR, { recursive: true })
+  })
+
+  // Clean up the temporary directory after tests run
+  afterEach(async () => {
+    await rm(TEMP_DIR, { recursive: true, force: true })
+  })
+
+  it('should correctly sync JavaScript ESM files using the real file system', async () => {
+    // Define paths within our temp directory
+    const enPath = resolve(TEMP_DIR, 'locales/en/translation.js')
+    const dePath = resolve(TEMP_DIR, 'locales/de/translation.js')
+
+    // Mock glob to find the real temp file
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue([enPath])
+
+    // Create the directories and write the real files
+    await mkdir(dirname(enPath), { recursive: true })
+    await mkdir(dirname(dePath), { recursive: true })
+
+    const enContent = 'export default {\n  "key1": "Value 1",\n  "key2": "Value 2"\n};\n'
+    const deContent = 'export default {\n  "key1": "Wert 1"\n};\n'
+    await writeFile(enPath, enContent)
+    await writeFile(dePath, deContent)
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        // Point the output to our temp directory
+        output: `${TEMP_DIR}/locales/{{language}}/{{namespace}}.js`,
+        outputFormat: 'js-esm',
+      },
+    }
+
+    await runSyncer(config)
+
+    // Read the updated file from the real file system
+    const updatedDeContent = await readFile(dePath, 'utf-8')
+
+    expect(updatedDeContent).toContain('"key2": ""')
+    expect(updatedDeContent).toContain('export default')
+  })
+
+  it('should correctly sync merged namespace files', async () => {
+    const enPath = resolve(TEMP_DIR, 'locales/en.json')
+    const dePath = resolve(TEMP_DIR, 'locales/de.json')
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue([enPath])
+
+    await mkdir(dirname(enPath), { recursive: true })
+    await mkdir(dirname(dePath), { recursive: true })
+
+    const enTranslations = {
+      translation: { key1: 'Value 1', key2: 'Value 2' },
+      common: { keyA: 'Value A' },
+    }
+    const deTranslations = {
+      translation: { key1: 'Wert 1' },
+      common: { keyA: 'Wert A', keyB: 'Extra Key' },
+    }
+    await writeFile(enPath, JSON.stringify(enTranslations))
+    await writeFile(dePath, JSON.stringify(deTranslations))
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: `${TEMP_DIR}/locales/{{language}}.json`,
+        mergeNamespaces: true,
+      },
+    }
+
+    await runSyncer(config)
+
+    const updatedDeContent = await readFile(dePath, 'utf-8')
+    const updatedDeJson = JSON.parse(updatedDeContent)
+
+    expect(updatedDeJson).toEqual({
+      translation: { key1: 'Wert 1', key2: '' },
+      common: { keyA: 'Wert A' },
+    })
+  })
+})

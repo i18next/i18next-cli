@@ -1,11 +1,10 @@
 import chalk from 'chalk'
 import ora from 'ora'
 import { resolve } from 'node:path'
-import { readFile } from 'node:fs/promises'
 import { findKeys } from './extractor/core/key-finder'
 import { getNestedValue } from './utils/nested-object'
 import type { I18nextToolkitConfig, ExtractedKey } from './types'
-import { getOutputPath } from './utils/file-utils'
+import { getOutputPath, loadTranslationFile } from './utils/file-utils'
 
 /**
  * Options for configuring the status report display.
@@ -56,8 +55,8 @@ interface StatusReport {
  * @throws {Error} When unable to extract keys or read translation files
  */
 export async function runStatus (config: I18nextToolkitConfig, options: StatusOptions = {}) {
-  if (!config.extract.primaryLanguage) config.extract.primaryLanguage = config.locales[0] || 'en'
-  if (!config.extract.secondaryLanguages) config.extract.secondaryLanguages = config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
+  config.extract.primaryLanguage ||= config.locales[0] || 'en'
+  config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
   const spinner = ora('Analyzing project localization status...\n').start()
   try {
     const report = await generateStatusReport(config)
@@ -84,9 +83,16 @@ export async function runStatus (config: I18nextToolkitConfig, options: StatusOp
  * @throws {Error} When key extraction fails or configuration is invalid
  */
 async function generateStatusReport (config: I18nextToolkitConfig): Promise<StatusReport> {
+  config.extract.primaryLanguage ||= config.locales[0] || 'en'
+  config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
+
   const { allKeys: allExtractedKeys } = await findKeys(config)
-  const { primaryLanguage, keySeparator = '.', defaultNS = 'translation' } = config.extract
-  const secondaryLanguages = config.locales.filter(l => l !== primaryLanguage)
+  const {
+    secondaryLanguages,
+    keySeparator = '.',
+    defaultNS = 'translation',
+    mergeNamespaces = false,
+  } = config.extract
 
   const keysByNs = new Map<string, ExtractedKey[]>()
   for (const key of allExtractedKeys.values()) {
@@ -105,17 +111,19 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
     let totalTranslatedForLocale = 0
     const namespaces = new Map<string, any>()
 
+    const mergedTranslations = mergeNamespaces
+      ? await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, locale))) || {}
+      : null
+
     for (const [ns, keysInNs] of keysByNs.entries()) {
-      const langFilePath = getOutputPath(config.extract.output, locale, ns)
-      let translations: Record<string, any> = {}
-      try {
-        const content = await readFile(resolve(process.cwd(), langFilePath), 'utf-8')
-        translations = JSON.parse(content)
-      } catch {}
+      const translationsForNs = mergeNamespaces
+        ? mergedTranslations?.[ns] || {}
+        : await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, locale, ns))) || {}
 
       let translatedInNs = 0
       const keyDetails = keysInNs.map(({ key }) => {
-        const value = getNestedValue(translations, key, keySeparator ?? '.')
+        // Search for the key within the correct namespace object
+        const value = getNestedValue(translationsForNs, key, keySeparator ?? '.')
         const isTranslated = !!value
         if (isTranslated) translatedInNs++
         return { key, isTranslated }

@@ -11,6 +11,7 @@ import { createPluginContext } from '../plugin-manager'
 import { extractKeysFromComments } from '../parsers/comment-parser'
 import { ASTVisitors } from '../parsers/ast-visitors'
 import { ConsoleLogger } from '../../utils/logger'
+import { serializeTranslationFile } from '../../utils/file-utils'
 
 /**
  * Main extractor function that runs the complete key extraction and file generation process.
@@ -42,8 +43,8 @@ export async function runExtractor (
   config: I18nextToolkitConfig,
   logger: Logger = new ConsoleLogger()
 ): Promise<boolean> {
-  if (!config.extract.primaryLanguage) config.extract.primaryLanguage = config.locales[0] || 'en'
-  if (!config.extract.secondaryLanguages) config.extract.secondaryLanguages = config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
+  config.extract.primaryLanguage ||= config.locales[0] || 'en'
+  config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
 
   validateExtractorConfig(config)
 
@@ -59,8 +60,13 @@ export async function runExtractor (
     for (const result of results) {
       if (result.updated) {
         anyFileUpdated = true
+        const fileContent = serializeTranslationFile(
+          result.newTranslations,
+          config.extract.outputFormat,
+          config.extract.indentation
+        )
         await mkdir(dirname(result.path), { recursive: true })
-        await writeFile(result.path, JSON.stringify(result.newTranslations, null, 2))
+        await writeFile(result.path, fileContent)
         logger.info(chalk.green(`Updated: ${result.path}`))
       }
     }
@@ -180,10 +186,10 @@ function traverseEveryNode (node: any, plugins: any[], pluginContext: PluginCont
  * ```
  */
 export async function extract (config: I18nextToolkitConfig) {
-  if (!config.extract.primaryLanguage) config.extract.primaryLanguage = config.locales[0]
-  if (!config.extract.secondaryLanguages) config.extract.secondaryLanguages = config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
-  if (!config.extract.functions) config.extract.functions = ['t']
-  if (!config.extract.transComponents) config.extract.transComponents = ['Trans']
+  config.extract.primaryLanguage ||= config.locales[0] || 'en'
+  config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
+  config.extract.functions ||= ['t']
+  config.extract.transComponents ||= ['Trans']
   const { allKeys, objectKeys } = await findKeys(config)
   return getTranslations(allKeys, objectKeys, config)
 }

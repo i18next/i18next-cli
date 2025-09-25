@@ -337,7 +337,7 @@ export class ASTVisitors {
     if (callee.type !== 'Identifier') return
 
     const scopeInfo = this.getVarFromScope(callee.value)
-    const isFunctionToParse = (this.config.extract.functions || []).includes(callee.value) || scopeInfo !== undefined
+    const isFunctionToParse = (this.config.extract.functions || ['t']).includes(callee.value) || scopeInfo !== undefined
     if (!isFunctionToParse || node.arguments.length === 0) return
 
     const firstArg = node.arguments[0].expression

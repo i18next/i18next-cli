@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - not yet released
 
+## [0.9.10] - 2025-09-25
+
+### Added
+- **JavaScript/TypeScript Translation Files:** Added the `outputFormat` option to support generating translation files as `.json` (default), `.js` (ESM or CJS), or `.ts` modules.
+- **Merged Namespace Files:** Added the `mergeNamespaces` option to combine all namespaces into a single file per language, streamlining imports and file structures.
+
 ## [0.9.9] - 2025-09-25
 
 - **Extractor:** Now supports static and dynamic (ternary) `context` options in both `t()` and `<Trans>`.
