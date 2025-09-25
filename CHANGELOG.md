@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0](https://github.com/i18next/i18next-cli/compare/v0.9.0...v1.0.0) - 2025-xx-yy
 
+- not yet released
 
-
-## [0.9.0] - 2025-09-24
+## [0.9.0] - 2025-09-25
 
 ### Added
 
