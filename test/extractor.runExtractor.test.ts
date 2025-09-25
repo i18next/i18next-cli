@@ -342,4 +342,40 @@ describe('extractor: runExtractor', () => {
       },
     })
   })
+
+  it('should preserve nested keys when returnObjects is true', async () => {
+    const sampleCode = `
+      // This key should be extracted normally
+      t('a_regular_key', 'A regular value');
+      // This call should cause all nested keys under 'countries' to be preserved
+      t('countries', { returnObjects: true });
+    `
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+
+    // Prepopulate an existing translation file with the nested object
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      [enPath]: JSON.stringify({
+        countries: {
+          US: 'United States',
+          DE: 'Germany',
+        },
+        an_old_key: 'This should be removed',
+      }, null, 2),
+    })
+
+    await runExtractor(mockConfig)
+
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    expect(enJson).toEqual({
+      a_regular_key: 'A regular value',
+      countries: {
+        US: 'United States', // Preserved
+        DE: 'Germany',      // Preserved
+      },
+      // an_old_key was correctly removed
+    })
+  })
 })

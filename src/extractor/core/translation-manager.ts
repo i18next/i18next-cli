@@ -45,11 +45,17 @@ function globToRegex (glob: string): RegExp {
  */
 export async function getTranslations (
   keys: Map<string, ExtractedKey>,
+  objectKeys: Set<string>,
   config: I18nextToolkitConfig
 ): Promise<TranslationResult[]> {
   const defaultNS = config.extract.defaultNS ?? 'translation'
   const keySeparator = config.extract.keySeparator ?? '.'
-  const preservePatterns = (config.extract.preservePatterns ?? []).map(globToRegex)
+  const patternsToPreserve = [...(config.extract.preservePatterns || [])]
+  for (const key of objectKeys) {
+    // Convert the object key to a glob pattern to preserve all its children
+    patternsToPreserve.push(`${key}.*`)
+  }
+  const preservePatterns = patternsToPreserve.map(globToRegex)
   if (!config.extract.primaryLanguage) config.extract.primaryLanguage = config.locales[0] || 'en'
   if (!config.extract.secondaryLanguages) config.extract.secondaryLanguages = config.locales.filter((l: string) => l !== config.extract.primaryLanguage)
 

@@ -4,8 +4,9 @@ import { access } from 'node:fs/promises'
 import { createJiti } from 'jiti'
 import inquirer from 'inquirer'
 import chalk from 'chalk'
-import type { I18nextToolkitConfig } from './types'
+import type { I18nextToolkitConfig, Logger } from './types'
 import { runInit } from './init'
+import { ConsoleLogger } from './utils/logger'
 
 /**
  * List of supported configuration file names in order of precedence
@@ -78,7 +79,7 @@ async function findConfigFile (): Promise<string | null> {
  * }
  * ```
  */
-export async function loadConfig (): Promise<I18nextToolkitConfig | null> {
+export async function loadConfig (logger: Logger = new ConsoleLogger()): Promise<I18nextToolkitConfig | null> {
   const configPath = await findConfigFile()
 
   if (!configPath) {
@@ -101,7 +102,7 @@ export async function loadConfig (): Promise<I18nextToolkitConfig | null> {
     }
 
     if (!config) {
-      console.error(`Error: No default export found in ${configPath}`)
+      logger.error(`Error: No default export found in ${configPath}`)
       return null
     }
 
@@ -112,8 +113,8 @@ export async function loadConfig (): Promise<I18nextToolkitConfig | null> {
 
     return config
   } catch (error) {
-    console.error(`Error loading configuration from ${configPath}`)
-    console.error(error)
+    logger.error(`Error loading configuration from ${configPath}`)
+    logger.error(error)
     return null
   }
 }
@@ -125,7 +126,7 @@ export async function loadConfig (): Promise<I18nextToolkitConfig | null> {
  * @returns A promise that resolves to a valid configuration object.
  * @throws Exits the process if the user declines to create a config or if loading fails after creation.
  */
-export async function ensureConfig (): Promise<I18nextToolkitConfig> {
+export async function ensureConfig (logger: Logger = new ConsoleLogger()): Promise<I18nextToolkitConfig> {
   let config = await loadConfig()
 
   if (config) {
@@ -142,17 +143,17 @@ export async function ensureConfig (): Promise<I18nextToolkitConfig> {
 
   if (shouldInit) {
     await runInit() // Run the interactive setup wizard
-    console.log(chalk.green('Configuration created. Resuming command...'))
+    logger.info(chalk.green('Configuration created. Resuming command...'))
     config = await loadConfig() // Try loading the newly created config
 
     if (config) {
       return config
     } else {
-      console.error(chalk.red('Error: Failed to load configuration after creation. Please try running the command again.'))
+      logger.error(chalk.red('Error: Failed to load configuration after creation. Please try running the command again.'))
       process.exit(1)
     }
   } else {
-    console.log('Operation cancelled. Please create a configuration file to proceed.')
+    logger.info('Operation cancelled. Please create a configuration file to proceed.')
     process.exit(0)
   }
 }

@@ -482,6 +482,9 @@ t('key', { name: 'John' })
 t(['key.primary', 'key.fallback']);
 t(['key.primary', 'key.fallback'], 'The fallback value');
 t(['key.primary', 'key.fallback'], { defaultValue: 'The fallback value' });
+
+// With structured content (returnObjects)
+t('countries', { returnObjects: true });
 ```
 
 ### React Components

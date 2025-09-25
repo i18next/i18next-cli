@@ -84,7 +84,7 @@ export async function runStatus (config: I18nextToolkitConfig, options: StatusOp
  * @throws {Error} When key extraction fails or configuration is invalid
  */
 async function generateStatusReport (config: I18nextToolkitConfig): Promise<StatusReport> {
-  const allExtractedKeys = await findKeys(config)
+  const { allKeys: allExtractedKeys } = await findKeys(config)
   const { primaryLanguage, keySeparator = '.', defaultNS = 'translation' } = config.extract
   const secondaryLanguages = config.locales.filter(l => l !== primaryLanguage)
 

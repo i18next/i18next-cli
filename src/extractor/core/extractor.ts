@@ -50,10 +50,10 @@ export async function runExtractor (
   const spinner = ora('Running i18next key extractor...\n').start()
 
   try {
-    const allKeys = await findKeys(config, logger)
+    const { allKeys, objectKeys } = await findKeys(config, logger)
     spinner.text = `Found ${allKeys.size} unique keys. Updating translation files...`
 
-    const results = await getTranslations(allKeys, config)
+    const results = await getTranslations(allKeys, objectKeys, config)
 
     let anyFileUpdated = false
     for (const result of results) {
@@ -97,8 +97,9 @@ export async function runExtractor (
 export async function processFile (
   file: string,
   config: I18nextToolkitConfig,
-  logger: Logger,
-  allKeys: Map<string, ExtractedKey>
+  allKeys: Map<string, ExtractedKey>,
+  astVisitors: ASTVisitors,
+  logger: Logger = new ConsoleLogger()
 ): Promise<void> {
   try {
     let code = await readFile(file, 'utf-8')
@@ -119,18 +120,11 @@ export async function processFile (
     // Extract keys from comments
     extractKeysFromComments(code, config.extract.functions || ['t'], pluginContext, config)
 
-    // Extract keys from AST using visitors
-    const astVisitors = new ASTVisitors(
-      config,
-      pluginContext,
-      logger
-    )
-
     astVisitors.visit(ast)
 
     // Run plugin visitors
     if ((config.plugins || []).length > 0) {
-      traverseEveryNode(ast, (config.plugins || []), pluginContext)
+      traverseEveryNode(ast, (config.plugins || []), pluginContext, logger)
     }
   } catch (error) {
     throw new ExtractorError('Failed to process file', file, error as Error)
@@ -146,7 +140,7 @@ export async function processFile (
  *
  * @internal
  */
-function traverseEveryNode (node: any, plugins: any[], pluginContext: PluginContext): void {
+function traverseEveryNode (node: any, plugins: any[], pluginContext: PluginContext, logger: Logger = new ConsoleLogger()): void {
   if (!node || typeof node !== 'object') return
 
   // Call plugins for this node
@@ -154,7 +148,7 @@ function traverseEveryNode (node: any, plugins: any[], pluginContext: PluginCont
     try {
       plugin.onVisitNode?.(node, pluginContext)
     } catch (err) {
-      console.warn(`Plugin ${plugin.name} onVisitNode failed:`, err)
+      logger.warn(`Plugin ${plugin.name} onVisitNode failed:`, err)
     }
   }
 
@@ -162,10 +156,10 @@ function traverseEveryNode (node: any, plugins: any[], pluginContext: PluginCont
     const child = node[key]
     if (Array.isArray(child)) {
       for (const c of child) {
-        if (c && typeof c === 'object') traverseEveryNode(c, plugins, pluginContext)
+        if (c && typeof c === 'object') traverseEveryNode(c, plugins, pluginContext, logger)
       }
     } else if (child && typeof child === 'object') {
-      traverseEveryNode(child, plugins, pluginContext)
+      traverseEveryNode(child, plugins, pluginContext, logger)
     }
   }
 }
@@ -190,6 +184,6 @@ export async function extract (config: I18nextToolkitConfig) {
   if (!config.extract.secondaryLanguages) config.extract.secondaryLanguages = config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
   if (!config.extract.functions) config.extract.functions = ['t']
   if (!config.extract.transComponents) config.extract.transComponents = ['Trans']
-  const allKeys = await findKeys(config)
-  return getTranslations(allKeys, config)
+  const { allKeys, objectKeys } = await findKeys(config)
+  return getTranslations(allKeys, objectKeys, config)
 }

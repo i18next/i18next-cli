@@ -51,7 +51,7 @@ describe('extractor.findKeys', () => {
       '/src/App.tsx': sampleCode,
     })
 
-    const keys = await findKeys(mockConfig)
+    const { allKeys: keys } = await findKeys(mockConfig)
     const extractedValues = Array.from(keys.values())
 
     const title = extractedValues.find(k => k.key === 'app.title')

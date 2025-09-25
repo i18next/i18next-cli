@@ -104,7 +104,7 @@ describe('plugin system: html', () => {
       'src/index.html': htmlCode,
     })
 
-    const keys = await findKeys(mockConfig)
+    const { allKeys: keys } = await findKeys(mockConfig)
     const extractedKeys = Array.from(keys.values()).map(k => k.key)
 
     // Verify that keys from BOTH the core extractor and the HTML plugin are present

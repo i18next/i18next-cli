@@ -2,7 +2,8 @@ import { glob } from 'glob'
 import type { ExtractedKey, Logger, I18nextToolkitConfig } from '../../types'
 import { processFile } from './extractor'
 import { ConsoleLogger } from '../../utils/logger'
-import { initializePlugins } from '../plugin-manager'
+import { initializePlugins, createPluginContext } from '../plugin-manager'
+import { ASTVisitors } from '../parsers/ast-visitors'
 
 /**
  * Main function for finding translation keys across all source files in a project.
@@ -35,14 +36,17 @@ import { initializePlugins } from '../plugin-manager'
 export async function findKeys (
   config: I18nextToolkitConfig,
   logger: Logger = new ConsoleLogger()
-): Promise<Map<string, ExtractedKey>> {
+): Promise<{ allKeys: Map<string, ExtractedKey>, objectKeys: Set<string> }> {
   const sourceFiles = await processSourceFiles(config)
   const allKeys = new Map<string, ExtractedKey>()
+
+  // Create a single visitors instance to accumulate data across all files
+  const astVisitors = new ASTVisitors(config, createPluginContext(allKeys), logger)
 
   await initializePlugins(config.plugins || [])
 
   for (const file of sourceFiles) {
-    await processFile(file, config, logger, allKeys)
+    await processFile(file, config, allKeys, astVisitors, logger)
   }
 
   // Run onEnd hooks
@@ -50,7 +54,7 @@ export async function findKeys (
     await plugin.onEnd?.(allKeys)
   }
 
-  return allKeys
+  return { allKeys, objectKeys: astVisitors.objectKeys }
 }
 
 /**

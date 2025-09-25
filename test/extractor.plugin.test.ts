@@ -74,7 +74,7 @@ describe('extractor plugin system', () => {
       plugins: [logI18nPlugin()],
     }
 
-    const keys = await findKeys(config as I18nextToolkitConfig)
+    const { allKeys: keys } = await findKeys(config as I18nextToolkitConfig)
     // Instead of checking the map's internal key, check the values.
     const extractedValues = Array.from(keys.values())
     const pluginKeyObject = extractedValues.find(k => k.key === 'plugin.key')

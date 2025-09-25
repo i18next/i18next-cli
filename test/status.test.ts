@@ -44,7 +44,7 @@ describe('status (summary view)', () => {
       ['translation:key.c', { key: 'key.c', ns: 'translation' }],
       ['translation:key.b', { key: 'key.b', ns: 'translation' }],
     ])
-    vi.mocked(findKeys).mockResolvedValue(mockKeys)
+    vi.mocked(findKeys).mockResolvedValue({ allKeys: mockKeys, objectKeys: new Set() })
 
     vol.fromJSON({
       [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({
@@ -75,7 +75,7 @@ describe('status (summary view)', () => {
       ['common:button.save', { key: 'button.save', ns: 'common' }],
       ['common:button.cancel', { key: 'button.cancel', ns: 'common' }],
     ])
-    vi.mocked(findKeys).mockResolvedValue(mockKeys)
+    vi.mocked(findKeys).mockResolvedValue({ allKeys: mockKeys, objectKeys: new Set() })
 
     vol.fromJSON({
       // 3 of 4 keys translated for 'translation' ns
@@ -113,22 +113,18 @@ describe('status (detailed view)', () => {
     vi.restoreAllMocks()
   })
 
-  // ... (the first test "should display a grouped, key-by-key report..." is unchanged) ...
-
-  // CORRECTED TEST
   it('should show a warning when checking the primary language', async () => {
     const { findKeys } = await import('../src/extractor/core/key-finder')
-    vi.mocked(findKeys).mockResolvedValue(new Map()) // No keys needed for this test
+    vi.mocked(findKeys).mockResolvedValue({ allKeys: new Map(), objectKeys: new Set() })
 
     await runStatus(mockConfig, { detail: 'en' })
 
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('is the primary language'))
   })
 
-  // CORRECTED TEST
   it('should show an error for an invalid locale', async () => {
     const { findKeys } = await import('../src/extractor/core/key-finder')
-    vi.mocked(findKeys).mockResolvedValue(new Map())
+    vi.mocked(findKeys).mockResolvedValue({ allKeys: new Map(), objectKeys: new Set() })
 
     await runStatus(mockConfig, { detail: 'jp' })
 
@@ -155,7 +151,7 @@ describe('status (namespace filtering)', () => {
       ['translation:app.title', { key: 'app.title', ns: 'translation' }],
       ['common:button.save', { key: 'button.save', ns: 'common' }],
     ])
-    vi.mocked(findKeys).mockResolvedValue(mockKeys)
+    vi.mocked(findKeys).mockResolvedValue({ allKeys: mockKeys, objectKeys: new Set() })
 
     vol.fromJSON({
       [resolve(process.cwd(), 'locales/de/common.json')]: JSON.stringify({
@@ -182,8 +178,7 @@ describe('status (namespace filtering)', () => {
       ['common:keyA', { key: 'keyA', ns: 'common' }],
       ['common:keyB', { key: 'keyB', ns: 'common' }],
     ])
-    vi.mocked(findKeys).mockResolvedValue(mockKeys)
-
+    vi.mocked(findKeys).mockResolvedValue({ allKeys: mockKeys, objectKeys: new Set() })
     vol.fromJSON({
       // 'de' has 2/2 translated in 'common', but 1/2 in 'translation'
       [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({ key1: 'Wert 1' }),

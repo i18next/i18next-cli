@@ -277,13 +277,13 @@ export interface Logger {
    * Logs a warning message.
    * @param message - The warning message to log
    */
-  warn(message: string): void;
+  warn(message: string, more?: any): void;
 
   /**
    * Logs an error message.
    * @param message - The error message to log
    */
-  error(message: string): void;
+  error(message: string | any): void;
 }
 
 /**

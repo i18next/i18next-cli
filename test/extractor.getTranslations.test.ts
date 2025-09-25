@@ -30,7 +30,7 @@ describe('extractor.getTranslations', () => {
     }
 
     // 1) No files exist -> should report updated=true and produce expected values
-    const res1 = await getTranslations(keysMap as any, config)
+    const res1 = await getTranslations(keysMap as any, new Set(), config)
     // two locales
     expect(res1.length).toBe(2)
 
@@ -60,7 +60,7 @@ describe('extractor.getTranslations', () => {
     await vol.promises.writeFile(dePath, JSON.stringify(deItem!.newTranslations, null, 2))
 
     // 3) Call again -> updated should be false as files match generated content
-    const res2 = await getTranslations(keysMap as any, config)
+    const res2 = await getTranslations(keysMap as any, new Set(), config)
     const enItem2 = res2.find(r => r.path.endsWith('/locales/en/translation.json'))!
     const deItem2 = res2.find(r => r.path.endsWith('/locales/de/translation.json'))!
     expect(enItem2.updated).toBe(false)
@@ -86,7 +86,7 @@ describe('extractor.getTranslations', () => {
       }
     }
 
-    const [result] = await getTranslations(keysMap as any, config)
+    const [result] = await getTranslations(keysMap as any, new Set(), config)
 
     // Assert that the object keys are in the original insertion order
     const resultKeys = Object.keys(result.newTranslations)

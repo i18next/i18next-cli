@@ -41,6 +41,8 @@ export class ASTVisitors {
   private readonly logger: Logger
   private scopeStack: Array<Map<string, ScopeInfo>> = []
 
+  public objectKeys = new Set<string>()
+
   /**
    * Creates a new AST visitor instance.
    *
@@ -275,7 +277,8 @@ export class ASTVisitors {
     const optionsArg = node.init.arguments?.[1]?.expression
     let keyPrefix: string | undefined
     if (optionsArg?.type === 'ObjectExpression') {
-      keyPrefix = this.getObjectPropValue(optionsArg, 'keyPrefix')
+      const kp = this.getObjectPropValue(optionsArg, 'keyPrefix')
+      keyPrefix = typeof kp === 'string' ? kp : undefined
     }
 
     // Store the scope info for the declared variable
@@ -340,7 +343,6 @@ export class ASTVisitors {
     const firstArg = node.arguments[0].expression
     const keysToProcess: string[] = []
 
-    // --- NEW: Handle ArrayExpression for key fallbacks ---
     if (firstArg.type === 'StringLiteral') {
       keysToProcess.push(firstArg.value)
     } else if (firstArg.type === 'ArrowFunctionExpression') {
@@ -366,7 +368,10 @@ export class ASTVisitors {
       let ns: string | undefined
 
       // Determine namespace (explicit ns > scope ns > ns:key > default)
-      if (options?.type === 'ObjectExpression') ns = this.getObjectPropValue(options, 'ns')
+      if (options?.type === 'ObjectExpression') {
+        const nsVal = this.getObjectPropValue(options, 'ns')
+        if (typeof nsVal === 'string') ns = nsVal
+      }
       if (!ns && scopeInfo?.defaultNs) ns = scopeInfo.defaultNs
 
       const nsSeparator = this.config.extract.nsSeparator ?? ':'
@@ -388,21 +393,33 @@ export class ASTVisitors {
       const isLastKey = i === keysToProcess.length - 1
       const dv = isLastKey ? defaultValue : key
 
-      // Handle plurals and context for each key
+      // Handle plurals, context, and returnObjects
+      let keyHandled = false
       if (options?.type === 'ObjectExpression') {
+        // Handle context
         const contextValue = this.getObjectPropValue(options, 'context')
-        const contextSeparator = this.config.extract.contextSeparator ?? '_'
-        if (contextValue) {
+        if (typeof contextValue === 'string' && contextValue) {
+          const contextSeparator = this.config.extract.contextSeparator ?? '_'
           this.pluginContext.addKey({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv })
-          continue // This key is handled, move to the next one in the array
+          keyHandled = true
         }
-        if (this.getObjectPropValue(options, 'count') !== undefined) {
+
+        // Handle plurals
+        if (!keyHandled && this.getObjectPropValue(options, 'count') !== undefined) {
           this.handlePluralKeys(finalKey, dv, ns)
-          continue // This key is handled, move to the next one in the array
+          keyHandled = true
+        }
+
+        // Handle returnObjects
+        if (!keyHandled && this.getObjectPropValue(options, 'returnObjects') === true) {
+          this.objectKeys.add(finalKey)
+          // We still add the base key itself
         }
       }
 
-      this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv })
+      if (!keyHandled) {
+        this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv })
+      }
     }
   }
 
@@ -462,7 +479,10 @@ export class ASTVisitors {
     }
 
     if (secondArg.type === 'ObjectExpression') {
-      return this.getObjectPropValue(secondArg, 'defaultValue') || fallback
+      const val = this.getObjectPropValue(secondArg, 'defaultValue')
+      if (typeof val === 'string') return val || fallback
+      if (typeof val === 'number' || typeof val === 'boolean') return String(val)
+      return fallback
     }
 
     return fallback
@@ -564,7 +584,7 @@ export class ASTVisitors {
    *
    * @private
    */
-  private getObjectPropValue (object: ObjectExpression, propName: string): string | undefined {
+  private getObjectPropValue (object: ObjectExpression, propName: string): string | boolean | number | undefined {
     const prop = (object.properties).find(
       (p) =>
         p.type === 'KeyValueProperty' &&
@@ -576,12 +596,18 @@ export class ASTVisitors {
 
     if (prop?.type === 'KeyValueProperty') {
       const val = prop.value
-      // Only return the value if it's a string, otherwise we just care that it exists (for `count`)
+      // Return concrete literal values when possible
       if (val.type === 'StringLiteral') {
         return val.value
       }
-      // For properties like `count`, the value could be a number, but we just need to know it's there.
-      // So we return a non-undefined value. An empty string is fine.
+      if (val.type === 'BooleanLiteral') {
+        return val.value
+      }
+      if (val.type === 'NumericLiteral') {
+        return val.value
+      }
+      // For other expression types (identifier, member expr, etc.) we only care that the prop exists.
+      // Return an empty string to indicate presence.
       return ''
     }
     return undefined
