@@ -240,6 +240,37 @@ describe('extractor: advanced t features', () => {
         alert_important: 'An alert', // undefined is ignored
       })
     })
+
+    it('should extract keys from t() calls inside array.map in JSX', async () => {
+      const sampleCode = `
+        function MappedComponent() {
+          const { t } = useTranslation('test');
+          return (
+            <>
+              {t('one', '1')}
+              {["two"].map((number, index) => (
+                <div key={index}>
+                  {t('two', '2')}
+                </div>
+              ))}
+              {t('three', '3')}
+            </>
+          )
+        }
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      const config = { ...mockConfig, extract: { ...mockConfig.extract, functions: ['t'], useTranslationNames: ['useTranslation'] } }
+
+      const results = await extract(config)
+      const file = results.find(r => r.path.endsWith('/locales/en/test.json'))
+
+      expect(file).toBeDefined()
+      expect(file!.newTranslations).toEqual({
+        one: '1',
+        two: '2',
+        three: '3',
+      })
+    })
   })
 
   describe('getFixedT support', () => {

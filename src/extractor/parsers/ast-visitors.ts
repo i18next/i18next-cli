@@ -118,7 +118,10 @@ export class ASTVisitors {
       const child = node[key]
       if (Array.isArray(child)) {
         for (const item of child) {
-          if (item && typeof item === 'object' && item.type) {
+          // Be less strict: if it's a non-null object, walk it.
+          // This allows traversal into nodes that might not have a `.type` property
+          // but still contain other valid AST nodes.
+          if (item && typeof item === 'object') {
             this.walk(item)
           }
         }
