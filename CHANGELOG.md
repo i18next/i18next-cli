@@ -5,37 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0](https://github.com/i18next/i18next-cli/compare/v0.9.9...v1.0.0) - 2025-xx-yy
+## [1.0.0](https://github.com/i18next/i18next-cli/compare/v0.9.11...v1.0.0) - 2025-xx-yy
 
 - not yet released
 
-## [0.9.10] - 2025-09-25
+## [0.9.11](https://github.com/i18next/i18next-cli/compare/v0.9.10...v0.9.11) - 2025-09-26
+
+### Added
+- **Extractor:** Added support for plural-specific default values (e.g., `defaultValue_other`, `defaultValue_two`) in `t()` function options. [#3](https://github.com/i18next/i18next-cli/issues/3)
+- **Extractor:** Added support for ordinal plurals (e.g., `t('key', { count: 1, ordinal: true })`), generating the correct suffixed keys (`key_ordinal_one`, `key_ordinal_two`, etc.) for all languages.
+
+### Fixed
+- **Extractor:** Fixed an issue where the AST walker would not find `t()` calls inside nested functions, such as an `array.map()` callback, within JSX. [#4](https://github.com/i18next/i18next-cli/issues/4)
+
+## [0.9.10] - 2025-09-25(https://github.com/i18next/i18next-cli/compare/v0.9.9...v0.9.10)
 
 ### Added
 - **JavaScript/TypeScript Translation Files:** Added the `outputFormat` option to support generating translation files as `.json` (default), `.js` (ESM or CJS), or `.ts` modules.
 - **Merged Namespace Files:** Added the `mergeNamespaces` option to combine all namespaces into a single file per language, streamlining imports and file structures.
 
-## [0.9.9] - 2025-09-25
+## [0.9.9] - 2025-09-25(https://github.com/i18next/i18next-cli/compare/v0.9.8...v0.9.9)
 
 - **Extractor:** Now supports static and dynamic (ternary) `context` options in both `t()` and `<Trans>`.
 
-## [0.9.8] - 2025-09-25
+## [0.9.8](https://github.com/i18next/i18next-cli/compare/v0.9.7...v0.9.8) - 2025-09-25
 
 - support t returnObjects
 
-## [0.9.7] - 2025-09-25
+## [0.9.7](https://github.com/i18next/i18next-cli/compare/v0.9.6...v0.9.7) - 2025-09-25
 
 - support t key fallbacks
 
-## [0.9.6] - 2025-09-25
+## [0.9.6](https://github.com/i18next/i18next-cli/compare/v0.9.5...v0.9.6) - 2025-09-25
 
 - show amount of namespaces in status output
 
-## [0.9.5] - 2025-09-25
+## [0.9.5](https://github.com/i18next/i18next-cli/compare/v0.9.4...v0.9.5) - 2025-09-25
 
 - introduced ignoredTags option
 
-## [0.9.4] - 2025-09-25
+## [0.9.4](https://github.com/i18next/i18next-cli/compare/v0.9.3...v0.9.4) - 2025-09-25
 
 ### Added
 - **Status Command:** Added a `--namespace` option to filter the status report by a single namespace.
@@ -44,16 +53,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Linter:** Corrected a persistent bug causing inaccurate line number reporting for found issues.
 - **Linter:** Significantly improved accuracy by adding heuristics to ignore URLs, paths, symbols, and common non-translatable JSX attributes (like `className`, `type`, etc.).
 
-## [0.9.3] - 2025-09-25
+## [0.9.3](https://github.com/i18next/i18next-cli/compare/v0.9.2...v0.9.3) - 2025-09-25
 
 - improved heuristic-config
 
-## [0.9.2] - 2025-09-25
+## [0.9.2](https://github.com/i18next/i18next-cli/compare/v0.9.1...v0.9.2) - 2025-09-25
 
 - added new paths for heuristic-config
 - fix some other dependencies
 
-## [0.9.1] - 2025-09-25
+## [0.9.1](https://github.com/i18next/i18next-cli/compare/v0.9.0...v0.9.1) - 2025-09-25
 
 - move glob from devDependency to dependency
 

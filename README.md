@@ -525,6 +525,7 @@ t('invalid.key');       // ❌ TypeScript error
 The toolkit automatically detects these i18next usage patterns:
 
 ### Function Calls
+
 ```javascript
 // Basic usage
 t('key')
@@ -539,22 +540,32 @@ t('key', { ns: 'namespace' })
 t('key', { name: 'John' })
 
 // With plurals and context
-t('key', { count: 1 });
+t('key', { count: 1 }); // Cardinal plural
 t('keyWithContext', { context: 'male' });
 t('keyWithDynContext', { context: isMale ? 'male' : 'female' });
 
+// With ordinal plurals
+t('place', { count: 1, ordinal: true });
+t('place', {
+  count: 2,
+  ordinal: true,
+  defaultValue_ordinal_one: '{{count}}st place',
+  defaultValue_ordinal_two: '{{count}}nd place',
+  defaultValue_ordinal_other: '{{count}}th place'
+});
+
 // With key fallbacks
 t(['key.primary', 'key.fallback']);
-t(['key.primary', 'key.fallback'], 'The fallback value');
 t(['key.primary', 'key.fallback'], { defaultValue: 'The fallback value' });
 
 // With structured content (returnObjects)
 t('countries', { returnObjects: true });
 ```
 
-The extractor correctly handles pluralization (`count`) and context options, generating all necessary suffixed keys (e.g., `key_one`, `key_other`, `keyWithContext_male`). It can even statically analyze ternary expressions in the `context` option to extract all possible variations.
+The extractor correctly handles **cardinal and ordinal plurals** (`count`), as well as context options, generating all necessary suffixed keys (e.g., `key_one`, `key_ordinal_one`, `keyWithContext_male`). It can even statically analyze ternary expressions in the `context` option to extract all possible variations.
 
 ### React Components
+
 ```jsx
 // Trans component
 <Trans i18nKey="welcome">Welcome {{name}}</Trans>
@@ -568,6 +579,7 @@ const { t } = useTranslation(['ns1', 'ns2']);
 ```
 
 ### Complex Patterns
+
 ```javascript
 // Aliased functions
 const translate = t;
