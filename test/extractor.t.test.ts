@@ -477,5 +477,32 @@ describe('extractor: advanced t features', () => {
         item_other: '{{count}} items',
       })
     })
+
+    it('should generate ordinal plural keys when ordinal: true is used', async () => {
+      const sampleCode = `
+        t('place', { 
+          count: 1, 
+          ordinal: true,
+          defaultValue_ordinal_one: "{{count}}st place",
+          defaultValue_ordinal_two: "{{count}}nd place",
+          defaultValue_ordinal_few: "{{count}}rd place",
+          defaultValue_ordinal_other: "{{count}}th place",
+        });
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+
+      // For English, ordinal rules are 'one', 'two', 'few', 'other'
+      expect(translationFile!.newTranslations).toEqual({
+        place_ordinal_one: '{{count}}st place',
+        place_ordinal_two: '{{count}}nd place',
+        place_ordinal_few: '{{count}}rd place',
+        place_ordinal_other: '{{count}}th place',
+      })
+    })
   })
 })

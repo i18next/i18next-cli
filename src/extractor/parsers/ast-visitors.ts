@@ -471,18 +471,20 @@ export class ASTVisitors {
    */
   private handlePluralKeys (key: string, ns: string | undefined, options: ObjectExpression): void {
     try {
-      const pluralCategories = new Intl.PluralRules(this.config.extract?.primaryLanguage).resolvedOptions().pluralCategories
+      const isOrdinal = this.getObjectPropValue(options, 'ordinal') === true
+      const type = isOrdinal ? 'ordinal' : 'cardinal'
+
+      const pluralCategories = new Intl.PluralRules(this.config.extract?.primaryLanguage, { type }).resolvedOptions().pluralCategories
       const pluralSeparator = this.config.extract.pluralSeparator ?? '_'
 
-      // Get all possible default values from the options object once
       const defaultValue = this.getObjectPropValue(options, 'defaultValue')
       const defaultValueOther = this.getObjectPropValue(options, 'defaultValue_other')
 
       for (const category of pluralCategories) {
-        // 1. Look for the most specific value, e.g., `defaultValue_two`
-        const specificDefault = this.getObjectPropValue(options, `defaultValue_${category}`)
+        // Construct the specific defaultValue key, e.g., `defaultValue_ordinal_one` or `defaultValue_one`
+        const specificDefaultKey = isOrdinal ? `defaultValue_ordinal_${category}` : `defaultValue_${category}`
+        const specificDefault = this.getObjectPropValue(options, specificDefaultKey)
 
-        // 2. Determine the correct fallback chain for this category
         let finalDefaultValue: string | undefined
 
         if (typeof specificDefault === 'string') {
@@ -497,12 +499,16 @@ export class ASTVisitors {
           // If all else fails, use the main `defaultValue` as a last resort
           finalDefaultValue = defaultValue
         } else {
-          // If no defaults are provided at all, construct one from the key
-          finalDefaultValue = `${key}${pluralSeparator}${category}`
+          finalDefaultValue = key // Fallback to the key itself
         }
 
+        // Construct the final key, e.g., `key_ordinal_one` or `key_one`
+        const finalKey = isOrdinal
+          ? `${key}${pluralSeparator}ordinal${pluralSeparator}${category}`
+          : `${key}${pluralSeparator}${category}`
+
         this.pluginContext.addKey({
-          key: `${key}${pluralSeparator}${category}`,
+          key: finalKey,
           ns,
           defaultValue: finalDefaultValue,
           hasCount: true,
