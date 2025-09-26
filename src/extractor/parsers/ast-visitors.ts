@@ -379,7 +379,6 @@ export class ASTVisitors {
         options = arg3
       }
     }
-
     const defaultValueFromOptions = options ? this.getObjectPropValue(options, 'defaultValue') : undefined
     const finalDefaultValue = (typeof defaultValueFromOptions === 'string' ? defaultValueFromOptions : defaultValue)
 
@@ -389,7 +388,7 @@ export class ASTVisitors {
       let ns: string | undefined
 
       // Determine namespace (explicit ns > scope ns > ns:key > default)
-      if (options?.type === 'ObjectExpression') {
+      if (options) {
         const nsVal = this.getObjectPropValue(options, 'ns')
         if (typeof nsVal === 'string') ns = nsVal
       }
@@ -409,13 +408,11 @@ export class ASTVisitors {
         finalKey = `${scopeInfo.keyPrefix}${keySeparator}${key}`
       }
 
-      // The explicit defaultValue only applies to the LAST key in the fallback array.
-      // For all preceding keys, their own key is their fallback.
       const isLastKey = i === keysToProcess.length - 1
       const dv = isLastKey ? (finalDefaultValue || key) : key
 
       // Handle plurals, context, and returnObjects
-      if (options?.type === 'ObjectExpression') {
+      if (options) {
         const contextProp = this.getObjectProperty(options, 'context')
 
         // 1. Handle Dynamic Context (Ternary) first
@@ -443,8 +440,8 @@ export class ASTVisitors {
 
         // 3. Handle Plurals
         if (this.getObjectPropValue(options, 'count') !== undefined) {
-          this.handlePluralKeys(finalKey, dv, ns)
-          continue // This key is fully handled
+          this.handlePluralKeys(finalKey, ns, options)
+          continue
         }
 
         // 4. Handle returnObjects
@@ -467,27 +464,76 @@ export class ASTVisitors {
    * for each category (e.g., 'item_one', 'item_other').
    *
    * @param key - Base key name for pluralization
-   * @param defaultValue - Default value to use for all plural forms
    * @param ns - Namespace for the keys
+   * @param options - object expression options
    *
    * @private
    */
-  private handlePluralKeys (key: string, defaultValue: string | undefined, ns: string | undefined): void {
+  private handlePluralKeys (key: string, ns: string | undefined, options: ObjectExpression): void {
     try {
       const pluralCategories = new Intl.PluralRules(this.config.extract?.primaryLanguage).resolvedOptions().pluralCategories
       const pluralSeparator = this.config.extract.pluralSeparator ?? '_'
 
+      // Get all possible default values from the options object once
+      const defaultValue = this.getObjectPropValue(options, 'defaultValue')
+      const defaultValueOther = this.getObjectPropValue(options, 'defaultValue_other')
+
+      for (const category of pluralCategories) {
+        // 1. Look for the most specific value, e.g., `defaultValue_two`
+        const specificDefault = this.getObjectPropValue(options, `defaultValue_${category}`)
+
+        // 2. Determine the correct fallback chain for this category
+        let finalDefaultValue: string | undefined
+
+        if (typeof specificDefault === 'string') {
+          finalDefaultValue = specificDefault
+        } else if (category === 'one' && typeof defaultValue === 'string') {
+          // 'one' specifically falls back to the main `defaultValue` prop
+          finalDefaultValue = defaultValue
+        } else if (typeof defaultValueOther === 'string') {
+          // All other categories fall back to `defaultValue_other`
+          finalDefaultValue = defaultValueOther
+        } else if (typeof defaultValue === 'string') {
+          // If all else fails, use the main `defaultValue` as a last resort
+          finalDefaultValue = defaultValue
+        } else {
+          // If no defaults are provided at all, construct one from the key
+          finalDefaultValue = `${key}${pluralSeparator}${category}`
+        }
+
+        this.pluginContext.addKey({
+          key: `${key}${pluralSeparator}${category}`,
+          ns,
+          defaultValue: finalDefaultValue,
+          hasCount: true,
+        })
+      }
+    } catch (e) {
+      this.logger.warn(`Could not determine plural rules for language "${this.config.extract?.primaryLanguage}". Falling back to simple key extraction.`)
+      // Fallback to a simple key if Intl API fails
+      const defaultValue = this.getObjectPropValue(options, 'defaultValue')
+      this.pluginContext.addKey({ key, ns, defaultValue: typeof defaultValue === 'string' ? defaultValue : key })
+    }
+  }
+
+  /**
+   * Generates simple plural keys, typically for a <Trans> component.
+   */
+  private handleSimplePluralKeys (key: string, defaultValue: string | undefined, ns: string | undefined): void {
+    try {
+      const pluralCategories = new Intl.PluralRules(this.config.extract?.primaryLanguage).resolvedOptions().pluralCategories
+      const pluralSeparator = this.config.extract.pluralSeparator ?? '_'
       for (const category of pluralCategories) {
         this.pluginContext.addKey({
           key: `${key}${pluralSeparator}${category}`,
           ns,
           defaultValue,
-          hasCount: true
+          hasCount: true,
         })
       }
     } catch (e) {
-      this.logger.warn(`Could not determine plural rules for language "${this.config.extract?.primaryLanguage}". Falling back to simple key extraction.`)
-      this.pluginContext.addKey({ key, defaultValue, ns })
+      this.logger.warn(`Could not determine plural rules for language "${this.config.extract?.primaryLanguage}".`)
+      this.pluginContext.addKey({ key, ns, defaultValue })
     }
   }
 
@@ -547,7 +593,7 @@ export class ASTVisitors {
             this.pluginContext.addKey(extractedKey)
           }
         } else if (extractedKey.hasCount) {
-          this.handlePluralKeys(extractedKey.key, extractedKey.defaultValue, extractedKey.ns)
+          this.handleSimplePluralKeys(extractedKey.key, extractedKey.defaultValue, extractedKey.ns)
         } else {
           this.pluginContext.addKey(extractedKey)
         }

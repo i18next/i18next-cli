@@ -418,4 +418,64 @@ describe('extractor: advanced t features', () => {
       })
     })
   })
+
+  describe('plurals', () => {
+    it('should extract plural-specific default values (e.g., defaultValue_other)', async () => {
+      const sampleCode = `
+        t('DogCount', { 
+          count: 5, 
+          defaultValue_other: "{{count}} dogs", 
+          defaultValue: "{{count}} dog" 
+        });
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile!.newTranslations).toEqual({
+        DogCount_one: '{{count}} dog', // From generic defaultValue
+        DogCount_other: '{{count}} dogs', // From specific defaultValue_other
+      })
+    })
+
+    it('should generate all required keys for languages with multiple plural forms (e.g., Arabic)', async () => {
+      const sampleCode = `
+        t('item', { 
+          count: 5, 
+          defaultValue_other: "{{count}} items", 
+          defaultValue_two: "two items", 
+          defaultValue_many: "many items", 
+          defaultValue: "{{count}} item" 
+        });
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      // Create a specific config for this test with 'ar' as the primary language
+      const arabicConfig: I18nextToolkitConfig = {
+        ...mockConfig,
+        locales: ['ar'], // Set locales to only include Arabic for this test
+        extract: {
+          ...mockConfig.extract,
+          primaryLanguage: 'ar', // This is the key change
+        },
+      }
+
+      const results = await extract(arabicConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/ar/translation.json'))
+
+      expect(translationFile).toBeDefined()
+
+      // Arabic has 6 plural forms: zero, one, two, few, many, other
+      // The extractor should generate a key for each one.
+      expect(translationFile!.newTranslations).toEqual({
+        item_zero: '{{count}} items',
+        item_one: '{{count}} item',
+        item_two: 'two items',
+        item_few: '{{count}} items',
+        item_many: 'many items',
+        item_other: '{{count}} items',
+      })
+    })
+  })
 })
