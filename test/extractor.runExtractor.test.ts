@@ -378,4 +378,92 @@ describe('extractor: runExtractor', () => {
       // an_old_key was correctly removed
     })
   })
+
+  it('should handle "mixed" nested keys when updating an existing file', async () => {
+    const sampleCode = `
+      // These keys create a "mixed" structure under 'example'
+      t('example.label');
+      t('example.content.title');
+      t('example.content.body');
+    `
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+
+    const existingTranslations = {
+      example: {
+        content: {
+          // This value should be preserved
+          title: 'Existing Title',
+        },
+      },
+    }
+
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      // Create the file before running the extractor
+      [enPath]: JSON.stringify(existingTranslations),
+    })
+
+    await runExtractor(mockConfig)
+
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    // The expected output should be a merge of the existing file and the new/missing keys
+    expect(enJson).toEqual({
+      example: {
+        // The new key was correctly added alongside the existing `content` object
+        label: 'example.label',
+        content: {
+          // The existing translation was correctly preserved
+          title: 'Existing Title',
+          // The new key was added to the nested object
+          body: 'example.content.body',
+        },
+      },
+    })
+  })
+
+  it('should handle "mixed" nested keys when updating an existing file with selector api', async () => {
+    const sampleCode = `
+      // These keys create a "mixed" structure under 'example'
+      t(($) => $.example.label)
+      t(($) => $.example.content.title)
+      t(($) => $.example.content.body)
+    `
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+
+    const existingTranslations = {
+      example: {
+        content: {
+          // This value should be preserved
+          title: 'Existing Title',
+        },
+      },
+    }
+
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      // Create the file before running the extractor
+      [enPath]: JSON.stringify(existingTranslations),
+    })
+
+    await runExtractor(mockConfig)
+
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    // The expected output should be a merge of the existing file and the new/missing keys
+    expect(enJson).toEqual({
+      example: {
+        // The new key was correctly added alongside the existing `content` object
+        label: 'example.label',
+        content: {
+          // The existing translation was correctly preserved
+          title: 'Existing Title',
+          // The new key was added to the nested object
+          body: 'example.content.body',
+        },
+      },
+    })
+  })
 })
