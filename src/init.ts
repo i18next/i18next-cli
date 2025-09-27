@@ -1,6 +1,7 @@
 import inquirer from 'inquirer'
 import { writeFile, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { detectConfig } from './heuristic-config'
 
 /**
  * Determines if the current project is configured as an ESM project.
@@ -58,6 +59,15 @@ async function isEsmProject (): Promise<boolean> {
  */
 export async function runInit () {
   console.log('Welcome to the i18next-cli setup wizard!')
+  console.log('Scanning your project for a recommended configuration...')
+
+  const detectedConfig = await detectConfig()
+  if (detectedConfig) {
+    console.log('✅ Found a potential project structure. Using it for suggestions.')
+  } else {
+    console.log('Could not detect a project structure. Using standard defaults.')
+  }
+  if (typeof detectedConfig?.extract?.input === 'string') detectedConfig.extract.input = [detectedConfig?.extract?.input]
 
   const answers = await inquirer.prompt([
     {
@@ -70,20 +80,20 @@ export async function runInit () {
       type: 'input',
       name: 'locales',
       message: 'What locales does your project support? (comma-separated)',
-      default: 'en,de,fr',
+      default: detectedConfig?.locales?.join(',') || 'en,de,fr',
       filter: (input: string) => input.split(',').map(s => s.trim()),
     },
     {
       type: 'input',
       name: 'input',
       message: 'What is the glob pattern for your source files?',
-      default: 'src/**/*.{js,jsx,ts,tsx}',
+      default: detectedConfig?.extract?.input ? (detectedConfig.extract.input || [])[0] : 'src/**/*.{js,jsx,ts,tsx}',
     },
     {
       type: 'input',
       name: 'output',
       message: 'What is the path for your output resource files?',
-      default: 'public/locales/{{language}}/{{namespace}}.json',
+      default: detectedConfig?.extract?.output || 'public/locales/{{language}}/{{namespace}}.json',
     },
   ])
 

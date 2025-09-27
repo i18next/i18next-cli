@@ -5,6 +5,7 @@ import chalk from 'chalk'
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
 import { basename, extname, resolve, dirname, join, relative } from 'node:path'
 import type { I18nextToolkitConfig } from './types'
+import { getOutputPath } from './utils/file-utils'
 
 /**
  * Represents a translation resource with its namespace name and content
@@ -46,9 +47,13 @@ export async function runTypesGenerator (config: I18nextToolkitConfig) {
   const spinner = ora('Generating TypeScript types for translations...\n').start()
 
   try {
-    if (!config.types) config.types = { input: ['locales/en/*.json'], output: 'src/types/i18next.d.ts' }
-    if (config.types.input === undefined) config.types.input = ['locales/en/*.json']
-    if (!config.types.output) config.types.output = 'src/types/i18next.d.ts'
+    config.extract.primaryLanguage ||= config.locales[0] || 'en'
+    let defaultTypesInputPath = config.extract.output || `locales/${config.extract.primaryLanguage}/*.json`
+    defaultTypesInputPath = getOutputPath(defaultTypesInputPath, config.extract.primaryLanguage || 'en', '*')
+
+    if (!config.types) config.types = { input: defaultTypesInputPath, output: 'src/@types/i18next.d.ts' }
+    if (config.types.input === undefined) config.types.input = defaultTypesInputPath
+    if (!config.types.output) config.types.output = 'src/@types/i18next.d.ts'
     if (!config.types.resourcesFile) config.types.resourcesFile = join(dirname(config.types?.output), 'resources.d.ts')
 
     if (!config.types?.input || config.types?.input.length < 0) {
@@ -105,10 +110,9 @@ declare module 'i18next' {
       await mkdir(dirname(outputPath), { recursive: true })
       await writeFile(outputPath, fileContent)
       logMessages.push(`  ${chalk.green('✓')} TypeScript definitions written to ${config.types.output || ''}`)
-
-      spinner.succeed(chalk.bold('TypeScript definitions generated successfully.'))
-      logMessages.forEach(msg => console.log(msg))
     }
+    spinner.succeed(chalk.bold('TypeScript definitions generated successfully.'))
+    logMessages.forEach(msg => console.log(msg))
   } catch (error) {
     spinner.fail(chalk.red('Failed to generate TypeScript definitions.'))
     console.error(error)

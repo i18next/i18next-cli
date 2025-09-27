@@ -1,5 +1,5 @@
 import { vol } from 'memfs'
-import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { vi, describe, it, expect, beforeEach, afterEach, Mock } from 'vitest'
 import { runInit } from '../src/init'
 import inquirer from 'inquirer'
 import { resolve } from 'path'
@@ -10,6 +10,9 @@ vi.mock('fs/promises', async () => {
   return memfs.fs.promises
 })
 vi.mock('inquirer')
+vi.mock('../src/heuristic-config', () => ({
+  detectConfig: vi.fn(),
+}))
 
 describe('init', () => {
   const mockAnswers = {
@@ -23,8 +26,6 @@ describe('init', () => {
     vol.reset()
     vi.clearAllMocks()
     vi.spyOn(console, 'log').mockImplementation(() => {})
-
-    // FIX: Mock process.cwd() to point to the root of the virtual file system
     vi.spyOn(process, 'cwd').mockReturnValue('/')
   })
 
@@ -86,5 +87,39 @@ describe('init', () => {
     expect(content).toContain('/** @type {import(\'i18next-cli\').I18nextToolkitConfig} */')
     expect(content).toContain('export default')
     expect(content).not.toContain('module.exports')
+  })
+
+  it('should suggest defaults from the heuristic scan if a structure is detected', async () => {
+    // Import the module to get a handle on the mocked function
+    const heuristicConfig = await import('../src/heuristic-config')
+    const detected = {
+      locales: ['en', 'fr', 'es'],
+      extract: {
+        input: ['app/**/*.{js,jsx,ts,tsx}'],
+        output: 'app/i18n/locales/{{language}}/{{namespace}}.json',
+      },
+    }
+
+    // Access the mock directly on the imported function and set its implementation
+    ;(heuristicConfig.detectConfig as Mock).mockResolvedValue(detected)
+
+    vi.mocked(inquirer.prompt).mockResolvedValue({
+      fileType: 'TypeScript (i18next.config.ts)',
+      locales: detected.locales,
+      input: detected.extract.input.join(','),
+      output: detected.extract.output,
+    })
+
+    await runInit()
+
+    const promptCalls = vi.mocked(inquirer.prompt).mock.calls[0][0] as unknown as any[]
+
+    expect(promptCalls.find(q => q.name === 'locales').default).toBe('en,fr,es')
+    expect(promptCalls.find(q => q.name === 'input').default).toBe('app/**/*.{js,jsx,ts,tsx}')
+    expect(promptCalls.find(q => q.name === 'output').default).toBe('app/i18n/locales/{{language}}/{{namespace}}.json')
+
+    const configPath = resolve(process.cwd(), 'i18next.config.ts')
+    const content = await vol.promises.readFile(configPath, 'utf-8')
+    expect(content).toContain('output: "app/i18n/locales/{{language}}/{{namespace}}.json"')
   })
 })

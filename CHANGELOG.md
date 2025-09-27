@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - not yet released
 
+## [0.9.12](https://github.com/i18next/i18next-cli/compare/v0.9.11...v0.9.12) - 2025-09-27
+
+### Added
+- **CLI:** The `init` command is now smarter. It uses a heuristic scan of the project to suggest tailored defaults for locales and file paths in the interactive setup wizard.
+
+### Fixed
+- **CLI:** Fixed a critical bug where the `types` command would hang without exiting after generating files if they already existed. [#5](https://github.com/i18next/i18next-cli/issues/5)
+- **Types Generator:** Corrected an issue where default configuration values were not being applied, causing the `types` command to fail if the `types` property was not explicitly defined in the config file.
+
 ## [0.9.11](https://github.com/i18next/i18next-cli/compare/v0.9.10...v0.9.11) - 2025-09-26
 
 ### Added
