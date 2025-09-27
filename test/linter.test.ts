@@ -251,4 +251,38 @@ describe('linter', () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1)
   })
+
+  it('should not crash on TypeScript code with decorators', async () => {
+    const sampleCodeWithDecorators = `
+    import { InjectManager, MedusaContext, MedusaService } from "@medusajs/framework/utils"
+    
+    export default class WishlistModuleService extends MedusaService({
+      Wishlist: {},
+      WishlistItem: {}
+    }) {
+      @InjectManager()
+      async getWishlistsOfVariants(
+        variantIds: string[],
+        @MedusaContext() context: any = {}
+      ): Promise<number> {
+        // This code contains no hardcoded strings
+        return 123;
+      }
+    }
+  `
+
+    const { glob } = await import('glob');
+    // Override the default glob mock to return our specific test file.
+    (glob as any).mockResolvedValue(['/src/decorator-service.ts'])
+
+    vol.fromJSON({ '/src/decorator-service.ts': sampleCodeWithDecorators })
+
+    await runLinter(mockConfig)
+
+    // Assert that the linter completes successfully and does not fail.
+    // This proves the parser did not crash.
+    expect(oraSpies.mockSucceed).toHaveBeenCalledWith(expect.stringContaining('No issues found.'))
+    expect(oraSpies.mockFail).not.toHaveBeenCalled()
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
 })

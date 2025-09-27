@@ -45,7 +45,11 @@ export async function runLinter (config: I18nextToolkitConfig) {
 
     for (const file of sourceFiles) {
       const code = await readFile(file, 'utf-8')
-      const ast = await parse(code, { syntax: 'typescript', tsx: true })
+      const ast = await parse(code, {
+        syntax: 'typescript',
+        tsx: true,
+        decorators: true
+      })
       const hardcodedStrings = findHardcodedStrings(ast, code, config)
 
       if (hardcodedStrings.length > 0) {

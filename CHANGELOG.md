@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - not yet released
 
+## [0.9.13](https://github.com/i18next/i18next-cli/compare/v0.9.12...v0.9.13) - 2025-09-27
+
+- **Linter & Extractor:** Fixed a parser crash that occurred when analyzing TypeScript files containing decorator syntax. Both the `lint` and `extract` commands will now correctly process files that use decorators. [#6](https://github.com/i18next/i18next-cli/issues/6)
+
 ## [0.9.12](https://github.com/i18next/i18next-cli/compare/v0.9.11...v0.9.12) - 2025-09-27
 
 ### Added

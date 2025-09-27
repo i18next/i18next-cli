@@ -118,6 +118,7 @@ export async function processFile (
     const ast = await parse(code, {
       syntax: 'typescript',
       tsx: true,
+      decorators: true,
       comments: true
     })
 
