@@ -1,7 +1,8 @@
-import { resolve } from 'node:path'
+import { resolve, join, dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { access } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 import { createJiti } from 'jiti'
+import { parse } from 'jsonc-parser'
 import inquirer from 'inquirer'
 import chalk from 'chalk'
 import type { I18nextToolkitConfig, Logger } from './types'
@@ -92,7 +93,11 @@ export async function loadConfig (logger: Logger = new ConsoleLogger()): Promise
 
     // Use jiti for TypeScript files, native import for JavaScript
     if (configPath.endsWith('.ts')) {
-      const jiti = createJiti(import.meta.url)
+      const aliases = await getTsConfigAliases()
+      const jiti = createJiti(process.cwd(), {
+        alias: aliases,
+      })
+
       const configModule = await jiti.import(configPath, { default: true })
       config = configModule
     } else {
@@ -120,7 +125,7 @@ export async function loadConfig (logger: Logger = new ConsoleLogger()): Promise
 }
 
 /**
- * NEW: Ensures a configuration exists, prompting the user to create one if necessary.
+ * Ensures a configuration exists, prompting the user to create one if necessary.
  * This function is a wrapper around loadConfig that provides an interactive fallback.
  *
  * @returns A promise that resolves to a valid configuration object.
@@ -155,5 +160,59 @@ export async function ensureConfig (logger: Logger = new ConsoleLogger()): Promi
   } else {
     logger.info('Operation cancelled. Please create a configuration file to proceed.')
     process.exit(0)
+  }
+}
+
+/**
+ * Searches upwards from the current directory to find the tsconfig.json file.
+ * @returns The full path to the tsconfig.json file, or null if not found.
+ */
+async function findTsConfigFile (): Promise<string | null> {
+  let currentDir = process.cwd()
+  while (true) {
+    const tsConfigPath = join(currentDir, 'tsconfig.json')
+    try {
+      await access(tsConfigPath)
+      return tsConfigPath
+    } catch {
+      // File not found, move to parent directory
+      const parentDir = dirname(currentDir)
+      if (parentDir === currentDir) {
+        // Reached the root of the file system
+        return null
+      }
+      currentDir = parentDir
+    }
+  }
+}
+
+/**
+ * Parses the project's tsconfig.json to extract path aliases for jiti.
+ * @returns A record of aliases for jiti's configuration.
+ */
+async function getTsConfigAliases (): Promise<Record<string, string>> {
+  try {
+    const tsConfigPath = await findTsConfigFile()
+    if (!tsConfigPath) return {}
+
+    const tsConfigStr = await readFile(tsConfigPath, 'utf-8')
+    const tsConfig = parse(tsConfigStr)
+    const paths = tsConfig.compilerOptions?.paths
+    const baseUrl = tsConfig.compilerOptions?.baseUrl || '.'
+    if (!paths) return {}
+
+    const aliases: Record<string, string> = {}
+    for (const [alias, aliasPaths] of Object.entries(paths as Record<string, string[]>)) {
+      if (Array.isArray(aliasPaths) && aliasPaths.length > 0) {
+        // Convert "@/*": ["./src/*"] to "@": "./src"
+        const key = alias.replace('/*', '')
+        const value = resolve(process.cwd(), baseUrl, aliasPaths[0].replace('/*', ''))
+        aliases[key] = value
+      }
+    }
+    return aliases
+  } catch (e) {
+    // Return empty if tsconfig doesn't exist or fails to parse
+    return {}
   }
 }

@@ -75,6 +75,7 @@
     "i18next-resources-for-ts": "1.7.4",
     "inquirer": "12.9.6",
     "jiti": "2.6.0",
+    "jsonc-parser": "3.3.1",
     "ora": "9.0.0",
     "swc-walk": "1.0.0"
   }
