@@ -10,12 +10,21 @@ const HEURISTIC_PATTERNS = [
   'src/locales/dev/*.json',
   'src/assets/locales/dev/*.json',
   'app/i18n/locales/dev/*.json',
+  'src/i18n/locales/dev/*.json',
 
   'public/locales/en/*.json',
   'locales/en/*.json',
   'src/locales/en/*.json',
   'src/assets/locales/en/*.json',
   'app/i18n/locales/en/*.json',
+  'src/i18n/locales/en/*.json',
+
+  'public/locales/en-*/*.json',
+  'locales/en-*/*.json',
+  'src/locales/en-*/*.json',
+  'src/assets/locales/en-*/*.json',
+  'app/i18n/locales/en-*/*.json',
+  'src/i18n/locales/en-*/*.json',
 ]
 
 /**

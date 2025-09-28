@@ -96,6 +96,7 @@ export async function loadConfig (logger: Logger = new ConsoleLogger()): Promise
       const aliases = await getTsConfigAliases()
       const jiti = createJiti(process.cwd(), {
         alias: aliases,
+        interopDefault: false,
       })
 
       const configModule = await jiti.import(configPath, { default: true })
