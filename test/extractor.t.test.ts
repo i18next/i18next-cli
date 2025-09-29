@@ -359,6 +359,45 @@ describe('extractor: advanced t features', () => {
         },
       })
     })
+
+    it('should handle custom async hook with direct assignment and selector API', async () => {
+      const sampleCode = `
+        let t = await getServerT('auth.signin', {
+          keyPrefix: 'page.submissionErrors',
+        });
+
+        const error = t(($) => $.invalidEmailError);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const customHookConfig: I18nextToolkitConfig = {
+        ...mockConfig,
+        extract: {
+          ...mockConfig.extract,
+          useTranslationNames: [
+            'useTranslation',
+            {
+              name: 'getServerT',
+              nsArg: 0,
+              keyPrefixArg: 1,
+            },
+          ],
+        },
+      }
+
+      const results = await extract(customHookConfig)
+      const authFile = results.find(r => r.path.endsWith('/locales/en/auth.signin.json'))
+
+      // This test will fail before the fix because `authFile` will be undefined.
+      expect(authFile).toBeDefined()
+      expect(authFile!.newTranslations).toEqual({
+        page: {
+          submissionErrors: {
+            invalidEmailError: 'invalidEmailError',
+          },
+        },
+      })
+    })
   })
 
   describe('getFixedT support', () => {

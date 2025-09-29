@@ -263,6 +263,11 @@ export class ASTVisitors {
   private handleUseTranslationDeclarator (node: VariableDeclarator, callExpr: CallExpression, hookConfig: UseTranslationHookConfig): void {
     let variableName: string | undefined
 
+    // Handle simple assignment: let t = useTranslation()
+    if (node.id.type === 'Identifier') {
+      variableName = node.id.value
+    }
+
     // Handle array destructuring: const [t, i18n] = useTranslation()
     if (node.id.type === 'ArrayPattern') {
       const firstElement = node.id.elements[0]
@@ -275,10 +280,12 @@ export class ASTVisitors {
     if (node.id.type === 'ObjectPattern') {
       for (const prop of node.id.properties) {
         if (prop.type === 'AssignmentPatternProperty' && prop.key.type === 'Identifier' && prop.key.value === 't') {
+          // This handles { t = defaultT }
           variableName = 't'
           break
         }
         if (prop.type === 'KeyValuePatternProperty' && prop.key.type === 'Identifier' && prop.key.value === 't' && prop.value.type === 'Identifier') {
+          // This handles { t: myT }
           variableName = prop.value.value
           break
         }

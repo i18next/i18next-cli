@@ -5,9 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0](https://github.com/i18next/i18next-cli/compare/v0.9.16...v1.0.0) - 2025-xx-yy
+## [1.0.0](https://github.com/i18next/i18next-cli/compare/v0.9.17...v1.0.0) - 2025-xx-yy
 
 - not yet released
+
+## [0.9.17](https://github.com/i18next/i18next-cli/compare/v0.9.16...v0.9.17) - 2025-09-29
+
+- **Extractor:** Fixed a bug where namespace and `keyPrefix` information from custom `useTranslationNames` hooks was ignored when the `t` function was assigned directly to a variable (e.g., `let t = myHook()`). The extractor now correctly handles this pattern in addition to destructuring assignments. [#9](https://github.com/i18next/i18next-cli/issues/9)
+
 
 ## [0.9.16](https://github.com/i18next/i18next-cli/compare/v0.9.15...v0.9.16) - 2025-09-29
 
