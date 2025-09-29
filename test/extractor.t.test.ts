@@ -271,6 +271,94 @@ describe('extractor: advanced t features', () => {
         three: '3',
       })
     })
+
+    it('should handle custom hook with configurable namespace and keyPrefix argument positions', async () => {
+      const sampleCode = `
+        const { t } = loadPageTranslations(
+          'en', // 0: locale (ignored)
+          'custom-ns', // 1: namespace
+          { keyPrefix: 'deep.prefix' } // 2: options object with keyPrefix
+        );
+
+        t('myKey', 'My Value'); // Should be extracted as 'deep.prefix.myKey' into the 'custom-ns' namespace
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      // Create a specific config for this test with the new custom hook configuration
+      const customHookConfig: I18nextToolkitConfig = {
+        ...mockConfig,
+        extract: {
+          ...mockConfig.extract,
+          // Define the custom hook and its argument positions
+          useTranslationNames: [
+            'useTranslation', // Keep the default for other tests
+            {
+              name: 'loadPageTranslations',
+              nsArg: 1,       // Namespace is the 2nd argument (index 1)
+              keyPrefixArg: 2 // Options object is the 3rd argument (index 2)
+            }
+          ]
+        }
+      }
+
+      const results = await extract(customHookConfig)
+
+      // Find the generated file for our custom namespace
+      const customNsFile = results.find(r => r.path.endsWith('/locales/en/custom-ns.json'))
+
+      expect(customNsFile).toBeDefined()
+      expect(customNsFile!.newTranslations).toEqual({
+        deep: {
+          prefix: {
+            myKey: 'My Value',
+          },
+        },
+      })
+    })
+
+    it('should handle custom async hook with configurable namespace and keyPrefix argument positions', async () => {
+      const sampleCode = `
+        const { t } = await loadPageTranslations(
+          'en', // 0: locale (ignored)
+          'custom-ns', // 1: namespace
+          { keyPrefix: 'deep.prefix' } // 2: options object with keyPrefix
+        );
+
+        t('myKey', 'My Value'); // Should be extracted as 'deep.prefix.myKey' into the 'custom-ns' namespace
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      // Create a specific config for this test with the new custom hook configuration
+      const customHookConfig: I18nextToolkitConfig = {
+        ...mockConfig,
+        extract: {
+          ...mockConfig.extract,
+          // Define the custom hook and its argument positions
+          useTranslationNames: [
+            'useTranslation', // Keep the default for other tests
+            {
+              name: 'loadPageTranslations',
+              nsArg: 1,       // Namespace is the 2nd argument (index 1)
+              keyPrefixArg: 2 // Options object is the 3rd argument (index 2)
+            }
+          ]
+        }
+      }
+
+      const results = await extract(customHookConfig)
+
+      // Find the generated file for our custom namespace
+      const customNsFile = results.find(r => r.path.endsWith('/locales/en/custom-ns.json'))
+
+      expect(customNsFile).toBeDefined()
+      expect(customNsFile!.newTranslations).toEqual({
+        deep: {
+          prefix: {
+            myKey: 'My Value',
+          },
+        },
+      })
+    })
   })
 
   describe('getFixedT support', () => {

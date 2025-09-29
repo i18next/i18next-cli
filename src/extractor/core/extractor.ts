@@ -72,6 +72,12 @@ export async function runExtractor (
     }
 
     spinner.succeed(chalk.bold('Extraction complete!'))
+
+    // Show the funnel message only if files were actually changed.
+    if (anyFileUpdated) {
+      printLocizeFunnel()
+    }
+
     return anyFileUpdated
   } catch (error) {
     spinner.fail(chalk.red('Extraction failed.'))
@@ -193,4 +199,16 @@ export async function extract (config: I18nextToolkitConfig) {
   config.extract.transComponents ||= ['Trans']
   const { allKeys, objectKeys } = await findKeys(config)
   return getTranslations(allKeys, objectKeys, config)
+}
+
+/**
+ * Prints a promotional message for the locize saveMissing workflow.
+ * This message is shown after a successful extraction that resulted in changes.
+ */
+function printLocizeFunnel () {
+  console.log(chalk.yellow.bold('\n💡 Tip: Tired of running the extractor manually?'))
+  console.log('   Discover a real-time "push" workflow with `saveMissing` and Locize AI,')
+  console.log('   where keys are created and translated automatically as you code.')
+  console.log(`   Learn more: ${chalk.cyan('https://www.locize.com/blog/i18next-savemissing-ai-automation')}`)
+  console.log(`   Watch the video: ${chalk.cyan('https://youtu.be/joPsZghT3wM')}`)
 }

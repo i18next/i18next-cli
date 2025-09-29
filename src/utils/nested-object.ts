@@ -28,15 +28,37 @@ export function setNestedValue (
     obj[path] = value
     return
   }
+
   const keys = path.split(keySeparator)
-  keys.reduce((acc, key, index) => {
-    if (index === keys.length - 1) {
-      acc[key] = value
-    } else {
-      acc[key] = acc[key] || {}
+  let current = obj
+
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]
+    const isLastKey = i === keys.length - 1
+
+    if (isLastKey) {
+      // We've reached the end of the path, set the value.
+      current[key] = value
+      return
     }
-    return acc[key]
-  }, obj)
+
+    const nextLevel = current[key]
+
+    // Check for a conflict: the path requires an object, but a primitive exists.
+    if (nextLevel !== undefined && (typeof nextLevel !== 'object' || nextLevel === null)) {
+      // Conflict detected. The parent path is already a leaf node.
+      // We must set the entire original path as a flat key on the root object.
+      obj[path] = value
+      return // Stop processing to prevent overwriting the parent.
+    }
+
+    // If the path doesn't exist, create an empty object to continue.
+    if (nextLevel === undefined) {
+      current[key] = {}
+    }
+
+    current = current[key]
+  }
 }
 
 /**

@@ -13,6 +13,12 @@ interface ScopeInfo {
   keyPrefix?: string;
 }
 
+interface UseTranslationHookConfig {
+  name: string;
+  nsArg: number;
+  keyPrefixArg: number;
+}
+
 /**
  * AST visitor class that traverses JavaScript/TypeScript syntax trees to extract translation keys.
  *
@@ -204,23 +210,37 @@ export class ASTVisitors {
    * @private
    */
   private handleVariableDeclarator (node: VariableDeclarator): void {
-    if (node.init?.type !== 'CallExpression') return
+    const init = node.init
+    if (!init) return
 
-    const callee = node.init.callee
+    // Determine the actual call expression, looking inside AwaitExpressions.
+    const callExpr =
+    init.type === 'AwaitExpression' && init.argument.type === 'CallExpression'
+      ? init.argument
+      : init.type === 'CallExpression'
+        ? init
+        : null
+
+    if (!callExpr) return
+
+    const callee = callExpr.callee
 
     // Handle: const { t } = useTranslation(...)
-    if (callee.type === 'Identifier' && (this.config.extract.useTranslationNames || ['useTranslation', 'getT', 'useT']).indexOf(callee.value) > -1) {
-      this.handleUseTranslationDeclarator(node)
-      return
+    if (callee.type === 'Identifier') {
+      const hookConfig = this.getUseTranslationConfig(callee.value)
+      if (hookConfig) {
+        this.handleUseTranslationDeclarator(node, callExpr, hookConfig)
+        return
+      }
     }
 
     // Handle: const t = i18next.getFixedT(...)
     if (
       callee.type === 'MemberExpression' &&
-    callee.property.type === 'Identifier' &&
-    callee.property.value === 'getFixedT'
+      callee.property.type === 'Identifier' &&
+      callee.property.value === 'getFixedT'
     ) {
-      this.handleGetFixedTDeclarator(node)
+      this.handleGetFixedTDeclarator(node, callExpr)
     }
   }
 
@@ -235,12 +255,12 @@ export class ASTVisitors {
    * Extracts namespace from the first argument and keyPrefix from options.
    *
    * @param node - Variable declarator with useTranslation call
+   * @param callExpr - The CallExpression node representing the useTranslation invocation
+   * @param hookConfig - Configuration describing argument positions for namespace and keyPrefix
    *
    * @private
    */
-  private handleUseTranslationDeclarator (node: VariableDeclarator): void {
-    if (!node.init || node.init.type !== 'CallExpression') return
-
+  private handleUseTranslationDeclarator (node: VariableDeclarator, callExpr: CallExpression, hookConfig: UseTranslationHookConfig): void {
     let variableName: string | undefined
 
     // Handle array destructuring: const [t, i18n] = useTranslation()
@@ -268,8 +288,9 @@ export class ASTVisitors {
     // If we couldn't find a `t` function being declared, exit
     if (!variableName) return
 
-    // Find the namespace and keyPrefix from the useTranslation call arguments
-    const nsArg = node.init.arguments?.[0]?.expression
+    // Use the configured argument indices from hookConfig
+    const nsArg = callExpr.arguments?.[hookConfig.nsArg]?.expression
+
     let defaultNs: string | undefined
     if (nsArg?.type === 'StringLiteral') {
       defaultNs = nsArg.value
@@ -277,7 +298,7 @@ export class ASTVisitors {
       defaultNs = nsArg.elements[0].expression.value
     }
 
-    const optionsArg = node.init.arguments?.[1]?.expression
+    const optionsArg = callExpr.arguments?.[hookConfig.keyPrefixArg]?.expression
     let keyPrefix: string | undefined
     if (optionsArg?.type === 'ObjectExpression') {
       const kp = this.getObjectPropValue(optionsArg, 'keyPrefix')
@@ -297,15 +318,16 @@ export class ASTVisitors {
    * - Extracts key prefix from the third argument
    *
    * @param node - Variable declarator with getFixedT call
+   * @param callExpr - The CallExpression node representing the getFixedT invocation
    *
    * @private
    */
-  private handleGetFixedTDeclarator (node: VariableDeclarator): void {
+  private handleGetFixedTDeclarator (node: VariableDeclarator, callExpr: CallExpression): void {
   // Ensure we are assigning to a simple variable, e.g., const t = ...
     if (node.id.type !== 'Identifier' || !node.init || node.init.type !== 'CallExpression') return
 
     const variableName = node.id.value
-    const args = node.init.arguments
+    const args = callExpr.arguments
 
     // getFixedT(lng, ns, keyPrefix)
     // We ignore the first argument (lng) for key extraction.
@@ -524,6 +546,12 @@ export class ASTVisitors {
 
   /**
    * Generates simple plural keys, typically for a <Trans> component.
+   *
+   * @param key - Base key name for which plural keys should be generated
+   * @param defaultValue - Optional default value to associate with each plural variant
+   * @param ns - Optional namespace to use for the generated keys
+   *
+   * @private
    */
   private handleSimplePluralKeys (key: string, defaultValue: string | undefined, ns: string | undefined): void {
     try {
@@ -795,5 +823,32 @@ export class ASTVisitors {
           (p.key?.type === 'StringLiteral' && p.key.value === propName)
         )
     )
+  }
+
+  /**
+   * Finds the configuration for a given useTranslation function name.
+   * Applies default argument positions if none are specified.
+   *
+   * @param name - The identifier name to look up in the configured useTranslationNames
+   * @returns The resolved UseTranslationHookConfig when a match is found, otherwise undefined
+   */
+  private getUseTranslationConfig (name: string): UseTranslationHookConfig | undefined {
+    const useTranslationNames = this.config.extract.useTranslationNames || ['useTranslation']
+
+    for (const item of useTranslationNames) {
+      if (typeof item === 'string' && item === name) {
+        // Default behavior for simple string entries
+        return { name, nsArg: 0, keyPrefixArg: 1 }
+      }
+      if (typeof item === 'object' && item.name === name) {
+        // Custom configuration with specified or default argument positions
+        return {
+          name: item.name,
+          nsArg: item.nsArg ?? 0,
+          keyPrefixArg: item.keyPrefixArg ?? 1,
+        }
+      }
+    }
+    return undefined
   }
 }

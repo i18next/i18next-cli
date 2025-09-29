@@ -285,8 +285,21 @@ export default defineConfig({
     // React components to analyze
     transComponents: ['Trans', 'Translation'],
     
-    // useTranslation hook variations
-    useTranslationNames: ['useTranslation', 'getT', 'useT', 'useAppTranslation'],
+    // HTML tags to preserve in Trans component default values
+    transKeepBasicHtmlNodesFor: ['br', 'strong', 'i', 'p'],
+    
+    // Hook-like functions that return a t function.
+    // Supports strings for default behavior or objects for custom argument positions.
+    useTranslationNames: [
+      'useTranslation', // Standard hook (ns: arg 0, keyPrefix: arg 1)
+      'getT',
+      'useT',
+      {
+        name: 'loadPageTranslations',
+        nsArg: 1,       // Namespace is the 2nd argument (index 1)
+        keyPrefixArg: 2 // Options with keyPrefix is the 3rd (index 2)
+      }
+    ],
 
     // Add custom JSX attributes to ignore during linting
     ignoredAttributes: ['data-testid', 'aria-label'],
@@ -297,7 +310,7 @@ export default defineConfig({
     // Namespace and key configuration
     defaultNS: 'translation',
     nsSeparator: ':',
-    keySeparator: '.',
+    keySeparator: '.', // Or `false` to disable nesting and use flat keys
     contextSeparator: '_',
     pluralSeparator: '_',
     
@@ -312,10 +325,10 @@ export default defineConfig({
     indentation: 2,
     
     // Primary language settings
-    primaryLanguage: 'en',
-    secondaryLanguages: ['de', 'fr'],
+    primaryLanguage: 'en', // Defaults to the first locale in the `locales` array
+    secondaryLanguages: ['de', 'fr'], // Defaults to all locales except primaryLanguage
 
-    defaultValue: '', // Default value for missing keys
+    defaultValue: '', // Default value for missing keys in secondary languages
   },
   
   // TypeScript type generation
