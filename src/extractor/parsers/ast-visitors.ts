@@ -1,6 +1,7 @@
 import type { Module, Node, CallExpression, VariableDeclarator, JSXElement, ArrowFunctionExpression, ObjectExpression, Expression } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, Logger } from '../../types'
 import { extractFromTransComponent } from './jsx-parser'
+import { getObjectProperty, getObjectPropValue } from './ast-utils'
 
 /**
  * Represents variable scope information tracked during AST traversal.
@@ -308,7 +309,7 @@ export class ASTVisitors {
     const optionsArg = callExpr.arguments?.[hookConfig.keyPrefixArg]?.expression
     let keyPrefix: string | undefined
     if (optionsArg?.type === 'ObjectExpression') {
-      const kp = this.getObjectPropValue(optionsArg, 'keyPrefix')
+      const kp = getObjectPropValue(optionsArg, 'keyPrefix')
       keyPrefix = typeof kp === 'string' ? kp : undefined
     }
 
@@ -374,7 +375,7 @@ export class ASTVisitors {
     if (!isFunctionToParse || node.arguments.length === 0) return
 
     const firstArg = node.arguments[0].expression
-    const keysToProcess: string[] = []
+    let keysToProcess: string[] = []
 
     if (firstArg.type === 'StringLiteral') {
       keysToProcess.push(firstArg.value)
@@ -390,6 +391,7 @@ export class ASTVisitors {
       }
     }
 
+    keysToProcess = keysToProcess.filter(key => !!key)
     if (keysToProcess.length === 0) return
 
     let isOrdinalByKey = false
@@ -420,7 +422,7 @@ export class ASTVisitors {
         options = arg3
       }
     }
-    const defaultValueFromOptions = options ? this.getObjectPropValue(options, 'defaultValue') : undefined
+    const defaultValueFromOptions = options ? getObjectPropValue(options, 'defaultValue') : undefined
     const finalDefaultValue = (typeof defaultValueFromOptions === 'string' ? defaultValueFromOptions : defaultValue)
 
     // Loop through each key found (could be one or more) and process it
@@ -430,7 +432,7 @@ export class ASTVisitors {
 
       // Determine namespace (explicit ns > scope ns > ns:key > default)
       if (options) {
-        const nsVal = this.getObjectPropValue(options, 'ns')
+        const nsVal = getObjectPropValue(options, 'ns')
         if (typeof nsVal === 'string') ns = nsVal
       }
       if (!ns && scopeInfo?.defaultNs) ns = scopeInfo.defaultNs
@@ -454,7 +456,7 @@ export class ASTVisitors {
 
       // Handle plurals, context, and returnObjects
       if (options) {
-        const contextProp = this.getObjectProperty(options, 'context')
+        const contextProp = getObjectProperty(options, 'context')
 
         // 1. Handle Dynamic Context (Ternary) first
         if (contextProp?.value?.type === 'ConditionalExpression') {
@@ -472,7 +474,7 @@ export class ASTVisitors {
         }
 
         // 2. Handle Static Context
-        const contextValue = this.getObjectPropValue(options, 'context')
+        const contextValue = getObjectPropValue(options, 'context')
         if (typeof contextValue === 'string' && contextValue) {
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
           this.pluginContext.addKey({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv })
@@ -480,16 +482,16 @@ export class ASTVisitors {
         }
 
         // 3. Handle Plurals
-        const hasCount = this.getObjectPropValue(options, 'count') !== undefined
-        const isOrdinalByOption = this.getObjectPropValue(options, 'ordinal') === true
+        const hasCount = getObjectPropValue(options, 'count') !== undefined
+        const isOrdinalByOption = getObjectPropValue(options, 'ordinal') === true
         if (hasCount || isOrdinalByKey) {
-        // Pass the combined ordinal flag to the handler
+          // Pass the combined ordinal flag to the handler
           this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey)
           continue
         }
 
         // 4. Handle returnObjects
-        if (this.getObjectPropValue(options, 'returnObjects') === true) {
+        if (getObjectPropValue(options, 'returnObjects') === true) {
           this.objectKeys.add(finalKey)
           // Fall through to add the base key itself
         }
@@ -522,14 +524,14 @@ export class ASTVisitors {
       const pluralSeparator = this.config.extract.pluralSeparator ?? '_'
 
       // Get all possible default values once at the start
-      const defaultValue = this.getObjectPropValue(options, 'defaultValue')
-      const otherDefault = this.getObjectPropValue(options, 'defaultValue_other')
-      const ordinalOtherDefault = this.getObjectPropValue(options, 'defaultValue_ordinal_other')
+      const defaultValue = getObjectPropValue(options, 'defaultValue')
+      const otherDefault = getObjectPropValue(options, `defaultValue${pluralSeparator}other`)
+      const ordinalOtherDefault = getObjectPropValue(options, `defaultValue${pluralSeparator}ordinal${pluralSeparator}other`)
 
       for (const category of pluralCategories) {
         // 1. Look for the most specific default value (e.g., defaultValue_ordinal_one)
-        const specificDefaultKey = isOrdinal ? `defaultValue_ordinal_${category}` : `defaultValue_${category}`
-        const specificDefault = this.getObjectPropValue(options, specificDefaultKey)
+        const specificDefaultKey = isOrdinal ? `defaultValue${pluralSeparator}ordinal${pluralSeparator}${category}` : `defaultValue${pluralSeparator}${category}`
+        const specificDefault = getObjectPropValue(options, specificDefaultKey)
 
         // 2. Determine the final default value using a clear fallback chain
         let finalDefaultValue: string | undefined
@@ -569,7 +571,7 @@ export class ASTVisitors {
     } catch (e) {
       this.logger.warn(`Could not determine plural rules for language "${this.config.extract?.primaryLanguage}". Falling back to simple key extraction.`)
       // Fallback to a simple key if Intl API fails
-      const defaultValue = this.getObjectPropValue(options, 'defaultValue')
+      const defaultValue = getObjectPropValue(options, 'defaultValue')
       this.pluginContext.addKey({ key, ns, defaultValue: typeof defaultValue === 'string' ? defaultValue : key })
     }
   }
@@ -617,20 +619,20 @@ export class ASTVisitors {
     if (elementName && (this.config.extract.transComponents || ['Trans']).includes(elementName)) {
       const extractedKey = extractFromTransComponent(node, this.config)
       if (extractedKey) {
-      // If ns is not explicitly set on the component, try to find it from the `t` prop
+        // If ns is not explicitly set on the component, try to find it from the `t` prop
         if (!extractedKey.ns) {
           const tProp = node.opening.attributes?.find(
             attr =>
               attr.type === 'JSXAttribute' &&
-            attr.name.type === 'Identifier' &&
-            attr.name.value === 't'
+              attr.name.type === 'Identifier' &&
+              attr.name.value === 't'
           )
 
           // Check if the prop value is an identifier (e.g., t={t})
           if (
             tProp?.type === 'JSXAttribute' &&
-          tProp.value?.type === 'JSXExpressionContainer' &&
-          tProp.value.expression.type === 'Identifier'
+            tProp.value?.type === 'JSXExpressionContainer' &&
+            tProp.value.expression.type === 'Identifier'
           ) {
             const tIdentifier = tProp.value.expression.value
             const scopeInfo = this.getVarFromScope(tIdentifier)
@@ -653,15 +655,35 @@ export class ASTVisitors {
             for (const context of contextValues) {
               this.pluginContext.addKey({ key: `${extractedKey.key}${contextSeparator}${context}`, ns: extractedKey.ns, defaultValue: extractedKey.defaultValue })
             }
-            // Add the base key as well
-            this.pluginContext.addKey(extractedKey)
+            // Only add the base key as a fallback if the context is dynamic (i.e., not a simple string).
+            if (extractedKey.contextExpression.type !== 'StringLiteral') {
+              this.pluginContext.addKey(extractedKey)
+            }
           }
         } else if (extractedKey.hasCount) {
-          this.handleSimplePluralKeys(extractedKey.key, extractedKey.defaultValue, extractedKey.ns)
+          // Find isOrdinal prop on the <Trans> component
+          const ordinalAttr = node.opening.attributes?.find(
+            (attr) =>
+              attr.type === 'JSXAttribute' &&
+              attr.name.type === 'Identifier' &&
+              attr.name.value === 'ordinal'
+          )
+          const isOrdinal = !!ordinalAttr
+
+          // If tOptions are provided, use the advanced plural handler
+          const optionsNode = extractedKey.optionsNode ?? { type: 'ObjectExpression', properties: [], span: { start: 0, end: 0, ctxt: 0 } }
+
+          // Inject the defaultValue from children into the options object
+          optionsNode.properties.push({
+            type: 'KeyValueProperty',
+            key: { type: 'Identifier', value: 'defaultValue', optional: false, span: { start: 0, end: 0, ctxt: 0 } },
+            value: { type: 'StringLiteral', value: extractedKey.defaultValue!, span: { start: 0, end: 0, ctxt: 0 } }
+          })
+
+          this.handlePluralKeys(extractedKey.key, extractedKey.ns, optionsNode, isOrdinal)
         } else {
           this.pluginContext.addKey(extractedKey)
         }
-      // The duplicated addKey call has been removed.
       }
     }
   }
@@ -690,47 +712,6 @@ export class ASTVisitors {
       }
       if (curr.type === 'Identifier') names.unshift(curr.value)
       return names.join('.')
-    }
-    return undefined
-  }
-
-  /**
-   * Extracts string value from object property.
-   *
-   * Looks for properties by name and returns their string values.
-   * Used for extracting options like 'ns', 'defaultValue', 'context', etc.
-   *
-   * @param object - Object expression to search
-   * @param propName - Property name to find
-   * @returns String value if found, empty string if property exists but isn't a string, undefined if not found
-   *
-   * @private
-   */
-  private getObjectPropValue (object: ObjectExpression, propName: string): string | boolean | number | undefined {
-    const prop = (object.properties).find(
-      (p) =>
-        p.type === 'KeyValueProperty' &&
-        (
-          (p.key?.type === 'Identifier' && p.key.value === propName) ||
-          (p.key?.type === 'StringLiteral' && p.key.value === propName)
-        )
-    )
-
-    if (prop?.type === 'KeyValueProperty') {
-      const val = prop.value
-      // Return concrete literal values when possible
-      if (val.type === 'StringLiteral') {
-        return val.value
-      }
-      if (val.type === 'BooleanLiteral') {
-        return val.value
-      }
-      if (val.type === 'NumericLiteral') {
-        return val.value
-      }
-      // For other expression types (identifier, member expr, etc.) we only care that the prop exists.
-      // Return an empty string to indicate presence.
-      return ''
     }
     return undefined
   }
@@ -827,32 +808,6 @@ export class ASTVisitors {
 
     // We can't statically determine the value of other expressions (e.g., variables, function calls)
     return []
-  }
-
-  /**
-   * Finds and returns the full property node (KeyValueProperty) for the given
-   * property name from an ObjectExpression.
-   *
-   * Matches both identifier keys (e.g., { ns: 'value' }) and string literal keys
-   * (e.g., { 'ns': 'value' }).
-   *
-   * This helper returns the full property node rather than just its primitive
-   * value so callers can inspect expression types (ConditionalExpression, etc.).
-   *
-   * @private
-   * @param object - The SWC ObjectExpression to search
-   * @param propName - The property name to locate
-   * @returns The matching KeyValueProperty node if found, otherwise undefined.
-   */
-  private getObjectProperty (object: ObjectExpression, propName: string): any {
-    return (object.properties).find(
-      (p) =>
-        p.type === 'KeyValueProperty' &&
-        (
-          (p.key?.type === 'Identifier' && p.key.value === propName) ||
-          (p.key?.type === 'StringLiteral' && p.key.value === propName)
-        )
-    )
   }
 
   /**

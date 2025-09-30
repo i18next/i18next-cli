@@ -1,4 +1,4 @@
-import type { Node, Expression } from '@swc/core'
+import type { Node, Expression, ObjectExpression } from '@swc/core'
 
 /**
  * Main configuration interface for the i18next toolkit.
@@ -253,6 +253,9 @@ export interface ExtractedKey {
 
   /** Whether this key is used with ordinal pluralization */
   isOrdinal?: boolean;
+
+  /** AST node for options object, used for advanced plural handling in Trans */
+  optionsNode?: ObjectExpression;
 
   /** hold the raw context expression from the AST */
   contextExpression?: Expression;

@@ -1,5 +1,6 @@
 import type { JSXElement } from '@swc/core'
 import type { ExtractedKey, I18nextToolkitConfig } from '../../types'
+import { getObjectProperty, getObjectPropValue } from './ast-utils'
 
 /**
  * Extracts translation keys from JSX Trans components.
@@ -55,13 +56,23 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
   )
   const hasCount = !!countAttr
 
+  const tOptionsAttr = node.opening.attributes?.find(
+    (attr) =>
+      attr.type === 'JSXAttribute' &&
+      attr.name.type === 'Identifier' &&
+      attr.name.value === 'tOptions'
+  )
+  const optionsNode = (tOptionsAttr?.type === 'JSXAttribute' && tOptionsAttr.value?.type === 'JSXExpressionContainer' && tOptionsAttr.value.expression.type === 'ObjectExpression')
+    ? tOptionsAttr.value.expression
+    : undefined
+
   const contextAttr = node.opening.attributes?.find(
     (attr) =>
       attr.type === 'JSXAttribute' &&
       attr.name.type === 'Identifier' &&
       attr.name.value === 'context'
   )
-  const contextExpression = (contextAttr?.type === 'JSXAttribute' && contextAttr.value?.type === 'JSXExpressionContainer')
+  let contextExpression = (contextAttr?.type === 'JSXAttribute' && contextAttr.value?.type === 'JSXExpressionContainer')
     ? contextAttr.value.expression
     : undefined
 
@@ -76,13 +87,27 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
     return null
   }
 
-  const nsAttr = node.opening.attributes?.find(
-    (attr) =>
-      attr.type === 'JSXAttribute' && attr.name.type === 'Identifier' && attr.name.value === 'ns'
-  )
-  const ns = nsAttr?.type === 'JSXAttribute' && nsAttr.value?.type === 'StringLiteral'
-    ? nsAttr.value.value
-    : undefined
+  // 1. Prioritize direct props for 'ns' and 'context'
+  const nsAttr = node.opening.attributes?.find(attr => attr.type === 'JSXAttribute' && attr.name.type === 'Identifier' && attr.name.value === 'ns')
+  let ns: string | undefined
+  if (nsAttr?.type === 'JSXAttribute' && nsAttr.value?.type === 'StringLiteral') {
+    ns = nsAttr.value.value
+  } else {
+    ns = undefined
+  }
+
+  // 2. If not found, fall back to looking inside tOptions
+  if (optionsNode) {
+    if (ns === undefined) {
+      ns = getObjectPropValue(optionsNode, 'ns') as string | undefined
+    }
+    if (contextExpression === undefined) {
+      const contextPropFromOptions = getObjectProperty(optionsNode, 'context')
+      if (contextPropFromOptions?.value) {
+        contextExpression = contextPropFromOptions.value
+      }
+    }
+  }
 
   let defaultValue = config.extract.defaultValue || ''
   if (defaultsAttr?.type === 'JSXAttribute' && defaultsAttr.value?.type === 'StringLiteral') {
@@ -91,7 +116,7 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
     defaultValue = serializeJSXChildren(node.children, config)
   }
 
-  return { key, ns, defaultValue: defaultValue || key, hasCount, contextExpression }
+  return { key, ns, defaultValue: defaultValue || key, hasCount, contextExpression, optionsNode }
 }
 
 /**

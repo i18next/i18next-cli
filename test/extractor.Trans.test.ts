@@ -169,4 +169,49 @@ describe('extractor: advanced Trans features', () => {
       friend_female: 'A friend',
     })
   })
+
+  it('should extract plural-specific default values from tOptions', async () => {
+    const sampleCode = `
+      <Trans i18nKey="item" count={count} tOptions={{ defaultValue_other: "Items" }}>
+        Item
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    expect(translationFile!.newTranslations).toEqual({
+      item_one: 'Item',
+      item_other: 'Items',
+    })
+  })
+
+  it('should find ns and context from the tOptions prop as a fallback', async () => {
+    const sampleCode = `
+      <Trans 
+        i18nKey="myKey" 
+        tOptions={{ 
+          ns: 'my-ns', 
+          context: 'male' 
+        }}
+      >
+        A value
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+
+    // It should extract to 'my-ns', not the default 'translation'
+    const myNsFile = results.find(r => r.path.endsWith('/locales/en/my-ns.json'))
+
+    expect(myNsFile).toBeDefined()
+    // It should apply the context suffix
+    expect(myNsFile!.newTranslations).toEqual({
+      myKey_male: 'A value',
+    })
+  })
 })

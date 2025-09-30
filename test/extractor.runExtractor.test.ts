@@ -466,4 +466,31 @@ describe('extractor: runExtractor', () => {
       },
     })
   })
+
+  it('should not discard other keys when a t() call with an empty string is present', async () => {
+    const sampleCode = `
+      t('TITLE', 'My Title');
+      t(''); // The problematic call with an empty key
+      t('SUBTITLE', 'My Subtitle');
+    `
+
+    // Pre-populate the translation file with the TITLE key
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      [enPath]: JSON.stringify({ TITLE: 'Existing Title' }, null, 2),
+    })
+
+    await runExtractor(mockConfig)
+
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    // This test will fail before the fix because TITLE will be missing.
+    // The correct behavior is to preserve TITLE and add SUBTITLE.
+    expect(enJson).toEqual({
+      TITLE: 'Existing Title',
+      SUBTITLE: 'My Subtitle',
+    })
+  })
 })
