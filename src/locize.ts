@@ -81,13 +81,6 @@ async function interactiveCredentialSetup (config: I18nextToolkitConfig): Promis
     return undefined
   }
 
-  // Use the entered credentials for the current run
-  config.locize = {
-    projectId: answers.projectId,
-    apiKey: answers.apiKey,
-    version: answers.version,
-  }
-
   const { save } = await inquirer.prompt([{
     type: 'confirm',
     name: 'save',
@@ -116,33 +109,29 @@ LOCIZE_API_KEY=${answers.apiKey}
     console.log(chalk.green(configSnippet))
   }
 
-  return config.locize
+  return {
+    projectId: answers.projectId,
+    apiKey: answers.apiKey,
+    version: answers.version,
+  }
 }
 
 /**
- * Converts CLI options and configuration into locize-cli command arguments.
- *
- * Maps toolkit configuration and CLI flags to the appropriate locize-cli arguments:
- * - `updateValues` → `--update-values`
- * - `sourceLanguageOnly` → `--reference-language-only`
- * - `compareModificationTime` → `--compare-modification-time`
- * - `dryRun` → `--dry`
- *
- * @param command - The locize command being executed
- * @param cliOptions - CLI options passed to the command
- * @param locizeConfig - Locize configuration from the config file
- * @returns Array of command-line arguments
- *
- * @example
- * ```typescript
- * const args = cliOptionsToArgs('sync', { updateValues: true }, { dryRun: false })
- * // Returns: ['--update-values', 'true']
- * ```
+ * Helper function to build the array of arguments for the execa call.
+ * This ensures the logic is consistent for both the initial run and the retry.
  */
-function cliOptionsToArgs (command: 'sync' | 'download' | 'migrate', cliOptions: any = {}, locizeConfig: any = {}) {
-  const commandArgs: string[] = []
+function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: any): string[] {
+  const { locize: locizeConfig = {}, extract } = config
+  const { projectId, apiKey, version } = locizeConfig
 
-  // Pass-through options
+  const commandArgs: string[] = [command]
+
+  if (projectId) commandArgs.push('--project-id', projectId)
+  if (apiKey) commandArgs.push('--api-key', apiKey)
+  if (version) commandArgs.push('--ver', version)
+  // TODO: there might be more configurable locize-cli options in future
+
+  // Pass-through options from the CLI
   if (command === 'sync') {
     const updateValues = cliOptions.updateValues ?? locizeConfig.updateValues
     if (updateValues) commandArgs.push('--update-values', 'true')
@@ -153,6 +142,9 @@ function cliOptionsToArgs (command: 'sync' | 'download' | 'migrate', cliOptions:
     const dryRun = cliOptions.dryRun ?? locizeConfig.dryRun
     if (dryRun) commandArgs.push('--dry', 'true')
   }
+
+  const basePath = resolve(process.cwd(), extract.output.split('/{{language}}/')[0])
+  commandArgs.push('--path', basePath)
 
   return commandArgs
 }
@@ -189,44 +181,33 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
 
   const spinner = ora(`Running 'locize ${command}'...\n`).start()
 
-  const locizeConfig = config.locize || {}
-  const { projectId, apiKey, version } = locizeConfig
-  let commandArgs: string[] = [command]
-
-  if (projectId) commandArgs.push('--project-id', projectId)
-  if (apiKey) commandArgs.push('--api-key', apiKey)
-  if (version) commandArgs.push('--ver', version)
-  // TODO: there might be more configurable locize-cli options in future
-
-  commandArgs.push(...cliOptionsToArgs(command, cliOptions, locizeConfig))
-
-  const basePath = resolve(process.cwd(), config.extract.output.split('/{{language}}/')[0])
-  commandArgs.push('--path', basePath)
+  let effectiveConfig = config
 
   try {
-    console.log(chalk.cyan(`\nRunning 'locize ${commandArgs.join(' ')}'...`))
-    const result = await execa('locize', commandArgs, { stdio: 'pipe' })
+    // 1. First attempt
+    const initialArgs = buildArgs(command, effectiveConfig, cliOptions)
+    console.log(chalk.cyan(`\nRunning 'locize ${initialArgs.join(' ')}'...`))
+    const result = await execa('locize', initialArgs, { stdio: 'pipe' })
+
     spinner.succeed(chalk.green(`'locize ${command}' completed successfully.`))
     if (result?.stdout) console.log(result.stdout) // Print captured output on success
   } catch (error: any) {
     const stderr = error.stderr || ''
     if (stderr.includes('missing required argument')) {
-      // Fallback to interactive setup
-      const newCredentials = await interactiveCredentialSetup(config)
+      // 2. Auth failure, trigger interactive setup
+      const newCredentials = await interactiveCredentialSetup(effectiveConfig)
       if (newCredentials) {
-        // Retry the command with the new credentials
-        commandArgs = [command]
-        if (newCredentials.projectId) commandArgs.push('--project-id', newCredentials.projectId)
-        if (newCredentials.apiKey) commandArgs.push('--api-key', newCredentials.apiKey)
-        if (newCredentials.version) commandArgs.push('--ver', newCredentials.version)
-        // TODO: there might be more configurable locize-cli options in future
-        commandArgs.push(...cliOptionsToArgs(command, cliOptions, locizeConfig))
-        commandArgs.push('--path', basePath)
+        effectiveConfig = { ...effectiveConfig, locize: newCredentials }
+
+        spinner.start('Retrying with new credentials...')
         try {
-          spinner.start('Retrying with new credentials...') // Restart spinner
-          const result = await execa('locize', commandArgs, { stdio: 'pipe' })
+          // 3. Retry attempt, rebuilding args with the NOW-UPDATED currentConfig object
+          const retryArgs = buildArgs(command, effectiveConfig, cliOptions)
+          console.log(chalk.cyan(`\nRunning 'locize ${retryArgs.join(' ')}'...`))
+          const result = await execa('locize', retryArgs, { stdio: 'pipe' })
+
           spinner.succeed(chalk.green('Retry successful!'))
-          if (result?.stdout) console.log(result.stdout) // Print captured output on success
+          if (result?.stdout) console.log(result.stdout)
         } catch (retryError: any) {
           spinner.fail(chalk.red('Error during retry.'))
           console.error(retryError.stderr || retryError.message)

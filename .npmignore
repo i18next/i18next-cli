@@ -16,3 +16,4 @@ typedoc.json
 eslint.config.js
 rollup.config.js
 vitest.config.js
+coverage

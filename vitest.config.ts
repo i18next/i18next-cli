@@ -8,6 +8,10 @@ export default defineConfig({
     globals: true,
     // Look for test files in the entire project
     root: './',
+    coverage: {
+      include: ['src/**/*'],
+      exclude: ['src/types.ts', 'src/index.ts', 'src/extractor/index.ts']
+    }
   },
   plugins: [swc.vite()]
 })

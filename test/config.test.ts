@@ -1,5 +1,3 @@
-// In test/config.test.ts
-
 import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

@@ -10,4 +10,5 @@ dist/*
 
 .env.*
 
+coverage
 tryme.js

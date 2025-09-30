@@ -66,4 +66,35 @@ describe('types-generator', () => {
     expect(mainOutputFileContent).toContain('interface CustomTypeOptions')
     expect(mainOutputFileContent).toContain('resources: Resources;')
   })
+
+  it('should use default paths when types configuration is minimal', async () => {
+    const { mergeResourcesAsInterface } = await import('i18next-resources-for-ts')
+
+    // Provide a config where the `types` object is empty
+    const minimalConfig: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+      },
+      types: {
+      // Intentionally leave input and output undefined to test fallbacks
+      } as any,
+    }
+
+    vol.fromJSON({
+    // Create a file at the location the default fallback logic should find
+      '/locales/en/translation.json': JSON.stringify({ key: 'value' }),
+    })
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['/locales/en/translation.json'])
+
+    await runTypesGenerator(minimalConfig)
+
+    // Assert that the function still called the core logic
+    expect(mergeResourcesAsInterface).toHaveBeenCalled()
+
+  // You can also assert that files were created at the default output paths,
+  // for example: `expect(vol.existsSync('src/@types/i18next.d.ts')).toBe(true)`
+  })
 })
