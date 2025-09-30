@@ -365,11 +365,12 @@ export class ASTVisitors {
    * @private
    */
   private handleCallExpression (node: CallExpression): void {
-    const callee = node.callee
-    if (callee.type !== 'Identifier') return
+    const functionName = this.getFunctionName(node.callee)
+    if (!functionName) return
 
-    const scopeInfo = this.getVarFromScope(callee.value)
-    const isFunctionToParse = (this.config.extract.functions || ['t']).includes(callee.value) || scopeInfo !== undefined
+    // The scope lookup will only work for simple identifiers, which is okay for this fix.
+    const scopeInfo = this.getVarFromScope(functionName)
+    const isFunctionToParse = (this.config.extract.functions || ['t']).includes(functionName) || scopeInfo !== undefined
     if (!isFunctionToParse || node.arguments.length === 0) return
 
     const firstArg = node.arguments[0].expression
@@ -857,5 +858,59 @@ export class ASTVisitors {
       }
     }
     return undefined
+  }
+
+  /**
+   * Serializes a callee node (Identifier or MemberExpression) into a string.
+   *
+   * Produces a dotted name for simple callees that can be used for scope lookups
+   * or configuration matching.
+   *
+   * Supported inputs:
+   * - Identifier: returns the identifier name (e.g., `t` -> "t")
+   * - MemberExpression with Identifier parts: returns a dotted path of identifiers
+   *   (e.g., `i18n.t` -> "i18n.t", `i18n.getFixedT` -> "i18n.getFixedT")
+   *
+   * Behavior notes:
+   * - Computed properties are not supported and cause this function to return null
+   *   (e.g., `i18n['t']` -> null).
+   * - The base of a MemberExpression must be a simple Identifier. More complex bases
+   *   (other expressions, `this`, etc.) will result in null.
+   * - This function does not attempt to resolve or evaluate expressions — it only
+   *   serializes static identifier/member chains.
+   *
+   * Examples:
+   * - Identifier callee: { type: 'Identifier', value: 't' } -> "t"
+   * - Member callee: { type: 'MemberExpression', object: { type: 'Identifier', value: 'i18n' }, property: { type: 'Identifier', value: 't' } } -> "i18n.t"
+   *
+   * @param callee - The CallExpression callee node to serialize
+   * @returns A dotted string name for supported callees, or null when the callee
+   *          is a computed/unsupported expression.
+   *
+   * @private
+   */
+  private getFunctionName (callee: CallExpression['callee']): string | null {
+    if (callee.type === 'Identifier') {
+      return callee.value
+    }
+    if (callee.type === 'MemberExpression') {
+      const parts: string[] = []
+      let current: any = callee
+      while (current.type === 'MemberExpression') {
+        if (current.property.type === 'Identifier') {
+          parts.unshift(current.property.value)
+        } else {
+          return null // Cannot handle computed properties like i18n['t']
+        }
+        current = current.object
+      }
+      if (current.type === 'Identifier') {
+        parts.unshift(current.value)
+      } else {
+        return null // Base of the expression is not a simple identifier
+      }
+      return parts.join('.')
+    }
+    return null
   }
 }

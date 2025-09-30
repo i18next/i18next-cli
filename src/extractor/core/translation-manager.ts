@@ -47,40 +47,46 @@ export async function getTranslations (
   objectKeys: Set<string>,
   config: I18nextToolkitConfig
 ): Promise<TranslationResult[]> {
+  config.extract.primaryLanguage ||= config.locales[0] || 'en'
+  config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
+  const primaryLanguage = config.extract.primaryLanguage
   const defaultNS = config.extract.defaultNS ?? 'translation'
   const keySeparator = config.extract.keySeparator ?? '.'
   const patternsToPreserve = [...(config.extract.preservePatterns || [])]
   const mergeNamespaces = config.extract.mergeNamespaces ?? false
+  const indentation = config.extract.indentation ?? 2
+
   for (const key of objectKeys) {
     // Convert the object key to a glob pattern to preserve all its children
     patternsToPreserve.push(`${key}.*`)
   }
   const preservePatterns = patternsToPreserve.map(globToRegex)
-  config.extract.primaryLanguage ||= config.locales[0] || 'en'
-  config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
-  const primaryLanguage = config.extract.primaryLanguage
 
   // Group keys by namespace
   const keysByNS = new Map<string, ExtractedKey[]>()
   for (const key of keys.values()) {
     const ns = key.ns || defaultNS
-    if (!keysByNS.has(ns)) {
-      keysByNS.set(ns, [])
-    }
+    if (!keysByNS.has(ns)) keysByNS.set(ns, [])
     keysByNS.get(ns)!.push(key)
   }
 
   const results: TranslationResult[] = []
 
   for (const locale of config.locales) {
-    const mergedTranslations: Record<string, any> = {}
-    const mergedExisting: Record<string, any> = {}
+    const existingMergedFile = mergeNamespaces
+      ? await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, locale))) || {}
+      : null
+
+    const newMergedTranslations: Record<string, any> = {}
 
     for (const [ns, nsKeys] of keysByNS.entries()) {
       const outputPath = getOutputPath(config.extract.output, locale, mergeNamespaces ? undefined : ns)
       const fullPath = resolve(process.cwd(), outputPath)
 
-      const existingTranslations = await loadTranslationFile(fullPath) || {}
+      const existingTranslations = mergeNamespaces
+        ? existingMergedFile?.[ns] || {}
+        : await loadTranslationFile(fullPath) || {}
+
       const newTranslations: Record<string, any> = {}
 
       const existingKeys = getNestedKeys(existingTranslations, keySeparator)
@@ -91,10 +97,7 @@ export async function getTranslations (
         }
       }
 
-      const sortedKeys = (config.extract.sort === false)
-        ? nsKeys
-        : [...nsKeys].sort((a, b) => a.key.localeCompare(b.key))
-
+      const sortedKeys = (config.extract.sort === false) ? nsKeys : [...nsKeys].sort((a, b) => a.key.localeCompare(b.key))
       for (const { key, defaultValue } of sortedKeys) {
         const existingValue = getNestedValue(existingTranslations, key, keySeparator)
         const valueToSet = existingValue ?? (locale === primaryLanguage ? defaultValue : (config.extract.defaultValue ?? ''))
@@ -102,35 +105,20 @@ export async function getTranslations (
       }
 
       if (mergeNamespaces) {
-        mergedTranslations[ns] = newTranslations
-        if (Object.keys(existingTranslations).length > 0) {
-          mergedExisting[ns] = existingTranslations
-        }
+        newMergedTranslations[ns] = newTranslations
       } else {
-        const oldContent = existingTranslations ? JSON.stringify(existingTranslations, null, config.extract.indentation ?? 2) : ''
-        const newContent = JSON.stringify(newTranslations, null, config.extract.indentation ?? 2)
-
-        results.push({
-          path: fullPath,
-          updated: newContent !== oldContent,
-          newTranslations,
-          existingTranslations,
-        })
+        const oldContent = JSON.stringify(existingTranslations, null, indentation)
+        const newContent = JSON.stringify(newTranslations, null, indentation)
+        results.push({ path: fullPath, updated: newContent !== oldContent, newTranslations, existingTranslations })
       }
     }
 
     if (mergeNamespaces) {
       const outputPath = getOutputPath(config.extract.output, locale)
       const fullPath = resolve(process.cwd(), outputPath)
-      const oldContent = Object.keys(mergedExisting).length > 0 ? JSON.stringify(mergedExisting, null, config.extract.indentation ?? 2) : ''
-      const newContent = JSON.stringify(mergedTranslations, null, config.extract.indentation ?? 2)
-
-      results.push({
-        path: fullPath,
-        updated: newContent !== oldContent,
-        newTranslations: mergedTranslations,
-        existingTranslations: mergedExisting,
-      })
+      const oldContent = JSON.stringify(existingMergedFile, null, indentation)
+      const newContent = JSON.stringify(newMergedTranslations, null, indentation)
+      results.push({ path: fullPath, updated: newContent !== oldContent, newTranslations: newMergedTranslations, existingTranslations: existingMergedFile || {} })
     }
   }
 

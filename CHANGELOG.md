@@ -5,9 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0](https://github.com/i18next/i18next-cli/compare/v0.9.17...v1.0.0) - 2025-xx-yy
+## [1.0.0](https://github.com/i18next/i18next-cli/compare/v0.9.18...v1.0.0) - 2025-xx-yy
 
 - not yet released
+
+## [0.9.18](https://github.com/i18next/i18next-cli/compare/v0.9.17...v0.9.18) - 2025-09-30
+
+- **Extractor:** Fixed a bug where translation keys were not found in custom functions that were part of an object (e.g., `i18n.t(...)`). The `functions` configuration option now correctly handles member expressions in addition to simple function names. [#10](https://github.com/i18next/i18next-cli/issues/10)
+- **Extractor:** Fixed a critical bug where the `extract` command would incorrectly overwrite existing translations in secondary languages when using the `mergeNamespaces: true` option. The fix also resolves a related issue where unused keys were not being correctly pruned from the primary language file in the same scenario. The translation manager logic is now more robust for both merged and non-merged configurations. [#11](https://github.com/i18next/i18next-cli/issues/11)
+
 
 ## [0.9.17](https://github.com/i18next/i18next-cli/compare/v0.9.16...v0.9.17) - 2025-09-29
 

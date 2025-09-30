@@ -21,6 +21,7 @@ describe('extractor - runExtractor: output formats and namespace merging', () =>
     vi.clearAllMocks()
     const { glob } = await import('glob')
     ;(glob as any).mockResolvedValue(['/src/App.tsx'])
+    vi.spyOn(process, 'cwd').mockReturnValue('/')
   })
 
   const sampleCode = `
@@ -123,5 +124,48 @@ describe('extractor - runExtractor: output formats and namespace merging', () =>
     expect(fileContent).toContain('export default {')
     expect(fileContent).toContain('"translation": {')
     expect(fileContent).toContain('"ns1": {')
+  })
+
+  it('should preserve existing translations in secondary languages when mergeNamespaces is true', async () => {
+  // Setup: A source file with one key, and existing translations for two keys
+    vol.fromJSON({
+      '/src/App.tsx': "t('key1')",
+      '/locales/en.json': JSON.stringify({
+        translation: { key1: 'value1_en', key2_old: 'old_value_en' },
+      }),
+      '/locales/de.json': JSON.stringify({
+        translation: { key1: 'wert1_de', key2_old: 'alter_wert_de' },
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/App.tsx'],
+        output: 'locales/{{language}}.json',
+        mergeNamespaces: true,
+        keySeparator: false, // As per the user's config
+        primaryLanguage: 'en',
+        secondaryLanguages: ['de'],
+      },
+    }
+
+    // Action: Run the extractor
+    await runExtractor(config)
+
+    // Assertions
+    const enFileContent = JSON.parse(String(await vol.promises.readFile('/locales/en.json', 'utf-8')))
+    const deFileContent = JSON.parse(String(await vol.promises.readFile('/locales/de.json', 'utf-8')))
+
+    // English file should have the new key and the old key removed
+    expect(enFileContent).toEqual({
+      translation: { key1: 'value1_en' },
+    })
+
+    // German file should have its existing translation for key1 preserved
+    // This is the part that will fail before the fix.
+    expect(deFileContent).toEqual({
+      translation: { key1: 'wert1_de' },
+    })
   })
 })

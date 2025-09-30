@@ -632,4 +632,31 @@ describe('extractor: advanced t features', () => {
       })
     })
   })
+
+  it('should extract keys from a custom function with a member expression (i.e., i18n.t)', async () => {
+    const sampleCode = `
+    import i18n from '@/i18n';
+    const message = i18n.t('A key from a member expression');
+  `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        keySeparator: false, // Use flat keys for simplicity
+        // Explicitly tell the extractor to look for 'i18n.t'
+        functions: ['t', 'i18n.t'],
+      },
+    }
+
+    const results = await extract(customConfig)
+    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+    // This test will fail before the fix because the key will not be found.
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      'A key from a member expression': 'A key from a member expression',
+    })
+  })
 })
