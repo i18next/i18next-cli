@@ -244,6 +244,8 @@ npx i18next-cli locize-sync [options]
 
 The configuration file supports both TypeScript (`.ts`) and JavaScript (`.js`) formats. Use the `defineConfig` helper for type safety and IntelliSense.
 
+> **💡 No Installation Required?** If you don't want to install `i18next-cli` as a dependency, you can skip the `defineConfig` helper and return a plain JavaScript object or JSON instead. The `defineConfig` function is purely for TypeScript support and doesn't affect functionality.
+
 ### Basic Configuration
 
 ```typescript
@@ -257,6 +259,19 @@ export default defineConfig({
     output: 'locales/{{language}}/{{namespace}}.json',
   },
 });
+```
+
+**Alternative without local installation:**
+
+```javascript
+// i18next.config.js
+export default {
+  locales: ['en', 'de', 'fr'],
+  extract: {
+    input: ['src/**/*.{ts,tsx,js,jsx}'],
+    output: 'locales/{{language}}/{{namespace}}.json',
+  },
+};
 ```
 
 ### Advanced Configuration
