@@ -96,6 +96,38 @@ describe('status (summary view)', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('📚 Namespaces Found:   2'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de: [■■■■■■■■■■■■■□□□□□□□] 67% (4/6 keys)'))
   })
+
+  it('should correctly calculate status for ordinal plurals', async () => {
+    const { findKeys } = await import('../src/extractor/core/key-finder')
+    // Mock findKeys to return the base key with hasCount and isOrdinal flags
+    const mockKeys = new Map<string, ExtractedKey>([
+      ['translation:place', { key: 'place', ns: 'translation', hasCount: true, isOrdinal: true }],
+    ])
+    vi.mocked(findKeys).mockResolvedValue({ allKeys: mockKeys, objectKeys: new Set() })
+
+    // English has 4 ordinal forms. We provide translations for 2 of them.
+    vol.fromJSON({
+      [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify({
+        place_ordinal_one: '1st place',
+        place_ordinal_other: 'nth place',
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['de', 'en'], // using 'de' as primary to check 'en'
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        primaryLanguage: 'de',
+      },
+    }
+
+    await runStatus(config)
+
+    // Total keys for English ordinal = 4. Translated = 2.
+    // Progress should be 2/4 = 50%
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- en: [■■■■■■■■■■□□□□□□□□□□] 50% (2/4 keys)'))
+  })
 })
 
 describe('status (detailed view)', () => {
@@ -192,5 +224,69 @@ describe('status (namespace filtering)', () => {
 
     // The progress should be calculated ONLY for the 'common' namespace (2/2 keys = 100%)
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de: [■■■■■■■■■■■■■■■■■■■■] 100% (2/2 keys)'))
+  })
+
+  it('should correctly report status for Arabic when primary language is English', async () => {
+    const { findKeys } = await import('../src/extractor/core/key-finder')
+
+    // Mock findKeys to return the BASE key with hasCount: true
+    const mockKeys = new Map<string, ExtractedKey>([
+      ['translation:item', { key: 'item', ns: 'translation', hasCount: true }],
+    ])
+    vi.mocked(findKeys).mockResolvedValue({ allKeys: mockKeys, objectKeys: new Set() })
+
+    vol.fromJSON({
+      [resolve(process.cwd(), 'locales/ar/translation.json')]: JSON.stringify({
+        item_one: 'قطعة واحدة', // 1 of 6 Arabic forms is translated
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'ar'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        primaryLanguage: 'en',
+      },
+    }
+
+    await runStatus(config)
+
+    // Arabic requires 6 plural forms. 1 is translated.
+    // Progress should be 1/6 = 17% (rounded)
+    // 17% of 20 bars is floor(3.4) = 3 bars
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- ar: [■■■□□□□□□□□□□□□□□□□□] 17% (1/6 keys)'))
+  })
+
+  it('should correctly report status for English when primary language is Arabic', async () => {
+    const { findKeys } = await import('../src/extractor/core/key-finder')
+
+    // Mock findKeys to return the BASE key with hasCount: true
+    const mockKeys = new Map<string, ExtractedKey>([
+      ['translation:item', { key: 'item', ns: 'translation', hasCount: true }],
+    ])
+    vi.mocked(findKeys).mockResolvedValue({ allKeys: mockKeys, objectKeys: new Set() })
+
+    vol.fromJSON({
+      [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify({
+        item_one: 'one item',
+        item_other: 'other items', // 2 of 2 English forms are translated
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['ar', 'en'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        primaryLanguage: 'ar',
+      },
+    }
+
+    await runStatus(config)
+
+    // English requires 2 plural forms. Both are translated.
+    // Progress should be 2/2 = 100%
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- en: [■■■■■■■■■■■■■■■■■■■■] 100% (2/2 keys)'))
   })
 })

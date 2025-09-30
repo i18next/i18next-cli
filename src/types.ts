@@ -251,6 +251,9 @@ export interface ExtractedKey {
   /** Whether this key is used with pluralization (count parameter) */
   hasCount?: boolean;
 
+  /** Whether this key is used with ordinal pluralization */
+  isOrdinal?: boolean;
+
   /** hold the raw context expression from the AST */
   contextExpression?: Expression;
 }

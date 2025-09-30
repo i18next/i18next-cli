@@ -631,6 +631,30 @@ describe('extractor: advanced t features', () => {
         place_ordinal_other: '{{count}}th place',
       })
     })
+
+    it('should extract ordinal plural keys from a key with an _ordinal suffix', async () => {
+      const sampleCode = `
+      t('place_ordinal', { 
+        count: 1, 
+        // Test with specific default values for ordinal forms
+        defaultValue_ordinal_one: "{{count}}st place",
+        defaultValue_ordinal_other: "{{count}}th place",
+      });
+    `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      // English has 4 ordinal forms: one, two, few, other
+      expect(translationFile!.newTranslations).toEqual({
+        place_ordinal_one: '{{count}}st place', // specific default
+        place_ordinal_two: '{{count}}th place', // fallback to _other
+        place_ordinal_few: '{{count}}th place', // fallback to _other
+        place_ordinal_other: '{{count}}th place',
+      })
+    })
   })
 
   it('should extract keys from a custom function with a member expression (i.e., i18n.t)', async () => {

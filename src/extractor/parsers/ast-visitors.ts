@@ -392,6 +392,17 @@ export class ASTVisitors {
 
     if (keysToProcess.length === 0) return
 
+    let isOrdinalByKey = false
+    const pluralSeparator = this.config.extract.pluralSeparator ?? '_'
+
+    for (let i = 0; i < keysToProcess.length; i++) {
+      if (keysToProcess[i].endsWith(`${pluralSeparator}ordinal`)) {
+        isOrdinalByKey = true
+        // Normalize the key by stripping the suffix
+        keysToProcess[i] = keysToProcess[i].slice(0, -8)
+      }
+    }
+
     let defaultValue: string | undefined
     let options: ObjectExpression | undefined
 
@@ -469,8 +480,11 @@ export class ASTVisitors {
         }
 
         // 3. Handle Plurals
-        if (this.getObjectPropValue(options, 'count') !== undefined) {
-          this.handlePluralKeys(finalKey, ns, options)
+        const hasCount = this.getObjectPropValue(options, 'count') !== undefined
+        const isOrdinalByOption = this.getObjectPropValue(options, 'ordinal') === true
+        if (hasCount || isOrdinalByKey) {
+        // Pass the combined ordinal flag to the handler
+          this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey)
           continue
         }
 
@@ -496,43 +510,50 @@ export class ASTVisitors {
    * @param key - Base key name for pluralization
    * @param ns - Namespace for the keys
    * @param options - object expression options
+   * @param isOrdinal - isOrdinal flag
    *
    * @private
    */
-  private handlePluralKeys (key: string, ns: string | undefined, options: ObjectExpression): void {
+  private handlePluralKeys (key: string, ns: string | undefined, options: ObjectExpression, isOrdinal: boolean): void {
     try {
-      const isOrdinal = this.getObjectPropValue(options, 'ordinal') === true
       const type = isOrdinal ? 'ordinal' : 'cardinal'
 
       const pluralCategories = new Intl.PluralRules(this.config.extract?.primaryLanguage, { type }).resolvedOptions().pluralCategories
       const pluralSeparator = this.config.extract.pluralSeparator ?? '_'
 
+      // Get all possible default values once at the start
       const defaultValue = this.getObjectPropValue(options, 'defaultValue')
-      const defaultValueOther = this.getObjectPropValue(options, 'defaultValue_other')
+      const otherDefault = this.getObjectPropValue(options, 'defaultValue_other')
+      const ordinalOtherDefault = this.getObjectPropValue(options, 'defaultValue_ordinal_other')
 
       for (const category of pluralCategories) {
-        // Construct the specific defaultValue key, e.g., `defaultValue_ordinal_one` or `defaultValue_one`
+        // 1. Look for the most specific default value (e.g., defaultValue_ordinal_one)
         const specificDefaultKey = isOrdinal ? `defaultValue_ordinal_${category}` : `defaultValue_${category}`
         const specificDefault = this.getObjectPropValue(options, specificDefaultKey)
 
+        // 2. Determine the final default value using a clear fallback chain
         let finalDefaultValue: string | undefined
-
         if (typeof specificDefault === 'string') {
+          // 1. Use the most specific default if it exists (e.g., defaultValue_one)
           finalDefaultValue = specificDefault
         } else if (category === 'one' && typeof defaultValue === 'string') {
-          // 'one' specifically falls back to the main `defaultValue` prop
+          // 2. SPECIAL CASE: The 'one' category falls back to the main 'defaultValue' prop
           finalDefaultValue = defaultValue
-        } else if (typeof defaultValueOther === 'string') {
-          // All other categories fall back to `defaultValue_other`
-          finalDefaultValue = defaultValueOther
+        } else if (isOrdinal && typeof ordinalOtherDefault === 'string') {
+          // 3a. Other ordinal categories fall back to 'defaultValue_ordinal_other'
+          finalDefaultValue = ordinalOtherDefault
+        } else if (!isOrdinal && typeof otherDefault === 'string') {
+          // 3b. Other cardinal categories fall back to 'defaultValue_other'
+          finalDefaultValue = otherDefault
         } else if (typeof defaultValue === 'string') {
-          // If all else fails, use the main `defaultValue` as a last resort
+          // 4. If no '_other' is found, all categories can fall back to the main 'defaultValue'
           finalDefaultValue = defaultValue
         } else {
-          finalDefaultValue = key // Fallback to the key itself
+          // 5. Final fallback to the base key itself
+          finalDefaultValue = key
         }
 
-        // Construct the final key, e.g., `key_ordinal_one` or `key_one`
+        // 3. Construct the final plural key
         const finalKey = isOrdinal
           ? `${key}${pluralSeparator}ordinal${pluralSeparator}${category}`
           : `${key}${pluralSeparator}${category}`
@@ -542,6 +563,7 @@ export class ASTVisitors {
           ns,
           defaultValue: finalDefaultValue,
           hasCount: true,
+          isOrdinal
         })
       }
     } catch (e) {

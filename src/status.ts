@@ -21,11 +21,13 @@ interface StatusOptions {
  */
 interface StatusReport {
   /** Total number of extracted keys across all namespaces */
-  totalKeys: number;
+  totalBaseKeys: number;
   /** Map of namespace names to their extracted keys */
   keysByNs: Map<string, ExtractedKey[]>;
   /** Map of locale codes to their translation status data */
   locales: Map<string, {
+    /** Total number of extracted keys per locale */
+    totalKeys: number;
     /** Total number of translated keys for this locale */
     totalTranslated: number;
     /** Map of namespace names to their translation details for this locale */
@@ -87,12 +89,7 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
 
   const { allKeys: allExtractedKeys } = await findKeys(config)
-  const {
-    secondaryLanguages,
-    keySeparator = '.',
-    defaultNS = 'translation',
-    mergeNamespaces = false,
-  } = config.extract
+  const { secondaryLanguages, keySeparator = '.', defaultNS = 'translation', mergeNamespaces = false, pluralSeparator = '_' } = config.extract
 
   const keysByNs = new Map<string, ExtractedKey[]>()
   for (const key of allExtractedKeys.values()) {
@@ -102,13 +99,14 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
   }
 
   const report: StatusReport = {
-    totalKeys: allExtractedKeys.size,
+    totalBaseKeys: allExtractedKeys.size,
     keysByNs,
     locales: new Map(),
   }
 
   for (const locale of secondaryLanguages) {
     let totalTranslatedForLocale = 0
+    let totalKeysForLocale = 0
     const namespaces = new Map<string, any>()
 
     const mergedTranslations = mergeNamespaces
@@ -121,24 +119,41 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
         : await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, locale, ns))) || {}
 
       let translatedInNs = 0
-      const keyDetails = keysInNs.map(({ key }) => {
-        // Search for the key within the correct namespace object
-        const value = getNestedValue(translationsForNs, key, keySeparator ?? '.')
-        const isTranslated = !!value
-        if (isTranslated) translatedInNs++
-        return { key, isTranslated }
-      })
+      let totalInNs = 0
+      const keyDetails: Array<{ key: string; isTranslated: boolean }> = []
 
-      namespaces.set(ns, {
-        totalKeys: keysInNs.length,
-        translatedKeys: translatedInNs,
-        keyDetails,
-      })
+      // This is the new, language-aware logic loop
+      for (const { key: baseKey, hasCount, isOrdinal } of keysInNs) {
+        if (hasCount) {
+          const type = isOrdinal ? 'ordinal' : 'cardinal'
+          // It's a plural key: expand it based on the current locale's rules
+          const pluralCategories = new Intl.PluralRules(locale, { type }).resolvedOptions().pluralCategories
+          for (const category of pluralCategories) {
+            totalInNs++
+            const pluralKey = isOrdinal
+              ? `${baseKey}${pluralSeparator}ordinal${pluralSeparator}${category}`
+              : `${baseKey}${pluralSeparator}${category}`
+            const value = getNestedValue(translationsForNs, pluralKey, keySeparator ?? '.')
+            const isTranslated = !!value
+            if (isTranslated) translatedInNs++
+            keyDetails.push({ key: pluralKey, isTranslated })
+          }
+        } else {
+          // It's a simple key
+          totalInNs++
+          const value = getNestedValue(translationsForNs, baseKey, keySeparator ?? '.')
+          const isTranslated = !!value
+          if (isTranslated) translatedInNs++
+          keyDetails.push({ key: baseKey, isTranslated })
+        }
+      }
+
+      namespaces.set(ns, { totalKeys: totalInNs, translatedKeys: translatedInNs, keyDetails })
       totalTranslatedForLocale += translatedInNs
+      totalKeysForLocale += totalInNs
     }
-    report.locales.set(locale, { totalTranslated: totalTranslatedForLocale, namespaces })
+    report.locales.set(locale, { totalKeys: totalKeysForLocale, totalTranslated: totalTranslatedForLocale, namespaces })
   }
-
   return report
 }
 
@@ -198,7 +213,7 @@ function displayDetailedLocaleReport (report: StatusReport, config: I18nextToolk
   console.log(chalk.bold(`\nKey Status for "${chalk.cyan(locale)}":`))
 
   const totalKeysForLocale = Array.from(report.keysByNs.values()).flat().length
-  printProgressBar('Overall', localeData.totalTranslated, totalKeysForLocale)
+  printProgressBar('Overall', localeData.totalTranslated, localeData.totalKeys)
 
   const namespacesToDisplay = namespaceFilter ? [namespaceFilter] : Array.from(localeData.namespaces.keys()).sort()
 
@@ -273,16 +288,16 @@ function displayOverallSummaryReport (report: StatusReport, config: I18nextToolk
 
   console.log(chalk.cyan.bold('\ni18next Project Status'))
   console.log('------------------------')
-  console.log(`🔑 Keys Found:         ${chalk.bold(report.totalKeys)}`)
+  console.log(`🔑 Keys Found:         ${chalk.bold(report.totalBaseKeys)}`)
   console.log(`📚 Namespaces Found:   ${chalk.bold(report.keysByNs.size)}`)
   console.log(`🌍 Locales:            ${chalk.bold(config.locales.join(', '))}`)
   console.log(`✅ Primary Language:   ${chalk.bold(primaryLanguage)}`)
   console.log('\nTranslation Progress:')
 
   for (const [locale, localeData] of report.locales.entries()) {
-    const percentage = report.totalKeys > 0 ? Math.round((localeData.totalTranslated / report.totalKeys) * 100) : 100
+    const percentage = localeData.totalKeys > 0 ? Math.round((localeData.totalTranslated / localeData.totalKeys) * 100) : 100
     const bar = generateProgressBarText(percentage)
-    console.log(`- ${locale}: ${bar} ${percentage}% (${localeData.totalTranslated}/${report.totalKeys} keys)`)
+    console.log(`- ${locale}: ${bar} ${percentage}% (${localeData.totalTranslated}/${localeData.totalKeys} keys)`)
   }
 
   printLocizeFunnel()
@@ -312,7 +327,7 @@ function printProgressBar (label: string, current: number, total: number) {
  */
 function generateProgressBarText (percentage: number): string {
   const totalBars = 20
-  const filledBars = Math.round((percentage / 100) * totalBars)
+  const filledBars = Math.floor((percentage / 100) * totalBars)
   const emptyBars = totalBars - filledBars
   return `[${chalk.green(''.padStart(filledBars, '■'))}${''.padStart(emptyBars, '□')}]`
 }

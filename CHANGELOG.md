@@ -5,9 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0](https://github.com/i18next/i18next-cli/compare/v0.9.18...v1.0.0) - 2025-xx-yy
+## [1.0.0](https://github.com/i18next/i18next-cli/compare/v0.9.19...v1.0.0) - 2025-xx-yy
 
 - not yet released
+
+## [0.9.19](https://github.com/i18next/i18next-cli/compare/v0.9.18...v0.9.19) - 2025-09-30
+
+- **Status Command:** Greatly improved the accuracy of the translation status report for plural keys. The command now calculates the total number of required keys for each language based on that specific language's pluralization rules (e.g., 2 forms for English, 6 for Arabic), rather than incorrectly using the primary language's rules for all locales.
+- **Extractor:** Corrected the logic for ordinal plurals and default value fallbacks. The extractor now recognizes keys with an `_ordinal` suffix as ordinal plurals. The fallback hierarchy for all plural default values (e.g., `defaultValue_one`, `defaultValue_other`) now correctly matches i18next's behavior.
 
 ## [0.9.18](https://github.com/i18next/i18next-cli/compare/v0.9.17...v0.9.18) - 2025-09-30
 
