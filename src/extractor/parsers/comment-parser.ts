@@ -23,14 +23,14 @@ import type { PluginContext, I18nextToolkitConfig } from '../../types'
  */
 export function extractKeysFromComments (
   code: string,
-  functionNames: string[],
   pluginContext: PluginContext,
   config: I18nextToolkitConfig
 ): void {
-  const functionPattern = functionNames
-    .map(n => n.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|')
-  const keyRegex = new RegExp(`(?:${functionPattern})\\s*\\(\\s*(['"])([^'"]+)\\1`, 'g')
+  // Hardcode the function name to 't' to prevent parsing other functions like 'test()'.
+  const functionNameToFind = 't'
+
+  // Use a reliable word boundary (\b) to match 't(...)' but not 'http.get(...)'.
+  const keyRegex = new RegExp(`\\b${functionNameToFind}\\s*\\(\\s*(['"])([^'"]+)\\1`, 'g')
 
   const commentTexts = collectCommentTexts(code)
 

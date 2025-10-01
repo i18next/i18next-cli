@@ -131,7 +131,7 @@ export async function processFile (
     const pluginContext = createPluginContext(allKeys)
 
     // Extract keys from comments
-    extractKeysFromComments(code, config.extract.functions || ['t'], pluginContext, config)
+    extractKeysFromComments(code, pluginContext, config)
 
     astVisitors.visit(ast)
 
