@@ -1,6 +1,6 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
-import { runExtractor } from '../src/extractor'
+import { runExtractor, extract } from '../src/extractor'
 import type { I18nextToolkitConfig } from '../src/index'
 import { resolve } from 'path'
 
@@ -492,5 +492,46 @@ describe('extractor: runExtractor', () => {
       TITLE: 'Existing Title',
       SUBTITLE: 'My Subtitle',
     })
+  })
+
+  it('should ignore files specified in the "ignore" option during extraction', async () => {
+  // Setup: Create two files, one of which should be ignored.
+    vol.fromJSON({
+      '/src/App.tsx': "t('key.from.app')",
+      '/src/ignored-file.ts': "t('key.from.ignored')",
+    })
+
+    // Mock glob to return both files, so we can ensure our logic filters them.
+    // In reality, `glob` itself would do the filtering, but this tests our code's intent.
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async (pattern, options) => {
+      if ((options?.ignore as string[]).includes('**/*.ignored.ts')) {
+        return ['/src/App.tsx'] // Simulate glob filtering
+      }
+      return ['/src/App.tsx', '/src/ignored-file.ts'] // Default return
+    })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.{ts,tsx}'],
+        // Ignore a specific file pattern
+        ignore: ['**/*.ignored.ts'],
+      },
+    }
+
+    // Action: Run the extractor
+    const results = await extract(config)
+    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+    // Assertions
+    expect(translationFile).toBeDefined()
+    const extractedKeys = translationFile!.newTranslations
+
+    // It should contain the key from the non-ignored file
+    expect(extractedKeys).toHaveProperty('key.from.app')
+    // It should NOT contain the key from the ignored file
+    expect(extractedKeys).not.toHaveProperty('key.from.ignored')
   })
 })

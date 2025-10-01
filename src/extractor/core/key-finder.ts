@@ -67,8 +67,16 @@ export async function findKeys (
  * @internal
  */
 async function processSourceFiles (config: I18nextToolkitConfig): Promise<string[]> {
+  const defaultIgnore = ['node_modules/**']
+
+  // Normalize the user's ignore option into an array
+  const userIgnore = Array.isArray(config.extract.ignore)
+    ? config.extract.ignore
+    : config.extract.ignore ? [config.extract.ignore] : []
+
   return await glob(config.extract.input, {
-    ignore: 'node_modules/**',
+    // Combine default ignore patterns with user-configured ones
+    ignore: [...defaultIgnore, ...userIgnore],
     cwd: process.cwd(),
   })
 }

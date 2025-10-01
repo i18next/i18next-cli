@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2](https://github.com/i18next/i18next-cli/compare/v1.0.1...v1.0.2) - 2025-10-01
+
+- **Extractor & Linter:** Added a new `extract.ignore` option to provide a simpler and more reliable way to exclude files from processing. This option accepts an array of glob patterns and is respected by both the `extract` and `lint` commands, avoiding the need for complex negative glob patterns.
+
 ## [1.0.1](https://github.com/i18next/i18next-cli/compare/v1.0.0...v1.0.1) - 2025-10-01
 
 - **Extractor:** Fixed a bug where the comment parser was too aggressive, causing it to incorrectly extract keys from non-translation functions (like `test()` or `http.get()`) found inside comments. The parser is now more specific and safely targets only valid, commented-out `t()` calls. [#13](https://github.com/i18next/i18next-cli/issues/13)

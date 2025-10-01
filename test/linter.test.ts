@@ -254,22 +254,22 @@ describe('linter', () => {
 
   it('should not crash on TypeScript code with decorators', async () => {
     const sampleCodeWithDecorators = `
-    import { InjectManager, MedusaContext, MedusaService } from "@medusajs/framework/utils"
-    
-    export default class WishlistModuleService extends MedusaService({
-      Wishlist: {},
-      WishlistItem: {}
-    }) {
-      @InjectManager()
-      async getWishlistsOfVariants(
-        variantIds: string[],
-        @MedusaContext() context: any = {}
-      ): Promise<number> {
-        // This code contains no hardcoded strings
-        return 123;
+      import { InjectManager, MedusaContext, MedusaService } from "@medusajs/framework/utils"
+      
+      export default class WishlistModuleService extends MedusaService({
+        Wishlist: {},
+        WishlistItem: {}
+      }) {
+        @InjectManager()
+        async getWishlistsOfVariants(
+          variantIds: string[],
+          @MedusaContext() context: any = {}
+        ): Promise<number> {
+          // This code contains no hardcoded strings
+          return 123;
+        }
       }
-    }
-  `
+    `
 
     const { glob } = await import('glob');
     // Override the default glob mock to return our specific test file.
@@ -284,5 +284,44 @@ describe('linter', () => {
     expect(oraSpies.mockSucceed).toHaveBeenCalledWith(expect.stringContaining('No issues found.'))
     expect(oraSpies.mockFail).not.toHaveBeenCalled()
     expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('should ignore files specified in the "ignore" option during linting', async () => {
+  // Setup: Create two files with hardcoded strings. One should be ignored.
+    vol.fromJSON({
+      '/src/App.tsx': '<p>A valid hardcoded string</p>',
+      '/src/legacy/ignored.tsx': '<h1>An ignored hardcoded string</h1>',
+    })
+
+    // Mock glob to respect the ignore pattern
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async (pattern, options) => {
+      if ((options?.ignore as string[]).includes('src/legacy/**')) {
+        return ['/src/App.tsx'] // Simulate glob filtering
+      }
+      return ['/src/App.tsx', '/src/legacy/ignored.tsx']
+    })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.{ts,tsx}'],
+        // Ignore all files in the 'legacy' directory
+        ignore: ['src/legacy/**'],
+      },
+    }
+
+    // Action: Run the linter
+    await runLinter(config)
+
+    // Assertions
+    // It should only find 1 issue (from App.tsx), not 2.
+    expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
+
+    // It should report the string from the non-ignored file
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Found hardcoded string: "A valid hardcoded string"'))
+    // It should NOT report the string from the ignored file
+    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('An ignored hardcoded string'))
   })
 })

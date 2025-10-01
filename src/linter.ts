@@ -39,7 +39,14 @@ export async function runLinter (config: I18nextToolkitConfig) {
   const spinner = ora('Analyzing source files...\n').start()
 
   try {
-    const sourceFiles = await glob(config.extract.input)
+    const defaultIgnore = ['node_modules/**']
+    const userIgnore = Array.isArray(config.extract.ignore)
+      ? config.extract.ignore
+      : config.extract.ignore ? [config.extract.ignore] : []
+
+    const sourceFiles = await glob(config.extract.input, {
+      ignore: [...defaultIgnore, ...userIgnore]
+    })
     let totalIssues = 0
     const issuesByFile = new Map<string, HardcodedString[]>()
 

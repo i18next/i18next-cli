@@ -30,6 +30,9 @@ export interface I18nextToolkitConfig {
     /** Glob pattern(s) for source files to scan for translation keys */
     input: string | string[];
 
+    /** Glob pattern(s) for files to ignore during extraction */
+    ignore?: string | string[];
+
     /** Output path template with placeholders: {{language}} for locale, {{namespace}} for namespace */
     output: string;
 

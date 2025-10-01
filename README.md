@@ -287,6 +287,9 @@ export default defineConfig({
     input: ['src/**/*.{ts,tsx}'],
     output: 'locales/{{language}}/{{namespace}}.json',
 
+    /** Glob pattern(s) for files to ignore during extraction */
+    ignore: ['node_modules/**'],
+
     // Use '.ts' files with `export default` instead of '.json'
     outputFormat: 'ts',
 
