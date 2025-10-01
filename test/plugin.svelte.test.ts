@@ -12,7 +12,7 @@ vi.mock('fs/promises', async () => {
 })
 vi.mock('glob', () => ({ glob: vi.fn() }))
 
-// --- CORRECTED Svelte plugin ---
+// --- Svelte plugin ---
 const sveltePlugin = (): Plugin => ({
   name: 'svelte-plugin',
   async onEnd (keys: Map<string, ExtractedKey>) {
