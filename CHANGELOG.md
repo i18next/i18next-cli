@@ -5,9 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0](https://github.com/i18next/i18next-cli/compare/v0.9.20...v1.0.0) - 2025-xx-yy
+## [1.0.0](https://github.com/i18next/i18next-cli/compare/v0.9.20...v1.0.0) - 2025-10-01
 
-- not yet released
+🎉 **Official v1.0.0 Release!**
+
+This release marks the official v1.0.0 milestone for `i18next-cli`, signifying that the tool is stable, feature-complete, and ready for production use - any future breaking changes will require a major version bump per SemVer.
+
+After extensive development and numerous bug fixes across the v0.9.x series, the core feature set is now considered robust and reliable. Thank you to everyone who contributed by reporting issues and providing valuable feedback!
 
 ## [0.9.20](https://github.com/i18next/i18next-cli/compare/v0.9.19...v0.9.20) - 2025-09-30
 
