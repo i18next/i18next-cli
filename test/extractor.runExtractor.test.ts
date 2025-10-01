@@ -467,6 +467,65 @@ describe('extractor: runExtractor', () => {
     })
   })
 
+  it('should recognize keys in arrays as expected', async () => {
+    const sampleCode = `
+      function TestingFunc() {
+        const { t } = useTranslation();
+
+        const titles = [
+          {
+            text: t(($) => $.system.nested.label),
+          },
+          {
+            text: t(($) => $.system.nested.body),
+          },
+        ];
+
+        const otherArray = [t(($) => $.system.nested.found), t(($) => $.system.nested.notFound)];
+
+        return (
+        <div>
+          <span>
+            {t(($) => $.system.title)}
+          </span>
+          {titles.map((title) => (
+            <span key={title.text}>{title.text}</span>
+          ))}
+        </div>
+        );
+      }
+    `
+    const existingTranslations = {
+      system: {
+        nested: {
+          label: 'Label to persist', // This should be preserved
+        },
+      }
+    }
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      [enPath]: JSON.stringify(existingTranslations),
+    })
+    await runExtractor(mockConfig)
+
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    expect(enJson).toEqual({
+      system: {
+        nested: {
+          label: 'Label to persist', // Preserved existing value
+          body: 'system.nested.body',
+          found: 'system.nested.found',
+          notFound: 'system.nested.notFound',
+        },
+        title: 'system.title',
+      },
+    })
+  })
+
   it('should not discard other keys when a t() call with an empty string is present', async () => {
     const sampleCode = `
       t('TITLE', 'My Title');
