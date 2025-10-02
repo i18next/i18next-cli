@@ -5,6 +5,7 @@ import { findKeys } from './extractor/core/key-finder'
 import { getNestedValue } from './utils/nested-object'
 import type { I18nextToolkitConfig, ExtractedKey } from './types'
 import { getOutputPath, loadTranslationFile } from './utils/file-utils'
+import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker'
 
 /**
  * Options for configuring the status report display.
@@ -63,7 +64,7 @@ export async function runStatus (config: I18nextToolkitConfig, options: StatusOp
   try {
     const report = await generateStatusReport(config)
     spinner.succeed('Analysis complete.')
-    displayStatusReport(report, config, options)
+    await displayStatusReport(report, config, options)
   } catch (error) {
     spinner.fail('Failed to generate status report.')
     console.error(error)
@@ -169,13 +170,13 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
  * @param config - The i18next toolkit configuration object
  * @param options - Display options determining which report type to show
  */
-function displayStatusReport (report: StatusReport, config: I18nextToolkitConfig, options: StatusOptions) {
+async function displayStatusReport (report: StatusReport, config: I18nextToolkitConfig, options: StatusOptions) {
   if (options.detail) {
-    displayDetailedLocaleReport(report, config, options.detail, options.namespace)
+    await displayDetailedLocaleReport(report, config, options.detail, options.namespace)
   } else if (options.namespace) {
-    displayNamespaceSummaryReport(report, config, options.namespace)
+    await displayNamespaceSummaryReport(report, config, options.namespace)
   } else {
-    displayOverallSummaryReport(report, config)
+    await displayOverallSummaryReport(report, config)
   }
 }
 
@@ -193,7 +194,7 @@ function displayStatusReport (report: StatusReport, config: I18nextToolkitConfig
  * @param locale - The locale code to display details for
  * @param namespaceFilter - Optional namespace to filter the display
  */
-function displayDetailedLocaleReport (report: StatusReport, config: I18nextToolkitConfig, locale: string, namespaceFilter?: string) {
+async function displayDetailedLocaleReport (report: StatusReport, config: I18nextToolkitConfig, locale: string, namespaceFilter?: string) {
   if (locale === config.extract.primaryLanguage) {
     console.log(chalk.yellow(`Locale "${locale}" is the primary language. All keys are considered present.`))
     return
@@ -237,7 +238,7 @@ function displayDetailedLocaleReport (report: StatusReport, config: I18nextToolk
     console.log(chalk.green.bold(`\nSummary: 🎉 All keys are translated for "${locale}".`))
   }
 
-  printLocizeFunnel()
+  await printLocizeFunnel()
 }
 
 /**
@@ -250,7 +251,7 @@ function displayDetailedLocaleReport (report: StatusReport, config: I18nextToolk
  * @param config - The i18next toolkit configuration object
  * @param namespace - The namespace to display summary for
  */
-function displayNamespaceSummaryReport (report: StatusReport, config: I18nextToolkitConfig, namespace: string) {
+async function displayNamespaceSummaryReport (report: StatusReport, config: I18nextToolkitConfig, namespace: string) {
   const nsData = report.keysByNs.get(namespace)
   if (!nsData) {
     console.error(chalk.red(`Error: Namespace "${namespace}" was not found in your source code.`))
@@ -269,7 +270,7 @@ function displayNamespaceSummaryReport (report: StatusReport, config: I18nextToo
     }
   }
 
-  printLocizeFunnel()
+  await printLocizeFunnel()
 }
 
 /**
@@ -283,7 +284,7 @@ function displayNamespaceSummaryReport (report: StatusReport, config: I18nextToo
  * @param report - The generated status report data
  * @param config - The i18next toolkit configuration object
  */
-function displayOverallSummaryReport (report: StatusReport, config: I18nextToolkitConfig) {
+async function displayOverallSummaryReport (report: StatusReport, config: I18nextToolkitConfig) {
   const { primaryLanguage } = config.extract
 
   console.log(chalk.cyan.bold('\ni18next Project Status'))
@@ -300,7 +301,7 @@ function displayOverallSummaryReport (report: StatusReport, config: I18nextToolk
     console.log(`- ${locale}: ${bar} ${percentage}% (${localeData.totalTranslated}/${localeData.totalKeys} keys)`)
   }
 
-  printLocizeFunnel()
+  await printLocizeFunnel()
 }
 
 /**
@@ -332,8 +333,12 @@ function generateProgressBarText (percentage: number): string {
   return `[${chalk.green(''.padStart(filledBars, '■'))}${''.padStart(emptyBars, '□')}]`
 }
 
-function printLocizeFunnel () {
+async function printLocizeFunnel () {
+  if (!(await shouldShowFunnel('status'))) return
+
   console.log(chalk.yellow.bold('\n✨ Take your localization to the next level!'))
   console.log('Manage translations with your team in the cloud with locize => https://www.locize.com/docs/getting-started')
   console.log(`Run ${chalk.cyan('npx i18next-cli locize-migrate')} to get started.`)
+
+  return recordFunnelShown('status')
 }

@@ -24,7 +24,7 @@ function sortObject (obj: any): any {
   }
 
   const sortedObj: Record<string, any> = {}
-  const keys = Object.keys(obj).sort()
+  const keys = Object.keys(obj).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
 
   for (const key of keys) {
     sortedObj[key] = sortObject(obj[key])
@@ -110,8 +110,8 @@ function buildNewTranslationsForNs (
           return sort(keyA, keyB)
         }
       }
-      // Fallback to default alphabetical sort for `sort: true` or if keys can't be mapped.
-      return a.localeCompare(b)
+      // Fallback to a case-insensitive alphabetical sort.
+      return a.localeCompare(b, undefined, { sensitivity: 'base' })
     })
 
     // 3. Rebuild the object in the final sorted order.

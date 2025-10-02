@@ -6,6 +6,7 @@ import { glob } from 'glob'
 import type { I18nextToolkitConfig } from './types'
 import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-object'
 import { getOutputPath, loadTranslationFile, serializeTranslationFile } from './utils/file-utils'
+import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker'
 
 /**
  * Synchronizes translation files across different locales by ensuring all secondary
@@ -107,7 +108,7 @@ export async function runSyncer (config: I18nextToolkitConfig) {
     logMessages.forEach(msg => console.log(msg))
 
     if (wasAnythingSynced) {
-      printLocizeFunnel()
+      await printLocizeFunnel()
     } else {
       console.log(chalk.green.bold('\n✅ All locales are already in sync.'))
     }
@@ -117,8 +118,12 @@ export async function runSyncer (config: I18nextToolkitConfig) {
   }
 }
 
-function printLocizeFunnel () {
+async function printLocizeFunnel () {
+  if (!(await shouldShowFunnel('syncer'))) return
+
   console.log(chalk.green.bold('\n✅ Sync complete.'))
   console.log(chalk.yellow('🚀 Ready to collaborate with translators? Move your files to the cloud.'))
   console.log(`   Get started with the official TMS for i18next: ${chalk.cyan('npx i18next-cli locize-migrate')}`)
+
+  return recordFunnelShown('syncer')
 }

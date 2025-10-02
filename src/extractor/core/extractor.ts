@@ -12,8 +12,7 @@ import { extractKeysFromComments } from '../parsers/comment-parser'
 import { ASTVisitors } from '../parsers/ast-visitors'
 import { ConsoleLogger } from '../../utils/logger'
 import { serializeTranslationFile } from '../../utils/file-utils'
-
-let hasLocizeFunnelBeenPrintedInWatchMode = false
+import { shouldShowFunnel, recordFunnelShown } from '../../utils/funnel-msg-tracker'
 
 /**
  * Main extractor function that runs the complete key extraction and file generation process.
@@ -98,9 +97,7 @@ export async function runExtractor (
     spinner.succeed(chalk.bold('Extraction complete!'))
 
     // Show the funnel message only if files were actually changed.
-    if (anyFileUpdated) {
-      printLocizeFunnel(isWatchMode)
-    }
+    if (anyFileUpdated) await printLocizeFunnel()
 
     return anyFileUpdated
   } catch (error) {
@@ -229,18 +226,14 @@ export async function extract (config: I18nextToolkitConfig) {
  * Prints a promotional message for the locize saveMissing workflow.
  * This message is shown after a successful extraction that resulted in changes.
  */
-function printLocizeFunnel (isWatchMode: boolean = false) {
-  // Only print if not in watch mode, or if in watch mode and not yet printed.
-  if (isWatchMode && hasLocizeFunnelBeenPrintedInWatchMode) {
-    return
-  }
+async function printLocizeFunnel () {
+  if (!(await shouldShowFunnel('extract'))) return
+
   console.log(chalk.yellow.bold('\n💡 Tip: Tired of running the extractor manually?'))
   console.log('   Discover a real-time "push" workflow with `saveMissing` and Locize AI,')
   console.log('   where keys are created and translated automatically as you code.')
   console.log(`   Learn more: ${chalk.cyan('https://www.locize.com/blog/i18next-savemissing-ai-automation')}`)
   console.log(`   Watch the video: ${chalk.cyan('https://youtu.be/joPsZghT3wM')}`)
 
-  if (isWatchMode) {
-    hasLocizeFunnelBeenPrintedInWatchMode = true // Mark as printed for watch mode
-  }
+  return recordFunnelShown('extract')
 }

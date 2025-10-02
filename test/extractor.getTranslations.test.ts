@@ -204,4 +204,28 @@ describe('extractor.getTranslations', () => {
     expect(nestedKeys[0]).toBe('cancel')
     expect(nestedKeys[1]).toBe('scroll-to-top')
   })
+
+  it('should sort keys case-insensitively when sort is true', async () => {
+    const keysMap = new Map<string, { key: string }>()
+    // Add keys in a jumbled, mixed-case order
+    keysMap.set('Zebra', { key: 'Zebra' })
+    keysMap.set('apple', { key: 'apple' })
+    keysMap.set('Appl', { key: 'Appl' })
+    keysMap.set('Banana', { key: 'Banana' })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: 'src/**/*.{ts,tsx}',
+        output: 'locales/{{language}}/{{namespace}}.json',
+        sort: true,
+      }
+    }
+
+    const [result] = await getTranslations(keysMap as any, new Set(), config)
+
+    // Assert that the keys are in case-insensitive alphabetical order.
+    const resultKeys = Object.keys(result.newTranslations)
+    expect(resultKeys).toEqual(['Appl', 'apple', 'Banana', 'Zebra'])
+  })
 })
