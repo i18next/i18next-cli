@@ -132,7 +132,9 @@ export class ASTVisitors {
             this.walk(item)
           }
         }
-      } else if (child && child.type) {
+      } else if (child && typeof child === 'object') {
+        // The condition for single objects should be the same as for array items.
+        // Do not require `child.type`. This allows traversal into class method bodies.
         this.walk(child)
       }
     }

@@ -661,4 +661,37 @@ describe('extractor: runExtractor', () => {
       'key.new': 'New Value'
     })
   })
+
+  it('should extract keys from within class methods', async () => {
+    const sampleCode = `
+      t("outside");
+      class C {
+        method() {
+          t("inside");
+        }
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    // Use a config with flat keys for a simple assertion
+    const flatKeyConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        keySeparator: false,
+      },
+    }
+
+    await runExtractor(flatKeyConfig)
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    // This will fail before the fix because "inside" will be missing.
+    expect(enJson).toEqual({
+      outside: 'outside',
+      inside: 'inside',
+    })
+  })
 })
