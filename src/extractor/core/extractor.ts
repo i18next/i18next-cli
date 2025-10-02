@@ -56,7 +56,7 @@ export async function runExtractor (
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
 
   // Ensure default function and component names are set if not provided.
-  config.extract.functions ||= ['t']
+  config.extract.functions ||= ['t', '*.t']
   config.extract.transComponents ||= ['Trans']
 
   validateExtractorConfig(config)
@@ -219,7 +219,7 @@ function traverseEveryNode (node: any, plugins: any[], pluginContext: PluginCont
 export async function extract (config: I18nextToolkitConfig) {
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
-  config.extract.functions ||= ['t']
+  config.extract.functions ||= ['t', '*.t']
   config.extract.transComponents ||= ['Trans']
   const { allKeys, objectKeys } = await findKeys(config)
   return getTranslations(allKeys, objectKeys, config)

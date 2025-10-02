@@ -51,7 +51,7 @@ export interface I18nextToolkitConfig {
     /** Separator for plural variants (default: '_') */
     pluralSeparator?: string;
 
-    /** Function names to extract translation calls from (default: ['t']) */
+    /** Function names to extract translation calls from (default: ['t', '*.t']) */
     functions?: string[];
 
     /** JSX component names to extract translations from (default: ['Trans']) */

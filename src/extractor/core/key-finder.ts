@@ -24,7 +24,7 @@ import { ASTVisitors } from '../parsers/ast-visitors'
  * const config = {
  *   extract: {
  *     input: ['src/**\/*.{ts,tsx}'],
- *     functions: ['t'],
+ *     functions: ['t', '*.t'],
  *     transComponents: ['Trans']
  *   }
  * }

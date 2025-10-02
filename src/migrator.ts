@@ -107,7 +107,7 @@ export async function runMigrator () {
       nsSeparator: oldConfig.namespaceSeparator,
       contextSeparator: oldConfig.contextSeparator,
       // A simple mapping for functions
-      functions: oldConfig.lexers?.js?.functions || ['t'],
+      functions: oldConfig.lexers?.js?.functions || ['t', '*.t'],
       transComponents: oldConfig.lexers?.js?.components || ['Trans'],
     },
     typesafe: {
@@ -118,6 +118,11 @@ export async function runMigrator () {
       primaryLanguage: oldConfig.locales?.[0] || 'en',
       secondaryLanguages: oldConfig.locales.filter((l: string) => l !== (oldConfig.locales?.[0] || 'en'))
     },
+  }
+  // Make the migration smarter: if 't' is a function, also add the '*.t' wildcard
+  // to provide better out-of-the-box support for common patterns like `i18n.t`.
+  if (newConfig.extract.functions.includes('t') && !newConfig.extract.functions.includes('*.t')) {
+    newConfig.extract.functions.push('*.t')
   }
   // --- End Migration Logic ---
 

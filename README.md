@@ -305,7 +305,8 @@ export default defineConfig({
     // Note: `output` path must not contain `{{namespace}}` when this is true.
     mergeNamespaces: false, 
     
-    // Translation functions to detect. Supports wildcards (e.g., '*.t').
+    // Translation functions to detect. Defaults to ['t', '*.t'].
+    // Supports wildcards for suffixes.
     functions: ['t', '*.t', 'i18next.t'],
     
     // React components to analyze

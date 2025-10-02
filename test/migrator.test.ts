@@ -87,4 +87,33 @@ describe('migrator', () => {
     // Assert that no new file was created by checking if access throws an error
     await expect(vol.promises.access(newConfigPath)).rejects.toThrow()
   })
+
+  it('should add the "*.t" wildcard if the legacy config included "t"', async () => {
+    // 1. Setup: Legacy config that includes 't' and another custom function.
+    const legacyConfig = {
+      locales: ['en'],
+      output: 'locales/$LOCALE/$NAMESPACE.json',
+      input: 'src/**/*.js',
+      lexers: {
+        js: {
+          functions: ['t', 'myCustomFunc'],
+        },
+      },
+    }
+    vol.fromJSON({
+      [oldConfigPath]: `module.exports = ${JSON.stringify(legacyConfig)}`,
+    })
+    vi.doMock(oldConfigPath, () => ({ default: legacyConfig }))
+
+    // 2. Action
+    await runMigrator()
+
+    // 3. Assertions
+    const newConfigFileContent = String(await vol.promises.readFile(newConfigPath, 'utf-8'))
+    const objectStringMatch = newConfigFileContent.match(/defineConfig\(([\s\S]*)\)/)
+    const generatedConfig = JSON.parse(objectStringMatch![1])
+
+    // It should preserve the original functions AND add the new wildcard
+    expect(generatedConfig.extract.functions).toEqual(['t', 'myCustomFunc', '*.t'])
+  })
 })

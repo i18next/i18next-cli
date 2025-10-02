@@ -373,7 +373,7 @@ export class ASTVisitors {
 
     // The scope lookup will only work for simple identifiers, which is okay for this fix.
     const scopeInfo = this.getVarFromScope(functionName)
-    const configuredFunctions = this.config.extract.functions || ['t']
+    const configuredFunctions = this.config.extract.functions || ['t', '*.t']
     let isFunctionToParse = scopeInfo !== undefined // A scoped variable (from useTranslation, etc.) is always parsed.
     if (!isFunctionToParse) {
       for (const pattern of configuredFunctions) {
