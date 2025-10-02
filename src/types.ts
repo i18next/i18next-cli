@@ -85,7 +85,7 @@ export interface I18nextToolkitConfig {
     sort?: boolean | ((a: ExtractedKey, b: ExtractedKey) => number);
 
     /** Number of spaces for JSON indentation (default: 2) */
-    indentation?: number;
+    indentation?: number | string;
 
     /** Default value to use for missing translations in secondary languages */
     defaultValue?: string;

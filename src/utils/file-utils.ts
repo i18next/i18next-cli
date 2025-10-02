@@ -114,7 +114,7 @@ export async function loadTranslationFile (filePath: string): Promise<Record<str
 export function serializeTranslationFile (
   data: Record<string, any>,
   format: I18nextToolkitConfig['extract']['outputFormat'] = 'json',
-  indentation: number = 2
+  indentation: number | string = 2
 ): string {
   const jsonString = JSON.stringify(data, null, indentation)
 
