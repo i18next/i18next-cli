@@ -181,4 +181,27 @@ describe('extractor.getTranslations', () => {
     expect(resultKeys).toContain('person')
     expect(resultKeys).toContain('animal')
   })
+
+  it('should correctly sort keys within nested objects', async () => {
+    const keysMap = new Map<string, { key: string; defaultValue?: string }>()
+    // Add keys for a nested object in a non-alphabetical order
+    keysMap.set('buttons.scroll-to-top', { key: 'buttons.scroll-to-top' })
+    keysMap.set('buttons.cancel', { key: 'buttons.cancel' })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: 'src/**/*.{ts,tsx}',
+        output: 'locales/{{language}}/{{namespace}}.json',
+        sort: true, // Enable default alphabetical sorting
+      }
+    }
+
+    const [result] = await getTranslations(keysMap as any, new Set(), config)
+
+    // Assert that the keys *inside* the 'buttons' object are sorted alphabetically.
+    const nestedKeys = Object.keys(result.newTranslations.buttons)
+    expect(nestedKeys[0]).toBe('cancel')
+    expect(nestedKeys[1]).toBe('scroll-to-top')
+  })
 })

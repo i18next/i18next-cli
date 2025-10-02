@@ -848,4 +848,21 @@ describe('extractor: runExtractor', () => {
     const expectedOrder = '"person": {\n    "bla": "person.bla"\n  },\n  "person-foo": "person-foo"'
     expect(enFileContent).toContain(expectedOrder)
   })
+
+  it('should correctly sort keys within nested objects', async () => {
+  // Setup: Add keys for a nested object in a non-alphabetical order
+    const sampleCode = `
+      t('buttons.scroll-to-top');
+      t('buttons.cancel');
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    await runExtractor(mockConfig) // mockConfig has sort: true by default
+
+    const enFileContent = await vol.promises.readFile('/locales/en/translation.json', 'utf-8')
+
+    // This will fail before the fix. We check the raw string to ensure order.
+    const expectedOrder = '"buttons": {\n    "cancel": "buttons.cancel",\n    "scroll-to-top": "buttons.scroll-to-top"\n  }'
+    expect(enFileContent).toContain(expectedOrder)
+  })
 })

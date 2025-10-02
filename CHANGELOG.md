@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2](https://github.com/i18next/i18next-cli/compare/v1.5.1...v1.5.2) - 2025-10-02
+
+- **Extractor:** Fixed a regression where keys within nested objects were no longer being sorted alphabetically (e.g., `buttons.scroll-to-top` would appear before `buttons.cancel`). The sorting logic now recursively sorts keys at all levels of the translation object to ensure a consistent and predictable order.
+
 ## [1.5.1](https://github.com/i18next/i18next-cli/compare/v1.5.0...v1.5.1) - 2025-10-02
 
 - **Extractor:** Improved the default key extraction by updating the default `functions` option to `['t', '*.t']`. This allows the extractor to automatically find keys in common patterns like `i18n.t(...)` and `this.t(...)` without any configuration.

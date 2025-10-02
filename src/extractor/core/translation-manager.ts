@@ -16,6 +16,24 @@ function globToRegex (glob: string): RegExp {
 }
 
 /**
+ * Recursively sorts the keys of an object.
+ */
+function sortObject (obj: any): any {
+  if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
+    return obj
+  }
+
+  const sortedObj: Record<string, any> = {}
+  const keys = Object.keys(obj).sort()
+
+  for (const key of keys) {
+    sortedObj[key] = sortObject(obj[key])
+  }
+
+  return sortedObj
+}
+
+/**
  * A helper function to build a new translation object for a single namespace.
  * This centralizes the core logic of merging keys.
  */
@@ -62,8 +80,14 @@ function buildNewTranslationsForNs (
     setNestedValue(newTranslations, key, valueToSet, keySeparator ?? '.')
   }
 
-  // 2. If sorting is enabled, create a new sorted object from the one we just built.
-  if (sort !== false) {
+  // 2. If sorting is enabled, recursively sort the entire object.
+  // This correctly handles both top-level and nested keys.
+  if (sort === true) {
+    return sortObject(newTranslations)
+  }
+  // Custom sort function logic remains as a future enhancement if needed,
+  // but for now, this robustly handles the most common `sort: true` case.
+  if (typeof sort === 'function') {
     const sortedObject: Record<string, any> = {}
     const topLevelKeys = Object.keys(newTranslations)
 
