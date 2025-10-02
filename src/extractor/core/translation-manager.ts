@@ -97,7 +97,11 @@ export async function getTranslations (
         }
       }
 
-      const sortedKeys = (config.extract.sort === false) ? nsKeys : [...nsKeys].sort((a, b) => a.key.localeCompare(b.key))
+      const sortedKeys = config.extract.sort === false
+        ? nsKeys
+        : [...nsKeys].sort(typeof config.extract.sort === 'function'
+            ? config.extract.sort
+            : (a, b) => a.key.localeCompare(b.key))
       for (const { key, defaultValue } of sortedKeys) {
         const existingValue = getNestedValue(existingTranslations, key, keySeparator)
         const valueToSet = existingValue ?? (locale === primaryLanguage ? defaultValue : (config.extract.defaultValue ?? ''))

@@ -81,8 +81,8 @@ export interface I18nextToolkitConfig {
     /** Glob patterns for keys to preserve even if not found in source (for dynamic keys) */
     preservePatterns?: string[];
 
-    /** Whether to sort keys alphabetically in output files (default: true) */
-    sort?: boolean;
+    /** Whether to sort keys alphabetically in output files, or a comparator function to customize the order (default: true) */
+    sort?: boolean | ((a: ExtractedKey, b: ExtractedKey) => number);
 
     /** Number of spaces for JSON indentation (default: 2) */
     indentation?: number;
