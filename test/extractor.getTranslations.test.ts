@@ -228,4 +228,26 @@ describe('extractor.getTranslations', () => {
     const resultKeys = Object.keys(result.newTranslations)
     expect(resultKeys).toEqual(['Appl', 'apple', 'Banana', 'Zebra'])
   })
+
+  it('should handle the FOO vs foo case correctly with case-insensitive sorting', async () => {
+    const keysMap = new Map<string, { key: string }>()
+    // Add the specific case mentioned: FOO and foo
+    keysMap.set('FOO', { key: 'FOO' })
+    keysMap.set('foo', { key: 'foo' })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: 'src/**/*.{ts,tsx}',
+        output: 'locales/{{language}}/{{namespace}}.json',
+        sort: true,
+      }
+    }
+
+    const [result] = await getTranslations(keysMap as any, new Set(), config)
+
+    // In case-insensitive sorting, lowercase should come before uppercase when they're the same word
+    const resultKeys = Object.keys(result.newTranslations)
+    expect(resultKeys).toEqual(['foo', 'FOO'])
+  })
 })

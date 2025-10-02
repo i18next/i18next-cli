@@ -24,7 +24,17 @@ function sortObject (obj: any): any {
   }
 
   const sortedObj: Record<string, any> = {}
-  const keys = Object.keys(obj).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  const keys = Object.keys(obj).sort((a, b) => {
+    // First, compare case-insensitively
+    const caseInsensitiveComparison = a.localeCompare(b, undefined, { sensitivity: 'base' })
+
+    // If they're equal case-insensitively, sort by case (lowercase first)
+    if (caseInsensitiveComparison === 0) {
+      return a.localeCompare(b, undefined, { sensitivity: 'case' })
+    }
+
+    return caseInsensitiveComparison
+  })
 
   for (const key of keys) {
     sortedObj[key] = sortObject(obj[key])

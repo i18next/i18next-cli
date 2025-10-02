@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.4](https://github.com/i18next/i18next-cli/compare/v1.5.3...v1.5.4) - 2025-10-02
+
+- **Extractor:** Fixed a sorting edge case where keys with identical spellings but different cases (e.g., `FOO` and `foo`) were not consistently ordered. Lowercase variants now correctly appear before uppercase variants when the spelling is identical, ensuring predictable and stable sort order across all translation files.
+
 ## [1.5.3](https://github.com/i18next/i18next-cli/compare/v1.5.2...v1.5.3) - 2025-10-02
 
 - **Extractor:** Fixed a regression where key sorting became case-sensitive (e.g., a key like `'Zebra'` would incorrectly appear before `'apple'`). Sorting has been restored to be case-insensitive, ensuring a natural alphabetical order at all levels of the translation files.
