@@ -202,6 +202,7 @@ Use watch mode to automatically lint on save:
 
 ```bash
 npx i18next-cli lint --watch
+```
 
 ### `migrate-config`
 Automatically migrates a legacy `i18next-parser.config.js` file to the new `i18next.config.ts` format.
