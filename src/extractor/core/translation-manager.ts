@@ -92,8 +92,6 @@ export async function getTranslations (
         ? {}
         : JSON.parse(JSON.stringify(existingTranslations))
 
-      console.log(newTranslations)
-
       const existingKeys = getNestedKeys(existingTranslations, keySeparator)
       for (const existingKey of existingKeys) {
         if (preservePatterns.some(re => re.test(existingKey))) {

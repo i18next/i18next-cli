@@ -168,4 +168,37 @@ describe('extractor - runExtractor: output formats and namespace merging', () =>
       translation: { key1: 'wert1_de' },
     })
   })
+
+  it('should use a string for indentation when provided (e.g., a tab character)', async () => {
+    // Setup: Use a key that will create a nested object to make indentation visible.
+    vol.fromJSON({ '/src/App.tsx': "t('parent.child', 'value')" })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: ['src/App.tsx'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        defaultNS: 'translation',
+        // Configure indentation with a tab character string
+        indentation: '\t',
+      },
+    }
+
+    // Action: Run the extractor
+    await runExtractor(config)
+
+    // Assertions: Check the content of the generated file
+    const filePath = resolve(process.cwd(), 'locales/en/translation.json')
+    const fileContent = await vol.promises.readFile(filePath, 'utf-8')
+
+    // Manually create the expected output string with tab indentation and a trailing newline
+    const expectedJson = {
+      parent: {
+        child: 'value'
+      }
+    }
+    const expectedFileContent = JSON.stringify(expectedJson, null, '\t') + '\n'
+
+    expect(fileContent).toBe(expectedFileContent)
+  })
 })

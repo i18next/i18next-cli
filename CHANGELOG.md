@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0](https://github.com/i18next/i18next-cli/compare/v1.1.0...v1.2.0) - 2025-10-02
+
+### Added
+
+  - **Extractor:** The `extract.sort` option now accepts a custom comparator function, allowing for advanced key sorting logic beyond simple alphabetical order. [#16](https://github.com/i18next/i18next-cli/pull/16)
+
+### Changed
+
+  - **File Output:** All generated translation files (`.json`, `.js`, `.ts`) now end with a trailing newline to improve compatibility with POSIX standards and various linters. [#17](https://github.com/i18next/i18next-cli/pull/17)
+  - **Extractor:** The `extract.indentation` option now accepts a string (e.g., `'\t'`) in addition to a number, allowing for the use of tab characters for indentation in the output files. [#15](https://github.com/i18next/i18next-cli/pull/15)
+
 ## [1.1.0](https://github.com/i18next/i18next-cli/compare/v1.0.2...v1.1.0) - 2025-10-02
 
 - **Extractor:** Added a new `extract.removeUnusedKeys` option to control whether keys no longer found in the source code are removed from translation files. This defaults to `true` to maintain the existing pruning behavior. Set it to `false` to preserve all existing keys, which is useful for projects with dynamic keys. [#18](https://github.com/i18next/i18next-cli/issues/18)
