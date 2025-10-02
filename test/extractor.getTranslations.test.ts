@@ -93,4 +93,29 @@ describe('extractor.getTranslations', () => {
     expect(resultKeys[0]).toBe('zebra')
     expect(resultKeys[1]).toBe('apple')
   })
+
+  it('should use custom sort comparator', async () => {
+    const keysMap = new Map<string, { key: string; defaultValue?: string }>()
+    // Add keys in a specific, non-alphabetical order
+    keysMap.set('zebra', { key: 'zebra', defaultValue: 'Zebra' })
+    keysMap.set('apple', { key: 'apple', defaultValue: 'Apple' })
+    keysMap.set('snail', { key: 'snail', defaultValue: 'Snail' })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: 'src/**/*.{ts,tsx}',
+        output: 'locales/{{language}}/{{namespace}}.json',
+        sort: (a, b) => a.key > b.key ? -1 : a.key < b.key ? 1 : 0, // sort in reverse order
+      }
+    }
+
+    const [result] = await getTranslations(keysMap as any, new Set(), config)
+
+    // Assert that the object keys are ordered by the custom comparator
+    const resultKeys = Object.keys(result.newTranslations)
+    expect(resultKeys[0]).toBe('zebra')
+    expect(resultKeys[1]).toBe('snail')
+    expect(resultKeys[2]).toBe('apple')
+  })
 })
