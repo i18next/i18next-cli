@@ -803,4 +803,49 @@ describe('extractor: runExtractor', () => {
     // This assertion will now pass.
     expect(enJson).toEqual({})
   })
+
+  it('should replace a nested object with a primitive when a key is refactored', async () => {
+    // Setup: The existing file has a nested object for 'person'.
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      '/locales/en/translation.json': JSON.stringify({
+        person: { name: 'A person name' },
+      }),
+      // The new source code only uses the parent 'person' key.
+      '/src/App.tsx': "t('person', 'A person')",
+    })
+
+    await runExtractor(mockConfig)
+
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    // This will fail before the fix because the old nested object will be preserved.
+    // The correct behavior is for the object to be replaced by the new string value.
+    expect(enJson).toEqual({
+      person: 'A person',
+    })
+  })
+
+  it('should correctly sort top-level keys when mixed with nested keys', async () => {
+    // Setup: The source code contains keys that should be sorted alphabetically
+    // at the top level ('person', then 'person-foo').
+    const sampleCode = `
+      t('person-foo');
+      t('person.bla');
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    // Action
+    await runExtractor(mockConfig) // mockConfig has sort: true by default
+
+    // Assertions
+    const enFileContent = await vol.promises.readFile('/locales/en/translation.json', 'utf-8')
+
+    // This will fail before the fix because the order will be person-foo, then person.
+    // The correct order is person, then person-foo.
+    // We check the raw string content because object key order is not guaranteed after JSON.parse.
+    const expectedOrder = '"person": {\n    "bla": "person.bla"\n  },\n  "person-foo": "person-foo"'
+    expect(enFileContent).toContain(expectedOrder)
+  })
 })

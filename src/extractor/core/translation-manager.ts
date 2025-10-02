@@ -24,7 +24,8 @@ function buildNewTranslationsForNs (
   existingTranslations: Record<string, any>,
   config: I18nextToolkitConfig,
   locale: string,
-  preservePatterns: RegExp[]
+  preservePatterns: RegExp[],
+  objectKeys: Set<string>
 ): Record<string, any> {
   const {
     keySeparator = '.',
@@ -35,7 +36,7 @@ function buildNewTranslationsForNs (
   } = config.extract
 
   // If `removeUnusedKeys` is true, start with an empty object. Otherwise, start with a clone of the existing translations.
-  const newTranslations: Record<string, any> = removeUnusedKeys
+  let newTranslations: Record<string, any> = removeUnusedKeys
     ? {}
     : JSON.parse(JSON.stringify(existingTranslations))
 
@@ -48,17 +49,52 @@ function buildNewTranslationsForNs (
     }
   }
 
-  const sortedKeys = sort === false
-    ? nsKeys
-    : [...nsKeys].sort(typeof sort === 'function'
-        ? sort
-        : (a, b) => a.key.localeCompare(b.key))
-
-  // Add the new/updated keys from the source code
-  for (const { key, defaultValue } of sortedKeys) {
+  // 1. Build the object first, without any sorting.
+  for (const { key, defaultValue } of nsKeys) {
     const existingValue = getNestedValue(existingTranslations, key, keySeparator ?? '.')
-    const valueToSet = existingValue ?? (locale === primaryLanguage ? defaultValue : emptyDefaultValue)
+    const isLeafInNewKeys = !nsKeys.some(otherKey => otherKey.key.startsWith(`${key}${keySeparator}`) && otherKey.key !== key)
+    const isStaleObject = typeof existingValue === 'object' && existingValue !== null && isLeafInNewKeys && !objectKeys.has(key)
+
+    const valueToSet = (existingValue === undefined || isStaleObject)
+      ? (locale === primaryLanguage ? defaultValue : emptyDefaultValue)
+      : existingValue
+
     setNestedValue(newTranslations, key, valueToSet, keySeparator ?? '.')
+  }
+
+  // 2. If sorting is enabled, create a new sorted object from the one we just built.
+  if (sort !== false) {
+    const sortedObject: Record<string, any> = {}
+    const topLevelKeys = Object.keys(newTranslations)
+
+    // Create a map of top-level keys to a representative ExtractedKey object.
+    // This is needed for the custom sort function.
+    const keyMap = new Map<string, ExtractedKey>()
+    for (const ek of nsKeys) {
+      const topLevelKey = keySeparator === false ? ek.key : ek.key.split(keySeparator as string)[0]
+      if (!keyMap.has(topLevelKey)) {
+        keyMap.set(topLevelKey, ek)
+      }
+    }
+
+    topLevelKeys.sort((a, b) => {
+      if (typeof sort === 'function') {
+        const keyA = keyMap.get(a)
+        const keyB = keyMap.get(b)
+        // If we can find both original keys, use the custom comparator.
+        if (keyA && keyB) {
+          return sort(keyA, keyB)
+        }
+      }
+      // Fallback to default alphabetical sort for `sort: true` or if keys can't be mapped.
+      return a.localeCompare(b)
+    })
+
+    // 3. Rebuild the object in the final sorted order.
+    for (const key of topLevelKeys) {
+      sortedObject[key] = newTranslations[key]
+    }
+    newTranslations = sortedObject
   }
 
   return newTranslations
@@ -140,7 +176,7 @@ export async function getTranslations (
       for (const ns of namespacesToProcess) {
         const nsKeys = keysByNS.get(ns) || []
         const existingTranslations = existingMergedFile[ns] || {}
-        newMergedTranslations[ns] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, preservePatterns)
+        newMergedTranslations[ns] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, preservePatterns, objectKeys)
       }
 
       const oldContent = JSON.stringify(existingMergedFile, null, indentation)
@@ -164,7 +200,7 @@ export async function getTranslations (
         const outputPath = getOutputPath(config.extract.output, locale, ns)
         const fullPath = resolve(process.cwd(), outputPath)
         const existingTranslations = await loadTranslationFile(fullPath) || {}
-        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, preservePatterns)
+        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, preservePatterns, objectKeys)
 
         const oldContent = JSON.stringify(existingTranslations, null, indentation)
         const newContent = JSON.stringify(newTranslations, null, indentation)

@@ -118,4 +118,67 @@ describe('extractor.getTranslations', () => {
     expect(resultKeys[1]).toBe('snail')
     expect(resultKeys[2]).toBe('apple')
   })
+
+  it('should correctly sort top-level keys alphabetically when nested and flat keys are mixed', async () => {
+    const keysMap = new Map<string, { key: string; defaultValue?: string }>()
+    // Add keys in a jumbled, non-alphabetical order
+    keysMap.set('person-foo', { key: 'person-foo', defaultValue: 'person-foo' })
+    keysMap.set('animal.cat', { key: 'animal.cat', defaultValue: 'Cat' })
+    keysMap.set('person.bla', { key: 'person.bla', defaultValue: 'person.bla' })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: 'src/**/*.{ts,tsx}',
+        output: 'locales/{{language}}/{{namespace}}.json',
+        sort: true, // <-- Enable default alphabetical sorting
+      }
+    }
+
+    const [result] = await getTranslations(keysMap as any, new Set(), config)
+
+    // Assert that the top-level keys of the final object are sorted alphabetically.
+    const resultKeys = Object.keys(result.newTranslations)
+    expect(resultKeys[0]).toBe('animal')
+    expect(resultKeys[1]).toBe('person')
+    expect(resultKeys[2]).toBe('person-foo')
+  })
+
+  it('should use custom sort for top-level keys when nested and flat keys are mixed', async () => {
+    const keyPersonFoo = { key: 'person-foo', defaultValue: 'person-foo' }
+    const keyAnimalCat = { key: 'animal.cat', defaultValue: 'Cat' }
+    const keyPersonBla = { key: 'person.bla', defaultValue: 'person.bla' }
+
+    const keysMap = new Map<string, any>()
+    keysMap.set('person-foo', keyPersonFoo)
+    keysMap.set('animal.cat', keyAnimalCat)
+    keysMap.set('person.bla', keyPersonBla)
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: 'src/**/*.{ts,tsx}',
+        output: 'locales/{{language}}/{{namespace}}.json',
+        // The sort function now correctly derives the top-level key before comparing lengths.
+        sort: (a, b) => {
+          const keyAroot = a.key.split('.')[0]
+          const keyBroot = b.key.split('.')[0]
+          return keyAroot.length - keyBroot.length
+        },
+      }
+    }
+
+    const [result] = await getTranslations(keysMap, new Set(), config)
+
+    // Assert that the top-level keys are sorted by the custom comparator.
+    // 'person' (len 6) < 'animal' (len 6) < 'person-foo' (len 10)
+    // The relative order of 'person' and 'animal' might be unstable, but this is a more robust check.
+    const resultKeys = Object.keys(result.newTranslations)
+
+    // The key with the longest top-level part should be last.
+    expect(resultKeys[2]).toBe('person-foo')
+    // The other two have the same length, so we just check for their presence.
+    expect(resultKeys).toContain('person')
+    expect(resultKeys).toContain('animal')
+  })
 })

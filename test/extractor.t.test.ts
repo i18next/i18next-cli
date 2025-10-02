@@ -683,4 +683,37 @@ describe('extractor: advanced t features', () => {
       'A key from a member expression': 'A key from a member expression',
     })
   })
+
+  it('should handle wildcard patterns in the functions array to match suffixes', async () => {
+    const sampleCode = `
+      // These should all be matched by '*.t' or 't'
+      t('key.simple');
+      i18n.t('key.member');
+      this._i18n.t('key.this');
+
+      // This should be ignored
+      ignoreThis('key.ignored');
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        keySeparator: false,
+        // Use a wildcard to match any function ending in '.t', plus the base 't'
+        functions: ['*.t', 't'],
+      },
+    }
+
+    const results = await extract(customConfig)
+    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      'key.simple': 'key.simple',
+      'key.member': 'key.member',
+      'key.this': 'key.this',
+    })
+  })
 })
