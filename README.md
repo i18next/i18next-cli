@@ -386,37 +386,30 @@ export default defineConfig({
 
 ### Plugin System
 
-Create custom plugins to extend extraction capabilities. The plugin system is powerful enough to support non-JavaScript files (e.g., HTML, Handlebars) by using the `onEnd` hook with custom parsers.
+Create custom plugins to extend the capabilities of `i18next-cli`. The plugin system provides several hooks that allow you to tap into different stages of the extraction process.
+
+**Available Hooks:**
+
+  - `setup`: Runs once when the CLI is initialized. Use it for any setup tasks.
+  - `onLoad`: Runs for each file *before* it is parsed. You can use this to transform code (e.g., transpile a custom language to JavaScript).
+  - `onVisitNode`: Runs for every node in the Abstract Syntax Tree (AST) of a parsed JavaScript/TypeScript file. This is useful for finding custom translation patterns in your code.
+  - `onEnd`: Runs after all JS/TS files have been parsed but *before* the final keys are compared with existing translation files. This is the ideal hook for parsing non-JavaScript files (like `.html`, `.vue`, or `.svelte`) and adding their keys to the collection.
+  - `afterSync`: Runs after the extractor has compared the found keys with your translation files and generated the final results. This is perfect for post-processing tasks, like generating a report of newly added keys.
+
+**Example Plugin (`my-custom-plugin.mjs`):**
 
 ```typescript
-import { defineConfig, Plugin } from 'i18next-cli';
+import { glob } from 'glob';
+import { readFile, writeFile } from 'node:fs/promises';
 
-const myCustomPlugin = (): Plugin => ({
+export const myCustomPlugin = () => ({
   name: 'my-custom-plugin',
   
-  async setup() {
-    // Initialize plugin
-  },
-  
-  async onLoad(code: string, file: string) {
-    // Transform code before parsing
-    return code;
-  },
-  
-  onVisitNode(node: any, context: PluginContext) {
-    // Custom AST node processing
-    if (node.type === 'CallExpression') {
-      // Extract custom translation patterns
-      context.addKey({
-        key: 'custom.key',
-        defaultValue: 'Custom Value',
-        ns: 'custom'
-      });
-    }
-  },
-  
-  async onEnd(allKeys: Map<string, ExtractedKey>) {
-    // Process all extracted keys or add additional keys from non-JS files
+  /**
+   * Runs after the core extractor has finished but before comparison.
+   * Ideal for adding keys from non-JS/TS files.
+   */
+  async onEnd(allKeys) {
     // Example: Parse HTML files for data-i18n attributes
     const htmlFiles = await glob('src/**/*.html');
     for (const file of htmlFiles) {
@@ -424,16 +417,62 @@ const myCustomPlugin = (): Plugin => ({
       const matches = content.match(/data-i18n="([^"]+)"/g) || [];
       for (const match of matches) {
         const key = match.replace(/data-i18n="([^"]+)"/, '$1');
-        allKeys.set(`translation:${key}`, { key, ns: 'translation' });
+        // Add the found key to the collection
+        allKeys.set(`translation:${key}`, { key, ns: 'translation', defaultValue: key });
       }
+    }
+  },
+
+  /**
+   * Runs after the extractor has generated the final translation results.
+   * Ideal for reporting or post-processing.
+   */
+  async afterSync(results, config) {
+    const primaryLanguage = config.extract.primaryLanguage || config.locales[0];
+    const newKeys = [];
+
+    for (const result of results) {
+      // Find the result for the primary language
+      if (!result.path.includes(`/${primaryLanguage}/`)) continue;
+      
+      const newKeysFlat = Object.keys(result.newTranslations);
+      const existingKeysFlat = Object.keys(result.existingTranslations);
+      
+      // Find keys that are in the new file but not the old one
+      for (const key of newKeysFlat) {
+        if (!existingKeysFlat.includes(key)) {
+          newKeys.push({
+            key: key,
+            defaultValue: result.newTranslations[key],
+          });
+        }
+      }
+    }
+
+    if (newKeys.length > 0) {
+      console.log(`[My Plugin] Found ${newKeys.length} new keys!`);
+      // Example: Write a report for your copywriter
+      await writeFile('new-keys-report.json', JSON.stringify(newKeys, null, 2));
     }
   }
 });
+```
+
+**Configuration (`i18next.config.ts`):**
+
+```typescript
+import { defineConfig } from 'i18next-cli';
+import { myCustomPlugin } from './my-custom-plugin.mjs';
 
 export default defineConfig({
   locales: ['en', 'de'],
-  plugins: [myCustomPlugin()],
-  // ... other config
+  extract: {
+    input: ['src/**/*.{ts,tsx}'],
+    output: 'locales/{{language}}/{{namespace}}.json',
+  },
+  plugins: [
+    myCustomPlugin(),
+  ],
 });
 ```
 

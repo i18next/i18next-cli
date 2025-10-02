@@ -228,6 +228,15 @@ export interface Plugin {
    * @param keys - Final map of all extracted keys
    */
   onEnd?: (keys: Map<string, { key: string; defaultValue?: string }>) => void | Promise<void>;
+
+  /**
+   * Hook called after all files have been processed and translation files have been generated.
+   * Useful for post-processing, validation, or reporting based on the final results.
+   *
+   * @param results - Array of translation results with update status and content.
+   * @param config - The i18next toolkit configuration object.
+   */
+  afterSync?: (results: TranslationResult[], config: I18nextToolkitConfig) => void | Promise<void>;
 }
 
 /**

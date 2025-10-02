@@ -723,4 +723,84 @@ describe('extractor: runExtractor', () => {
 
     writeFileSpy.mockRestore()
   })
+
+  it('should extract keys from a member expression based on "this"', async () => {
+    const sampleCode = `
+      class Foo {
+        constructor() { this._i18n = { t: (key) => key }; }
+        method() {
+          this._i18n.t('bar');
+        }
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const configWithThis: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        keySeparator: false,
+        // Add the new function pattern to the config
+        functions: ['t', 'this._i18n.t'],
+      },
+    }
+
+    await runExtractor(configWithThis)
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    expect(enJson).toEqual({
+      bar: 'bar',
+    })
+  })
+
+  it('should correctly remove the last remaining key from a translation file', async () => {
+    // This test requires a specific mock for glob to simulate its exact scenario:
+    // 1. Finding NO source files.
+    // 2. Finding the ONE existing translation file.
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async (pattern: string | string[]) => {
+      // For key-finder looking for source files, return an empty array.
+      if (Array.isArray(pattern) && pattern[0].includes('src/')) {
+        return []
+      }
+      // For translation-manager looking for 'en' locale files, return the one we created.
+      if (pattern === 'locales/en/*.json') {
+        return ['/locales/en/translation.json']
+      }
+      // For other locales, return empty.
+      return []
+    })
+
+    // Setup: The source code is empty.
+    const sampleCode = ''
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      // The existing translation file contains one key.
+      '/locales/en/translation.json': JSON.stringify({
+        'key.to.remove': 'Old Value',
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        keySeparator: false, // Use flat keys for simplicity
+        removeUnusedKeys: true,
+      },
+    }
+
+    // Action
+    await runExtractor(config)
+
+    // Assertions
+    const enFileContent = await vol.promises.readFile('/locales/en/translation.json', 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    // This assertion will now pass.
+    expect(enJson).toEqual({})
+  })
 })

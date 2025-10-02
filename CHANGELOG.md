@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0](https://github.com/i18next/i18next-cli/compare/v1.3.0...v1.4.0) - 2025-10-02
+
+### Added
+- **Plugin System:** Introduced a new `afterSync` plugin hook. This hook runs after the extractor has finished processing and writing files, providing plugins with the final results. This is ideal for post-processing tasks, such as generating a report of newly added keys.
+
+### Fixed
+- **Extractor:** Fixed a bug where translation keys inside class methods were not being extracted, particularly when using member expressions based on `this` (e.g., `this._i18n.t('key')`). [#25](https://github.com/i18next/i18next-cli/issues/25)
+- **Extractor:** Fixed a critical bug where `removeUnusedKeys` would fail to remove keys from a file if it was the last key remaining. The extractor now correctly processes and empties files and namespaces when all keys have been removed from the source code. [#26](https://github.com/i18next/i18next-cli/issues/26)
+
 ## [1.3.0](https://github.com/i18next/i18next-cli/compare/v1.2.1...v1.3.0) - 2025-10-02
 
 ### Added

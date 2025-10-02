@@ -883,7 +883,10 @@ export class ASTVisitors {
         }
         current = current.object
       }
-      if (current.type === 'Identifier') {
+      // Handle `this` as the base of the expression (e.g., this._i18n.t)
+      if (current.type === 'ThisExpression') {
+        parts.unshift('this')
+      } else if (current.type === 'Identifier') {
         parts.unshift(current.value)
       } else {
         return null // Base of the expression is not a simple identifier

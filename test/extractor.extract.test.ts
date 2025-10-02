@@ -30,7 +30,20 @@ describe('extractor.extract', () => {
     vi.clearAllMocks()
     const { glob } = await import('glob')
     // Use consistent file paths
-    ;(glob as any).mockResolvedValue(['src/App.tsx'])
+    // Make the glob mock conditional and more realistic
+    vi.mocked(glob).mockImplementation(async (pattern: string | string[]) => {
+      // If glob is looking for source files, return the source file.
+      if (Array.isArray(pattern) && pattern[0].startsWith('src/')) {
+        return ['src/App.tsx']
+      }
+      // If glob is looking for existing translation files (from translation-manager),
+      // check the virtual file system. In this test, none exist, so return empty.
+      if (typeof pattern === 'string' && pattern.startsWith('locales/')) {
+        return []
+      }
+      // Default fallback
+      return []
+    })
   })
 
   it('creates locale files with primary defaults and empty secondary values', async () => {

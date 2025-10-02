@@ -55,6 +55,10 @@ export async function runExtractor (
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
 
+  // Ensure default function and component names are set if not provided.
+  config.extract.functions ||= ['t']
+  config.extract.transComponents ||= ['Trans']
+
   validateExtractorConfig(config)
 
   const spinner = ora('Running i18next key extractor...\n').start()
@@ -80,6 +84,14 @@ export async function runExtractor (
           await writeFile(result.path, fileContent)
           logger.info(chalk.green(`Updated: ${result.path}`))
         }
+      }
+    }
+
+    // Run afterSync hooks from plugins
+    if ((config.plugins || []).length > 0) {
+      spinner.text = 'Running post-extraction plugins...'
+      for (const plugin of (config.plugins || [])) {
+        await plugin.afterSync?.(results, config)
       }
     }
 
