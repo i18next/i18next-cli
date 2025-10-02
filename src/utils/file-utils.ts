@@ -129,6 +129,6 @@ export function serializeTranslationFile (
       return `export default ${jsonString} as const;\n`
     case 'json':
     default:
-      return jsonString
+      return `${jsonString}\n`
   }
 }

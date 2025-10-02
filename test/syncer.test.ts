@@ -129,7 +129,7 @@ describe('syncer', () => {
 
     const updatedDeContent = await vol.promises.readFile(dePath, 'utf-8')
 
-    const expectedContent = JSON.stringify({ key: '' }, null, 4) // Expect 4 spaces
+    const expectedContent = JSON.stringify({ key: '' }, null, 4) + '\n' // Expect 4 spaces
     expect(updatedDeContent).toBe(expectedContent)
   })
 })
