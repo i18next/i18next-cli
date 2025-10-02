@@ -28,11 +28,12 @@ program
   .description('Extract translation keys from source files and update resource files.')
   .option('-w, --watch', 'Watch for file changes and re-run the extractor.')
   .option('--ci', 'Exit with a non-zero status code if any files are updated.')
+  .option('--dry-run', 'Run the extractor without writing any files to disk.')
   .action(async (options) => {
     const config = await ensureConfig()
 
     const run = async () => {
-      const filesWereUpdated = await runExtractor(config)
+      const filesWereUpdated = await runExtractor(config, { isWatchMode: options.watch, isDryRun: options.dryRun })
       if (options.ci && filesWereUpdated) {
         console.error(chalk.red.bold('\n[CI Mode] Error: Translation files were updated. Please commit the changes.'))
         console.log(chalk.yellow('💡 Tip: Tired of committing JSON files? locize syncs your team automatically => https://www.locize.com/docs/getting-started'))
@@ -120,20 +121,44 @@ program
 program
   .command('lint')
   .description('Find potential issues like hardcoded strings in your codebase.')
-  .action(async () => {
-    let config = await loadConfig()
-    if (!config) {
-      console.log(chalk.blue('No config file found. Attempting to detect project structure...'))
-      const detected = await detectConfig()
-      if (!detected) {
-        console.error(chalk.red('Could not automatically detect your project structure.'))
-        console.log(`Please create a config file first by running: ${chalk.cyan('npx i1e-toolkit init')}`)
-        process.exit(1)
+  .option('-w, --watch', 'Watch for file changes and re-run the linter.')
+  .action(async (options) => {
+    const loadAndRunLinter = async () => {
+      // The existing logic for loading the config or detecting it is now inside this function
+      let config = await loadConfig()
+      if (!config) {
+        console.log(chalk.blue('No config file found. Attempting to detect project structure...'))
+        const detected = await detectConfig()
+        if (!detected) {
+          console.error(chalk.red('Could not automatically detect your project structure.'))
+          console.log(`Please create a config file first by running: ${chalk.cyan('npx i18next-cli init')}`)
+          process.exit(1)
+        }
+        console.log(chalk.green('Project structure detected successfully!'))
+        config = detected as I18nextToolkitConfig
       }
-      console.log(chalk.green('Project structure detected successfully!'))
-      config = detected as I18nextToolkitConfig
+      await runLinter(config)
     }
-    await runLinter(config)
+
+    // Run the linter once initially
+    await loadAndRunLinter()
+
+    // If in watch mode, set up the chokidar watcher
+    if (options.watch) {
+      console.log('\nWatching for changes...')
+      // Re-load the config to get the correct input paths for the watcher
+      const config = await loadConfig()
+      if (config?.extract?.input) {
+        const watcher = chokidar.watch(await glob(config.extract.input), {
+          ignored: /node_modules/,
+          persistent: true,
+        })
+        watcher.on('change', path => {
+          console.log(`\nFile changed: ${path}`)
+          loadAndRunLinter() // Re-run on change
+        })
+      }
+    }
   })
 
 program

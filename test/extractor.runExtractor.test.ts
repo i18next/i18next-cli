@@ -694,4 +694,33 @@ describe('extractor: runExtractor', () => {
       inside: 'inside',
     })
   })
+
+  it('should not write any files when --dry-run is used', async () => {
+    const sampleCode = "t('new.key', 'A New Key')"
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+      },
+    }
+
+    const fsPromises = await import('node:fs/promises')
+    const writeFileSpy = vi.spyOn(fsPromises, 'writeFile')
+
+    // Call runExtractor with the correct options object, including `isDryRun: true`.
+    const result = await runExtractor(config, { isDryRun: true })
+
+    // Assertions
+    // 1. `writeFile` should NOT have been called.
+    expect(writeFileSpy).not.toHaveBeenCalled()
+
+    // 2. The function should still report that an update *would* have happened.
+    expect(result).toBe(true)
+
+    writeFileSpy.mockRestore()
+  })
 })

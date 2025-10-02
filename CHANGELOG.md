@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0](https://github.com/i18next/i18next-cli/compare/v1.2.1...v1.3.0) - 2025-10-02
+
+### Added
+- **Linter:** Introduced a new `--watch` flag for the `lint` command, enabling it to run automatically on file changes for real-time feedback during development.
+- **Extractor:** Introduced a new `--dry-run` flag for the `extract` command. When used, the extractor will report potential changes but will not write any files to disk, which is useful for validation in CI/CD pipelines. [#22](https://github.com/i18next/i18next-cli/issues/22)
+
+### Fixed
+- **Extractor:** Reduced console noise in `extract --watch` mode. The promotional tip is now only displayed once per watch session, instead of after every file change. [#20](https://github.com/i18next/i18next-cli/issues/20)
+
 ## [1.2.1](https://github.com/i18next/i18next-cli/compare/v1.2.0...v1.2.1) - 2025-10-02
 
 - **Extractor:** Fixed a bug where translation keys inside class methods were not being extracted. This was caused by a fragile AST traversal logic that has now been made more robust. [19](https://github.com/i18next/i18next-cli/issues/19)

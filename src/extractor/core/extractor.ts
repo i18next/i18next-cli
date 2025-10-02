@@ -13,6 +13,8 @@ import { ASTVisitors } from '../parsers/ast-visitors'
 import { ConsoleLogger } from '../../utils/logger'
 import { serializeTranslationFile } from '../../utils/file-utils'
 
+let hasLocizeFunnelBeenPrintedInWatchMode = false
+
 /**
  * Main extractor function that runs the complete key extraction and file generation process.
  *
@@ -41,6 +43,13 @@ import { serializeTranslationFile } from '../../utils/file-utils'
  */
 export async function runExtractor (
   config: I18nextToolkitConfig,
+  {
+    isWatchMode = false,
+    isDryRun = false
+  }: {
+    isWatchMode?: boolean,
+    isDryRun?: boolean,
+  } = {},
   logger: Logger = new ConsoleLogger()
 ): Promise<boolean> {
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
@@ -60,14 +69,17 @@ export async function runExtractor (
     for (const result of results) {
       if (result.updated) {
         anyFileUpdated = true
-        const fileContent = serializeTranslationFile(
-          result.newTranslations,
-          config.extract.outputFormat,
-          config.extract.indentation
-        )
-        await mkdir(dirname(result.path), { recursive: true })
-        await writeFile(result.path, fileContent)
-        logger.info(chalk.green(`Updated: ${result.path}`))
+        // Only write files if it's not a dry run.
+        if (!isDryRun) {
+          const fileContent = serializeTranslationFile(
+            result.newTranslations,
+            config.extract.outputFormat,
+            config.extract.indentation
+          )
+          await mkdir(dirname(result.path), { recursive: true })
+          await writeFile(result.path, fileContent)
+          logger.info(chalk.green(`Updated: ${result.path}`))
+        }
       }
     }
 
@@ -75,7 +87,7 @@ export async function runExtractor (
 
     // Show the funnel message only if files were actually changed.
     if (anyFileUpdated) {
-      printLocizeFunnel()
+      printLocizeFunnel(isWatchMode)
     }
 
     return anyFileUpdated
@@ -205,10 +217,18 @@ export async function extract (config: I18nextToolkitConfig) {
  * Prints a promotional message for the locize saveMissing workflow.
  * This message is shown after a successful extraction that resulted in changes.
  */
-function printLocizeFunnel () {
+function printLocizeFunnel (isWatchMode: boolean = false) {
+  // Only print if not in watch mode, or if in watch mode and not yet printed.
+  if (isWatchMode && hasLocizeFunnelBeenPrintedInWatchMode) {
+    return
+  }
   console.log(chalk.yellow.bold('\n💡 Tip: Tired of running the extractor manually?'))
   console.log('   Discover a real-time "push" workflow with `saveMissing` and Locize AI,')
   console.log('   where keys are created and translated automatically as you code.')
   console.log(`   Learn more: ${chalk.cyan('https://www.locize.com/blog/i18next-savemissing-ai-automation')}`)
   console.log(`   Watch the video: ${chalk.cyan('https://youtu.be/joPsZghT3wM')}`)
+
+  if (isWatchMode) {
+    hasLocizeFunnelBeenPrintedInWatchMode = true // Mark as printed for watch mode
+  }
 }

@@ -30,15 +30,27 @@ vi.mock('../src/config', () => ({
 
 describe('CLI command parsing and dispatching', () => {
   let originalArgv: string[]
+  let exitSpy: any
+
+  // A valid, minimal config to prevent crashes
+  const validMockConfig = {
+    locales: ['en'],
+    extract: {
+      input: ['src/'],
+      output: 'locales/{{language}}/{{namespace}}.json',
+    }
+  }
 
   beforeEach(() => {
     vi.resetAllMocks()
     originalArgv = process.argv
     process.argv = []
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
   })
 
   afterEach(() => {
     process.argv = originalArgv
+    vi.restoreAllMocks()
   })
 
   it('should parse the "status" command and call runStatus', async () => {
@@ -50,24 +62,27 @@ describe('CLI command parsing and dispatching', () => {
     await import('../src/cli')
 
     expect(mockRunStatus).toHaveBeenCalledTimes(1)
-    // CORRECTED: Assert the actual two-argument call signature
+    // Assert the actual two-argument call signature
     expect(mockRunStatus).toHaveBeenCalledWith(config, { detail: 'en', namespace: undefined })
   })
 
-  it('should parse the "extract --ci" command and call runExtractor', async () => {
+  it('should parse the "extract --ci" command and exit with error if files are updated', async () => {
     vi.resetModules()
     process.argv = ['node', 'cli.ts', 'extract', '--ci']
-    const config = { extract: { input: [] } }
-    mockEnsureConfig.mockResolvedValue(config)
+
+    mockEnsureConfig.mockResolvedValue(validMockConfig)
+    // Simulate runExtractor returning `true` (files were updated)
+    mockRunExtractor.mockResolvedValue(true)
 
     await import('../src/cli')
 
-    expect(mockRunExtractor).toHaveBeenCalledTimes(1)
-    // CORRECTED: Assert that runExtractor is only called with the config object
-    expect(mockRunExtractor).toHaveBeenCalledWith(config)
+    // Allow async operations in the action handler to complete
+    await new Promise(resolve => setImmediate(resolve))
+
+    // Assert that the CI-specific exit code is called
+    expect(exitSpy).toHaveBeenCalledWith(1)
   })
 
-  // ... (the other tests were already correct and remain the same)
   it('should parse the "sync" command and call runSyncer', async () => {
     vi.resetModules()
     process.argv = ['node', 'cli.ts', 'sync']

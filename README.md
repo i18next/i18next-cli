@@ -111,6 +111,7 @@ npx i18next-cli extract [options]
 **Options:**
 - `--watch, -w`: Re-run automatically when files change
 - `--ci`: Exit with non-zero status if any files are updated (for CI/CD)
+- `--dry-run`: Does not change any files - useful in combination with `--ci` (for CI/CD)
 
 **Examples:**
 ```bash
@@ -194,6 +195,13 @@ Analyzes your source code for internationalization issues like hardcoded strings
 ```bash
 npx i18next-cli lint
 ```
+
+## Watch Mode
+
+Use watch mode to automatically lint on save:
+
+```bash
+npx i18next-cli lint --watch
 
 ### `migrate-config`
 Automatically migrates a legacy `i18next-parser.config.js` file to the new `i18next.config.ts` format.
