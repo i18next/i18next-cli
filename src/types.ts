@@ -113,6 +113,9 @@ export interface I18nextToolkitConfig {
      * (default: false)
      */
     mergeNamespaces?: boolean;
+
+    /** If true, keys that are not found in the source code will be removed from translation files. (default: true) */
+    removeUnusedKeys?: boolean;
   };
 
   /** Configuration options for TypeScript type generation */

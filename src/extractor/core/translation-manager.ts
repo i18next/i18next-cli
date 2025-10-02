@@ -55,6 +55,7 @@ export async function getTranslations (
   const patternsToPreserve = [...(config.extract.preservePatterns || [])]
   const mergeNamespaces = config.extract.mergeNamespaces ?? false
   const indentation = config.extract.indentation ?? 2
+  const removeUnusedKeys = config.extract.removeUnusedKeys ?? true
 
   for (const key of objectKeys) {
     // Convert the object key to a glob pattern to preserve all its children
@@ -87,7 +88,11 @@ export async function getTranslations (
         ? existingMergedFile?.[ns] || {}
         : await loadTranslationFile(fullPath) || {}
 
-      const newTranslations: Record<string, any> = {}
+      const newTranslations: Record<string, any> = removeUnusedKeys
+        ? {}
+        : JSON.parse(JSON.stringify(existingTranslations))
+
+      console.log(newTranslations)
 
       const existingKeys = getNestedKeys(existingTranslations, keySeparator)
       for (const existingKey of existingKeys) {

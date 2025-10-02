@@ -31,6 +31,9 @@ describe('extractor: runExtractor', () => {
     vol.reset()
     vi.clearAllMocks()
 
+    // Mock the current working directory to align with the virtual file system's root.
+    vi.spyOn(process, 'cwd').mockReturnValue('/')
+
     // Dynamically import the mocked glob after mocks are set up
     const { glob } = await import('glob')
     ;(glob as any).mockResolvedValue(['/src/App.tsx'])
@@ -592,5 +595,70 @@ describe('extractor: runExtractor', () => {
     expect(extractedKeys).toHaveProperty('key.from.app')
     // It should NOT contain the key from the ignored file
     expect(extractedKeys).not.toHaveProperty('key.from.ignored')
+  })
+
+  it('should preserve unused keys when removeUnusedKeys is false', async () => {
+    // Setup: A source file with one key, and an existing file with a different, unused key.
+    vol.fromJSON({
+      '/src/App.tsx': "t('key.new', 'New Value')",
+      '/locales/en/translation.json': JSON.stringify({
+        'key.old': 'Old Value',
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        keySeparator: false, // Use flat keys for this test
+        removeUnusedKeys: false
+      },
+    }
+
+    // Action
+    await runExtractor(config)
+
+    // Assertions
+    const enFileContent = await vol.promises.readFile('/locales/en/translation.json', 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    // This will fail before the fix because `key.old` will be pruned.
+    // The correct behavior is to preserve the old key and add the new one.
+    expect(enJson).toEqual({
+      'key.old': 'Old Value',
+      'key.new': 'New Value',
+    })
+  })
+
+  it('should not preserve unused keys when removeUnusedKeys is true', async () => {
+    // Setup: A source file with one key, and an existing file with a different, unused key.
+    vol.fromJSON({
+      '/src/App.tsx': "t('key.new', 'New Value')",
+      '/locales/en/translation.json': JSON.stringify({
+        'key.old': 'Old Value',
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        keySeparator: false, // Use flat keys for this test
+        removeUnusedKeys: true
+      },
+    }
+
+    // Action
+    await runExtractor(config)
+
+    // Assertions
+    const enFileContent = await vol.promises.readFile('/locales/en/translation.json', 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    // This will fail before the fix because `key.old` will be pruned.
+    // The correct behavior is to preserve the old key and add the new one.
+    expect(enJson).toEqual({
+      'key.new': 'New Value'
+    })
   })
 })

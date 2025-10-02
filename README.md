@@ -347,6 +347,9 @@ export default defineConfig({
     secondaryLanguages: ['de', 'fr'], // Defaults to all locales except primaryLanguage
 
     defaultValue: '', // Default value for missing keys in secondary languages
+
+    /** If true, keys that are not found in the source code will be removed from translation files. (default: true) */
+    removeUnusedKeys: true,
   },
   
   // TypeScript type generation

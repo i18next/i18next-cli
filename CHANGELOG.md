@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0](https://github.com/i18next/i18next-cli/compare/v1.0.2...v1.1.0) - 2025-10-02
+
+- **Extractor:** Added a new `extract.removeUnusedKeys` option to control whether keys no longer found in the source code are removed from translation files. This defaults to `true` to maintain the existing pruning behavior. Set it to `false` to preserve all existing keys, which is useful for projects with dynamic keys. [#18](https://github.com/i18next/i18next-cli/issues/18)
+
 ## [1.0.2](https://github.com/i18next/i18next-cli/compare/v1.0.1...v1.0.2) - 2025-10-01
 
 - **Extractor & Linter:** Added a new `extract.ignore` option to provide a simpler and more reliable way to exclude files from processing. This option accepts an array of glob patterns and is respected by both the `extract` and `lint` commands, avoiding the need for complex negative glob patterns.
