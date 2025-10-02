@@ -339,8 +339,8 @@ export default defineConfig({
     ],
     
     // Output formatting
-    sort: true,
-    indentation: 2,
+    sort: true, // can be also a sort function => i.e. (a, b) => a.key > b.key ? -1 : a.key < b.key ? 1 : 0, // sort in reverse order
+    indentation: 2, // can be also a string
     
     // Primary language settings
     primaryLanguage: 'en', // Defaults to the first locale in the `locales` array
