@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { runSyncer } from '../src/syncer'
+import { runSyncer } from '../src/index'
 import type { I18nextToolkitConfig } from '../src/index'
 import { resolve, dirname } from 'path'
 import { mkdir, writeFile, readFile, rm } from 'node:fs/promises'

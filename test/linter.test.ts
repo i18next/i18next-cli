@@ -1,6 +1,6 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { runLinter } from '../src/linter'
+import { runLinter } from '../src/index'
 import type { I18nextToolkitConfig } from '../src/index'
 
 // --- MOCKS ---

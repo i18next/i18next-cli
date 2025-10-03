@@ -15,3 +15,4 @@ export {
 export { runLinter } from './linter'
 export { runSyncer } from './syncer'
 export { runStatus } from './status'
+export { runTypesGenerator } from './types-generator'

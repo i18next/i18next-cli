@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { runStatus } from '../src/status'
+import { runStatus } from '../src/index'
 import type { I18nextToolkitConfig, ExtractedKey } from '../src/index'
 import { resolve, dirname } from 'path'
 import { mkdir, writeFile, rm } from 'node:fs/promises'

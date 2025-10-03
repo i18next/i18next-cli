@@ -1,6 +1,6 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
-import { findKeys } from '../src/extractor/core/key-finder'
+import { findKeys } from '../src/index'
 import type { I18nextToolkitConfig, Plugin, ExtractedKey } from '../src/types'
 import { glob } from 'glob'
 import { readFile } from 'node:fs/promises'
