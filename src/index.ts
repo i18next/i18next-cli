@@ -8,5 +8,10 @@ export { defineConfig } from './config'
 export {
   extract,
   findKeys,
-  getTranslations
+  getTranslations,
+  runExtractor
 } from './extractor'
+
+export { runLinter } from './linter'
+export { runSyncer } from './syncer'
+export { runStatus } from './status'

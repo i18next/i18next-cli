@@ -1,6 +1,6 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
-import { runExtractor, extract } from '../src/extractor'
+import { runExtractor, extract } from '../src/index'
 import type { I18nextToolkitConfig } from '../src/index'
 import { resolve } from 'path'
 

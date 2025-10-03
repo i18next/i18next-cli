@@ -669,6 +669,81 @@ const fixedT = getFixedT('en', 'namespace');
 fixedT('key');
 ```
 
+## Programmatic Usage
+
+In addition to the CLI commands, `i18next-cli` can be used programmatically in your build scripts, Gulp tasks, or any Node.js application:
+
+### Basic Programmatic Usage
+
+```typescript
+import { runExtractor, runLinter, runSyncer, runStatus } from 'i18next-cli';
+import type { I18nextToolkitConfig } from 'i18next-cli';
+
+const config: I18nextToolkitConfig = {
+  locales: ['en', 'de'],
+  extract: {
+    input: ['src/**/*.{ts,tsx,js,jsx}'],
+    output: 'locales/{{language}}/{{namespace}}.json',
+  },
+};
+
+// Run the complete extraction process
+const wasUpdated = await runExtractor(config);
+console.log('Files updated:', wasUpdated);
+
+// Check translation status programmatically
+const statusResults = await runStatus(config);
+
+// Run linting
+const lintResults = await runLinter(config);
+
+// Sync translation files
+const syncResults = await runSyncer(config);
+```
+
+### Build Tool Integration
+
+**Gulp Example:**
+
+```typescript
+import gulp from 'gulp';
+import { runExtractor } from 'i18next-cli';
+
+gulp.task('i18next-extract', async () => {
+  const config = {
+    locales: ['en', 'de', 'fr'],
+    extract: {
+      input: ['src/**/*.{ts,tsx,js,jsx}'],
+      output: 'public/locales/{{language}}/{{namespace}}.json',
+    },
+  };
+  
+  await runExtractor(config);
+});
+```
+
+**Webpack Plugin Example:**
+
+```typescript
+class I18nextExtractionPlugin {
+  apply(compiler) {
+    compiler.hooks.afterEmit.tapAsync('I18nextExtractionPlugin', async (compilation, callback) => {
+      await runExtractor(config);
+      callback();
+    });
+  }
+}
+```
+
+### Available Functions
+
+- `runExtractor(config, options?)` - Complete extraction with file writing
+- `runLinter(config)` - Run linting analysis
+- `runSyncer(config)` - Sync translation files
+- `runStatus(config, options?)` - Get translation status
+
+This programmatic API gives you the same power as the CLI but with full control over when and how it runs in your build process.
+
 ---
 
 <h3 align="center">Gold Sponsors</h3>

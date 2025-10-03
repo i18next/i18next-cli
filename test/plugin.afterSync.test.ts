@@ -1,6 +1,6 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
-import { runExtractor } from '../src/extractor'
+import { runExtractor } from '../src/index'
 import type { I18nextToolkitConfig, Plugin } from '../src/types'
 
 // Mocks
