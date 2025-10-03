@@ -21,7 +21,7 @@ const program = new Command()
 program
   .name('i18next-cli')
   .description('A unified, high-performance i18next CLI.')
-  .version('1.5.5')
+  .version('1.5.6')
 
 program
   .command('extract')
