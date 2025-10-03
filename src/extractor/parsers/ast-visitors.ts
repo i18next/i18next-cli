@@ -396,12 +396,16 @@ export class ASTVisitors {
 
     const firstArg = node.arguments[0].expression
     let keysToProcess: string[] = []
+    let isSelectorAPI = false
 
     if (firstArg.type === 'StringLiteral') {
       keysToProcess.push(firstArg.value)
     } else if (firstArg.type === 'ArrowFunctionExpression') {
       const key = this.extractKeyFromSelector(firstArg)
-      if (key) keysToProcess.push(key)
+      if (key) {
+        keysToProcess.push(key)
+        isSelectorAPI = true
+      }
     } else if (firstArg.type === 'ArrayExpression') {
       for (const element of firstArg.elements) {
         // We only extract static string literals from the array
@@ -517,7 +521,13 @@ export class ASTVisitors {
         }
       }
 
-      // 5. Default case: Add the simple key
+      // 5. Handle selector API as implicit returnObjects
+      if (isSelectorAPI) {
+        this.objectKeys.add(finalKey)
+        // Fall through to add the base key itself
+      }
+
+      // 6. Default case: Add the simple key
       this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv })
     }
   }

@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.5](https://github.com/i18next/i18next-cli/compare/v1.5.4...v1.5.5) - 2025-10-03
+
+- **Extractor:** Fixed a regression where existing nested translation objects were being replaced with string values when extracted with regular `t()` calls. The extractor now preserves existing nested objects when no explicit default value is provided, ensuring compatibility with global `returnObjects: true` configurations and preventing data loss during extraction. [#29](https://github.com/i18next/i18next-cli/issues/29)
+
 ## [1.5.4](https://github.com/i18next/i18next-cli/compare/v1.5.3...v1.5.4) - 2025-10-02
 
 - **Extractor:** Fixed a sorting edge case where keys with identical spellings but different cases (e.g., `FOO` and `foo`) were not consistently ordered. Lowercase variants now correctly appear before uppercase variants when the spelling is identical, ensuring predictable and stable sort order across all translation files.

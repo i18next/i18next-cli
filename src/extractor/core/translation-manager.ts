@@ -81,7 +81,20 @@ function buildNewTranslationsForNs (
   for (const { key, defaultValue } of nsKeys) {
     const existingValue = getNestedValue(existingTranslations, key, keySeparator ?? '.')
     const isLeafInNewKeys = !nsKeys.some(otherKey => otherKey.key.startsWith(`${key}${keySeparator}`) && otherKey.key !== key)
-    const isStaleObject = typeof existingValue === 'object' && existingValue !== null && isLeafInNewKeys && !objectKeys.has(key)
+
+    // Determine if we should preserve an existing object
+    const shouldPreserveObject = typeof existingValue === 'object' && existingValue !== null && (
+      objectKeys.has(key) || // Explicit returnObjects
+      !defaultValue || defaultValue === key // No explicit default or default equals key
+    )
+
+    const isStaleObject = typeof existingValue === 'object' && existingValue !== null && isLeafInNewKeys && !objectKeys.has(key) && !shouldPreserveObject
+
+    // Special handling for existing objects that should be preserved
+    if (shouldPreserveObject) {
+      setNestedValue(newTranslations, key, existingValue, keySeparator ?? '.')
+      continue
+    }
 
     const valueToSet = (existingValue === undefined || isStaleObject)
       ? (locale === primaryLanguage ? defaultValue : emptyDefaultValue)

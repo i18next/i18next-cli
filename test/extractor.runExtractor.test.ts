@@ -865,4 +865,70 @@ describe('extractor: runExtractor', () => {
     const expectedOrder = '"buttons": {\n    "cancel": "buttons.cancel",\n    "scroll-to-top": "buttons.scroll-to-top"\n  }'
     expect(enFileContent).toContain(expectedOrder)
   })
+
+  it('should preserve nested objects when returnObjects is used with selector API', async () => {
+    const sampleCode = `
+      // This selector API call should preserve the nested object structure
+      let { t } = useTranslation('_app._index')
+      const meta = t(($) => $.meta);
+    `
+    const enPath = resolve(process.cwd(), 'locales/en/_app._index.json')
+
+    // Prepopulate an existing translation file with the nested object
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      [enPath]: JSON.stringify({
+        meta: {
+          title: 'Lorem ipsum',
+          description: 'Dolor et sit amet'
+        }
+      }, null, 2),
+    })
+
+    await runExtractor(mockConfig)
+
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    expect(enJson).toEqual({
+      meta: {
+        title: 'Lorem ipsum', // Preserved
+        description: 'Dolor et sit amet' // Preserved
+      },
+      // The nested structure should be preserved, not replaced with "meta": "meta"
+    })
+  })
+
+  it('should preserve nested objects when returnObjects is used with t function API', async () => {
+    const sampleCode = `
+      // This selector API call should preserve the nested object structure
+      let { t } = useTranslation('_app._index')
+      const meta = t('meta');
+    `
+    const enPath = resolve(process.cwd(), 'locales/en/_app._index.json')
+
+    // Prepopulate an existing translation file with the nested object
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      [enPath]: JSON.stringify({
+        meta: {
+          title: 'Lorem ipsum',
+          description: 'Dolor et sit amet'
+        }
+      }, null, 2),
+    })
+
+    await runExtractor(mockConfig)
+
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    expect(enJson).toEqual({
+      meta: {
+        title: 'Lorem ipsum', // Preserved
+        description: 'Dolor et sit amet' // Preserved
+      },
+      // The nested structure should be preserved, not replaced with "meta": "meta"
+    })
+  })
 })
