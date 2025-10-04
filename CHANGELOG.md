@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.7](https://github.com/i18next/i18next-cli/compare/v1.5.6...v1.5.7) - 2025-10-04
+
+### Added
+- **Migration:** Added support for custom config file paths in the `migrate-config` command. You can now use a positional argument to specify non-standard config file locations (e.g., `i18next-cli migrate-config my-config.mjs`). [#31](https://github.com/i18next/i18next-cli/issues/31)
+- **Programmatic API:** Exported `runTypesGenerator` function for programmatic usage for build tool integration.
+
+### Enhanced
+- **Migration:** Added warning for deprecated `compatibilityJSON: 'v3'` option in legacy configs.
+
 ## [1.5.6](https://github.com/i18next/i18next-cli/compare/v1.5.5...v1.5.6) - 2025-10-03
 
 - **Programmatic API:** Exported `runExtractor`, `runLinter`, `runSyncer`, and `runStatus` functions for programmatic usage. You can now use `i18next-cli` directly in your build scripts, Gulp tasks, or any Node.js application without running the CLI commands. [#30](https://github.com/i18next/i18next-cli/issues/30)

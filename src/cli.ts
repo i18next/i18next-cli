@@ -107,10 +107,10 @@ program
   })
 
 program
-  .command('migrate-config')
+  .command('migrate-config [configPath]')
   .description('Migrate a legacy i18next-parser.config.js to the new format.')
-  .action(async () => {
-    await runMigrator()
+  .action(async (configPath) => {
+    await runMigrator(configPath)
   })
 
 program

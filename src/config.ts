@@ -191,7 +191,7 @@ async function findTsConfigFile (): Promise<string | null> {
  * Parses the project's tsconfig.json to extract path aliases for jiti.
  * @returns A record of aliases for jiti's configuration.
  */
-async function getTsConfigAliases (): Promise<Record<string, string>> {
+export async function getTsConfigAliases (): Promise<Record<string, string>> {
   try {
     const tsConfigPath = await findTsConfigFile()
     if (!tsConfigPath) return {}

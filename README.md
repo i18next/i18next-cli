@@ -201,6 +201,9 @@ Automatically migrates a legacy `i18next-parser.config.js` file to the new `i18n
 
 ```bash
 npx i18next-cli migrate-config
+
+# Using custom path for old config
+npx i18next-cli migrate-config i18next-parser.config.mjs
 ```
 
 ### Locize Integration
@@ -676,7 +679,7 @@ In addition to the CLI commands, `i18next-cli` can be used programmatically in y
 ### Basic Programmatic Usage
 
 ```typescript
-import { runExtractor, runLinter, runSyncer, runStatus } from 'i18next-cli';
+import { runExtractor, runLinter, runSyncer, runStatus, runTypesGenerator } from 'i18next-cli';
 import type { I18nextToolkitConfig } from 'i18next-cli';
 
 const config: I18nextToolkitConfig = {
@@ -692,13 +695,16 @@ const wasUpdated = await runExtractor(config);
 console.log('Files updated:', wasUpdated);
 
 // Check translation status programmatically
-const statusResults = await runStatus(config);
+await runStatus(config);
 
 // Run linting
-const lintResults = await runLinter(config);
+await runLinter(config);
 
 // Sync translation files
-const syncResults = await runSyncer(config);
+await runSyncer(config);
+
+// types generattion
+await runTypesGenerator(config);
 ```
 
 ### Build Tool Integration
@@ -741,6 +747,7 @@ class I18nextExtractionPlugin {
 - `runLinter(config)` - Run linting analysis
 - `runSyncer(config)` - Sync translation files
 - `runStatus(config, options?)` - Get translation status
+- `runTypesGenerator(config)` - Generate types
 
 This programmatic API gives you the same power as the CLI but with full control over when and how it runs in your build process.
 
