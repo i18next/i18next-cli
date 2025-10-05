@@ -363,4 +363,29 @@ export interface PluginContext {
    * @param keyInfo - The extracted key information
    */
   addKey: (keyInfo: ExtractedKey) => void;
+
+  /** The fully resolved i18next-cli configuration. */
+  config: I18nextToolkitConfig;
+
+  /** The shared logger instance. */
+  logger: Logger;
+
+  /**
+   * Retrieves variable information from the current scope chain.
+   * Searches from the innermost scope outwards.
+   * @param name - The variable name to look up (e.g., 't').
+   * @returns Scope information if found, otherwise undefined.
+   */
+  getVarFromScope: (name: string) => ScopeInfo | undefined;
+}
+
+/**
+ * Represents variable scope information tracked during AST traversal.
+ * Used to maintain context about translation functions and their configuration.
+ */
+export interface ScopeInfo {
+  /** Default namespace for translation calls in this scope */
+  defaultNs?: string;
+  /** Key prefix to prepend to all translation keys in this scope */
+  keyPrefix?: string;
 }

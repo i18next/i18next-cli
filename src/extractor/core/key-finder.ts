@@ -40,8 +40,15 @@ export async function findKeys (
   const sourceFiles = await processSourceFiles(config)
   const allKeys = new Map<string, ExtractedKey>()
 
-  // Create a single visitors instance to accumulate data across all files
-  const astVisitors = new ASTVisitors(config, createPluginContext(allKeys), logger)
+  // 1. Create the base context with config and logger.
+  const pluginContext = createPluginContext(allKeys, config, logger)
+
+  // 2. Create the visitor instance, passing it the context.
+  const astVisitors = new ASTVisitors(config, pluginContext, logger)
+
+  // 3. "Wire up" the visitor's scope method to the context.
+  // This avoids a circular dependency while giving plugins access to the scope.
+  pluginContext.getVarFromScope = astVisitors.getVarFromScope.bind(astVisitors)
 
   await initializePlugins(config.plugins || [])
 

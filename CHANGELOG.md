@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0](https://github.com/i18next/i18next-cli/compare/v1.5.11...v1.6.0) - 2025-10-05
+
+### Added
+- **Plugin System:** Enhanced plugin capabilities with improved context access and error handling. Plugins now receive richer context objects including:
+  - `getVarFromScope(name)`: Access to variable scope information for understanding `useTranslation` hooks, `getFixedT` calls, and namespace context
+  - Full configuration access via `context.config`
+  - Enhanced logging utilities via `context.logger`
+- **Plugin System:** Added robust error handling for plugin hooks. Plugin failures (in `onLoad` and `onVisitNode`) no longer crash the extraction process but are logged as warnings, allowing extraction to continue gracefully
+- **Plugin System:** Improved TypeScript support in plugins with better AST node access, enabling plugins to handle TypeScript-specific syntax like `satisfies` and `as` operators for advanced extraction patterns
+
+### Enhanced
+- **Extractor:** The `processFile` function now provides plugins with comprehensive access to the parsing context, enabling sophisticated custom extraction logic that can leverage variable scope analysis and TypeScript-aware parsing
+
 ## [1.5.11](https://github.com/i18next/i18next-cli/compare/v1.5.10...v1.5.11) - 2025-10-05
 
 - **Extractor:** Fixed handling of empty strings in template literals where conditional expressions could result in empty string concatenation (e.g., `` t(`key${condition ? '.suffix' : ''}`) ``). Empty strings are now properly filtered out during template literal resolution, ensuring only valid key variants are generated. [#41](https://github.com/i18next/i18next-cli/pull/41)

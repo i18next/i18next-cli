@@ -137,9 +137,17 @@ export async function processFile (
   try {
     let code = await readFile(file, 'utf-8')
 
-    // Run onLoad hooks from plugins
+    // Run onLoad hooks from plugins with error handling
     for (const plugin of (config.plugins || [])) {
-      code = (await plugin.onLoad?.(code, file)) ?? code
+      try {
+        const result = await plugin.onLoad?.(code, file)
+        if (result !== undefined) {
+          code = result
+        }
+      } catch (err) {
+        logger.warn(`Plugin ${plugin.name} onLoad failed:`, err)
+        // Continue with the original code if the plugin fails
+      }
     }
 
     const ast = await parse(code, {
@@ -149,7 +157,12 @@ export async function processFile (
       comments: true
     })
 
-    const pluginContext = createPluginContext(allKeys)
+    // 1. Create the base context with config and logger.
+    const pluginContext = createPluginContext(allKeys, config, logger)
+
+    // 2. "Wire up" the visitor's scope method to the context.
+    // This avoids a circular dependency while giving plugins access to the scope.
+    pluginContext.getVarFromScope = astVisitors.getVarFromScope.bind(astVisitors)
 
     // Extract keys from comments
     extractKeysFromComments(code, pluginContext, config)

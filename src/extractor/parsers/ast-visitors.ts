@@ -1,18 +1,7 @@
 import type { Module, Node, CallExpression, VariableDeclarator, JSXElement, ArrowFunctionExpression, ObjectExpression, Expression, TemplateLiteral } from '@swc/core'
-import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey } from '../../types'
+import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey, ScopeInfo } from '../../types'
 import { extractFromTransComponent } from './jsx-parser'
 import { getObjectProperty, getObjectPropValue } from './ast-utils'
-
-/**
- * Represents variable scope information tracked during AST traversal.
- * Used to maintain context about translation functions and their configuration.
- */
-interface ScopeInfo {
-  /** Default namespace for translation calls in this scope */
-  defaultNs?: string;
-  /** Key prefix to prepend to all translation keys in this scope */
-  keyPrefix?: string;
-}
 
 interface UseTranslationHookConfig {
   name: string;
@@ -190,7 +179,7 @@ export class ASTVisitors {
    *
    * @private
    */
-  private getVarFromScope (name: string): ScopeInfo | undefined {
+  public getVarFromScope (name: string): ScopeInfo | undefined {
     for (let i = this.scopeStack.length - 1; i >= 0; i--) {
       if (this.scopeStack[i].has(name)) {
         return this.scopeStack[i].get(name)

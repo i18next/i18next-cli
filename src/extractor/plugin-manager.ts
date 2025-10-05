@@ -1,4 +1,4 @@
-import type { ExtractedKey, PluginContext } from '../types'
+import type { ExtractedKey, PluginContext, I18nextToolkitConfig, Logger } from '../types'
 
 /**
  * Initializes an array of plugins by calling their setup hooks.
@@ -39,7 +39,7 @@ export async function initializePlugins (plugins: any[]): Promise<void> {
  * })
  * ```
  */
-export function createPluginContext (allKeys: Map<string, ExtractedKey>): PluginContext {
+export function createPluginContext (allKeys: Map<string, ExtractedKey>, config: I18nextToolkitConfig, logger: Logger): PluginContext {
   return {
     addKey: (keyInfo: ExtractedKey) => {
       // Use namespace in the unique map key to avoid collisions across namespaces
@@ -50,5 +50,9 @@ export function createPluginContext (allKeys: Map<string, ExtractedKey>): Plugin
         allKeys.set(uniqueKey, { ...keyInfo, defaultValue })
       }
     },
+    config,
+    logger,
+    // This will be attached later, so we provide a placeholder
+    getVarFromScope: () => undefined,
   }
 }

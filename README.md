@@ -383,15 +383,15 @@ export default defineConfig({
 
 ### Plugin System
 
-Create custom plugins to extend the capabilities of `i18next-cli`. The plugin system provides several hooks that allow you to tap into different stages of the extraction process.
+Create custom plugins to extend the capabilities of `i18next-cli`. The plugin system provides several hooks that allow you to tap into different stages of the extraction process, with full access to the AST parsing context and variable scope information.
 
 **Available Hooks:**
 
-  - `setup`: Runs once when the CLI is initialized. Use it for any setup tasks.
-  - `onLoad`: Runs for each file *before* it is parsed. You can use this to transform code (e.g., transpile a custom language to JavaScript).
-  - `onVisitNode`: Runs for every node in the Abstract Syntax Tree (AST) of a parsed JavaScript/TypeScript file. This is useful for finding custom translation patterns in your code.
-  - `onEnd`: Runs after all JS/TS files have been parsed but *before* the final keys are compared with existing translation files. This is the ideal hook for parsing non-JavaScript files (like `.html`, `.vue`, or `.svelte`) and adding their keys to the collection.
-  - `afterSync`: Runs after the extractor has compared the found keys with your translation files and generated the final results. This is perfect for post-processing tasks, like generating a report of newly added keys.
+- `setup`: Runs once when the CLI is initialized. Use it for any setup tasks.
+- `onLoad`: Runs for each file *before* it is parsed. You can use this to transform code (e.g., transpile a custom language to JavaScript).
+- `onVisitNode`: Runs for every node in the Abstract Syntax Tree (AST) of a parsed JavaScript/TypeScript file. This provides access to the full parsing context, including variable scope and TypeScript-specific syntax like `satisfies` and `as` operators.
+- `onEnd`: Runs after all JS/TS files have been parsed but *before* the final keys are compared with existing translation files. This is the ideal hook for parsing non-JavaScript files (like `.html`, `.vue`, or `.svelte`) and adding their keys to the collection.
+- `afterSync`: Runs after the extractor has compared the found keys with your translation files and generated the final results. This is perfect for post-processing tasks, like generating a report of newly added keys.
 
 **Example Plugin (`my-custom-plugin.mjs`):**
 
