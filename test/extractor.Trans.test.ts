@@ -65,6 +65,28 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should use ns from key instead of t prop', async () => {
+    const sampleCode = `
+      import React from 'react';
+      import { Trans, useTranslation } from 'react-i18next'
+
+      function MyComponent() {
+        const { t } = useTranslation('myNamespace');
+
+        return <Trans t={t} i18nKey="myOtherNamespace:myKey">Hello World</Trans>;
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const myNamespaceFile = results.find(r => r.path.endsWith('/locales/en/myOtherNamespace.json'))
+
+    expect(myNamespaceFile).toBeDefined()
+    expect(myNamespaceFile!.newTranslations).toEqual({
+      myKey: 'Hello World',
+    })
+  })
+
   it('should generate plural keys when Trans component has a count prop', async () => {
     const sampleCode = `
       <Trans i18nKey="userMessagesUnread" count={count}>
