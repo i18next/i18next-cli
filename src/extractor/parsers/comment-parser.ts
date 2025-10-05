@@ -55,7 +55,7 @@ export function extractKeysFromComments (
         key = parts.join(nsSeparator)
       }
 
-      // 3. NEW: If no explicit namespace found, try to resolve from scope
+      // 3. If no explicit namespace found, try to resolve from scope
       // This allows commented t() calls to inherit namespace from useTranslation scope
       if (!ns && scopeResolver) {
         const scopeInfo = scopeResolver('t')

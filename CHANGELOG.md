@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1](https://github.com/i18next/i18next-cli/compare/v1.6.0...v1.6.1) - 2025-10-05
+
+- **Extractor (Comments):** Fixed namespace scope resolution for `t()` calls in comments. Commented translation calls like `// t("Private")` now correctly inherit the namespace from the surrounding `useTranslation('access')` scope instead of defaulting to the default namespace, matching i18next-parser behavior. This ensures consistency between commented and actual translation calls within the same component scope. [#44](https://github.com/i18next/i18next-cli/issues/44)
+- **Extractor:** Loosened context value parsing to handle edge cases where empty strings or dynamic expressions in context options could cause extraction failures. The parser now gracefully handles various context value types and expressions. [#48](https://github.com/i18next/i18next-cli/pull/48)
+- **Plugin System:** Fixed plugin execution timing by running `onVisitNode` hooks inline during AST traversal instead of after it. This ensures plugins have access to scope information (like `getVarFromScope`) when processing nodes, enabling more sophisticated custom extraction logic. Plugins can now properly access variable scope context during the main AST walking phase. [#47](https://github.com/i18next/i18next-cli/pull/47)
+
 ## [1.6.0](https://github.com/i18next/i18next-cli/compare/v1.5.11...v1.6.0) - 2025-10-05
 
 ### Added

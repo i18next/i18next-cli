@@ -161,10 +161,11 @@ export async function processFile (
     // This avoids a circular dependency while giving plugins access to the scope.
     pluginContext.getVarFromScope = astVisitors.getVarFromScope.bind(astVisitors)
 
-    // Extract keys from comments with scope resolution
-    extractKeysFromComments(code, pluginContext, config, astVisitors.getVarFromScope.bind(astVisitors))
-
+    // 3. FIRST: Visit the AST to build scope information
     astVisitors.visit(ast)
+
+    // 4. THEN: Extract keys from comments with scope resolution (now scope info is available)
+    extractKeysFromComments(code, pluginContext, config, astVisitors.getVarFromScope.bind(astVisitors))
   } catch (error) {
     throw new ExtractorError('Failed to process file', file, error as Error)
   }

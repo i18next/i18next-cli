@@ -45,6 +45,8 @@ export class ASTVisitors {
 
   public objectKeys = new Set<string>()
 
+  private scope: Map<string, { defaultNs?: string; keyPrefix?: string }> = new Map()
+
   /**
    * Creates a new AST visitor instance.
    *
@@ -196,11 +198,20 @@ export class ASTVisitors {
    * @private
    */
   public getVarFromScope (name: string): ScopeInfo | undefined {
+    // First check the proper scope stack (this is the primary source of truth)
     for (let i = this.scopeStack.length - 1; i >= 0; i--) {
       if (this.scopeStack[i].has(name)) {
-        return this.scopeStack[i].get(name)
+        const scopeInfo = this.scopeStack[i].get(name)
+        return scopeInfo
       }
     }
+
+    // Then check the legacy scope tracking for useTranslation calls (for comment parsing)
+    const legacyScope = this.scope.get(name)
+    if (legacyScope) {
+      return legacyScope
+    }
+
     return undefined
   }
 
@@ -238,6 +249,9 @@ export class ASTVisitors {
       const hookConfig = this.getUseTranslationConfig(callee.value)
       if (hookConfig) {
         this.handleUseTranslationDeclarator(node, callExpr, hookConfig)
+
+        // ALSO store in the legacy scope for comment parsing compatibility
+        this.handleUseTranslationForComments(node, callExpr, hookConfig)
         return
       }
     }
@@ -249,6 +263,84 @@ export class ASTVisitors {
       callee.property.value === 'getFixedT'
     ) {
       this.handleGetFixedTDeclarator(node, callExpr)
+    }
+  }
+
+  /**
+   * Handles useTranslation calls for comment scope resolution.
+   * This is a separate method to store scope info in the legacy scope map
+   * that the comment parser can access.
+   *
+   * @param node - Variable declarator with useTranslation call
+   * @param callExpr - The CallExpression node representing the useTranslation invocation
+   * @param hookConfig - Configuration describing argument positions for namespace and keyPrefix
+   *
+   * @private
+   */
+  private handleUseTranslationForComments (node: VariableDeclarator, callExpr: CallExpression, hookConfig: UseTranslationHookConfig): void {
+    let variableName: string | undefined
+
+    // Handle simple assignment: let t = useTranslation()
+    if (node.id.type === 'Identifier') {
+      variableName = node.id.value
+    }
+
+    // Handle array destructuring: const [t, i18n] = useTranslation()
+    if (node.id.type === 'ArrayPattern') {
+      const firstElement = node.id.elements[0]
+      if (firstElement?.type === 'Identifier') {
+        variableName = firstElement.value
+      }
+    }
+
+    // Handle object destructuring: const { t } or { t: t1 } = useTranslation()
+    if (node.id.type === 'ObjectPattern') {
+      for (const prop of node.id.properties) {
+        if (prop.type === 'AssignmentPatternProperty' && prop.key.type === 'Identifier' && prop.key.value === 't') {
+          // This handles { t = defaultT }
+          variableName = 't'
+          break
+        }
+        if (prop.type === 'KeyValuePatternProperty' && prop.key.type === 'Identifier' && prop.key.value === 't' && prop.value.type === 'Identifier') {
+          // This handles { t: myT }
+          variableName = prop.value.value
+          break
+        }
+      }
+    }
+
+    // If we couldn't find a `t` function being declared, exit
+    if (!variableName) return
+
+    // Extract namespace from useTranslation arguments
+    const nsArg = callExpr.arguments?.[hookConfig.nsArg]?.expression
+    const optionsArg = callExpr.arguments?.[hookConfig.keyPrefixArg]?.expression
+
+    let defaultNs: string | undefined
+    let keyPrefix: string | undefined
+
+    // Parse namespace argument
+    if (nsArg?.type === 'StringLiteral') {
+      defaultNs = nsArg.value
+    } else if (nsArg?.type === 'ArrayExpression' && nsArg.elements[0]?.expression.type === 'StringLiteral') {
+      defaultNs = nsArg.elements[0].expression.value
+    }
+
+    // Parse keyPrefix from options object
+    if (optionsArg?.type === 'ObjectExpression') {
+      const keyPrefixProp = optionsArg.properties.find(
+        prop => prop.type === 'KeyValueProperty' &&
+                prop.key.type === 'Identifier' &&
+                prop.key.value === 'keyPrefix'
+      )
+      if (keyPrefixProp?.type === 'KeyValueProperty' && keyPrefixProp.value.type === 'StringLiteral') {
+        keyPrefix = keyPrefixProp.value.value
+      }
+    }
+
+    // Store in the legacy scope map for comment parsing
+    if (defaultNs || keyPrefix) {
+      this.scope.set(variableName, { defaultNs, keyPrefix })
     }
   }
 

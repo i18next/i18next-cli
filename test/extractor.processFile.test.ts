@@ -53,7 +53,7 @@ describe('processFile', () => {
       '/src/App.tsx': sampleCode,
     })
 
-    const plugins = []
+    const plugins: Plugin[] = []
 
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 
@@ -108,7 +108,7 @@ describe('processFile', () => {
       '/src/test.ts': sampleCode,
     })
 
-    const plugins = []
+    const plugins: Plugin[] = []
 
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 
@@ -128,7 +128,7 @@ describe('processFile', () => {
       '/src/satisfies-test.ts': sampleCode,
     })
 
-    const plugins = []
+    const plugins: Plugin[] = []
 
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 
@@ -151,7 +151,7 @@ describe('processFile', () => {
       '/src/as-test.ts': sampleCode,
     })
 
-    const plugins = []
+    const plugins: Plugin[] = []
 
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 
@@ -181,7 +181,7 @@ describe('processFile', () => {
       '/src/jsx-test.tsx': sampleCode,
     })
 
-    const plugins = []
+    const plugins: Plugin[] = []
 
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 
@@ -208,7 +208,7 @@ describe('processFile', () => {
       '/src/decorator-test.ts': sampleCode,
     })
 
-    const plugins = []
+    const plugins: Plugin[] = []
 
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 
@@ -231,7 +231,7 @@ describe('processFile', () => {
       '/src/invalid.ts': invalidCode,
     })
 
-    const plugins = []
+    const plugins: Plugin[] = []
 
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 
@@ -240,7 +240,7 @@ describe('processFile', () => {
   })
 
   it('should throw ExtractorError when file does not exist', async () => {
-    const plugins = []
+    const plugins: Plugin[] = []
 
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 

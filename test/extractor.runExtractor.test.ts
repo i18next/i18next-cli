@@ -1028,7 +1028,7 @@ describe('extractor: runExtractor', () => {
               <>
                   {
                       // t("Private")
-                      // t("Everyone") 
+                      // t("Everyone")
                       // t("Admin Only")
                       t(accessType, {
                           ignoreJSONStructure: true,
@@ -1044,44 +1044,34 @@ describe('extractor: runExtractor', () => {
 
     await runExtractor(mockConfig)
 
-    // First, let's check if the keys are being extracted at all (likely to translation.json currently)
-    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
-    let translationJson = {}
-    let accessJson = {}
+    // Check that commented keys go to access.json (from useTranslation scope)
+    const accessPath = resolve(process.cwd(), 'locales/en/access.json')
+    const accessFileContent = await vol.promises.readFile(accessPath, 'utf-8')
+    const accessJson = JSON.parse(accessFileContent as string)
 
+    expect(accessJson).toEqual({
+      Private: 'Private',
+      Everyone: 'Everyone',
+      'Admin Only': 'Admin Only'
+    })
+
+    // Verify that the default translation.json doesn't contain these keys
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
     try {
       const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
-      translationJson = JSON.parse(translationFileContent as string)
+      const translationJson = JSON.parse(translationFileContent as string)
+
+      // Should not contain the commented keys since they went to access.json
+      expect(translationJson).not.toHaveProperty('Private')
+      expect(translationJson).not.toHaveProperty('Everyone')
+      expect(translationJson).not.toHaveProperty('Admin Only')
     } catch (error) {
-      // File might not exist
-    }
-
-    // Check if access.json exists (this is what we want after the fix)
-    const accessPath = resolve(process.cwd(), 'locales/en/access.json')
-    try {
-      const accessFileContent = await vol.promises.readFile(accessPath, 'utf-8')
-      accessJson = JSON.parse(accessFileContent as string)
-    } catch (error) {
-      // File doesn't exist yet - this is the current behavior
-    }
-
-    // For now, let's verify the current behavior - keys should be in translation.json
-    // This test documents the current bug and will need to be updated once fixed
-    if (Object.keys(accessJson).length > 0) {
-      // This is the desired behavior (after fix)
-      expect(accessJson).toEqual({
-        Private: 'Private',
-        Everyone: 'Everyone',
-        'Admin Only': 'Admin Only'
-      })
-    } else {
-      // This is the current buggy behavior - keys go to default namespace
-      expect(translationJson).toHaveProperty('Private')
-      expect(translationJson).toHaveProperty('Everyone')
-      expect(translationJson).toHaveProperty('Admin Only')
-
-      // Mark this as a known issue that should be fixed
-      console.warn('BUG: Commented t() calls are not inheriting namespace from useTranslation scope')
+      // It's okay if the translation.json file doesn't exist since keys went to access namespace
+      if ((error as any)?.code === 'ENOENT') {
+        expect(true).toBe(true)
+      } else {
+        throw error
+      }
     }
   })
 })
