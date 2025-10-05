@@ -141,6 +141,20 @@ describe('extractor: advanced t features', () => {
       expect(headerFile!.newTranslations).toEqual({ title: 'A Header' })
     })
 
+    it('should allow key to override the useTranslation namespace', async () => {
+      const sampleCode = `
+        const { t } = useTranslation('common');
+        t('header:title', { defaultValue: 'A Header' });
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const headerFile = results.find(r => r.path.endsWith('/locales/en/header.json'))
+
+      expect(headerFile).toBeDefined()
+      expect(headerFile!.newTranslations).toEqual({ title: 'A Header' })
+    })
+
     it('should detect the correct namespace from multiple useTranslation calls', async () => {
       const sampleCode = `
         function NotificationItem() {

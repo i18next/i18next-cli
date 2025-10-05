@@ -454,12 +454,12 @@ export class ASTVisitors {
       let key = keysToProcess[i]
       let ns: string | undefined
 
-      // Determine namespace (explicit ns > scope ns > ns:key > default)
+      // Determine namespace (explicit ns > ns:key > scope ns > default)
+      // See https://www.i18next.com/overview/api#getfixedt
       if (options) {
         const nsVal = getObjectPropValue(options, 'ns')
         if (typeof nsVal === 'string') ns = nsVal
       }
-      if (!ns && scopeInfo?.defaultNs) ns = scopeInfo.defaultNs
 
       const nsSeparator = this.config.extract.nsSeparator ?? ':'
       if (!ns && nsSeparator && key.includes(nsSeparator)) {
@@ -467,6 +467,8 @@ export class ASTVisitors {
         ns = parts.shift()
         key = parts.join(nsSeparator)
       }
+
+      if (!ns && scopeInfo?.defaultNs) ns = scopeInfo.defaultNs
       if (!ns) ns = this.config.extract.defaultNS
 
       let finalKey = key
