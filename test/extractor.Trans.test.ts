@@ -213,6 +213,61 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should extract all possible keys with a template string first argument', async () => {
+    const sampleCode = `
+          const isOpen = true;
+  
+          const Component = () => {
+            return <Trans i18nKey={\`state.\${isDone ? 'done' : 'notDone'}.title\`}>Done</Trans>;
+          }
+        `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+    expect(translationFile!.newTranslations).toEqual({
+      state: {
+        done: {
+          title: 'Done',
+        },
+        notDone: {
+          title: 'Done',
+        },
+      },
+    })
+  })
+
+  it('should extract all possible keys with nested expressions', async () => {
+    const sampleCode = `
+          const test = false;
+          const state = 'unknown';
+  
+          <Trans i18nKey={test ? \`state.\${state === 'final' ? 'finalized' : \`\${state === 'pending' ? 'pending' : 'unknown'}\`}.title\` : 'state.test.title'}>State</Trans>;
+        `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+    expect(translationFile!.newTranslations).toEqual({
+      state: {
+        finalized: {
+          title: 'State',
+        },
+        pending: {
+          title: 'State',
+        },
+        test: {
+          title: 'State',
+        },
+        unknown: {
+          title: 'State',
+        },
+      },
+    })
+  })
+
   it('should extract plural-specific default values from tOptions', async () => {
     const sampleCode = `
       <Trans i18nKey="item" count={count} tOptions={{ defaultValue_other: "Items" }}>

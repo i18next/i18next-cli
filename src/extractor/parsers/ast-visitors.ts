@@ -1,4 +1,4 @@
-import type { Module, Node, CallExpression, VariableDeclarator, JSXElement, ArrowFunctionExpression, ObjectExpression, Expression } from '@swc/core'
+import type { Module, Node, CallExpression, VariableDeclarator, JSXElement, ArrowFunctionExpression, ObjectExpression, Expression, TemplateLiteral } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey } from '../../types'
 import { extractFromTransComponent } from './jsx-parser'
 import { getObjectProperty, getObjectPropValue } from './ast-utils'
@@ -1006,8 +1006,49 @@ export class ASTVisitors {
       return [] // Handle the `undefined` case
     }
 
+    if (expression.type === 'TemplateLiteral') {
+      return this.resolvePossibleStringValuesFromTemplateString(expression)
+    }
+
+    if (expression.type === 'NumericLiteral' || expression.type === 'BooleanLiteral') {
+      return [`${expression.value}`] // Handle literals like 5 or true
+    }
+
     // We can't statically determine the value of other expressions (e.g., variables, function calls)
     return []
+  }
+
+  /**
+   * Resolves a template literal to one or more possible string values that can be
+   * determined statically from the AST.
+   *
+   * @private
+   * @param templateString - The SWC AST template literal node to resolve
+   * @returns An array of possible string values that the template literal may produce.
+   */
+  private resolvePossibleStringValuesFromTemplateString (templateString: TemplateLiteral): string[] {
+    // If there are no expressions, we can just return the cooked value
+    if (templateString.quasis.length === 1 && templateString.expressions.length === 0) {
+      // Ex. `translation.key.no.substitution`
+      return [templateString.quasis[0].cooked || '']
+    }
+
+    // Ex. `translation.key.with.expression.${x ? 'title' : 'description}`
+    const [firstQuasis, ...tails] = templateString.quasis
+
+    const stringValues = templateString.expressions.reduce(
+      (heads, expression, i) => {
+        return heads.flatMap((head) => {
+          const tail = tails[i]?.cooked ?? ''
+          return this.resolvePossibleStringValues(expression).map(
+            (expressionValue) => `${head}${expressionValue}${tail}`
+          )
+        })
+      },
+      [firstQuasis.cooked ?? '']
+    )
+
+    return stringValues
   }
 
   /**
