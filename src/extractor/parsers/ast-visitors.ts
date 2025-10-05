@@ -1,5 +1,5 @@
 import type { Module, Node, CallExpression, VariableDeclarator, JSXElement, ArrowFunctionExpression, ObjectExpression, Expression } from '@swc/core'
-import type { PluginContext, I18nextToolkitConfig, Logger } from '../../types'
+import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey } from '../../types'
 import { extractFromTransComponent } from './jsx-parser'
 import { getObjectProperty, getObjectPropValue } from './ast-utils'
 
@@ -394,28 +394,8 @@ export class ASTVisitors {
     }
     if (!isFunctionToParse || node.arguments.length === 0) return
 
-    const firstArg = node.arguments[0].expression
-    let keysToProcess: string[] = []
-    let isSelectorAPI = false
+    const { keysToProcess, isSelectorAPI } = this.handleCallExpressionArgument(node, 0)
 
-    if (firstArg.type === 'StringLiteral') {
-      keysToProcess.push(firstArg.value)
-    } else if (firstArg.type === 'ArrowFunctionExpression') {
-      const key = this.extractKeyFromSelector(firstArg)
-      if (key) {
-        keysToProcess.push(key)
-        isSelectorAPI = true
-      }
-    } else if (firstArg.type === 'ArrayExpression') {
-      for (const element of firstArg.elements) {
-        // We only extract static string literals from the array
-        if (element?.expression.type === 'StringLiteral') {
-          keysToProcess.push(element.expression.value)
-        }
-      }
-    }
-
-    keysToProcess = keysToProcess.filter(key => !!key)
     if (keysToProcess.length === 0) return
 
     let isOrdinalByKey = false
@@ -535,6 +515,43 @@ export class ASTVisitors {
   }
 
   /**
+   * Processed a call expression to extract keys from the specified argument.
+   *
+   * @param node - The call expression node
+   * @param argIndex - The index of the argument to process
+   * @returns An object containing the keys to process and a flag indicating if the selector API is used
+   */
+  private handleCallExpressionArgument (
+    node: CallExpression,
+    argIndex: number
+  ): { keysToProcess: string[]; isSelectorAPI: boolean } {
+    const firstArg = node.arguments[argIndex].expression
+    const keysToProcess: string[] = []
+    let isSelectorAPI = false
+
+    if (firstArg.type === 'ArrowFunctionExpression') {
+      const key = this.extractKeyFromSelector(firstArg)
+      if (key) {
+        keysToProcess.push(key)
+        isSelectorAPI = true
+      }
+    } else if (firstArg.type === 'ArrayExpression') {
+      for (const element of firstArg.elements) {
+        if (element?.expression) {
+          keysToProcess.push(...this.resolvePossibleStringValues(element.expression))
+        }
+      }
+    } else {
+      keysToProcess.push(...this.resolvePossibleStringValues(firstArg))
+    }
+
+    return {
+      keysToProcess: keysToProcess.filter((key) => !!key),
+      isSelectorAPI,
+    }
+  }
+
+  /**
    * Generates plural form keys based on the primary language's plural rules.
    *
    * Uses Intl.PluralRules to determine the correct plural categories
@@ -649,10 +666,28 @@ export class ASTVisitors {
     const elementName = this.getElementName(node)
 
     if (elementName && (this.config.extract.transComponents || ['Trans']).includes(elementName)) {
-      const extractedKey = extractFromTransComponent(node, this.config)
-      if (extractedKey) {
+      const extractedAttributes = extractFromTransComponent(node, this.config)
+
+      const keysToProcess: string[] = []
+
+      if (extractedAttributes) {
+        if (extractedAttributes.keyExpression) {
+          const keyValues = this.resolvePossibleStringValues(extractedAttributes.keyExpression)
+          keysToProcess.push(...keyValues)
+        } else {
+          keysToProcess.push(extractedAttributes.serializedChildren)
+        }
+
+        let extractedKeys: ExtractedKey[]
+
+        const { contextExpression, optionsNode, defaultValue, hasCount, isOrdinal, serializedChildren } = extractedAttributes
+
         // If ns is not explicitly set on the component, try to find it from the `t` prop
-        if (!extractedKey.ns) {
+        if (!extractedAttributes.ns) {
+          extractedKeys = keysToProcess.map(key => {
+            return { key, defaultValue: defaultValue || serializedChildren, hasCount, isOrdinal }
+          })
+
           const tProp = node.opening.attributes?.find(
             attr =>
               attr.type === 'JSXAttribute' &&
@@ -669,18 +704,28 @@ export class ASTVisitors {
             const tIdentifier = tProp.value.expression.value
             const scopeInfo = this.getVarFromScope(tIdentifier)
             if (scopeInfo?.defaultNs) {
-              extractedKey.ns = scopeInfo.defaultNs
+              extractedKeys.forEach(key => {
+                key.ns = scopeInfo.defaultNs
+              })
             }
           }
+        } else {
+          const { ns } = extractedAttributes
+          extractedKeys = keysToProcess.map(key => {
+            return { key, ns, defaultValue: defaultValue || serializedChildren, hasCount, isOrdinal, }
+          })
         }
 
-        // Apply defaultNS from config if no namespace was found on the component
-        if (!extractedKey.ns) {
-          extractedKey.ns = this.config.extract.defaultNS
-        }
+        extractedKeys.forEach(key => {
+          // Apply defaultNS from config if no namespace was found on the component and
+          // the key does not contain a namespace prefix
+          if (!key.ns) {
+            key.ns = this.config.extract.defaultNS
+          }
+        })
 
         // Handle the combination of context and count
-        if (extractedKey.contextExpression && extractedKey.hasCount) {
+        if (contextExpression && hasCount) {
           // Find isOrdinal prop on the <Trans> component
           const ordinalAttr = node.opening.attributes?.find(
             (attr) =>
@@ -690,37 +735,41 @@ export class ASTVisitors {
           )
           const isOrdinal = !!ordinalAttr
 
-          const contextValues = this.resolvePossibleStringValues(extractedKey.contextExpression)
+          const contextValues = this.resolvePossibleStringValues(contextExpression)
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
 
           // Generate all combinations of context and plural forms
           if (contextValues.length > 0) {
             // Generate base plural forms (no context)
-            this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, extractedKey.optionsNode)
+            extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode))
 
             // Generate context + plural combinations
             for (const context of contextValues) {
-              const contextKey = `${extractedKey.key}${contextSeparator}${context}`
-              this.generatePluralKeysForTrans(contextKey, extractedKey.defaultValue, extractedKey.ns, isOrdinal, extractedKey.optionsNode)
+              for (const extractedKey of extractedKeys) {
+                const contextKey = `${extractedKey.key}${contextSeparator}${context}`
+                this.generatePluralKeysForTrans(contextKey, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode)
+              }
             }
           } else {
             // Fallback to just plural forms if context resolution fails
-            this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, extractedKey.optionsNode)
+            extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode))
           }
-        } else if (extractedKey.contextExpression) {
-          const contextValues = this.resolvePossibleStringValues(extractedKey.contextExpression)
+        } else if (contextExpression) {
+          const contextValues = this.resolvePossibleStringValues(contextExpression)
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
 
           if (contextValues.length > 0) {
             for (const context of contextValues) {
-              this.pluginContext.addKey({ key: `${extractedKey.key}${contextSeparator}${context}`, ns: extractedKey.ns, defaultValue: extractedKey.defaultValue })
+              for (const { key, ns, defaultValue } of extractedKeys) {
+                this.pluginContext.addKey({ key: `${key}${contextSeparator}${context}`, ns, defaultValue })
+              }
             }
             // Only add the base key as a fallback if the context is dynamic (i.e., not a simple string).
-            if (extractedKey.contextExpression.type !== 'StringLiteral') {
-              this.pluginContext.addKey(extractedKey)
+            if (contextExpression.type !== 'StringLiteral') {
+              extractedKeys.forEach(this.pluginContext.addKey)
             }
           }
-        } else if (extractedKey.hasCount) {
+        } else if (hasCount) {
           // Find isOrdinal prop on the <Trans> component
           const ordinalAttr = node.opening.attributes?.find(
             (attr) =>
@@ -730,9 +779,9 @@ export class ASTVisitors {
           )
           const isOrdinal = !!ordinalAttr
 
-          this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, extractedKey.optionsNode)
+          extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode))
         } else {
-          this.pluginContext.addKey(extractedKey)
+          extractedKeys.forEach(this.pluginContext.addKey)
         }
       }
     }

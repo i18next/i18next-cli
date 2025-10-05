@@ -255,6 +255,24 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should extract all possible keys with a ternary first argument', async () => {
+      const sampleCode = `
+        const isOpen = true;
+        t('open', 'Open');
+        t('closed', 'Closed');
+        t(isOpen ? 'open' : 'closed');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile!.newTranslations).toEqual({
+        open: 'Open',
+        closed: 'Closed',
+      })
+    })
+
     it('should extract keys from t() calls inside array.map in JSX', async () => {
       const sampleCode = `
         function MappedComponent() {
