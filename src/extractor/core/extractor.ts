@@ -3,11 +3,10 @@ import chalk from 'chalk'
 import { parse } from '@swc/core'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { Logger, ExtractedKey, PluginContext, I18nextToolkitConfig } from '../../types'
+import type { Logger, I18nextToolkitConfig, Plugin, PluginContext } from '../../types'
 import { findKeys } from './key-finder'
 import { getTranslations } from './translation-manager'
 import { validateExtractorConfig, ExtractorError } from '../../utils/validation'
-import { createPluginContext } from '../plugin-manager'
 import { extractKeysFromComments } from '../parsers/comment-parser'
 import { ASTVisitors } from '../parsers/ast-visitors'
 import { ConsoleLogger } from '../../utils/logger'
@@ -129,16 +128,17 @@ export async function runExtractor (
  */
 export async function processFile (
   file: string,
-  config: I18nextToolkitConfig,
-  allKeys: Map<string, ExtractedKey>,
+  plugins: Plugin[],
   astVisitors: ASTVisitors,
+  pluginContext: PluginContext,
+  config: Omit<I18nextToolkitConfig, 'plugins'>,
   logger: Logger = new ConsoleLogger()
 ): Promise<void> {
   try {
     let code = await readFile(file, 'utf-8')
 
     // Run onLoad hooks from plugins with error handling
-    for (const plugin of (config.plugins || [])) {
+    for (const plugin of plugins) {
       try {
         const result = await plugin.onLoad?.(code, file)
         if (result !== undefined) {
@@ -157,10 +157,7 @@ export async function processFile (
       comments: true
     })
 
-    // 1. Create the base context with config and logger.
-    const pluginContext = createPluginContext(allKeys, config, logger)
-
-    // 2. "Wire up" the visitor's scope method to the context.
+    // "Wire up" the visitor's scope method to the context.
     // This avoids a circular dependency while giving plugins access to the scope.
     pluginContext.getVarFromScope = astVisitors.getVarFromScope.bind(astVisitors)
 
@@ -168,46 +165,8 @@ export async function processFile (
     extractKeysFromComments(code, pluginContext, config, astVisitors.getVarFromScope.bind(astVisitors))
 
     astVisitors.visit(ast)
-
-    // Run plugin visitors
-    if ((config.plugins || []).length > 0) {
-      traverseEveryNode(ast, (config.plugins || []), pluginContext, logger)
-    }
   } catch (error) {
     throw new ExtractorError('Failed to process file', file, error as Error)
-  }
-}
-
-/**
- * Recursively traverses AST nodes and calls plugin onVisitNode hooks.
- *
- * @param node - The AST node to traverse
- * @param plugins - Array of plugins to run hooks for
- * @param pluginContext - Context object with helper methods for plugins
- *
- * @internal
- */
-function traverseEveryNode (node: any, plugins: any[], pluginContext: PluginContext, logger: Logger = new ConsoleLogger()): void {
-  if (!node || typeof node !== 'object') return
-
-  // Call plugins for this node
-  for (const plugin of plugins) {
-    try {
-      plugin.onVisitNode?.(node, pluginContext)
-    } catch (err) {
-      logger.warn(`Plugin ${plugin.name} onVisitNode failed:`, err)
-    }
-  }
-
-  for (const key of Object.keys(node)) {
-    const child = node[key]
-    if (Array.isArray(child)) {
-      for (const c of child) {
-        if (c && typeof c === 'object') traverseEveryNode(c, plugins, pluginContext, logger)
-      }
-    } else if (child && typeof child === 'object') {
-      traverseEveryNode(child, plugins, pluginContext, logger)
-    }
   }
 }
 

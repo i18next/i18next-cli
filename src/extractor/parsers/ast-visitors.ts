@@ -9,6 +9,11 @@ interface UseTranslationHookConfig {
   keyPrefixArg: number;
 }
 
+export interface ASTVisitorHooks {
+  onBeforeVisitNode?: (node: Node) => void
+  onAfterVisitNode?: (node: Node) => void
+}
+
 /**
  * AST visitor class that traverses JavaScript/TypeScript syntax trees to extract translation keys.
  *
@@ -33,9 +38,10 @@ interface UseTranslationHookConfig {
  */
 export class ASTVisitors {
   private readonly pluginContext: PluginContext
-  private readonly config: I18nextToolkitConfig
+  private readonly config: Omit<I18nextToolkitConfig, 'plugins'>
   private readonly logger: Logger
   private scopeStack: Array<Map<string, ScopeInfo>> = []
+  private hooks: ASTVisitorHooks
 
   public objectKeys = new Set<string>()
 
@@ -47,13 +53,18 @@ export class ASTVisitors {
    * @param logger - Logger for warnings and debug information
    */
   constructor (
-    config: I18nextToolkitConfig,
+    config: Omit<I18nextToolkitConfig, 'plugins'>,
     pluginContext: PluginContext,
-    logger: Logger
+    logger: Logger,
+    hooks?: ASTVisitorHooks
   ) {
     this.pluginContext = pluginContext
     this.config = config
     this.logger = logger
+    this.hooks = {
+      onBeforeVisitNode: hooks?.onBeforeVisitNode,
+      onAfterVisitNode: hooks?.onAfterVisitNode
+    }
   }
 
   /**
@@ -91,6 +102,8 @@ export class ASTVisitors {
       isNewScope = true
     }
 
+    this.hooks.onBeforeVisitNode?.(node)
+
     // --- VISIT LOGIC ---
     // Handle specific node types
     switch (node.type) {
@@ -104,6 +117,9 @@ export class ASTVisitors {
         this.handleJSXElement(node)
         break
     }
+
+    this.hooks.onAfterVisitNode?.(node)
+
     // --- END VISIT LOGIC ---
 
     // --- RECURSION ---
