@@ -9,6 +9,8 @@ dist/*
 !dist/deno/
 
 .env.*
+.node-version
+.nvmrc
 
 coverage
 tryme.js
