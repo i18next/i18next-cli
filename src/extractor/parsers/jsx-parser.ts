@@ -158,9 +158,28 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
   }
 
   let keyExpression: Expression | undefined
+  let processedKeyValue: string | undefined
+
   if (i18nKeyAttr?.type === 'JSXAttribute') {
     if (i18nKeyAttr.value?.type === 'StringLiteral') {
       keyExpression = i18nKeyAttr.value
+      processedKeyValue = keyExpression.value
+
+      // Handle namespace prefix removal when both ns and i18nKey are provided
+      if (ns && keyExpression.type === 'StringLiteral') {
+        const nsSeparator = config.extract.nsSeparator ?? ':'
+        const keyValue = keyExpression.value
+
+        // If the key starts with the namespace followed by the separator, remove the prefix
+        if (nsSeparator && keyValue.startsWith(`${ns}${nsSeparator}`)) {
+          processedKeyValue = keyValue.slice(`${ns}${nsSeparator}`.length)
+          // Create a new StringLiteral with the namespace prefix removed
+          keyExpression = {
+            ...keyExpression,
+            value: processedKeyValue
+          }
+        }
+      }
     } else if (
       i18nKeyAttr.value?.type === 'JSXExpressionContainer' &&
       i18nKeyAttr.value.expression.type !== 'JSXEmptyExpression'
@@ -169,6 +188,14 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
     }
 
     if (!keyExpression) return null
+  }
+
+  // If no explicit defaults provided and we have a processed key, use it as default value
+  // This matches the behavior of other similar tests in the codebase
+  if (!defaultsAttr && processedKeyValue && !serialized.trim()) {
+    defaultValue = processedKeyValue
+  } else if (!defaultsAttr && serialized.trim()) {
+    defaultValue = serialized
   }
 
   return {

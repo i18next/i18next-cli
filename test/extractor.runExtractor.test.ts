@@ -931,4 +931,87 @@ describe('extractor: runExtractor', () => {
       // The nested structure should be preserved, not replaced with "meta": "meta"
     })
   })
+
+  it('should remove namespace prefix from i18nKey when ns prop is specified on Trans component', async () => {
+    const sampleCode = `
+      import { Trans } from 'react-i18next';
+
+      export const FormTranslation = () => {
+        return (
+          <Trans
+            t={t}
+            ns="form"
+            i18nKey="form:cost_question.description"
+          />
+        );
+      };
+
+      export const AnotherComponent = () => {
+        return (
+          <Trans
+            ns="common"
+            i18nKey="common:button.submit"
+          />
+        );
+      };
+
+      export const WithoutNamespacePrefix = () => {
+        return (
+          <Trans
+            ns="form"
+            i18nKey="simple.key"
+          />
+        );
+      };
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    await runExtractor(mockConfig)
+
+    // Check form namespace file
+    const formPath = resolve(process.cwd(), 'locales/en/form.json')
+    const formFileContent = await vol.promises.readFile(formPath, 'utf-8')
+    const formJson = JSON.parse(formFileContent as string)
+
+    expect(formJson).toEqual({
+      cost_question: {
+        description: 'cost_question.description'
+      },
+      simple: {
+        key: 'simple.key'
+      }
+    })
+
+    // Check common namespace file
+    const commonPath = resolve(process.cwd(), 'locales/en/common.json')
+    const commonFileContent = await vol.promises.readFile(commonPath, 'utf-8')
+    const commonJson = JSON.parse(commonFileContent as string)
+
+    expect(commonJson).toEqual({
+      button: {
+        submit: 'button.submit'
+      }
+    })
+
+    // Verify that the default translation.json doesn't contain these keys (if it exists)
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    try {
+      const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+      const translationJson = JSON.parse(translationFileContent as string)
+
+      // Should not contain the namespaced keys
+      expect(translationJson).not.toHaveProperty('form:cost_question.description')
+      expect(translationJson).not.toHaveProperty('common:button.submit')
+    } catch (error) {
+      // It's okay if the translation.json file doesn't exist since all keys went to namespace files
+      if ((error as any)?.code === 'ENOENT') {
+        // This is expected - no keys went to the default translation file
+        expect(true).toBe(true)
+      } else {
+        throw error
+      }
+    }
+  })
 })

@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Enhanced
 - **Extractor:** The `processFile` function now provides plugins with comprehensive access to the parsing context, enabling sophisticated custom extraction logic that can leverage variable scope analysis and TypeScript-aware parsing
+- **Extractor (`<Trans>`):** Fixed namespace prefix duplication when both `ns` prop and namespace prefix in `i18nKey` are specified. When a `<Trans>` component has both `ns="form"` and `i18nKey="form:cost_question.description"`, the extractor now correctly removes the redundant namespace prefix and extracts `cost_question.description` to the `form.json` file, matching i18next and i18next-parser behavior. [#45](https://github.com/i18next/i18next-cli/issues/45)
+
 
 ## [1.5.11](https://github.com/i18next/i18next-cli/compare/v1.5.10...v1.5.11) - 2025-10-05
 
