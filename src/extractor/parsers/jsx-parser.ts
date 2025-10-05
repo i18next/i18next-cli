@@ -1,6 +1,32 @@
-import type { JSXElement } from '@swc/core'
-import type { ExtractedKey, I18nextToolkitConfig } from '../../types'
+import type { Expression, JSXElement, ObjectExpression, Property } from '@swc/core'
+import type { I18nextToolkitConfig } from '../../types'
 import { getObjectProperty, getObjectPropValue } from './ast-utils'
+
+export interface ExtractedJSXAttributes {
+  /** holds the raw key expression from the AST */
+  keyExpression?: Expression;
+
+  /** holds the serialized JSX children from the AST */
+  serializedChildren: string;
+
+  /** Default value to use in the primary language */
+  defaultValue?: string;
+
+  /** Namespace this key belongs to (if defined on <Trans />) */
+  ns?: string;
+
+  /** Whether this key is used with pluralization (count parameter) */
+  hasCount?: boolean;
+
+  /** Whether this key is used with ordinal pluralization */
+  isOrdinal?: boolean;
+
+  /** AST node for options object, used for advanced plural handling in Trans */
+  optionsNode?: ObjectExpression;
+
+  /** hold the raw context expression from the AST */
+  contextExpression?: Expression;
+}
 
 /**
  * Extracts translation keys from JSX Trans components.
@@ -27,13 +53,14 @@ import { getObjectProperty, getObjectPropValue } from './ast-utils'
  * const result = extractFromTransComponent(jsxNode, config)
  * // Returns: {
  * //   key: 'welcome.title',
+ * //   keyExpression: { ... },
  * //   ns: 'home',
  * //   defaultValue: 'Welcome!',
  * //   hasCount: false
  * // }
  * ```
  */
-export function extractFromTransComponent (node: JSXElement, config: I18nextToolkitConfig): ExtractedKey | null {
+export function extractFromTransComponent (node: JSXElement, config: I18nextToolkitConfig): ExtractedJSXAttributes | null {
   const i18nKeyAttr = node.opening.attributes?.find(
     (attr) =>
       attr.type === 'JSXAttribute' &&
@@ -54,7 +81,23 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
       attr.name.type === 'Identifier' &&
       attr.name.value === 'count'
   )
-  const hasCount = !!countAttr
+
+  const valuesAttr = node.opening.attributes?.find(
+    (attr) => attr.type === 'JSXAttribute' && attr.name.type === 'Identifier' && attr.name.value === 'values'
+  )
+
+  // Find the 'count' property in the 'values' object if count={...} is not defined
+  let valuesCountProperty: Property | undefined
+  if (
+    !countAttr &&
+    valuesAttr?.type === 'JSXAttribute' &&
+    valuesAttr.value?.type === 'JSXExpressionContainer' &&
+    valuesAttr.value.expression.type === 'ObjectExpression'
+  ) {
+    valuesCountProperty = getObjectProperty(valuesAttr.value.expression, 'count')
+  }
+
+  const hasCount = !!countAttr || !!valuesCountProperty
 
   const tOptionsAttr = node.opening.attributes?.find(
     (attr) =>
@@ -66,26 +109,24 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
     ? tOptionsAttr.value.expression
     : undefined
 
+  // Find isOrdinal prop on the <Trans> component
+  const ordinalAttr = node.opening.attributes?.find(
+    (attr) =>
+      attr.type === 'JSXAttribute' &&
+            attr.name.type === 'Identifier' &&
+            attr.name.value === 'ordinal'
+  )
+  const isOrdinal = !!ordinalAttr
+
   const contextAttr = node.opening.attributes?.find(
     (attr) =>
       attr.type === 'JSXAttribute' &&
-      attr.name.type === 'Identifier' &&
-      attr.name.value === 'context'
+        attr.name.type === 'Identifier' &&
+        attr.name.value === 'context'
   )
   let contextExpression = (contextAttr?.type === 'JSXAttribute' && contextAttr.value?.type === 'JSXExpressionContainer')
     ? contextAttr.value.expression
     : undefined
-
-  let key: string
-  if (i18nKeyAttr?.type === 'JSXAttribute' && i18nKeyAttr.value?.type === 'StringLiteral') {
-    key = i18nKeyAttr.value.value
-  } else {
-    key = serializeJSXChildren(node.children, config)
-  }
-
-  if (!key) {
-    return null
-  }
 
   // 1. Prioritize direct props for 'ns' and 'context'
   const nsAttr = node.opening.attributes?.find(attr => attr.type === 'JSXAttribute' && attr.name.type === 'Identifier' && attr.name.value === 'ns')
@@ -109,14 +150,37 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
     }
   }
 
+  const serialized = serializeJSXChildren(node.children, config)
+
   let defaultValue = config.extract.defaultValue || ''
   if (defaultsAttr?.type === 'JSXAttribute' && defaultsAttr.value?.type === 'StringLiteral') {
     defaultValue = defaultsAttr.value.value
-  } else {
-    defaultValue = serializeJSXChildren(node.children, config)
   }
 
-  return { key, ns, defaultValue: defaultValue || key, hasCount, contextExpression, optionsNode }
+  let keyExpression: Expression | undefined
+  if (i18nKeyAttr?.type === 'JSXAttribute') {
+    if (i18nKeyAttr.value?.type === 'StringLiteral') {
+      keyExpression = i18nKeyAttr.value
+    } else if (
+      i18nKeyAttr.value?.type === 'JSXExpressionContainer' &&
+      i18nKeyAttr.value.expression.type !== 'JSXEmptyExpression'
+    ) {
+      keyExpression = i18nKeyAttr.value.expression
+    }
+
+    if (!keyExpression) return null
+  }
+
+  return {
+    keyExpression,
+    serializedChildren: serialized,
+    ns,
+    defaultValue,
+    hasCount,
+    isOrdinal,
+    contextExpression,
+    optionsNode,
+  }
 }
 
 /**

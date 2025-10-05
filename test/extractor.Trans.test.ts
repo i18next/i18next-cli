@@ -153,6 +153,27 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should extract all possible keys with a ternary i18nKey', async () => {
+    const sampleCode = `
+          const isOpen = true;
+          t('open', 'Open');
+          t('closed', 'Closed');
+          
+          const Component = () => {
+            return <Trans i18nKey={isOpen ? 'open' : 'closed'} />;
+          }
+        `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+    expect(translationFile!.newTranslations).toEqual({
+      open: 'Open',
+      closed: 'Closed',
+    })
+  })
+
   it('should extract all possible keys from a ternary in the context prop', async () => {
     const sampleCode = `
         const isMale = true;
