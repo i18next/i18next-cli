@@ -349,6 +349,31 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should correctly handle empty strings in template literal', async () => {
+      const sampleCode = `
+        const hasProducts = false;
+        const isAvailable = true;
+
+        t(\`section.intro.header.marketing\${isAvailable ? '.available' : ''}\`)
+        t(\`section.intro.header.\${
+                  hasProducts ? 'products' : 'no-products'
+              }\${isAvailable ? '.available' : ''}\`)
+        `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract({ ...mockConfig, extract: { ...mockConfig.extract, keySeparator: false, } })
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile!.newTranslations).toEqual({
+        'section.intro.header.marketing': 'section.intro.header.marketing',
+        'section.intro.header.marketing.available': 'section.intro.header.marketing.available',
+        'section.intro.header.no-products': 'section.intro.header.no-products',
+        'section.intro.header.no-products.available': 'section.intro.header.no-products.available',
+        'section.intro.header.products': 'section.intro.header.products',
+        'section.intro.header.products.available': 'section.intro.header.products.available',
+      })
+    })
+
     it('should extract keys from t() calls inside array.map in JSX', async () => {
       const sampleCode = `
         function MappedComponent() {

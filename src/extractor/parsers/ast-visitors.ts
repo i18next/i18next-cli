@@ -758,8 +758,8 @@ export class ASTVisitors {
           const ordinalAttr = node.opening.attributes?.find(
             (attr) =>
               attr.type === 'JSXAttribute' &&
-            attr.name.type === 'Identifier' &&
-            attr.name.value === 'ordinal'
+              attr.name.type === 'Identifier' &&
+              attr.name.value === 'ordinal'
           )
           const isOrdinal = !!ordinalAttr
 
@@ -802,8 +802,8 @@ export class ASTVisitors {
           const ordinalAttr = node.opening.attributes?.find(
             (attr) =>
               attr.type === 'JSXAttribute' &&
-            attr.name.type === 'Identifier' &&
-            attr.name.value === 'ordinal'
+              attr.name.type === 'Identifier' &&
+              attr.name.value === 'ordinal'
           )
           const isOrdinal = !!ordinalAttr
 
@@ -988,17 +988,18 @@ export class ASTVisitors {
    *
    * @private
    * @param expression - The SWC AST expression node to resolve
+   * @param returnEmptyStrings - Whether to include empty strings in the result
    * @returns An array of possible string values that the expression may produce.
    */
-  private resolvePossibleStringValues (expression: Expression): string[] {
+  private resolvePossibleStringValues (expression: Expression, returnEmptyStrings = false): string[] {
     if (expression.type === 'StringLiteral') {
       // Filter out empty strings as they should be treated as "no context" like i18next does
-      return expression.value ? [expression.value] : []
+      return expression.value || returnEmptyStrings ? [expression.value] : []
     }
 
     if (expression.type === 'ConditionalExpression') { // This is a ternary operator
-      const consequentValues = this.resolvePossibleStringValues(expression.consequent)
-      const alternateValues = this.resolvePossibleStringValues(expression.alternate)
+      const consequentValues = this.resolvePossibleStringValues(expression.consequent, returnEmptyStrings)
+      const alternateValues = this.resolvePossibleStringValues(expression.alternate, returnEmptyStrings)
       return [...consequentValues, ...alternateValues]
     }
 
@@ -1040,7 +1041,7 @@ export class ASTVisitors {
       (heads, expression, i) => {
         return heads.flatMap((head) => {
           const tail = tails[i]?.cooked ?? ''
-          return this.resolvePossibleStringValues(expression).map(
+          return this.resolvePossibleStringValues(expression, true).map(
             (expressionValue) => `${head}${expressionValue}${tail}`
           )
         })
