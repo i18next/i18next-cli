@@ -25,7 +25,7 @@ describe('extractor: advanced t features', () => {
     vol.reset()
     vi.clearAllMocks()
     const { glob } = await import('glob')
-    ;(glob as any).mockResolvedValue(['/src/App.tsx'])
+      ;(glob as any).mockResolvedValue(['/src/App.tsx'])
   })
 
   it('should handle namespaces in the key (ns:key)', async () => {
@@ -270,6 +270,82 @@ describe('extractor: advanced t features', () => {
       expect(translationFile!.newTranslations).toEqual({
         open: 'Open',
         closed: 'Closed',
+      })
+    })
+
+    it('should extract all possible keys with a template string first argument', async () => {
+      const sampleCode = `
+        const isDone = true;
+
+        t(\`state.\${isDone ? 'done' : 'notDone'}.title\`);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile!.newTranslations).toEqual({
+        state: {
+          done: {
+            title: 'state.done.title',
+          },
+          notDone: {
+            title: 'state.notDone.title',
+          },
+        },
+      })
+    })
+
+    it('should extract keys from template string with numeric and boolean literals', async () => {
+      const sampleCode = `
+        const isFive = true;
+
+        t(\`messages.\${isFive ? 5 : false}.title\`);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile!.newTranslations).toEqual({
+        messages: {
+          5: {
+            title: 'messages.5.title',
+          },
+          false: {
+            title: 'messages.false.title',
+          },
+        },
+      })
+    })
+
+    it('should extract all possible keys with nested expressions', async () => {
+      const sampleCode = `
+        const test = false;
+        const state = 'unknown';
+
+        t(test ? \`state.\${state === 'final' ? 'finalized' : \`\${state === 'pending' ? 'pending' : 'unknown'}\`}.title\` : 'state.test.title');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile!.newTranslations).toEqual({
+        state: {
+          finalized: {
+            title: 'state.finalized.title',
+          },
+          pending: {
+            title: 'state.pending.title',
+          },
+          test: {
+            title: 'state.test.title',
+          },
+          unknown: {
+            title: 'state.unknown.title',
+          },
+        },
       })
     })
 
