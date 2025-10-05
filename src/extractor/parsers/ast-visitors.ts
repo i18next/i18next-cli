@@ -679,7 +679,35 @@ export class ASTVisitors {
           extractedKey.ns = this.config.extract.defaultNS
         }
 
-        if (extractedKey.contextExpression) {
+        // Handle the combination of context and count
+        if (extractedKey.contextExpression && extractedKey.hasCount) {
+          // Find isOrdinal prop on the <Trans> component
+          const ordinalAttr = node.opening.attributes?.find(
+            (attr) =>
+              attr.type === 'JSXAttribute' &&
+              attr.name.type === 'Identifier' &&
+              attr.name.value === 'ordinal'
+          )
+          const isOrdinal = !!ordinalAttr
+
+          const contextValues = this.resolvePossibleStringValues(extractedKey.contextExpression)
+          const contextSeparator = this.config.extract.contextSeparator ?? '_'
+
+          // Generate all combinations of context and plural forms
+          if (contextValues.length > 0) {
+            // Generate base plural forms (no context)
+            this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, extractedKey.optionsNode)
+
+            // Generate context + plural combinations
+            for (const context of contextValues) {
+              const contextKey = `${extractedKey.key}${contextSeparator}${context}`
+              this.generatePluralKeysForTrans(contextKey, extractedKey.defaultValue, extractedKey.ns, isOrdinal, extractedKey.optionsNode)
+            }
+          } else {
+            // Fallback to just plural forms if context resolution fails
+            this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, extractedKey.optionsNode)
+          }
+        } else if (extractedKey.contextExpression) {
           const contextValues = this.resolvePossibleStringValues(extractedKey.contextExpression)
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
 
@@ -702,21 +730,83 @@ export class ASTVisitors {
           )
           const isOrdinal = !!ordinalAttr
 
-          // If tOptions are provided, use the advanced plural handler
-          const optionsNode = extractedKey.optionsNode ?? { type: 'ObjectExpression', properties: [], span: { start: 0, end: 0, ctxt: 0 } }
-
-          // Inject the defaultValue from children into the options object
-          optionsNode.properties.push({
-            type: 'KeyValueProperty',
-            key: { type: 'Identifier', value: 'defaultValue', optional: false, span: { start: 0, end: 0, ctxt: 0 } },
-            value: { type: 'StringLiteral', value: extractedKey.defaultValue!, span: { start: 0, end: 0, ctxt: 0 } }
-          })
-
-          this.handlePluralKeys(extractedKey.key, extractedKey.ns, optionsNode, isOrdinal)
+          this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, extractedKey.optionsNode)
         } else {
           this.pluginContext.addKey(extractedKey)
         }
       }
+    }
+  }
+
+  /**
+   * Generates plural keys for Trans components, with support for tOptions plural defaults.
+   *
+   * @param key - Base key name for pluralization
+   * @param defaultValue - Default value for the keys
+   * @param ns - Namespace for the keys
+   * @param isOrdinal - Whether to generate ordinal plural forms
+   * @param optionsNode - Optional tOptions object expression for plural-specific defaults
+   *
+   * @private
+   */
+  private generatePluralKeysForTrans (key: string, defaultValue: string | undefined, ns: string | undefined, isOrdinal: boolean, optionsNode?: ObjectExpression): void {
+    try {
+      const type = isOrdinal ? 'ordinal' : 'cardinal'
+      const pluralCategories = new Intl.PluralRules(this.config.extract?.primaryLanguage, { type }).resolvedOptions().pluralCategories
+      const pluralSeparator = this.config.extract.pluralSeparator ?? '_'
+
+      // Get plural-specific default values from tOptions if available
+      let otherDefault: string | undefined
+      let ordinalOtherDefault: string | undefined
+
+      if (optionsNode) {
+        otherDefault = getObjectPropValue(optionsNode, `defaultValue${pluralSeparator}other`) as string | undefined
+        ordinalOtherDefault = getObjectPropValue(optionsNode, `defaultValue${pluralSeparator}ordinal${pluralSeparator}other`) as string | undefined
+      }
+
+      for (const category of pluralCategories) {
+        // Look for the most specific default value (e.g., defaultValue_ordinal_one)
+        const specificDefaultKey = isOrdinal ? `defaultValue${pluralSeparator}ordinal${pluralSeparator}${category}` : `defaultValue${pluralSeparator}${category}`
+        const specificDefault = optionsNode ? getObjectPropValue(optionsNode, specificDefaultKey) as string | undefined : undefined
+
+        // Determine the final default value using a clear fallback chain
+        let finalDefaultValue: string | undefined
+        if (typeof specificDefault === 'string') {
+          // 1. Use the most specific default if it exists (e.g., defaultValue_one)
+          finalDefaultValue = specificDefault
+        } else if (category === 'one' && typeof defaultValue === 'string') {
+          // 2. SPECIAL CASE: The 'one' category falls back to the main default value (children content)
+          finalDefaultValue = defaultValue
+        } else if (isOrdinal && typeof ordinalOtherDefault === 'string') {
+          // 3a. Other ordinal categories fall back to 'defaultValue_ordinal_other'
+          finalDefaultValue = ordinalOtherDefault
+        } else if (!isOrdinal && typeof otherDefault === 'string') {
+          // 3b. Other cardinal categories fall back to 'defaultValue_other'
+          finalDefaultValue = otherDefault
+        } else if (typeof defaultValue === 'string') {
+          // 4. If no '_other' is found, all categories can fall back to the main default value
+          finalDefaultValue = defaultValue
+        } else {
+          // 5. Final fallback to the base key itself
+          finalDefaultValue = key
+        }
+
+        const finalKey = isOrdinal
+          ? `${key}${pluralSeparator}ordinal${pluralSeparator}${category}`
+          : `${key}${pluralSeparator}${category}`
+
+        this.pluginContext.addKey({
+          key: finalKey,
+          ns,
+          defaultValue: finalDefaultValue,
+          hasCount: true,
+          isOrdinal
+        })
+      }
+    } catch (e) {
+      this.logger.warn(`Could not determine plural rules for language "${this.config.extract?.primaryLanguage}". Falling back to simple key extraction.`)
+      // Fallback to a simple key if Intl API fails
+      this.pluginContext.addKey({ key, ns, defaultValue })
     }
   }
 
@@ -812,7 +902,7 @@ export class ASTVisitors {
    * determined statically from the AST.
    *
    * Supports:
-   * - StringLiteral -> single value
+   * - StringLiteral -> single value (filtered to exclude empty strings for context)
    * - ConditionalExpression (ternary) -> union of consequent and alternate resolved values
    * - The identifier `undefined` -> empty array
    *
@@ -825,7 +915,8 @@ export class ASTVisitors {
    */
   private resolvePossibleStringValues (expression: Expression): string[] {
     if (expression.type === 'StringLiteral') {
-      return [expression.value]
+      // Filter out empty strings as they should be treated as "no context" like i18next does
+      return expression.value ? [expression.value] : []
     }
 
     if (expression.type === 'ConditionalExpression') { // This is a ternary operator

@@ -214,4 +214,45 @@ describe('extractor: advanced Trans features', () => {
       myKey_male: 'A value',
     })
   })
+
+  it('should handle both context and count props together on Trans component', async () => {
+    const sampleCode = `
+      <Trans
+        ns="event"
+        i18nKey="confirm-cancellation-page.body.text.description"
+        context={
+          isLate
+            ? 'late'
+            : eventType === EventType.GROUP
+            ? 'group'
+            : undefined
+        }
+        count={numberOfHoursLeftToCancel}
+      >
+        Default text
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const eventFile = results.find(r => r.path.endsWith('/locales/en/event.json'))
+
+    expect(eventFile).toBeDefined()
+    expect(eventFile!.newTranslations).toEqual({
+      'confirm-cancellation-page': {
+        body: {
+          text: {
+            // Base plural forms (no context)
+            description_one: 'Default text',
+            description_other: 'Default text',
+            // Context + plural combinations
+            description_group_one: 'Default text',
+            description_group_other: 'Default text',
+            description_late_one: 'Default text',
+            description_late_other: 'Default text',
+          },
+        },
+      },
+    })
+  })
 })

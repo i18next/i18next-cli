@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.8](https://github.com/i18next/i18next-cli/compare/v1.5.7...v1.5.8) - 2025-10-05
+
+- **Extractor:** Fixed namespace resolution/override order where explicitly passed `ns` options in `t()` calls were being incorrectly overridden by hook-level namespaces. The extractor now properly prioritizes explicit namespace options over inferred ones. [#32](https://github.com/i18next/i18next-cli/issues/32)
+- **Extractor (`<Trans>`):** Fixed a bug where `context` and `count` props on Trans components were treated as mutually exclusive. The extractor now correctly generates all combinations of context and plural forms (e.g., `key_context_one`, `key_context_other`) to match i18next's behavior. [#33](https://github.com/i18next/i18next-cli/issues/33)
+- **Extractor:** Fixed a bug where passing an empty string as a context value (e.g., `context: test ? 'male' : ''`) resulted in keys with trailing underscores. Empty strings are now treated as "no context" like i18next does, ensuring clean key generation. [#34](https://github.com/i18next/i18next-cli/issues/34)
+
 ## [1.5.7](https://github.com/i18next/i18next-cli/compare/v1.5.6...v1.5.7) - 2025-10-04
 
 ### Added

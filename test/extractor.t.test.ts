@@ -730,4 +730,26 @@ describe('extractor: advanced t features', () => {
       'key.this': 'key.this',
     })
   })
+
+  it('should treat empty string context as "no context" like i18next does', async () => {
+    const sampleCode = `
+      const test = false;
+      t('state.description', { context: test ? 'test' : '' });
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      state: {
+        description: 'state.description',
+        description_test: 'state.description',
+      },
+    })
+
+    // Ensure there's no key with an underscore suffix (state.description_)
+    expect(translationFile!.newTranslations.state).not.toHaveProperty('description_')
+  })
 })
