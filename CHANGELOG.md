@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.9](https://github.com/i18next/i18next-cli/compare/v1.5.8...v1.5.9) - 2025-10-05
+
+### Added
+- **Extractor (`<Trans>`):** Added support for plural-specific default values from `tOptions` prop (e.g., `defaultValue_other: "Items"`). The extractor now correctly uses these values when generating plural keys for Trans components. [#36](https://github.com/i18next/i18next-cli/pull/36)
+- **Extractor:** Added support for dynamic expressions in `t()` function arguments. The extractor can now resolve ternary operators and other static expressions to extract all possible key variants (e.g., `t(isOpen ? 'open' : 'closed')`). [#37](https://github.com/i18next/i18next-cli/pull/37)
+
+### Enhanced
+- **Extractor (`<Trans>`):** Improved namespace resolution consistency by prioritizing namespace from `i18nKey` prop over other sources. When a Trans component uses `i18nKey="ns:key"`, the namespace from the key now takes precedence over the `t` prop namespace, matching i18next's behavior. [#38](https://github.com/i18next/i18next-cli/pull/38)
+
 ## [1.5.8](https://github.com/i18next/i18next-cli/compare/v1.5.7...v1.5.8) - 2025-10-05
 
 - **Extractor:** Fixed namespace resolution/override order where explicitly passed `ns` options in `t()` calls were being incorrectly overridden by hook-level namespaces. The extractor now properly prioritizes explicit namespace options over inferred ones. [#32](https://github.com/i18next/i18next-cli/issues/32)
