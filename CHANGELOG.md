@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.11](https://github.com/i18next/i18next-cli/compare/v1.5.10...v1.5.11) - 2025-10-05
+
+- **Extractor:** Fixed handling of empty strings in template literals where conditional expressions could result in empty string concatenation (e.g., `` t(`key${condition ? '.suffix' : ''}`) ``). Empty strings are now properly filtered out during template literal resolution, ensuring only valid key variants are generated. [#41](https://github.com/i18next/i18next-cli/pull/41)
+
 ## [1.5.10](https://github.com/i18next/i18next-cli/compare/v1.5.9...v1.5.10) - 2025-10-05
 
 - **Extractor:** Added support for template literals as translation keys in both `t()` functions and `<Trans>` components. The extractor can now resolve complex template strings with nested expressions, ternary operators, and mixed data types to extract all possible key variants (e.g., `` t(`state.${isDone ? 'done' : 'notDone'}.title`) `` generates both `state.done.title` and `state.notDone.title`). [#39](https://github.com/i18next/i18next-cli/pull/39)
