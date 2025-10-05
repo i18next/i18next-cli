@@ -5,9 +5,9 @@ import type { PluginContext, I18nextToolkitConfig } from '../../types'
  * Supports extraction from single-line (//) and multi-line comments.
  *
  * @param code - The source code to analyze
- * @param functionNames - Array of function names to look for (e.g., ['t', 'i18n.t'])
  * @param pluginContext - Context object with helper methods to add found keys
  * @param config - Configuration object containing extraction settings
+ * @param scopeResolver - Function to resolve scope information for variables (optional)
  *
  * @example
  * ```typescript
@@ -17,14 +17,15 @@ import type { PluginContext, I18nextToolkitConfig } from '../../types'
  * `
  *
  * const context = createPluginContext(allKeys)
- * extractKeysFromComments(code, ['t'], context, config)
+ * extractKeysFromComments(code, context, config, scopeResolver)
  * // Extracts: user.name and app.title with their respective settings
  * ```
  */
 export function extractKeysFromComments (
   code: string,
   pluginContext: PluginContext,
-  config: I18nextToolkitConfig
+  config: I18nextToolkitConfig,
+  scopeResolver?: (varName: string) => { defaultNs?: string; keyPrefix?: string } | undefined
 ): void {
   // Hardcode the function name to 't' to prevent parsing other functions like 'test()'.
   const functionNameToFind = 't'
@@ -42,6 +43,7 @@ export function extractKeysFromComments (
       const remainder = text.slice(match.index + match[0].length)
 
       const defaultValue = parseDefaultValueFromComment(remainder)
+
       // 1. Check for namespace in options object first (e.g., { ns: 'common' })
       ns = parseNsFromComment(remainder)
 
@@ -52,6 +54,17 @@ export function extractKeysFromComments (
         ns = parts.shift()
         key = parts.join(nsSeparator)
       }
+
+      // 3. NEW: If no explicit namespace found, try to resolve from scope
+      // This allows commented t() calls to inherit namespace from useTranslation scope
+      if (!ns && scopeResolver) {
+        const scopeInfo = scopeResolver('t')
+        if (scopeInfo?.defaultNs) {
+          ns = scopeInfo.defaultNs
+        }
+      }
+
+      // 4. Final fallback to configured default namespace
       if (!ns) ns = config.extract.defaultNS
 
       pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })
