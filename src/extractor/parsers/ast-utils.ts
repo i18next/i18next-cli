@@ -15,15 +15,16 @@ import type { ObjectExpression } from '@swc/core'
  * @param propName - The property name to locate
  * @returns The matching KeyValueProperty node if found, otherwise undefined.
  */
-export function getObjectProperty (object: ObjectExpression, propName: string): any {
-  return (object.properties).find(
-    (p) =>
-      p.type === 'KeyValueProperty' &&
-      (
-        (p.key?.type === 'Identifier' && p.key.value === propName) ||
-        (p.key?.type === 'StringLiteral' && p.key.value === propName)
-      )
-  )
+export function getObjectProperty (object: ObjectExpression, propName: string) {
+  return (object.properties).filter(
+    (p) => p.type === 'KeyValueProperty')
+    .find(
+      (p) =>
+        (
+          (p.key?.type === 'Identifier' && p.key.value === propName) ||
+          (p.key?.type === 'StringLiteral' && p.key.value === propName)
+        )
+    )
 }
 
 /**

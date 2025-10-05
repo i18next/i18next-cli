@@ -218,11 +218,11 @@ export class ASTVisitors {
 
     // Determine the actual call expression, looking inside AwaitExpressions.
     const callExpr =
-    init.type === 'AwaitExpression' && init.argument.type === 'CallExpression'
-      ? init.argument
-      : init.type === 'CallExpression'
-        ? init
-        : null
+      init.type === 'AwaitExpression' && init.argument.type === 'CallExpression'
+        ? init.argument
+        : init.type === 'CallExpression'
+          ? init
+          : null
 
     if (!callExpr) return
 
@@ -464,52 +464,65 @@ export class ASTVisitors {
       if (options) {
         const contextProp = getObjectProperty(options, 'context')
 
-        // 1. Handle Dynamic Context (Ternary) first
+        const keysWithContext: ExtractedKey[] = []
+
+        // 1. Handle Context
         if (contextProp?.value?.type === 'ConditionalExpression') {
           const contextValues = this.resolvePossibleStringValues(contextProp.value)
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
 
           if (contextValues.length > 0) {
             contextValues.forEach(context => {
-              this.pluginContext.addKey({ key: `${finalKey}${contextSeparator}${context}`, ns, defaultValue: dv })
+              keysWithContext.push({ key: `${finalKey}${contextSeparator}${context}`, ns, defaultValue: dv })
             })
             // For dynamic context, also add the base key as a fallback
-            this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv })
-            continue // This key is fully handled, move to the next in the array
+            keysWithContext.push({ key: finalKey, ns, defaultValue: dv })
           }
-        }
+        } else if (contextProp?.value?.type === 'StringLiteral') {
+          const contextValue = contextProp.value.value
 
-        // 2. Handle Static Context
-        const contextValue = getObjectPropValue(options, 'context')
-        if (typeof contextValue === 'string' && contextValue) {
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
-          this.pluginContext.addKey({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv })
-          continue // This key is fully handled
+          keysWithContext.push({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv })
         }
 
-        // 3. Handle Plurals
+        // 2. Handle Plurals
         const hasCount = getObjectPropValue(options, 'count') !== undefined
         const isOrdinalByOption = getObjectPropValue(options, 'ordinal') === true
         if (hasCount || isOrdinalByKey) {
-          // Pass the combined ordinal flag to the handler
-          this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey)
-          continue
+          // If we have keys with context pluralize them
+          if (keysWithContext.length > 0) {
+            for (const { key, ns } of keysWithContext) {
+              // Pass the combined ordinal flag to the handler
+              this.handlePluralKeys(key, ns, options, isOrdinalByOption || isOrdinalByKey)
+            }
+          } else {
+            // Otherwise pluralize the base key
+            this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey)
+          }
+
+          continue // This key is fully handled
         }
 
-        // 4. Handle returnObjects
+        if (keysWithContext.length > 0) {
+          keysWithContext.forEach(this.pluginContext.addKey)
+
+          continue // This key is now fully handled
+        }
+
+        // 3. Handle returnObjects
         if (getObjectPropValue(options, 'returnObjects') === true) {
           this.objectKeys.add(finalKey)
           // Fall through to add the base key itself
         }
       }
 
-      // 5. Handle selector API as implicit returnObjects
+      // 4. Handle selector API as implicit returnObjects
       if (isSelectorAPI) {
         this.objectKeys.add(finalKey)
         // Fall through to add the base key itself
       }
 
-      // 6. Default case: Add the simple key
+      // 5. Default case: Add the simple key
       this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv })
     }
   }
@@ -730,8 +743,8 @@ export class ASTVisitors {
           const ordinalAttr = node.opening.attributes?.find(
             (attr) =>
               attr.type === 'JSXAttribute' &&
-              attr.name.type === 'Identifier' &&
-              attr.name.value === 'ordinal'
+            attr.name.type === 'Identifier' &&
+            attr.name.value === 'ordinal'
           )
           const isOrdinal = !!ordinalAttr
 
@@ -774,8 +787,8 @@ export class ASTVisitors {
           const ordinalAttr = node.opening.attributes?.find(
             (attr) =>
               attr.type === 'JSXAttribute' &&
-              attr.name.type === 'Identifier' &&
-              attr.name.value === 'ordinal'
+            attr.name.type === 'Identifier' &&
+            attr.name.value === 'ordinal'
           )
           const isOrdinal = !!ordinalAttr
 
