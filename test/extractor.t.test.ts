@@ -255,6 +255,44 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should extract all possible keys from template string in the context option', async () => {
+      const sampleCode = `
+        const isFemale = true;
+        t('friend', 'A friend', { context: \`$\{isFemale ? 'fe' : ''}male\` });
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      // This expectation is correct: for dynamic context, we need the base key and all variants.
+      expect(translationFile!.newTranslations).toEqual({
+        friend: 'A friend', // base key, dynamic context
+        friend_male: 'A friend',
+        friend_female: 'A friend',
+      })
+    })
+
+    it('should extract static contexts', async () => {
+      const sampleCode = `
+        t('alert.text', 'An alert', { context: true });
+        t('alert.number', 'A numeric alert', { context: 10 });
+        t('alert.empty', 'An empty alert', { context: '' });
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile!.newTranslations).toEqual({
+        alert: {
+          text_true: 'An alert', // no base key, static context
+          number_10: 'A numeric alert', // no base key, static context
+          empty: 'An empty alert', // context is ''
+        }
+      })
+    })
+
     it('should extract all possible keys with a ternary first argument', async () => {
       const sampleCode = `
         const isOpen = true;

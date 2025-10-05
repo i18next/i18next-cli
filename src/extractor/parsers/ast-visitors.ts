@@ -456,7 +456,16 @@ export class ASTVisitors {
         const keysWithContext: ExtractedKey[] = []
 
         // 1. Handle Context
-        if (contextProp?.value?.type === 'ConditionalExpression') {
+        if (contextProp?.value?.type === 'StringLiteral' || contextProp?.value.type === 'NumericLiteral' || contextProp?.value.type === 'BooleanLiteral') {
+          // If the context is static, we don't need to add the base key
+          const contextValue = `${contextProp.value.value}`
+
+          const contextSeparator = this.config.extract.contextSeparator ?? '_'
+          // Ignore context: ''
+          if (contextValue !== '') {
+            keysWithContext.push({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv })
+          }
+        } else if (contextProp?.value) {
           const contextValues = this.resolvePossibleStringValues(contextProp.value)
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
 
@@ -467,11 +476,6 @@ export class ASTVisitors {
             // For dynamic context, also add the base key as a fallback
             keysWithContext.push({ key: finalKey, ns, defaultValue: dv })
           }
-        } else if (contextProp?.value?.type === 'StringLiteral') {
-          const contextValue = contextProp.value.value
-
-          const contextSeparator = this.config.extract.contextSeparator ?? '_'
-          keysWithContext.push({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv })
         }
 
         // 2. Handle Plurals
