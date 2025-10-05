@@ -3,7 +3,7 @@ import type { ExtractedKey, Logger, I18nextToolkitConfig } from '../../types'
 import { processFile } from './extractor'
 import { ConsoleLogger } from '../../utils/logger'
 import { initializePlugins, createPluginContext } from '../plugin-manager'
-import { ASTVisitors } from '../parsers/ast-visitors'
+import { type ASTVisitorHooks, ASTVisitors } from '../parsers/ast-visitors'
 
 /**
  * Main function for finding translation keys across all source files in a project.
@@ -37,27 +37,45 @@ export async function findKeys (
   config: I18nextToolkitConfig,
   logger: Logger = new ConsoleLogger()
 ): Promise<{ allKeys: Map<string, ExtractedKey>, objectKeys: Set<string> }> {
+  const { plugins: pluginsOrUndefined, ...otherConfig } = config
+  const plugins = pluginsOrUndefined || []
+
   const sourceFiles = await processSourceFiles(config)
   const allKeys = new Map<string, ExtractedKey>()
 
   // 1. Create the base context with config and logger.
-  const pluginContext = createPluginContext(allKeys, config, logger)
+  const pluginContext = createPluginContext(allKeys, plugins, otherConfig, logger)
 
-  // 2. Create the visitor instance, passing it the context.
-  const astVisitors = new ASTVisitors(config, pluginContext, logger)
+  // 2. Create hooks for plugins to hook into AST
+  const hooks = {
+    onBeforeVisitNode: (node) => {
+      for (const plugin of plugins) {
+        try {
+          plugin.onVisitNode?.(node, pluginContext)
+        } catch (err) {
+          logger.warn(`Plugin ${plugin.name} onVisitNode failed:`, err)
+        }
+      }
+    },
+  } satisfies ASTVisitorHooks
 
-  // 3. "Wire up" the visitor's scope method to the context.
+  // 3. Create the visitor instance, passing it the context.
+  const astVisitors = new ASTVisitors(otherConfig, pluginContext, logger, hooks)
+
+  // 4. "Wire up" the visitor's scope method to the context.
   // This avoids a circular dependency while giving plugins access to the scope.
   pluginContext.getVarFromScope = astVisitors.getVarFromScope.bind(astVisitors)
 
-  await initializePlugins(config.plugins || [])
+  // 5. Initialize plugins
+  await initializePlugins(plugins)
 
+  // 6. Process each file
   for (const file of sourceFiles) {
-    await processFile(file, config, allKeys, astVisitors, logger)
+    await processFile(file, plugins, astVisitors, pluginContext, otherConfig, logger)
   }
 
-  // Run onEnd hooks
-  for (const plugin of (config.plugins || [])) {
+  // 7. Run onEnd hooks
+  for (const plugin of plugins) {
     await plugin.onEnd?.(allKeys)
   }
 
