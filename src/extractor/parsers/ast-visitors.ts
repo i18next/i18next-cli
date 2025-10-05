@@ -695,10 +695,23 @@ export class ASTVisitors {
 
         const { contextExpression, optionsNode, defaultValue, hasCount, isOrdinal, serializedChildren } = extractedAttributes
 
-        // If ns is not explicitly set on the component, try to find it from the `t` prop
+        // If ns is not explicitly set on the component, try to find it from the key
+        // or the `t` prop
         if (!extractedAttributes.ns) {
           extractedKeys = keysToProcess.map(key => {
-            return { key, defaultValue: defaultValue || serializedChildren, hasCount, isOrdinal }
+            const nsSeparator = this.config.extract.nsSeparator ?? ':'
+            let ns: string | undefined
+
+            // If the key contains a namespace separator, it takes precedence
+            // over the default t ns value
+            if (nsSeparator && key.includes(nsSeparator)) {
+              let parts: string[]
+              ([ns, ...parts] = key.split(nsSeparator))
+
+              key = parts.join(nsSeparator)
+            }
+
+            return { key, ns, defaultValue: defaultValue || serializedChildren, hasCount, isOrdinal }
           })
 
           const tProp = node.opening.attributes?.find(
@@ -718,7 +731,9 @@ export class ASTVisitors {
             const scopeInfo = this.getVarFromScope(tIdentifier)
             if (scopeInfo?.defaultNs) {
               extractedKeys.forEach(key => {
-                key.ns = scopeInfo.defaultNs
+                if (!key.ns) {
+                  key.ns = scopeInfo.defaultNs
+                }
               })
             }
           }
