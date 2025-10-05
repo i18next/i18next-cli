@@ -687,6 +687,32 @@ describe('extractor: advanced t features', () => {
         place_ordinal_other: '{{count}}th place',
       })
     })
+
+    it('should combine context and plural variants', async () => {
+      const sampleCode = `
+        const test = true;
+
+        t('state', {
+          context: test ? 'test' : 'production', 
+          count: 2,
+          defaultValue_one: "{{count}} car",
+          defaultValue_other: "{{count}} cars",
+        });
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile!.newTranslations).toEqual({
+        state_one: '{{count}} car',
+        state_other: '{{count}} cars',
+        state_test_one: '{{count}} car',
+        state_test_other: '{{count}} cars',
+        state_production_one: '{{count}} car',
+        state_production_other: '{{count}} cars',
+      })
+    })
   })
 
   it('should extract keys from a custom function with a member expression (i.e., i18n.t)', async () => {
