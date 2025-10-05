@@ -13,6 +13,8 @@ typedoc.json
 .github
 .env
 .env.*
+.node-version
+.nvmrc
 eslint.config.js
 rollup.config.js
 vitest.config.js
