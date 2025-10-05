@@ -1424,4 +1424,98 @@ describe('extractor: runExtractor', () => {
       }
     })
   })
+
+  it('should handle TypeScript satisfies operator in template literals', async () => {
+    const sampleCode = `
+      const role = 'ADMIN';
+
+      // Support as for static types
+      t(\`profile.role.\${role satisfies 'ADMIN' | 'MANAGER' | 'EMPLOYEE'}\`);
+      t(\`menu.option.\${title satisfies 'title' | 'subtitle' | Dynamic}\`);
+      // Ignore non-static types
+      t(\`option.action.\${name satisfies Option}\`);
+    `
+
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    await runExtractor(mockConfig)
+
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+    const translationJson = JSON.parse(translationFileContent as string)
+
+    expect(translationJson).toEqual({
+      menu: {
+        option: {
+          subtitle: 'menu.option.subtitle',
+          title: 'menu.option.title'
+        }
+      },
+      profile: {
+        role: {
+          ADMIN: 'profile.role.ADMIN',
+          MANAGER: 'profile.role.MANAGER',
+          EMPLOYEE: 'profile.role.EMPLOYEE'
+        }
+      }
+    })
+  })
+
+  it('should handle TypeScript satisfies operator with nested types', async () => {
+    const sampleCode = `
+        const role = 'role_ADMIN';
+        t('test.key')
+        t(\`profile.role.\${role satisfies \`role_\${'ADMIN' | 'MANAGER'}\`}.description\`);
+        t(\`profile.role.\${role satisfies \`role_\${'ADMIN' | 'MANAGER' | ROLES}\`}.title\`);
+      `
+
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    await runExtractor(mockConfig)
+
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+    const translationJson = JSON.parse(translationFileContent as string)
+
+    expect(translationJson).toEqual({
+      test: {
+        key: 'test.key',
+      },
+      profile: {
+        role: {
+          role_ADMIN: {
+            description: 'profile.role.role_ADMIN.description',
+            title: 'profile.role.role_ADMIN.title',
+          },
+          role_MANAGER: {
+            description: 'profile.role.role_MANAGER.description',
+            title: 'profile.role.role_MANAGER.title',
+          },
+        }
+      }
+    })
+  })
+
+  it('should handle TypeScript as operator in template literals', async () => {
+    const sampleCode = `
+        const status = getStatus();
+        t(\`alert.\${status as 'success' | 'error' | 'warning'}.message\`);
+      `
+
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    await runExtractor(mockConfig)
+
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+    const translationJson = JSON.parse(translationFileContent as string)
+
+    expect(translationJson).toEqual({
+      alert: {
+        error: { message: 'alert.error.message' },
+        success: { message: 'alert.success.message' },
+        warning: { message: 'alert.warning.message' }
+      }
+    })
+  })
 })

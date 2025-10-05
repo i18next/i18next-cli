@@ -118,52 +118,6 @@ describe('processFile', () => {
     expect(allKeys.size).toBeGreaterThan(0)
   })
 
-  it('should handle TypeScript satisfies operator in template literals', async () => {
-    const sampleCode = `
-      const role = 'ADMIN';
-      t(\`profile.role.\${role satisfies 'ADMIN' | 'MANAGER' | 'EMPLOYEE'}.description\`);
-    `
-
-    vol.fromJSON({
-      '/src/satisfies-test.ts': sampleCode,
-    })
-
-    const plugins: Plugin[] = []
-
-    const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
-
-    await processFile('/src/satisfies-test.ts', plugins, astVisitors, pluginContext, mockConfig)
-
-    expect(astVisitors.visit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'Module'
-      })
-    )
-  })
-
-  it('should handle TypeScript as operator in template literals', async () => {
-    const sampleCode = `
-      const status = getStatus();
-      t(\`alert.\${status as 'success' | 'error' | 'warning'}.message\`);
-    `
-
-    vol.fromJSON({
-      '/src/as-test.ts': sampleCode,
-    })
-
-    const plugins: Plugin[] = []
-
-    const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
-
-    await processFile('/src/as-test.ts', plugins, astVisitors, pluginContext, mockConfig)
-
-    expect(astVisitors.visit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'Module'
-      })
-    )
-  })
-
   it('should parse JSX syntax correctly', async () => {
     const sampleCode = `
       import { Trans } from 'react-i18next';
