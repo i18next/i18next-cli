@@ -43,6 +43,8 @@ export function extractKeysFromComments (
       const remainder = text.slice(match.index + match[0].length)
 
       const defaultValue = parseDefaultValueFromComment(remainder)
+      const context = parseContextFromComment(remainder)
+      const count = parseCountFromComment(remainder)
 
       // 1. Check for namespace in options object first (e.g., { ns: 'common' })
       ns = parseNsFromComment(remainder)
@@ -67,8 +69,86 @@ export function extractKeysFromComments (
       // 4. Final fallback to configured default namespace
       if (!ns) ns = config.extract.defaultNS
 
-      pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })
+      // 5. Handle context and count combinations
+      if (context && count) {
+        // Generate all combinations: base plural + context+plural
+        generatePluralKeys(key, defaultValue ?? key, ns, pluginContext, config)
+        generateContextPluralKeys(key, defaultValue ?? key, ns, context, pluginContext, config)
+      } else if (context) {
+        // Just context variants
+        pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })
+        pluginContext.addKey({ key: `${key}_${context}`, ns, defaultValue: defaultValue ?? key })
+      } else if (count) {
+        // Just plural variants
+        generatePluralKeys(key, defaultValue ?? key, ns, pluginContext, config)
+      } else {
+        // Simple key
+        pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })
+      }
     }
+  }
+}
+
+/**
+ * Generates plural keys for a given base key
+ */
+function generatePluralKeys (
+  key: string,
+  defaultValue: string,
+  ns: string | undefined,
+  pluginContext: PluginContext,
+  config: I18nextToolkitConfig
+): void {
+  const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
+  const pluralRules = new Intl.PluralRules(primaryLanguage)
+
+  // Get all possible plural categories for the primary language
+  const testNumbers = [0, 1, 2, 3, 5, 100] // Test various numbers to find all categories
+  const categories = new Set<string>()
+
+  for (const num of testNumbers) {
+    categories.add(pluralRules.select(num))
+  }
+
+  // Generate keys for each plural category
+  for (const category of categories) {
+    pluginContext.addKey({
+      key: `${key}_${category}`,
+      ns,
+      defaultValue
+    })
+  }
+}
+
+/**
+ * Generates context + plural combination keys
+ */
+function generateContextPluralKeys (
+  key: string,
+  defaultValue: string,
+  ns: string | undefined,
+  context: string,
+  pluginContext: PluginContext,
+  config: I18nextToolkitConfig
+): void {
+  const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
+  const pluralRules = new Intl.PluralRules(primaryLanguage)
+
+  // Get all possible plural categories for the primary language
+  const testNumbers = [0, 1, 2, 3, 5, 100]
+  const categories = new Set<string>()
+
+  for (const num of testNumbers) {
+    categories.add(pluralRules.select(num))
+  }
+
+  // Generate keys for each context + plural combination
+  for (const category of categories) {
+    pluginContext.addKey({
+      key: `${key}_${context}_${category}`,
+      ns,
+      defaultValue
+    })
   }
 }
 
@@ -135,4 +215,38 @@ function collectCommentTexts (src: string): string[] {
   }
 
   return texts
+}
+
+/**
+ * Parses context from the remainder of a comment after a translation function call.
+ * Looks for context specified in options object syntax.
+ *
+ * @param remainder - The remaining text after the translation key
+ * @returns The parsed context value or undefined if none found
+ *
+ * @internal
+ */
+function parseContextFromComment (remainder: string): string | undefined {
+  // Look for context in an options object, e.g., { context: 'male' }
+  const contextObj = /^\s*,\s*\{[^}]*context\s*:\s*(['"])(.*?)\1/.exec(remainder)
+  if (contextObj) return contextObj[2]
+
+  return undefined
+}
+
+/**
+ * Parses count from the remainder of a comment after a translation function call.
+ * Looks for count specified in options object syntax.
+ *
+ * @param remainder - The remaining text after the translation key
+ * @returns The parsed count value or undefined if none found
+ *
+ * @internal
+ */
+function parseCountFromComment (remainder: string): number | undefined {
+  // Look for count in an options object, e.g., { count: 1 }
+  const countObj = /^\s*,\s*\{[^}]*count\s*:\s*(\d+)/.exec(remainder)
+  if (countObj) return parseInt(countObj[1], 10)
+
+  return undefined
 }

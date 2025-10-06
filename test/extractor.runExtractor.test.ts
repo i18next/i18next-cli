@@ -1074,4 +1074,47 @@ describe('extractor: runExtractor', () => {
       }
     }
   })
+
+  it('should extract commented t() calls with context and count combinations', async () => {
+    const sampleCode = `
+      export const TimeBasedOptions = ({ term }) => {
+        return (
+          <div>
+            {/* t('options.option', { context: 'month', count: 1 }) */}
+            {/* t('options.option', { context: 'day', count: 1 })  */}
+            {/* t('options.option', { context: 'week', count: 1 }) */}
+            {t(\`options.option\`, {
+              count: Number(term.amount),
+              context: term.timeUnit,
+            })}
+          </div>
+        );
+      };
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    await runExtractor(mockConfig)
+
+    // Check that all context + plural combinations are extracted
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+    const translationJson = JSON.parse(translationFileContent as string)
+
+    expect(translationJson).toEqual({
+      options: {
+        // Base plural forms (no context)
+        option_one: 'options.option',
+        option_other: 'options.option',
+        // Context + plural combinations
+        option_month_one: 'options.option',
+        option_month_other: 'options.option',
+        option_day_one: 'options.option',
+        option_day_other: 'options.option',
+        option_week_one: 'options.option',
+        option_week_other: 'options.option',
+      }
+    })
+  })
 })
