@@ -688,7 +688,7 @@ describe('extractor: runExtractor', () => {
     const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
     const enJson = JSON.parse(enFileContent as string)
 
-    // This will fail before the fix because "inside" will be missing.
+    // This will fail because "inside" will be missing.
     expect(enJson).toEqual({
       outside: 'outside',
       inside: 'inside',
@@ -1324,6 +1324,104 @@ describe('extractor: runExtractor', () => {
       // Dynamic call: cardinal plurals (English cardinal: one, other)
       test_one: 'test',
       test_other: 'test'
+    })
+  })
+
+  it('should apply namespace from useTranslation to dynamic t() calls with context and count', async () => {
+    const sampleCode = `
+      export const Calculator = ({ term }) => {
+        const { t } = useTranslation('/widgets/calculator/ui/calculator-form');
+        
+        return (
+          <div>
+            {t(\`options.option\`, {
+              count: Number(term.amount),
+              context: term.timeUnit, // Could be 'DAYS', 'WEEKS', 'MONTHS'
+            })}
+          </div>
+        );
+      };
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    await runExtractor(mockConfig)
+
+    // Keys should go to the namespace from useTranslation, not the default namespace
+    const calculatorPath = resolve(process.cwd(), 'locales/en/widgets/calculator/ui/calculator-form.json')
+    const calculatorFileContent = await vol.promises.readFile(calculatorPath, 'utf-8')
+    const calculatorJson = JSON.parse(calculatorFileContent as string)
+
+    // Should only extract the base plural keys since context is dynamic
+    // The actual context variants would need to be added via comments or preservePatterns
+    expect(calculatorJson).toEqual({
+      options: {
+        option_one: 'options.option',
+        option_other: 'options.option'
+      }
+    })
+
+    // Verify that the default translation.json doesn't contain these keys
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    try {
+      await vol.promises.readFile(translationPath, 'utf-8')
+      // If the file exists, it should be empty or not contain our keys
+      expect(true).toBe(false) // Should not reach here - file shouldn't exist
+    } catch (error) {
+      // File should not exist since keys went to the proper namespace
+      if (error && typeof error === 'object' && 'code' in error && (error as any).code === 'ENOENT') {
+        expect(true).toBe(true)
+      } else {
+        throw error
+      }
+    }
+  })
+
+  it('should extract context variants when using commented hints with namespace', async () => {
+    const sampleCode = `
+      export const Calculator = ({ term }) => {
+        const { t } = useTranslation('/widgets/calculator/ui/calculator-form');
+        
+        return (
+          <div>
+            {
+              // t('options.option', { context: 'DAYS', count: 1 })
+              // t('options.option', { context: 'WEEKS', count: 1 })
+              // t('options.option', { context: 'MONTHS', count: 1 })
+              t(\`options.option\`, {
+                count: Number(term.amount),
+                context: term.timeUnit,
+              })
+            }
+          </div>
+        );
+      };
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    await runExtractor(mockConfig)
+
+    // Keys should go to the namespace from useTranslation
+    const calculatorPath = resolve(process.cwd(), 'locales/en/widgets/calculator/ui/calculator-form.json')
+    const calculatorFileContent = await vol.promises.readFile(calculatorPath, 'utf-8')
+    const calculatorJson = JSON.parse(calculatorFileContent as string)
+
+    expect(calculatorJson).toEqual({
+      options: {
+        // Base plural forms from dynamic call
+        option_one: 'options.option',
+        option_other: 'options.option',
+        // Context + plural combinations from comments
+        option_DAYS_one: 'options.option',
+        option_DAYS_other: 'options.option',
+        option_WEEKS_one: 'options.option',
+        option_WEEKS_other: 'options.option',
+        option_MONTHS_one: 'options.option',
+        option_MONTHS_other: 'options.option'
+      }
     })
   })
 })
