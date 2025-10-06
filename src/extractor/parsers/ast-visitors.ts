@@ -597,12 +597,12 @@ export class ASTVisitors {
           // If we have keys with context pluralize them
           if (keysWithContext.length > 0) {
             for (const { key, ns } of keysWithContext) {
-              // Pass the combined ordinal flag to the handler
-              this.handlePluralKeys(key, ns, options, isOrdinalByOption || isOrdinalByKey)
+              // Pass the combined ordinal flag and the default value to the handler
+              this.handlePluralKeys(key, ns, options, isOrdinalByOption || isOrdinalByKey, finalDefaultValue)
             }
           } else {
             // Otherwise pluralize the base key
-            this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey)
+            this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey, finalDefaultValue)
           }
 
           continue // This key is fully handled
@@ -683,7 +683,7 @@ export class ASTVisitors {
    *
    * @private
    */
-  private handlePluralKeys (key: string, ns: string | undefined, options: ObjectExpression, isOrdinal: boolean): void {
+  private handlePluralKeys (key: string, ns: string | undefined, options: ObjectExpression, isOrdinal: boolean, defaultValueFromCall?: string): void {
     try {
       const type = isOrdinal ? 'ordinal' : 'cardinal'
 
@@ -695,6 +695,20 @@ export class ASTVisitors {
       const otherDefault = getObjectPropValue(options, `defaultValue${pluralSeparator}other`)
       const ordinalOtherDefault = getObjectPropValue(options, `defaultValue${pluralSeparator}ordinal${pluralSeparator}other`)
 
+      // Get the count value and determine target category if available
+      const countValue = getObjectPropValue(options, 'count')
+      let targetCategory: string | undefined
+
+      if (typeof countValue === 'number') {
+        try {
+          const primaryLanguage = this.config.extract?.primaryLanguage || this.config.locales[0] || 'en'
+          const pluralRules = new Intl.PluralRules(primaryLanguage, { type })
+          targetCategory = pluralRules.select(countValue)
+        } catch (e) {
+          // If we can't determine the category, continue with normal logic
+        }
+      }
+
       for (const category of pluralCategories) {
         // 1. Look for the most specific default value (e.g., defaultValue_ordinal_one)
         const specificDefaultKey = isOrdinal ? `defaultValue${pluralSeparator}ordinal${pluralSeparator}${category}` : `defaultValue${pluralSeparator}${category}`
@@ -703,7 +717,7 @@ export class ASTVisitors {
         // 2. Determine the final default value using a clear fallback chain
         let finalDefaultValue: string | undefined
         if (typeof specificDefault === 'string') {
-          // 1. Use the most specific default if it exists (e.g., defaultValue_one)
+          // 1. HIGHEST PRIORITY: Use the most specific default if it exists (e.g., defaultValue_few)
           finalDefaultValue = specificDefault
         } else if (category === 'one' && typeof defaultValue === 'string') {
           // 2. SPECIAL CASE: The 'one' category falls back to the main 'defaultValue' prop
@@ -717,8 +731,12 @@ export class ASTVisitors {
         } else if (typeof defaultValue === 'string') {
           // 4. If no '_other' is found, all categories can fall back to the main 'defaultValue'
           finalDefaultValue = defaultValue
+        } else if (defaultValueFromCall && targetCategory === category) {
+          // 5. LOWER PRIORITY: If we have a default value from the t() call and this category matches the count,
+          //    use the default value from the call (only if no other defaults exist)
+          finalDefaultValue = defaultValueFromCall
         } else {
-          // 5. Final fallback to the base key itself
+          // 6. Final fallback to the base key itself
           finalDefaultValue = key
         }
 
@@ -738,7 +756,7 @@ export class ASTVisitors {
     } catch (e) {
       this.logger.warn(`Could not determine plural rules for language "${this.config.extract?.primaryLanguage}". Falling back to simple key extraction.`)
       // Fallback to a simple key if Intl API fails
-      const defaultValue = getObjectPropValue(options, 'defaultValue')
+      const defaultValue = defaultValueFromCall || getObjectPropValue(options, 'defaultValue')
       this.pluginContext.addKey({ key, ns, defaultValue: typeof defaultValue === 'string' ? defaultValue : key })
     }
   }
@@ -789,7 +807,13 @@ export class ASTVisitors {
               key = parts.join(nsSeparator)
             }
 
-            return { key, ns, defaultValue: defaultValue || serializedChildren, hasCount, isOrdinal }
+            return {
+              key,
+              ns,
+              defaultValue: defaultValue || serializedChildren,
+              hasCount,
+              isOrdinal,
+            }
           })
 
           const tProp = node.opening.attributes?.find(
@@ -818,7 +842,13 @@ export class ASTVisitors {
         } else {
           const { ns } = extractedAttributes
           extractedKeys = keysToProcess.map(key => {
-            return { key, ns, defaultValue: defaultValue || serializedChildren, hasCount, isOrdinal, }
+            return {
+              key,
+              ns,
+              defaultValue: defaultValue || serializedChildren,
+              hasCount,
+              isOrdinal,
+            }
           })
         }
 

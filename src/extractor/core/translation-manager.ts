@@ -3,6 +3,7 @@ import { resolve, basename, extname } from 'node:path'
 import { glob } from 'glob'
 import { getNestedValue, setNestedValue, getNestedKeys } from '../../utils/nested-object'
 import { getOutputPath, loadTranslationFile } from '../../utils/file-utils'
+import { resolveDefaultValue } from '../../utils/default-value'
 
 /**
  * Converts a glob pattern to a regular expression for matching keys
@@ -52,6 +53,7 @@ function buildNewTranslationsForNs (
   existingTranslations: Record<string, any>,
   config: I18nextToolkitConfig,
   locale: string,
+  namespace: string,
   preservePatterns: RegExp[],
   objectKeys: Set<string>
 ): Record<string, any> {
@@ -96,9 +98,17 @@ function buildNewTranslationsForNs (
       continue
     }
 
-    const valueToSet = (existingValue === undefined || isStaleObject)
-      ? (locale === primaryLanguage ? defaultValue : emptyDefaultValue)
-      : existingValue
+    let valueToSet: string
+    if (existingValue === undefined || isStaleObject) {
+      if (locale === primaryLanguage) {
+        valueToSet = defaultValue || key
+      } else {
+        // For secondary languages, use the resolved default value
+        valueToSet = resolveDefaultValue(emptyDefaultValue, key, namespace, locale)
+      }
+    } else {
+      valueToSet = existingValue
+    }
 
     setNestedValue(newTranslations, key, valueToSet, keySeparator ?? '.')
   }
@@ -223,7 +233,7 @@ export async function getTranslations (
       for (const ns of namespacesToProcess) {
         const nsKeys = keysByNS.get(ns) || []
         const existingTranslations = existingMergedFile[ns] || {}
-        newMergedTranslations[ns] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, preservePatterns, objectKeys)
+        newMergedTranslations[ns] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, ns, preservePatterns, objectKeys)
       }
 
       const oldContent = JSON.stringify(existingMergedFile, null, indentation)
@@ -247,7 +257,7 @@ export async function getTranslations (
         const outputPath = getOutputPath(config.extract.output, locale, ns)
         const fullPath = resolve(process.cwd(), outputPath)
         const existingTranslations = await loadTranslationFile(fullPath) || {}
-        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, preservePatterns, objectKeys)
+        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, ns, preservePatterns, objectKeys)
 
         const oldContent = JSON.stringify(existingTranslations, null, indentation)
         const newContent = JSON.stringify(newTranslations, null, indentation)

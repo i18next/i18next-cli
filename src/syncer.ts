@@ -7,6 +7,7 @@ import type { I18nextToolkitConfig } from './types'
 import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-object'
 import { getOutputPath, loadTranslationFile, serializeTranslationFile } from './utils/file-utils'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker'
+import { resolveDefaultValue } from './utils/default-value'
 
 /**
  * Synchronizes translation files across different locales by ensuring all secondary
@@ -84,7 +85,9 @@ export async function runSyncer (config: I18nextToolkitConfig) {
 
         for (const key of primaryKeys) {
           const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
-          const valueToSet = existingValue ?? defaultValue
+
+          // Use the resolved default value if no existing value
+          const valueToSet = existingValue ?? resolveDefaultValue(defaultValue, key, ns, lang)
           setNestedValue(newSecondaryTranslations, key, valueToSet, keySeparator ?? '.')
         }
 

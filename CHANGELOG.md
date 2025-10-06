@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0](https://github.com/i18next/i18next-cli/compare/v1.7.1...v1.8.0) - 2025-10-06
+
+- **Extractor:** The `defaultValue` option now accepts a function `(key, namespace, language) => string` for dynamic default value generation. This enables powerful patterns like i18next-parser compatibility (`defaultValue: (key) => key`), development-friendly TODO markers (`defaultValue: (key) => \`TODO: translate ${key}\``), and language-specific fallbacks. The function receives the translation key, namespace, and target language as parameters, allowing for sophisticated fallback strategies. [#52](https://github.com/i18next/i18next-cli/issues/52)
+
 ## [1.7.1](https://github.com/i18next/i18next-cli/compare/v1.7.0...v1.7.1) - 2025-10-06
 
 - **Extractor (Comments):** Enhanced comment parser to support ordinal plurals alongside cardinal plurals and context combinations. Commented `t()` calls now correctly handle ordinal flags (e.g., `// t('position', { count: 1, ordinal: true })`) and generate all appropriate ordinal plural forms (`position_ordinal_one`, `position_ordinal_two`, `position_ordinal_few`, `position_ordinal_other`) using the proper `Intl.PluralRules` API. The parser also supports ordinal detection via `_ordinal` suffix in keys and properly combines ordinal plurals with context options for comprehensive key generation. This ensures complete parity with the AST-based extractor for all plural types. [#50](https://github.com/i18next/i18next-cli/issues/50)

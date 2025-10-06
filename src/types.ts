@@ -88,7 +88,7 @@ export interface I18nextToolkitConfig {
     indentation?: number | string;
 
     /** Default value to use for missing translations in secondary languages */
-    defaultValue?: string;
+    defaultValue?: string | ((key: string, namespace: string, language: string) => string);
 
     /** Primary language that provides default values (default: first locale) */
     primaryLanguage?: string;

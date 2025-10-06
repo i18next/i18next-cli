@@ -152,9 +152,22 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
 
   const serialized = serializeJSXChildren(node.children, config)
 
-  let defaultValue = config.extract.defaultValue || ''
+  // Handle default value properly
+  let defaultValue: string
+
   if (defaultsAttr?.type === 'JSXAttribute' && defaultsAttr.value?.type === 'StringLiteral') {
+    // Explicit defaults attribute takes precedence
     defaultValue = defaultsAttr.value.value
+  } else {
+    // Use the configured default value or fall back to empty string
+    const configuredDefault = config.extract.defaultValue
+    if (typeof configuredDefault === 'string') {
+      defaultValue = configuredDefault
+    } else {
+      // For function-based defaults or undefined, use empty string as placeholder
+      // The translation manager will handle function resolution with proper context
+      defaultValue = ''
+    }
   }
 
   let keyExpression: Expression | undefined

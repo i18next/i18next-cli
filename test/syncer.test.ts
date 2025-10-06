@@ -112,6 +112,80 @@ describe('syncer', () => {
     })
   })
 
+  it('should use function-based defaultValue for missing keys', async () => {
+    const enTranslations = {
+      user: { name: 'Name', email: 'Email' },
+      settings: { theme: 'Theme' }
+    }
+    const deTranslations = {
+      user: { name: 'Name' }, // email is missing
+      // settings namespace is completely missing
+    }
+
+    const configWithFunctionDefault: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        defaultValue: (key: string, namespace: string, language: string) => {
+          return `${language.toUpperCase()}_${namespace}_${key}`
+        },
+      },
+    }
+
+    vol.fromJSON({
+      [enPath]: JSON.stringify(enTranslations),
+      [dePath]: JSON.stringify(deTranslations),
+    })
+
+    await runSyncer(configWithFunctionDefault)
+
+    const updatedDeContent = await vol.promises.readFile(dePath, 'utf-8')
+    const updatedDeJson = JSON.parse(updatedDeContent as string)
+
+    expect(updatedDeJson).toEqual({
+      user: {
+        name: 'Name', // Preserved existing value
+        email: 'DE_translation_user.email', // Function-generated default
+      },
+      settings: {
+        theme: 'DE_translation_settings.theme', // Function-generated default
+      },
+    })
+  })
+
+  it('should handle function-based defaultValue errors gracefully', async () => {
+    const enTranslations = { key1: 'Value 1', key2: 'Value 2' }
+    const deTranslations = { key1: 'Wert 1' } // key2 is missing
+
+    const configWithErrorFunction: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        defaultValue: (key: string, namespace: string, language: string) => {
+          if (key === 'key2') {
+            throw new Error('Test error')
+          }
+          return `${language}_${key}`
+        },
+      },
+    }
+
+    vol.fromJSON({
+      [enPath]: JSON.stringify(enTranslations),
+      [dePath]: JSON.stringify(deTranslations),
+    })
+
+    await runSyncer(configWithErrorFunction)
+
+    const updatedDeContent = await vol.promises.readFile(dePath, 'utf-8')
+    const updatedDeJson = JSON.parse(updatedDeContent as string)
+
+    expect(updatedDeJson).toEqual({
+      key1: 'Wert 1',
+      key2: '', // Falls back to empty string when function throws
+    })
+  })
+
   it('should use the configured indentation for output files', async () => {
     const enTranslations = { key: 'Value' }
 
