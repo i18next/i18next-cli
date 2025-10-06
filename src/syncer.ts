@@ -1,5 +1,5 @@
 import { writeFile, mkdir } from 'node:fs/promises'
-import { resolve, dirname, basename } from 'path'
+import { resolve, dirname, basename } from 'node:path'
 import chalk from 'chalk'
 import ora from 'ora'
 import { glob } from 'glob'
