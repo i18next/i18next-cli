@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1](https://github.com/i18next/i18next-cli/compare/v1.7.0...v1.7.1) - 2025-10-06
+
+- **Extractor (Comments):** Enhanced comment parser to support ordinal plurals alongside cardinal plurals and context combinations. Commented `t()` calls now correctly handle ordinal flags (e.g., `// t('position', { count: 1, ordinal: true })`) and generate all appropriate ordinal plural forms (`position_ordinal_one`, `position_ordinal_two`, `position_ordinal_few`, `position_ordinal_other`) using the proper `Intl.PluralRules` API. The parser also supports ordinal detection via `_ordinal` suffix in keys and properly combines ordinal plurals with context options for comprehensive key generation. This ensures complete parity with the AST-based extractor for all plural types. [#50](https://github.com/i18next/i18next-cli/issues/50)
+
 ## [1.7.0](https://github.com/i18next/i18next-cli/compare/v1.6.1...v1.7.9) - 2025-10-06
 
 - **Extractor (Comments):** Improved comment extraction for complex translation patterns with both context and plural options. Commented `t()` calls like `// t('options.option', { context: 'month', count: 1 })` now correctly generate all combinations of context and plural forms (e.g., `options.option_month_one`, `options.option_month_other`, `options.option_day_one`, etc.), providing comprehensive key extraction for dynamic scenarios where developers use commented hints to declare all possible runtime values. [#50](https://github.com/i18next/i18next-cli/issues/50)

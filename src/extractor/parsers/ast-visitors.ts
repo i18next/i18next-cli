@@ -744,33 +744,6 @@ export class ASTVisitors {
   }
 
   /**
-   * Generates simple plural keys, typically for a <Trans> component.
-   *
-   * @param key - Base key name for which plural keys should be generated
-   * @param defaultValue - Optional default value to associate with each plural variant
-   * @param ns - Optional namespace to use for the generated keys
-   *
-   * @private
-   */
-  private handleSimplePluralKeys (key: string, defaultValue: string | undefined, ns: string | undefined): void {
-    try {
-      const pluralCategories = new Intl.PluralRules(this.config.extract?.primaryLanguage).resolvedOptions().pluralCategories
-      const pluralSeparator = this.config.extract.pluralSeparator ?? '_'
-      for (const category of pluralCategories) {
-        this.pluginContext.addKey({
-          key: `${key}${pluralSeparator}${category}`,
-          ns,
-          defaultValue,
-          hasCount: true,
-        })
-      }
-    } catch (e) {
-      this.logger.warn(`Could not determine plural rules for language "${this.config.extract?.primaryLanguage}".`)
-      this.pluginContext.addKey({ key, ns, defaultValue })
-    }
-  }
-
-  /**
    * Processes JSX elements to extract translation keys from Trans components.
    *
    * Identifies configured Trans components and delegates to the JSX parser

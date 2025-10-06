@@ -45,6 +45,18 @@ export function extractKeysFromComments (
       const defaultValue = parseDefaultValueFromComment(remainder)
       const context = parseContextFromComment(remainder)
       const count = parseCountFromComment(remainder)
+      const ordinal = parseOrdinalFromComment(remainder)
+
+      // Check if key ends with _ordinal suffix (like in ast-visitors)
+      let isOrdinalByKey = false
+      const pluralSeparator = config.extract.pluralSeparator ?? '_'
+      if (key.endsWith(`${pluralSeparator}ordinal`)) {
+        isOrdinalByKey = true
+        // Normalize the key by stripping the suffix
+        key = key.slice(0, -(pluralSeparator.length + 7)) // Remove "_ordinal"
+      }
+
+      const isOrdinal = ordinal === true || isOrdinalByKey
 
       // 1. Check for namespace in options object first (e.g., { ns: 'common' })
       ns = parseNsFromComment(remainder)
@@ -72,15 +84,15 @@ export function extractKeysFromComments (
       // 5. Handle context and count combinations
       if (context && count) {
         // Generate all combinations: base plural + context+plural
-        generatePluralKeys(key, defaultValue ?? key, ns, pluginContext, config)
-        generateContextPluralKeys(key, defaultValue ?? key, ns, context, pluginContext, config)
+        generatePluralKeys(key, defaultValue ?? key, ns, pluginContext, config, isOrdinal)
+        generateContextPluralKeys(key, defaultValue ?? key, ns, context, pluginContext, config, isOrdinal)
       } else if (context) {
         // Just context variants
         pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })
         pluginContext.addKey({ key: `${key}_${context}`, ns, defaultValue: defaultValue ?? key })
       } else if (count) {
         // Just plural variants
-        generatePluralKeys(key, defaultValue ?? key, ns, pluginContext, config)
+        generatePluralKeys(key, defaultValue ?? key, ns, pluginContext, config, isOrdinal)
       } else {
         // Simple key
         pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })
@@ -97,26 +109,32 @@ function generatePluralKeys (
   defaultValue: string,
   ns: string | undefined,
   pluginContext: PluginContext,
-  config: I18nextToolkitConfig
+  config: I18nextToolkitConfig,
+  isOrdinal = false
 ): void {
-  const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
-  const pluralRules = new Intl.PluralRules(primaryLanguage)
+  try {
+    const type = isOrdinal ? 'ordinal' : 'cardinal'
+    const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
+    const pluralCategories = new Intl.PluralRules(primaryLanguage, { type }).resolvedOptions().pluralCategories
+    const pluralSeparator = config.extract.pluralSeparator ?? '_'
 
-  // Get all possible plural categories for the primary language
-  const testNumbers = [0, 1, 2, 3, 5, 100] // Test various numbers to find all categories
-  const categories = new Set<string>()
+    // Generate keys for each plural category
+    for (const category of pluralCategories) {
+      const finalKey = isOrdinal
+        ? `${key}${pluralSeparator}ordinal${pluralSeparator}${category}`
+        : `${key}${pluralSeparator}${category}`
 
-  for (const num of testNumbers) {
-    categories.add(pluralRules.select(num))
-  }
-
-  // Generate keys for each plural category
-  for (const category of categories) {
-    pluginContext.addKey({
-      key: `${key}_${category}`,
-      ns,
-      defaultValue
-    })
+      pluginContext.addKey({
+        key: finalKey,
+        ns,
+        defaultValue,
+        hasCount: true,
+        isOrdinal
+      })
+    }
+  } catch (e) {
+    // Fallback if Intl API fails
+    pluginContext.addKey({ key, ns, defaultValue })
   }
 }
 
@@ -129,26 +147,32 @@ function generateContextPluralKeys (
   ns: string | undefined,
   context: string,
   pluginContext: PluginContext,
-  config: I18nextToolkitConfig
+  config: I18nextToolkitConfig,
+  isOrdinal = false
 ): void {
-  const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
-  const pluralRules = new Intl.PluralRules(primaryLanguage)
+  try {
+    const type = isOrdinal ? 'ordinal' : 'cardinal'
+    const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
+    const pluralCategories = new Intl.PluralRules(primaryLanguage, { type }).resolvedOptions().pluralCategories
+    const pluralSeparator = config.extract.pluralSeparator ?? '_'
 
-  // Get all possible plural categories for the primary language
-  const testNumbers = [0, 1, 2, 3, 5, 100]
-  const categories = new Set<string>()
+    // Generate keys for each context + plural combination
+    for (const category of pluralCategories) {
+      const finalKey = isOrdinal
+        ? `${key}_${context}${pluralSeparator}ordinal${pluralSeparator}${category}`
+        : `${key}_${context}${pluralSeparator}${category}`
 
-  for (const num of testNumbers) {
-    categories.add(pluralRules.select(num))
-  }
-
-  // Generate keys for each context + plural combination
-  for (const category of categories) {
-    pluginContext.addKey({
-      key: `${key}_${context}_${category}`,
-      ns,
-      defaultValue
-    })
+      pluginContext.addKey({
+        key: finalKey,
+        ns,
+        defaultValue,
+        hasCount: true,
+        isOrdinal
+      })
+    }
+  } catch (e) {
+    // Fallback if Intl API fails
+    pluginContext.addKey({ key: `${key}_${context}`, ns, defaultValue })
   }
 }
 
@@ -247,6 +271,23 @@ function parseCountFromComment (remainder: string): number | undefined {
   // Look for count in an options object, e.g., { count: 1 }
   const countObj = /^\s*,\s*\{[^}]*count\s*:\s*(\d+)/.exec(remainder)
   if (countObj) return parseInt(countObj[1], 10)
+
+  return undefined
+}
+
+/**
+ * Parses ordinal flag from the remainder of a comment after a translation function call.
+ * Looks for ordinal specified in options object syntax.
+ *
+ * @param remainder - The remaining text after the translation key
+ * @returns The parsed ordinal value or undefined if none found
+ *
+ * @internal
+ */
+function parseOrdinalFromComment (remainder: string): boolean | undefined {
+  // Look for ordinal in an options object, e.g., { ordinal: true }
+  const ordinalObj = /^\s*,\s*\{[^}]*ordinal\s*:\s*(true|false)/.exec(remainder)
+  if (ordinalObj) return ordinalObj[1] === 'true'
 
   return undefined
 }

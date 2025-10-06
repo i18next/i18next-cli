@@ -1117,4 +1117,213 @@ describe('extractor: runExtractor', () => {
       }
     })
   })
+
+  it('should extract commented t() calls with ordinal plurals', async () => {
+    const sampleCode = `
+      export const OrdinalExamples = () => {
+        return (
+          <div>
+            {
+              // t('position', { count: 1, ordinal: true })
+              // t('rank_ordinal', { count: 1 })
+              // t('place', { count: 2, ordinal: false })
+              t(\`position\`, {
+                count: Number(position),
+                // No ordinal flag, so this should generate cardinal plurals
+              })
+            }
+          </div>
+        );
+      };
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    await runExtractor(mockConfig)
+
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+    const translationJson = JSON.parse(translationFileContent as string)
+
+    expect(translationJson).toEqual({
+      // Ordinal from comment with explicit ordinal: true (English has one, two, few, other)
+      position_ordinal_one: 'position',
+      position_ordinal_two: 'position',
+      position_ordinal_few: 'position',
+      position_ordinal_other: 'position',
+
+      // Ordinal from comment with _ordinal suffix in key
+      rank_ordinal_one: 'rank',
+      rank_ordinal_two: 'rank',
+      rank_ordinal_few: 'rank',
+      rank_ordinal_other: 'rank',
+
+      // Cardinal from comment with explicit ordinal: false (English cardinal has one, other)
+      place_one: 'place',
+      place_other: 'place',
+
+      // Cardinal from dynamic t() call (no ordinal specified)
+      position_one: 'position',
+      position_other: 'position'
+    })
+  })
+
+  it('should handle ordinal plurals with custom separators', async () => {
+    const customConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        pluralSeparator: '-'
+      }
+    }
+
+    const sampleCode = `
+      export const CustomSeparatorOrdinals = () => {
+        return (
+          <div>
+            {
+              // t('position', { count: 1, ordinal: true })
+              // t('rank-ordinal', { count: 1 })
+              t(\`position\`, { count: Number(pos) }) // No ordinal flag
+            }
+          </div>
+        );
+      };
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    await runExtractor(customConfig)
+
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+    const translationJson = JSON.parse(translationFileContent as string)
+
+    expect(translationJson).toEqual({
+      // Ordinal with custom separator from comment (English ordinal: one, two, few, other)
+      'position-ordinal-one': 'position',
+      'position-ordinal-two': 'position',
+      'position-ordinal-few': 'position',
+      'position-ordinal-other': 'position',
+
+      // Ordinal detected via suffix with custom separator
+      'rank-ordinal-one': 'rank',
+      'rank-ordinal-two': 'rank',
+      'rank-ordinal-few': 'rank',
+      'rank-ordinal-other': 'rank',
+
+      // Dynamic call fallback with custom separator (cardinal: one, other)
+      'position-one': 'position',
+      'position-other': 'position'
+    })
+  })
+
+  it('should handle ordinal plurals with different primary languages', async () => {
+    const polishConfig = {
+      ...mockConfig,
+      locales: ['pl', 'en'],
+      extract: {
+        ...mockConfig.extract,
+        primaryLanguage: 'pl'
+      }
+    }
+
+    const sampleCode = `
+      export const PolishOrdinals = () => {
+        return (
+          <div>
+            {
+              // t('position', { count: 1, ordinal: true })
+              t(\`position\`, { count: num }) // Cardinal plurals for dynamic call
+            }
+          </div>
+        );
+      };
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    await runExtractor(polishConfig)
+
+    const translationPath = resolve(process.cwd(), 'locales/pl/translation.json')
+    const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+    const translationJson = JSON.parse(translationFileContent as string)
+
+    // Polish ordinal plural categories - get the actual categories
+    const ordinalKeys = Object.keys(translationJson).filter(key =>
+      key.startsWith('position_ordinal_')
+    )
+
+    // Polish ordinals actually only have 'other' category
+    expect(ordinalKeys.length).toBe(1)
+    expect(ordinalKeys).toContain('position_ordinal_other')
+
+    // Also check dynamic call generates cardinal plurals (Polish cardinal: one, few, many, other)
+    const cardinalKeys = Object.keys(translationJson).filter(key =>
+      key.startsWith('position_') && !key.includes('ordinal')
+    )
+    expect(cardinalKeys.length).toBeGreaterThan(2) // Should have more than just one/other
+    expect(cardinalKeys).toContain('position_one')
+    expect(cardinalKeys).toContain('position_other')
+    // Polish should also have 'few' and 'many'
+    expect(cardinalKeys.some(key => key.includes('_few'))).toBe(true)
+    expect(cardinalKeys.some(key => key.includes('_many'))).toBe(true)
+  })
+
+  it('should handle ordinal parsing edge cases', async () => {
+    const sampleCode = `
+      export const OrdinalEdgeCases = () => {
+        return (
+          <div>
+            {
+              // t('test1', { ordinal: true }) - ordinal without count
+              // t('test2', { count: 1, ordinal: "true" }) - string ordinal value  
+              // t('test3', { count: 1, ordinal: false }) - explicit false
+              // t('test4_ordinal') - ordinal suffix without count
+              // t('test5_ordinal', { count: 1, ordinal: false }) - suffix overrides option
+              t(\`test\`, { count: num })
+            }
+          </div>
+        );
+      };
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    await runExtractor(mockConfig)
+
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+    const translationJson = JSON.parse(translationFileContent as string)
+
+    expect(translationJson).toEqual({
+      // test1: ordinal without count -> simple key only
+      test1: 'test1',
+
+      // test2: string "true" value -> should not be parsed as ordinal (cardinal plurals)
+      test2_one: 'test2',
+      test2_other: 'test2',
+
+      // test3: explicit false -> cardinal plurals
+      test3_one: 'test3',
+      test3_other: 'test3',
+
+      // test4: ordinal suffix without count -> simple key only (suffix stripped)
+      test4: 'test4',
+
+      // test5: suffix detected despite ordinal: false -> ordinal wins (English ordinal: one, two, few, other)
+      test5_ordinal_one: 'test5',
+      test5_ordinal_two: 'test5',
+      test5_ordinal_few: 'test5',
+      test5_ordinal_other: 'test5',
+
+      // Dynamic call: cardinal plurals (English cardinal: one, other)
+      test_one: 'test',
+      test_other: 'test'
+    })
+  })
 })
