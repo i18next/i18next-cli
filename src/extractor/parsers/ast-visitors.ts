@@ -12,6 +12,8 @@ interface UseTranslationHookConfig {
 export interface ASTVisitorHooks {
   onBeforeVisitNode?: (node: Node) => void
   onAfterVisitNode?: (node: Node) => void
+  resolvePossibleContextStringValues?: (expression: Expression, returnEmptyStrings?: boolean) => string[]
+  resolvePossibleKeyStringValues?: (expression: Expression, returnEmptyStrings?: boolean) => string[]
 }
 
 /**
@@ -65,7 +67,9 @@ export class ASTVisitors {
     this.logger = logger
     this.hooks = {
       onBeforeVisitNode: hooks?.onBeforeVisitNode,
-      onAfterVisitNode: hooks?.onAfterVisitNode
+      onAfterVisitNode: hooks?.onAfterVisitNode,
+      resolvePossibleKeyStringValues: hooks?.resolvePossibleKeyStringValues,
+      resolvePossibleContextStringValues: hooks?.resolvePossibleContextStringValues
     }
   }
 
@@ -574,7 +578,7 @@ export class ASTVisitors {
             keysWithContext.push({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv })
           }
         } else if (contextProp?.value) {
-          const contextValues = this.resolvePossibleStringValues(contextProp.value)
+          const contextValues = this.resolvePossibleContextStringValues(contextProp.value)
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
 
           if (contextValues.length > 0) {
@@ -652,11 +656,11 @@ export class ASTVisitors {
     } else if (firstArg.type === 'ArrayExpression') {
       for (const element of firstArg.elements) {
         if (element?.expression) {
-          keysToProcess.push(...this.resolvePossibleStringValues(element.expression))
+          keysToProcess.push(...this.resolvePossibleKeyStringValues(element.expression))
         }
       }
     } else {
-      keysToProcess.push(...this.resolvePossibleStringValues(firstArg))
+      keysToProcess.push(...this.resolvePossibleKeyStringValues(firstArg))
     }
 
     return {
@@ -786,7 +790,7 @@ export class ASTVisitors {
 
       if (extractedAttributes) {
         if (extractedAttributes.keyExpression) {
-          const keyValues = this.resolvePossibleStringValues(extractedAttributes.keyExpression)
+          const keyValues = this.resolvePossibleKeyStringValues(extractedAttributes.keyExpression)
           keysToProcess.push(...keyValues)
         } else {
           keysToProcess.push(extractedAttributes.serializedChildren)
@@ -864,7 +868,7 @@ export class ASTVisitors {
           )
           const isOrdinal = !!ordinalAttr
 
-          const contextValues = this.resolvePossibleStringValues(contextExpression)
+          const contextValues = this.resolvePossibleContextStringValues(contextExpression)
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
 
           // Generate all combinations of context and plural forms
@@ -884,7 +888,7 @@ export class ASTVisitors {
             extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode))
           }
         } else if (contextExpression) {
-          const contextValues = this.resolvePossibleStringValues(contextExpression)
+          const contextValues = this.resolvePossibleContextStringValues(contextExpression)
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
 
           if (contextValues.length > 0) {
@@ -1076,12 +1080,47 @@ export class ASTVisitors {
   }
 
   /**
+   * Resolves an expression to one or more possible context string values that can be
+   * determined statically from the AST. This is a wrapper around the plugin hook
+   * `extractContextFromExpression` and {@link resolvePossibleStringValuesFromExpression}.
+   *
+   * @param expression - The SWC AST expression node to resolve
+   * @returns An array of possible context string values that the expression may produce.
+   *
+   * @private
+   */
+  private resolvePossibleContextStringValues (expression: Expression) {
+    const strings = this.hooks.resolvePossibleContextStringValues?.(expression) ?? []
+
+    return [...strings, ...this.resolvePossibleStringValuesFromExpression(expression)]
+  }
+
+  /**
+   * Resolves an expression to one or more possible key string values that can be
+   * determined statically from the AST. This is a wrapper around the plugin hook
+   * `extractKeysFromExpression` and {@link resolvePossibleStringValuesFromExpression}.
+   *
+   * @param expression - The SWC AST expression node to resolve
+   * @returns An array of possible key string values that the expression may produce.
+   *
+   * @private
+   */
+  private resolvePossibleKeyStringValues (expression: Expression) {
+    const strings = this.hooks.resolvePossibleKeyStringValues?.(expression) ?? []
+
+    return [...strings, ...this.resolvePossibleStringValuesFromExpression(expression)]
+  }
+
+  /**
    * Resolves an expression to one or more possible string values that can be
    * determined statically from the AST.
    *
    * Supports:
    * - StringLiteral -> single value (filtered to exclude empty strings for context)
+   * - NumericLiteral -> single value
+   * - BooleanLiteral -> single value
    * - ConditionalExpression (ternary) -> union of consequent and alternate resolved values
+   * - TemplateLiteral -> union of all possible string values
    * - The identifier `undefined` -> empty array
    *
    * For any other expression types (identifiers, function calls, member expressions,
@@ -1092,15 +1131,15 @@ export class ASTVisitors {
    * @param returnEmptyStrings - Whether to include empty strings in the result
    * @returns An array of possible string values that the expression may produce.
    */
-  private resolvePossibleStringValues (expression: Expression, returnEmptyStrings = false): string[] {
+  private resolvePossibleStringValuesFromExpression (expression: Expression, returnEmptyStrings = false): string[] {
     if (expression.type === 'StringLiteral') {
       // Filter out empty strings as they should be treated as "no context" like i18next does
       return expression.value || returnEmptyStrings ? [expression.value] : []
     }
 
     if (expression.type === 'ConditionalExpression') { // This is a ternary operator
-      const consequentValues = this.resolvePossibleStringValues(expression.consequent, returnEmptyStrings)
-      const alternateValues = this.resolvePossibleStringValues(expression.alternate, returnEmptyStrings)
+      const consequentValues = this.resolvePossibleStringValuesFromExpression(expression.consequent, returnEmptyStrings)
+      const alternateValues = this.resolvePossibleStringValuesFromExpression(expression.alternate, returnEmptyStrings)
       return [...consequentValues, ...alternateValues]
     }
 
@@ -1142,7 +1181,7 @@ export class ASTVisitors {
       (heads, expression, i) => {
         return heads.flatMap((head) => {
           const tail = tails[i]?.cooked ?? ''
-          return this.resolvePossibleStringValues(expression, true).map(
+          return this.resolvePossibleStringValuesFromExpression(expression, true).map(
             (expressionValue) => `${head}${expressionValue}${tail}`
           )
         })

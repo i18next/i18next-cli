@@ -1,4 +1,5 @@
 import { glob } from 'glob'
+import type { Expression } from '@swc/core'
 import type { ExtractedKey, Logger, I18nextToolkitConfig } from '../../types'
 import { processFile } from './extractor'
 import { ConsoleLogger } from '../../utils/logger'
@@ -56,6 +57,26 @@ export async function findKeys (
           logger.warn(`Plugin ${plugin.name} onVisitNode failed:`, err)
         }
       }
+    },
+    resolvePossibleKeyStringValues: (expression: Expression) => {
+      return plugins.flatMap(plugin => {
+        try {
+          return plugin.extractKeysFromExpression?.(expression, config, logger) ?? []
+        } catch (err) {
+          logger.warn(`Plugin ${plugin.name} extractKeysFromExpression failed:`, err)
+          return []
+        }
+      })
+    },
+    resolvePossibleContextStringValues: (expression: Expression) => {
+      return plugins.flatMap(plugin => {
+        try {
+          return plugin.extractContextFromExpression?.(expression, config, logger) ?? []
+        } catch (err) {
+          logger.warn(`Plugin ${plugin.name} extractContextFromExpression failed:`, err)
+          return []
+        }
+      })
     },
   } satisfies ASTVisitorHooks
 
