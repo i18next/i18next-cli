@@ -984,7 +984,7 @@ describe('runExtractor: defaultValue option', () => {
     })
   })
 
-  it.only('should handle conflicting translations from different source files with namespaces', async () => {
+  it('should handle conflicting translations from different source files with namespaces', async () => {
     const sampleCode1 = `
       t('app:title', 'App Title');
       t('app:description', 'App Description');
