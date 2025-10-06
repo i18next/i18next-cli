@@ -359,14 +359,6 @@ export default defineConfig({
     // defaultValue: (key, namespace, language) => key, // i18next-parser style: use key as value
     // defaultValue: (key, namespace, language) => `TODO: translate ${key}`, // Mark untranslated keys
     // defaultValue: (key, namespace, language) => language === 'de' ? 'German TODO' : 'TODO', // Language-specific
-    
-    // Or use an object for namespace-specific defaults:
-    // defaultValue: {
-    //   common: 'Common translation needed',
-    //   errors: 'Error message needs translation',
-    //   // fallback for other namespaces:
-    //   '*': (key) => key
-    // },
 
     /** If true, keys that are not found in the source code will be removed from translation files. (default: true) */
     removeUnusedKeys: true,
