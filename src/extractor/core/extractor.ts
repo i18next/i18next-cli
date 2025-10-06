@@ -59,6 +59,8 @@ export async function runExtractor (
 
   validateExtractorConfig(config)
 
+  const plugins = config.plugins || []
+
   const spinner = ora('Running i18next key extractor...\n').start()
 
   try {
@@ -86,9 +88,9 @@ export async function runExtractor (
     }
 
     // Run afterSync hooks from plugins
-    if ((config.plugins || []).length > 0) {
+    if (plugins.length > 0) {
       spinner.text = 'Running post-extraction plugins...'
-      for (const plugin of (config.plugins || [])) {
+      for (const plugin of plugins) {
         await plugin.afterSync?.(results, config)
       }
     }

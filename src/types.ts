@@ -197,6 +197,32 @@ export interface Plugin {
   name: string;
 
   /**
+   * Custom function to extract keys from an AST expression. Useful
+   * for plugins that need to extract key patterns from `t(..., options)`
+   * or `<Trans i18nKey={...} />`.
+   *
+   * @param expression - An expression to extract keys from
+   * @param config - The i18next toolkit configuration object
+   * @param logger - Logger instance for output
+   *
+   * @returns An array of extracted keys
+   */
+  extractKeysFromExpression?: (expression: Expression, config: Omit<I18nextToolkitConfig, 'plugins'>, logger: Logger) => string[];
+
+  /**
+   * Custom function to extract context from an AST expression. Useful
+   * for plugins that need to extract context patterns from `t('key', { context: ... })`
+   * or `<Trans i18nKey="key" context={...} />`.
+   *
+   * @param expression - An expression to extract context from
+   * @param config - The i18next toolkit configuration object
+   * @param logger - Logger instance for output
+   *
+   * @returns An array of extracted context values
+   */
+  extractContextFromExpression?: (expression: Expression, config: Omit<I18nextToolkitConfig, 'plugins'>, logger: Logger) => string[];
+
+  /**
    * Hook called once at the beginning of the extraction process.
    * Use for initialization tasks like setting up resources or validating configuration.
    */
