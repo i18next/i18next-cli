@@ -390,10 +390,12 @@ Create custom plugins to extend the capabilities of `i18next-cli`. The plugin sy
 - `setup`: Runs once when the CLI is initialized. Use it for any setup tasks.
 - `onLoad`: Runs for each file *before* it is parsed. You can use this to transform code (e.g., transpile a custom language to JavaScript).
 - `onVisitNode`: Runs for every node in the Abstract Syntax Tree (AST) of a parsed JavaScript/TypeScript file. This provides access to the full parsing context, including variable scope and TypeScript-specific syntax like `satisfies` and `as` operators.
+- `extractKeysFromExpression`: Runs for specific expressions during AST traversal to extract additional translation keys. This is ideal for handling custom syntax patterns or complex key generation logic without managing pluralization manually.
+- `extractContextFromExpression`: Runs for specific expressions to extract context values that can't be statically analyzed. Useful for dynamic context patterns or custom context resolution logic.
 - `onEnd`: Runs after all JS/TS files have been parsed but *before* the final keys are compared with existing translation files. This is the ideal hook for parsing non-JavaScript files (like `.html`, `.vue`, or `.svelte`) and adding their keys to the collection.
 - `afterSync`: Runs after the extractor has compared the found keys with your translation files and generated the final results. This is perfect for post-processing tasks, like generating a report of newly added keys.
 
-**Example Plugin (`my-custom-plugin.mjs`):**
+**Basic Plugin Example:**
 
 ```typescript
 import { glob } from 'glob';
@@ -402,74 +404,134 @@ import { readFile, writeFile } from 'node:fs/promises';
 export const myCustomPlugin = () => ({
   name: 'my-custom-plugin',
   
-  /**
-   * Runs after the core extractor has finished but before comparison.
-   * Ideal for adding keys from non-JS/TS files.
-   */
-  async onEnd(allKeys) {
-    // Example: Parse HTML files for data-i18n attributes
-    const htmlFiles = await glob('src/**/*.html');
-    for (const file of htmlFiles) {
+  // Handle custom file formats
+  async onEnd(keys) {
+    // Extract keys from .vue files
+    const vueFiles = await glob('src/**/*.vue');
+    for (const file of vueFiles) {
       const content = await readFile(file, 'utf-8');
-      const matches = content.match(/data-i18n="([^"]+)"/g) || [];
-      for (const match of matches) {
-        const key = match.replace(/data-i18n="([^"]+)"/, '$1');
-        // Add the found key to the collection
-        allKeys.set(`translation:${key}`, { key, ns: 'translation', defaultValue: key });
+      const keyMatches = content.matchAll(/\{\{\s*\$t\(['"]([^'"]+)['"]\)/g);
+      for (const match of keyMatches) {
+        keys.set(`translation:${match[1]}`, {
+          key: match[1],
+          defaultValue: match[1],
+          ns: 'translation'
+        });
       }
-    }
-  },
-
-  /**
-   * Runs after the extractor has generated the final translation results.
-   * Ideal for reporting or post-processing.
-   */
-  async afterSync(results, config) {
-    const primaryLanguage = config.extract.primaryLanguage || config.locales[0];
-    const newKeys = [];
-
-    for (const result of results) {
-      // Find the result for the primary language
-      if (!result.path.includes(`/${primaryLanguage}/`)) continue;
-      
-      const newKeysFlat = Object.keys(result.newTranslations);
-      const existingKeysFlat = Object.keys(result.existingTranslations);
-      
-      // Find keys that are in the new file but not the old one
-      for (const key of newKeysFlat) {
-        if (!existingKeysFlat.includes(key)) {
-          newKeys.push({
-            key: key,
-            defaultValue: result.newTranslations[key],
-          });
-        }
-      }
-    }
-
-    if (newKeys.length > 0) {
-      console.log(`[My Plugin] Found ${newKeys.length} new keys!`);
-      // Example: Write a report for your copywriter
-      await writeFile('new-keys-report.json', JSON.stringify(newKeys, null, 2));
     }
   }
 });
 ```
 
-**Configuration (`i18next.config.ts`):**
+**Advanced Plugin with Expression Parsing:**
+
+```typescript
+export const advancedExtractionPlugin = () => ({
+  name: 'advanced-extraction-plugin',
+  
+  // Extract keys from TypeScript satisfies expressions
+  extractKeysFromExpression: (expression, config, logger) => {
+    const keys = [];
+    
+    // Handle template literals with variable substitutions
+    if (expression.type === 'TemplateLiteral') {
+      // Extract pattern: `user.${role}.permission`
+      const parts = expression.quasis.map(q => q.cooked);
+      const variables = expression.expressions.map(e => 
+        e.type === 'Identifier' ? e.value : 'dynamic'
+      );
+      
+      if (variables.includes('role')) {
+        // Generate keys for known roles
+        keys.push('user.admin.permission', 'user.manager.permission', 'user.employee.permission');
+      }
+    }
+    
+    // Handle TypeScript satisfies expressions
+    if (expression.type === 'TsAsExpression' && 
+        expression.typeAnnotation?.type === 'TsUnionType') {
+      const unionTypes = expression.typeAnnotation.types;
+      for (const unionType of unionTypes) {
+        if (unionType.type === 'TsLiteralType' && 
+            unionType.literal?.type === 'StringLiteral') {
+          keys.push(`dynamic.${unionType.literal.value}.extracted`);
+        }
+      }
+    }
+    
+    return keys;
+  },
+  
+  // Extract context from conditional expressions
+  extractContextFromExpression: (expression, config, logger) => {
+    const contexts = [];
+    
+    // Handle ternary operators: isAdmin ? 'admin' : 'user'
+    if (expression.type === 'ConditionalExpression') {
+      if (expression.consequent.type === 'StringLiteral') {
+        contexts.push(expression.consequent.value);
+      }
+      if (expression.alternate.type === 'StringLiteral') {
+        contexts.push(expression.alternate.value);
+      }
+    }
+    
+    // Handle template literals: `${role}.${level}`
+    if (expression.type === 'TemplateLiteral') {
+      const parts = expression.expressions.map(expr =>
+        expr.type === 'Identifier' ? expr.value : 'unknown'
+      );
+      if (parts.length > 0) {
+        const joins = expression.quasis.map(quasi => quasi.cooked);
+        contexts.push(joins.reduce((acc, join, i) => 
+          acc + (join || '') + (parts[i] || ''), ''
+        ));
+      }
+    }
+    
+    return contexts;
+  },
+  
+  // Handle complex AST patterns
+  onVisitNode: (node, context) => {
+    // Custom extraction for specific component patterns
+    if (node.type === 'JSXElement' && 
+        node.opening.name.type === 'Identifier' && 
+        node.opening.name.value === 'CustomTransComponent') {
+      
+      const keyAttr = node.opening.attributes?.find(attr =>
+        attr.type === 'JSXAttribute' && 
+        attr.name.value === 'translationKey'
+      );
+      
+      if (keyAttr?.value?.type === 'StringLiteral') {
+        context.addKey({
+          key: keyAttr.value.value,
+          defaultValue: 'Custom component translation',
+          ns: 'components'
+        });
+      }
+    }
+  }
+});
+```
+
+**Configuration:**
 
 ```typescript
 import { defineConfig } from 'i18next-cli';
-import { myCustomPlugin } from './my-custom-plugin.mjs';
+import { myCustomPlugin, advancedExtractionPlugin } from './my-plugins.mjs';
 
 export default defineConfig({
   locales: ['en', 'de'],
   extract: {
-    input: ['src/**/*.{ts,tsx}'],
-    output: 'locales/{{language}}/{{namespace}}.json',
+    input: ['src/**/*.{ts,tsx,vue}'],
+    output: 'locales/{{language}}/{{namespace}}.json'
   },
   plugins: [
     myCustomPlugin(),
-  ],
+    advancedExtractionPlugin()
+  ]
 });
 ```
 

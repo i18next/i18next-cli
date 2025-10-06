@@ -5,9 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.6.2](https://github.com/i18next/i18next-cli/compare/v1.6.1...v1.6.2) - 2025-10-06
+## [1.7.0](https://github.com/i18next/i18next-cli/compare/v1.6.1...v1.7.9) - 2025-10-06
 
 - **Extractor (Comments):** Improved comment extraction for complex translation patterns with both context and plural options. Commented `t()` calls like `// t('options.option', { context: 'month', count: 1 })` now correctly generate all combinations of context and plural forms (e.g., `options.option_month_one`, `options.option_month_other`, `options.option_day_one`, etc.), providing comprehensive key extraction for dynamic scenarios where developers use commented hints to declare all possible runtime values. [#50](https://github.com/i18next/i18next-cli/issues/50)
+- **Plugin System:** Added new `extractKeysFromExpression` and `extractContextFromExpression` plugin hooks for simplified custom key extraction. These pure, context-less functions allow plugins to parse specific expressions during AST traversal without handling pluralization, namespace resolution, or file writing manually. Perfect for TypeScript-specific syntax (like `satisfies` expressions), template literals with dynamic variables, or custom key generation patterns. Plugins can now focus on expression parsing logic while the core extractor handles the heavy lifting. [#49](https://github.com/i18next/i18next-cli/pull/49)
 
 ## [1.6.1](https://github.com/i18next/i18next-cli/compare/v1.6.0...v1.6.1) - 2025-10-05
 
