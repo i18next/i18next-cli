@@ -256,7 +256,7 @@ export interface Plugin {
    *
    * @param keys - Final map of all extracted keys
    */
-  onEnd?: (keys: Map<string, { key: string; defaultValue?: string }>) => void | Promise<void>;
+  onEnd?: (keys: Map<string, ExtractedKey>) => void | Promise<void>;
 
   /**
    * Hook called after all files have been processed and translation files have been generated.
