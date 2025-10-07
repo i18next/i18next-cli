@@ -274,10 +274,7 @@ describe('extractor: runExtractor', () => {
     expect(enJson).toEqual({
       'static.key': 'Old Static Value', // Preserved existing value
       'dynamic.status.active': 'Active Status', // Preserved by pattern
-      'dynamic.status.another': 'OTHER', // found in comment
-      'dynamic.status.base': 'dynamic.status.base', // found in comment
       'dynamic.status.inactive': 'Inactive Status', // Preserved by pattern
-      'dynamic.status.next': 'NEXT', // found in comment
       // 'unused.key' has been correctly removed
     })
   })
@@ -1519,75 +1516,128 @@ describe('extractor: runExtractor', () => {
     })
   })
 
-  it('should not extract keys while still preserving them', async () => {
+  it('should NOT extract keys matching preservePatterns', async () => {
     const sampleCode = `
       function App() {
-        // These should be extracted (normal app translations)
-        t('Overview', 'Overview Page');
-        t('user.profile.name', 'User Name');
+        // These keys should be extracted normally
+        t('app.title', 'My App Title');
+        t('common.button.save', 'Save');
         
-        // These should NOT be extracted (static translations managed separately)
-        // but should be preserved if they exist in the translation files
+        // These keys match preservePatterns and should NOT be extracted
+        // (they already exist in other files like assets.json)
         t('BUILDINGS.ACADEMY.NAME');
-        t('BUILDINGS.SMITHY.NAME'); 
-        t('UNITS.LEGIONNAIRE.NAME');
-        t('UNITS.HERO.DESCRIPTION');
+        t('BUILDINGS.BREWERY.NAME'); 
+        t('BUILDINGS.HEROS_MANSION.NAME');
+        t('QUESTS.ADVENTURE-COUNT.DESCRIPTION');
+        t('QUESTS.EVERY.NAME');
         
-        // Dynamic usage should still work (not extracted, but pattern preserved)
-        const buildingId = getBuildingId();
+        // Dynamic usage of preserved patterns (also shouldn't be extracted)
+        const buildingId = 'SMITHY';
         t(\`BUILDINGS.\${buildingId}.NAME\`);
       }
     `
 
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    const configWithPreservePatterns: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        keySeparator: false, // Use flat keys to match user's config
+        preservePatterns: [
+          'BUILDINGS.*',
+          'QUESTS.*',
+          'UNITS.*',
+          'ITEMS.*',
+          'TRIBES.*',
+          'REPUTATIONS.*',
+          'FACTIONS.*',
+          'RESOURCES.*',
+          'ICONS.*',
+        ],
+      },
+    }
+
+    await runExtractor(configWithPreservePatterns)
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    // ✅ This test should now PASS - demonstrating the fix
+    expect(enJson).toEqual({
+      // These should be extracted (normal app keys)
+      'app.title': 'My App Title',
+      'common.button.save': 'Save',
+
+      // ✅ These should NOT be in the extracted file:
+      // 'BUILDINGS.ACADEMY.NAME': 'BUILDINGS.ACADEMY.NAME', // EXCLUDED
+      // 'BUILDINGS.BREWERY.NAME': 'BUILDINGS.BREWERY.NAME', // EXCLUDED
+      // 'BUILDINGS.HEROS_MANSION.NAME': 'BUILDINGS.HEROS_MANSION.NAME', // EXCLUDED
+      // 'QUESTS.ADVENTURE-COUNT.DESCRIPTION': 'QUESTS.ADVENTURE-COUNT.DESCRIPTION', // EXCLUDED
+      // 'QUESTS.EVERY.NAME': 'QUESTS.EVERY.NAME', // EXCLUDED
+    })
+
+    // The preserved pattern keys should be completely absent from extraction
+    expect(enJson).not.toHaveProperty('BUILDINGS.ACADEMY.NAME')
+    expect(enJson).not.toHaveProperty('BUILDINGS.BREWERY.NAME')
+    expect(enJson).not.toHaveProperty('BUILDINGS.HEROS_MANSION.NAME')
+    expect(enJson).not.toHaveProperty('QUESTS.ADVENTURE-COUNT.DESCRIPTION')
+    expect(enJson).not.toHaveProperty('QUESTS.EVERY.NAME')
+  })
+
+  it('should preserve keys matching preservePatterns and remove other unused keys', async () => {
+    const sampleCode = `
+      function App() {
+        // This key will be extracted (doesn't match preservePatterns)
+        t('static.key', 'Static Value');
+        
+        // These commented keys match preservePatterns and should NOT be extracted
+        // t('dynamic.status.base')
+        // t('dynamic.status.another', 'OTHER')
+        // t('dynamic.status.next', { defaultValue: 'NEXT' })
+        
+        // This dynamic key also matches preservePatterns and should NOT be extracted
+        const status = 'active';
+        return <div>{t(\`dynamic.status.\${status}\`)}</div>;
+      }
+    `
     const enPath = resolve(process.cwd(), 'locales/en/translation.json')
 
-    // Existing translation file with both regular and static keys
+    // Prepopulate an existing translation file
     vol.fromJSON({
       '/src/App.tsx': sampleCode,
       [enPath]: JSON.stringify({
-        Overview: 'Overview Page',
-        'user.profile.name': 'User Name',
-        // Static keys that should be preserved but not re-extracted
-        'BUILDINGS.ACADEMY.NAME': 'Academy',
-        'BUILDINGS.SMITHY.NAME': 'Smithy',
-        'BUILDINGS.MARKETPLACE.NAME': 'Marketplace', // Not used in code but should be preserved
-        'UNITS.LEGIONNAIRE.NAME': 'Legionnaire',
-        'UNITS.HERO.DESCRIPTION': 'Hero Description',
-        'UNITS.PRAETORIAN.NAME': 'Praetorian', // Not used in code but should be preserved
-        // This should be removed (not preserved and not in code)
-        'old.unused.key': 'Old Value',
+        'static.key': 'Old Static Value',
+        'dynamic.status.active': 'Active Status',
+        'dynamic.status.inactive': 'Inactive Status',
+        'unused.key': 'This should be removed',
       }, null, 2),
     })
 
-    const configWithIgnorePatterns: I18nextToolkitConfig = {
+    const configWithPatterns: I18nextToolkitConfig = {
       ...mockConfig,
       extract: {
         ...mockConfig.extract,
         keySeparator: false, // Use flat keys for this test
-        preservePatterns: ['BUILDINGS.*', 'UNITS.*'],
+        preservePatterns: ['dynamic.status.*'],
       },
     }
 
-    await runExtractor(configWithIgnorePatterns)
+    await runExtractor(configWithPatterns)
 
     const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
     const enJson = JSON.parse(enFileContent as string)
 
+    // The correct behavior with preservePatterns:
     expect(enJson).toEqual({
-      // Regular keys that were extracted
-      Overview: 'Overview Page',
-      'user.profile.name': 'User Name',
-
-      // Static keys that were preserved but NOT re-extracted
-      'BUILDINGS.ACADEMY.NAME': 'Academy',
-      'BUILDINGS.SMITHY.NAME': 'Smithy',
-      'BUILDINGS.MARKETPLACE.NAME': 'Marketplace', // Preserved even though not in code
-      'UNITS.LEGIONNAIRE.NAME': 'Legionnaire',
-      'UNITS.HERO.DESCRIPTION': 'Hero Description',
-      'UNITS.PRAETORIAN.NAME': 'Praetorian', // Preserved even though not in code
-
-      // BUILDINGS.ACADEMY.NAME, BUILDINGS.SMITHY.NAME, etc. should NOT be duplicated
-      // old.unused.key should be removed (not preserved and not extracted)
+      'static.key': 'Old Static Value', // Extracted and preserved existing value
+      'dynamic.status.active': 'Active Status', // Preserved by pattern (not re-extracted)
+      'dynamic.status.inactive': 'Inactive Status', // Preserved by pattern
+      // 'unused.key' has been correctly removed (removeUnusedKeys: true by default)
+      // The commented keys matching preservePatterns were NOT extracted (correct behavior)
     })
   })
 })

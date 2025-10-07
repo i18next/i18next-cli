@@ -85,6 +85,11 @@ function buildNewTranslationsForNs (
 
   // Filter nsKeys to only include keys relevant to this language
   const filteredKeys = nsKeys.filter(({ key, hasCount, isOrdinal }) => {
+    // FIRST: Check if key matches preservePatterns and should be excluded
+    if (preservePatterns.some(re => re.test(key))) {
+      return false // Skip keys that match preserve patterns
+    }
+
     if (!hasCount) {
       // Non-plural keys are always included
       return true

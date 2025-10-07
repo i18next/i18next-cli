@@ -33,6 +33,9 @@ export function extractKeysFromComments (
   // Use a reliable word boundary (\b) to match 't(...)' but not 'http.get(...)'.
   const keyRegex = new RegExp(`\\b${functionNameToFind}\\s*\\(\\s*(['"])([^'"]+)\\1`, 'g')
 
+  // Prepare preservePatterns for filtering
+  const preservePatterns = (config.extract.preservePatterns || []).map(globToRegex)
+
   const commentTexts = collectCommentTexts(code)
 
   for (const text of commentTexts) {
@@ -43,6 +46,11 @@ export function extractKeysFromComments (
       // Validate that the key is not empty or whitespace-only
       if (!key || key.trim() === '') {
         continue // Skip empty keys
+      }
+
+      // Check if key matches preservePatterns and should be excluded from extraction
+      if (preservePatterns.some(re => re.test(key))) {
+        continue // Skip keys that match preserve patterns
       }
 
       let ns: string | undefined
@@ -65,6 +73,11 @@ export function extractKeysFromComments (
         if (!key || key.trim() === '') {
           continue // Skip keys that become empty after normalization
         }
+
+        // Re-check preservePatterns after key normalization
+        if (preservePatterns.some(re => re.test(key))) {
+          continue // Skip normalized keys that match preserve patterns
+        }
       }
 
       const isOrdinal = ordinal === true || isOrdinalByKey
@@ -78,6 +91,16 @@ export function extractKeysFromComments (
         const parts = key.split(nsSeparator)
         ns = parts.shift()
         key = parts.join(nsSeparator)
+
+        // Validate that the key didn't become empty after namespace removal
+        if (!key || key.trim() === '') {
+          continue // Skip keys that become empty after namespace removal
+        }
+
+        // Re-check preservePatterns after namespace processing
+        if (preservePatterns.some(re => re.test(key))) {
+          continue // Skip processed keys that match preserve patterns
+        }
       }
 
       // 3. If no explicit namespace found, try to resolve from scope
@@ -350,4 +373,19 @@ function parseOrdinalFromComment (remainder: string): boolean | undefined {
   if (ordinalObj) return ordinalObj[1] === 'true'
 
   return undefined
+}
+
+/**
+ * Converts a glob pattern to a regular expression.
+ * Supports basic glob patterns with * wildcards.
+ *
+ * @param glob - The glob pattern to convert
+ * @returns A RegExp that matches the glob pattern
+ *
+ * @internal
+ */
+function globToRegex (glob: string): RegExp {
+  const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+  const regexString = `^${escaped.replace(/\*/g, '.*')}$`
+  return new RegExp(regexString)
 }
