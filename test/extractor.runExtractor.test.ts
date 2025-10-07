@@ -1518,4 +1518,76 @@ describe('extractor: runExtractor', () => {
       }
     })
   })
+
+  it('should not extract keys while still preserving them', async () => {
+    const sampleCode = `
+      function App() {
+        // These should be extracted (normal app translations)
+        t('Overview', 'Overview Page');
+        t('user.profile.name', 'User Name');
+        
+        // These should NOT be extracted (static translations managed separately)
+        // but should be preserved if they exist in the translation files
+        t('BUILDINGS.ACADEMY.NAME');
+        t('BUILDINGS.SMITHY.NAME'); 
+        t('UNITS.LEGIONNAIRE.NAME');
+        t('UNITS.HERO.DESCRIPTION');
+        
+        // Dynamic usage should still work (not extracted, but pattern preserved)
+        const buildingId = getBuildingId();
+        t(\`BUILDINGS.\${buildingId}.NAME\`);
+      }
+    `
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+
+    // Existing translation file with both regular and static keys
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      [enPath]: JSON.stringify({
+        Overview: 'Overview Page',
+        'user.profile.name': 'User Name',
+        // Static keys that should be preserved but not re-extracted
+        'BUILDINGS.ACADEMY.NAME': 'Academy',
+        'BUILDINGS.SMITHY.NAME': 'Smithy',
+        'BUILDINGS.MARKETPLACE.NAME': 'Marketplace', // Not used in code but should be preserved
+        'UNITS.LEGIONNAIRE.NAME': 'Legionnaire',
+        'UNITS.HERO.DESCRIPTION': 'Hero Description',
+        'UNITS.PRAETORIAN.NAME': 'Praetorian', // Not used in code but should be preserved
+        // This should be removed (not preserved and not in code)
+        'old.unused.key': 'Old Value',
+      }, null, 2),
+    })
+
+    const configWithIgnorePatterns: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        keySeparator: false, // Use flat keys for this test
+        preservePatterns: ['BUILDINGS.*', 'UNITS.*'],
+      },
+    }
+
+    await runExtractor(configWithIgnorePatterns)
+
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    expect(enJson).toEqual({
+      // Regular keys that were extracted
+      Overview: 'Overview Page',
+      'user.profile.name': 'User Name',
+
+      // Static keys that were preserved but NOT re-extracted
+      'BUILDINGS.ACADEMY.NAME': 'Academy',
+      'BUILDINGS.SMITHY.NAME': 'Smithy',
+      'BUILDINGS.MARKETPLACE.NAME': 'Marketplace', // Preserved even though not in code
+      'UNITS.LEGIONNAIRE.NAME': 'Legionnaire',
+      'UNITS.HERO.DESCRIPTION': 'Hero Description',
+      'UNITS.PRAETORIAN.NAME': 'Praetorian', // Preserved even though not in code
+
+      // BUILDINGS.ACADEMY.NAME, BUILDINGS.SMITHY.NAME, etc. should NOT be duplicated
+      // old.unused.key should be removed (not preserved and not extracted)
+    })
+  })
 })
