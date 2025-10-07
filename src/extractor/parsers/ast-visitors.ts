@@ -1,4 +1,4 @@
-import type { Module, Node, CallExpression, VariableDeclarator, JSXElement, ArrowFunctionExpression, ObjectExpression, Expression, TemplateLiteral } from '@swc/core'
+import type { Module, Node, CallExpression, VariableDeclarator, JSXElement, ArrowFunctionExpression, ObjectExpression, Expression, TemplateLiteral, TsType, TsTemplateLiteralType } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey, ScopeInfo } from '../../types'
 import { extractFromTransComponent } from './jsx-parser'
 import { getObjectProperty, getObjectPropValue } from './ast-utils'
@@ -1158,17 +1158,49 @@ export class ASTVisitors {
       return [`${expression.value}`] // Handle literals like 5 or true
     }
 
+    // Support building translation keys for
+    // `variable satisfies 'coaching' | 'therapy'`
+    if (expression.type === 'TsSatisfiesExpression' || expression.type === 'TsAsExpression') {
+      const annotation = expression.typeAnnotation
+
+      return this.resolvePossibleStringValuesFromType(annotation, returnEmptyStrings)
+    }
+
+    // We can't statically determine the value of other expressions (e.g., variables, function calls)
+    return []
+  }
+
+  private resolvePossibleStringValuesFromType (type: TsType, returnEmptyStrings = false): string[] {
+    if (type.type === 'TsUnionType') {
+      return type.types.flatMap((t) => this.resolvePossibleStringValuesFromType(t, returnEmptyStrings))
+    }
+
+    if (type.type === 'TsLiteralType') {
+      if (type.literal.type === 'StringLiteral') {
+        // Filter out empty strings as they should be treated as "no context" like i18next does
+        return type.literal.value || returnEmptyStrings ? [type.literal.value] : []
+      }
+
+      if (type.literal.type === 'TemplateLiteral') {
+        return this.resolvePossibleStringValuesFromTemplateLiteralType(type.literal)
+      }
+
+      if (type.literal.type === 'NumericLiteral' || type.literal.type === 'BooleanLiteral') {
+        return [`${type.literal.value}`] // Handle literals like 5 or true
+      }
+    }
+
     // We can't statically determine the value of other expressions (e.g., variables, function calls)
     return []
   }
 
   /**
-   * Resolves a template literal to one or more possible string values that can be
+   * Resolves a template literal string to one or more possible strings that can be
    * determined statically from the AST.
    *
    * @private
-   * @param templateString - The SWC AST template literal node to resolve
-   * @returns An array of possible string values that the template literal may produce.
+   * @param templateString - The SWC AST template literal string to resolve
+   * @returns An array of possible string values that the template may produce.
    */
   private resolvePossibleStringValuesFromTemplateString (templateString: TemplateLiteral): string[] {
     // If there are no expressions, we can just return the cooked value
@@ -1177,7 +1209,7 @@ export class ASTVisitors {
       return [templateString.quasis[0].cooked || '']
     }
 
-    // Ex. `translation.key.with.expression.${x ? 'title' : 'description}`
+    // Ex. `translation.key.with.expression.${x ? 'title' : 'description'}`
     const [firstQuasis, ...tails] = templateString.quasis
 
     const stringValues = templateString.expressions.reduce(
@@ -1185,6 +1217,39 @@ export class ASTVisitors {
         return heads.flatMap((head) => {
           const tail = tails[i]?.cooked ?? ''
           return this.resolvePossibleStringValuesFromExpression(expression, true).map(
+            (expressionValue) => `${head}${expressionValue}${tail}`
+          )
+        })
+      },
+      [firstQuasis.cooked ?? '']
+    )
+
+    return stringValues
+  }
+
+  /**
+   * Resolves a template literal type to one or more possible strings that can be
+   * determined statically from the AST.
+   *
+   * @private
+   * @param templateLiteralType - The SWC AST template literal type to resolve
+   * @returns An array of possible string values that the template may produce.
+   */
+  private resolvePossibleStringValuesFromTemplateLiteralType (templateLiteralType: TsTemplateLiteralType): string[] {
+    // If there are no types, we can just return the cooked value
+    if (templateLiteralType.quasis.length === 1 && templateLiteralType.types.length === 0) {
+      // Ex. `translation.key.no.substitution`
+      return [templateLiteralType.quasis[0].cooked || '']
+    }
+
+    // Ex. `translation.key.with.expression.${'title' | 'description'}`
+    const [firstQuasis, ...tails] = templateLiteralType.quasis
+
+    const stringValues = templateLiteralType.types.reduce(
+      (heads, type, i) => {
+        return heads.flatMap((head) => {
+          const tail = tails[i]?.cooked ?? ''
+          return this.resolvePossibleStringValuesFromType(type, true).map(
             (expressionValue) => `${head}${expressionValue}${tail}`
           )
         })

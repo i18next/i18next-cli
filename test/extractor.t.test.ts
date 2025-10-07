@@ -357,6 +357,33 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should extract keys from template string with annotated variable', async () => {
+      const sampleCode = `
+        const state = 'pending';
+
+        t(\`states.\${state satisfies 'pending' | 'finalized'}.description\`);
+        t(\`states.\${state as 'baseball'}.description\`);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile!.newTranslations).toEqual({
+        states: {
+          pending: {
+            description: 'states.pending.description',
+          },
+          finalized: {
+            description: 'states.finalized.description',
+          },
+          baseball: {
+            description: 'states.baseball.description',
+          },
+        },
+      })
+    })
+
     it('should extract all possible keys with nested expressions', async () => {
       const sampleCode = `
         const test = false;
