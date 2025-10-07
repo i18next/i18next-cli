@@ -180,6 +180,12 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
       keyExpression = i18nKeyAttr.value
       processedKeyValue = keyExpression.value
 
+      // Validate that the key is not empty
+      if (!processedKeyValue || processedKeyValue.trim() === '') {
+        console.warn('Ignoring Trans component with empty i18nKey')
+        return null
+      }
+
       // Handle namespace prefix removal when both ns and i18nKey are provided
       if (ns && keyExpression.type === 'StringLiteral') {
         const nsSeparator = config.extract.nsSeparator ?? ':'
@@ -188,6 +194,13 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
         // If the key starts with the namespace followed by the separator, remove the prefix
         if (nsSeparator && keyValue.startsWith(`${ns}${nsSeparator}`)) {
           processedKeyValue = keyValue.slice(`${ns}${nsSeparator}`.length)
+
+          // Validate processed key is not empty
+          if (!processedKeyValue || processedKeyValue.trim() === '') {
+            console.warn('Ignoring Trans component with i18nKey that becomes empty after namespace removal')
+            return null
+          }
+
           // Create a new StringLiteral with the namespace prefix removed
           keyExpression = {
             ...keyExpression,

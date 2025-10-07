@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.10.0](https://github.com/i18next/i18next-cli/compare/v1.9.0...v1.10.0) - 2025-10-07
 
-- introduce disablePlurals to address [#55](https://github.com/i18next/i18next-cli/issues/55)
-- Fix incorrect map value type in Plugin.onEnd keys argument [#56](https://github.com/i18next/i18next-cli/pull/56)
+### Added
+- **Extractor:** Introduced `disablePlurals` configuration option to disable plural key generation when pluralization is handled by other systems or when you only need the base key for interpolation. When enabled, `t('item', { count: 5 })` will only generate `item` instead of `item_one`, `item_other`, etc. This is useful for projects using external pluralization libraries or custom count handling. [#55](https://github.com/i18next/i18next-cli/issues/55)
+
+### Fixed
+- **Plugin System:** Fixed incorrect TypeScript type definition for the `keys` argument in the `Plugin.onEnd` hook. The keys parameter now correctly represents a `Map<string, ExtractedKey>` instead of the previous incorrect type, improving type safety for plugin development. [#56](https://github.com/i18next/i18next-cli/pull/56)
+- **Extractor:** Fixed a critical bug where empty string keys (`""`) were being created in translation files under specific conditions. This occurred when namespace processing resulted in empty keys (e.g., `t('ns:')` with `keyPrefix` combinations) or when malformed key patterns created nested empty key structures. The extractor now validates and skips problematic key combinations that would result in empty keys, preventing corrupted translation files. [#54](https://github.com/i18next/i18next-cli/issues/54)
 
 ## [1.9.0](https://github.com/i18next/i18next-cli/compare/v1.8.0...v1.9.0) - 2025-10-07
 

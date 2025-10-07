@@ -547,15 +547,44 @@ export class ASTVisitors {
         const parts = key.split(nsSeparator)
         ns = parts.shift()
         key = parts.join(nsSeparator)
+
+        if (!key || key.trim() === '') {
+          this.logger.warn(`Skipping key that became empty after namespace removal: '${ns}${nsSeparator}'`)
+          continue
+        }
       }
 
       if (!ns && scopeInfo?.defaultNs) ns = scopeInfo.defaultNs
       if (!ns) ns = this.config.extract.defaultNS
 
       let finalKey = key
+
+      // Apply keyPrefix AFTER namespace extraction
       if (scopeInfo?.keyPrefix) {
         const keySeparator = this.config.extract.keySeparator ?? '.'
-        finalKey = `${scopeInfo.keyPrefix}${keySeparator}${key}`
+
+        // Apply keyPrefix - handle case where keyPrefix already ends with separator
+        if (keySeparator !== false) {
+          if (scopeInfo.keyPrefix.endsWith(keySeparator)) {
+            finalKey = `${scopeInfo.keyPrefix}${key}`
+          } else {
+            finalKey = `${scopeInfo.keyPrefix}${keySeparator}${key}`
+          }
+        } else {
+          finalKey = `${scopeInfo.keyPrefix}${key}`
+        }
+
+        // Validate keyPrefix combinations that create problematic keys
+        if (keySeparator !== false) {
+          // Check for patterns that would create empty segments in the nested key structure
+          const segments = finalKey.split(keySeparator)
+          const hasEmptySegment = segments.some(segment => segment.trim() === '')
+
+          if (hasEmptySegment) {
+            this.logger.warn(`Skipping key with empty segments: '${finalKey}' (keyPrefix: '${scopeInfo.keyPrefix}', key: '${key}')`)
+            continue
+          }
+        }
       }
 
       const isLastKey = i === keysToProcess.length - 1

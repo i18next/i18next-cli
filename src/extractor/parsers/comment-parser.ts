@@ -39,6 +39,12 @@ export function extractKeysFromComments (
     let match: RegExpExecArray | null
     while ((match = keyRegex.exec(text)) !== null) {
       let key = match[2]
+
+      // Validate that the key is not empty or whitespace-only
+      if (!key || key.trim() === '') {
+        continue // Skip empty keys
+      }
+
       let ns: string | undefined
       const remainder = text.slice(match.index + match[0].length)
 
@@ -54,6 +60,11 @@ export function extractKeysFromComments (
         isOrdinalByKey = true
         // Normalize the key by stripping the suffix
         key = key.slice(0, -(pluralSeparator.length + 7)) // Remove "_ordinal"
+
+        // Validate that the key is still not empty after normalization
+        if (!key || key.trim() === '') {
+          continue // Skip keys that become empty after normalization
+        }
       }
 
       const isOrdinal = ordinal === true || isOrdinalByKey
