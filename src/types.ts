@@ -116,6 +116,9 @@ export interface I18nextToolkitConfig {
 
     /** If true, keys that are not found in the source code will be removed from translation files. (default: true) */
     removeUnusedKeys?: boolean;
+
+    // New option to control whether base plural forms are generated when context is present
+    generateBasePluralForms?: boolean
   };
 
   /** Configuration options for TypeScript type generation */

@@ -83,9 +83,14 @@ export function extractKeysFromComments (
 
       // 5. Handle context and count combinations
       if (context && count) {
-        // Generate all combinations: base plural + context+plural
-        generatePluralKeys(key, defaultValue ?? key, ns, pluginContext, config, isOrdinal)
+        // Generate context+plural combinations
         generateContextPluralKeys(key, defaultValue ?? key, ns, context, pluginContext, config, isOrdinal)
+
+        // Only generate base plural forms if generateBasePluralForms is not disabled
+        const shouldGenerateBaseForms = config.extract?.generateBasePluralForms !== false
+        if (shouldGenerateBaseForms) {
+          generatePluralKeys(key, defaultValue ?? key, ns, pluginContext, config, isOrdinal)
+        }
       } else if (context) {
         // Just context variants
         pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })

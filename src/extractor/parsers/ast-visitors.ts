@@ -687,7 +687,23 @@ export class ASTVisitors {
     try {
       const type = isOrdinal ? 'ordinal' : 'cardinal'
 
-      const pluralCategories = new Intl.PluralRules(this.config.extract?.primaryLanguage, { type }).resolvedOptions().pluralCategories
+      // Generate plural forms for ALL target languages to ensure we have all necessary keys
+      const allPluralCategories = new Set<string>()
+
+      for (const locale of this.config.locales) {
+        try {
+          const pluralRules = new Intl.PluralRules(locale, { type })
+          const categories = pluralRules.resolvedOptions().pluralCategories
+          categories.forEach(cat => allPluralCategories.add(cat))
+        } catch (e) {
+          // If a locale is invalid, fall back to English rules
+          const englishRules = new Intl.PluralRules('en', { type })
+          const categories = englishRules.resolvedOptions().pluralCategories
+          categories.forEach(cat => allPluralCategories.add(cat))
+        }
+      }
+
+      const pluralCategories = Array.from(allPluralCategories).sort()
       const pluralSeparator = this.config.extract.pluralSeparator ?? '_'
 
       // Get all possible default values once at the start
@@ -709,49 +725,72 @@ export class ASTVisitors {
         }
       }
 
-      for (const category of pluralCategories) {
-        // 1. Look for the most specific default value (e.g., defaultValue_ordinal_one)
-        const specificDefaultKey = isOrdinal ? `defaultValue${pluralSeparator}ordinal${pluralSeparator}${category}` : `defaultValue${pluralSeparator}${category}`
-        const specificDefault = getObjectPropValue(options, specificDefaultKey)
+      // Check if context is present
+      const contextValue = getObjectPropValue(options, 'context')
+      const hasContext = typeof contextValue === 'string' && contextValue.length > 0
 
-        // 2. Determine the final default value using a clear fallback chain
-        let finalDefaultValue: string | undefined
-        if (typeof specificDefault === 'string') {
-          // 1. HIGHEST PRIORITY: Use the most specific default if it exists (e.g., defaultValue_few)
-          finalDefaultValue = specificDefault
-        } else if (category === 'one' && typeof defaultValue === 'string') {
-          // 2. SPECIAL CASE: The 'one' category falls back to the main 'defaultValue' prop
-          finalDefaultValue = defaultValue
-        } else if (isOrdinal && typeof ordinalOtherDefault === 'string') {
-          // 3a. Other ordinal categories fall back to 'defaultValue_ordinal_other'
-          finalDefaultValue = ordinalOtherDefault
-        } else if (!isOrdinal && typeof otherDefault === 'string') {
-          // 3b. Other cardinal categories fall back to 'defaultValue_other'
-          finalDefaultValue = otherDefault
-        } else if (typeof defaultValue === 'string') {
-          // 4. If no '_other' is found, all categories can fall back to the main 'defaultValue'
-          finalDefaultValue = defaultValue
-        } else if (defaultValueFromCall && targetCategory === category) {
-          // 5. LOWER PRIORITY: If we have a default value from the t() call and this category matches the count,
-          //    use the default value from the call (only if no other defaults exist)
-          finalDefaultValue = defaultValueFromCall
-        } else {
-          // 6. Final fallback to the base key itself
-          finalDefaultValue = key
+      // Determine which key variants to generate
+      const keysToGenerate: Array<{ key: string, context?: string }> = []
+
+      if (hasContext) {
+        // Generate keys for the specific context
+        keysToGenerate.push({ key, context: contextValue })
+
+        // Only generate base plural forms if generateBasePluralForms is not disabled
+        const shouldGenerateBaseForms = this.config.extract?.generateBasePluralForms !== false
+        if (shouldGenerateBaseForms) {
+          keysToGenerate.push({ key })
         }
+      } else {
+        // No context, always generate base plural forms
+        keysToGenerate.push({ key })
+      }
 
-        // 3. Construct the final plural key
-        const finalKey = isOrdinal
-          ? `${key}${pluralSeparator}ordinal${pluralSeparator}${category}`
-          : `${key}${pluralSeparator}${category}`
+      // Generate plural forms for each key variant
+      for (const { key: baseKey, context } of keysToGenerate) {
+        for (const category of pluralCategories) {
+          // 1. Look for the most specific default value
+          const specificDefaultKey = isOrdinal ? `defaultValue${pluralSeparator}ordinal${pluralSeparator}${category}` : `defaultValue${pluralSeparator}${category}`
+          const specificDefault = getObjectPropValue(options, specificDefaultKey)
 
-        this.pluginContext.addKey({
-          key: finalKey,
-          ns,
-          defaultValue: finalDefaultValue,
-          hasCount: true,
-          isOrdinal
-        })
+          // 2. Determine the final default value using a clear fallback chain
+          let finalDefaultValue: string | undefined
+          if (typeof specificDefault === 'string') {
+            finalDefaultValue = specificDefault
+          } else if (category === 'one' && typeof defaultValue === 'string') {
+            finalDefaultValue = defaultValue
+          } else if (isOrdinal && typeof ordinalOtherDefault === 'string') {
+            finalDefaultValue = ordinalOtherDefault
+          } else if (!isOrdinal && typeof otherDefault === 'string') {
+            finalDefaultValue = otherDefault
+          } else if (typeof defaultValue === 'string') {
+            finalDefaultValue = defaultValue
+          } else if (defaultValueFromCall && targetCategory === category) {
+            finalDefaultValue = defaultValueFromCall
+          } else {
+            finalDefaultValue = baseKey
+          }
+
+          // 3. Construct the final plural key
+          let finalKey: string
+          if (context) {
+            finalKey = isOrdinal
+              ? `${baseKey}${pluralSeparator}${context}${pluralSeparator}ordinal${pluralSeparator}${category}`
+              : `${baseKey}${pluralSeparator}${context}${pluralSeparator}${category}`
+          } else {
+            finalKey = isOrdinal
+              ? `${baseKey}${pluralSeparator}ordinal${pluralSeparator}${category}`
+              : `${baseKey}${pluralSeparator}${category}`
+          }
+
+          this.pluginContext.addKey({
+            key: finalKey,
+            ns,
+            defaultValue: finalDefaultValue,
+            hasCount: true,
+            isOrdinal
+          })
+        }
       }
     } catch (e) {
       this.logger.warn(`Could not determine plural rules for language "${this.config.extract?.primaryLanguage}". Falling back to simple key extraction.`)

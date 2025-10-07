@@ -1015,6 +1015,136 @@ describe('extractor: advanced t features', () => {
         item_other: 'item',
       })
     })
+
+    it('should skip base plural forms when generateBasePluralForms is false and context is used', async () => {
+      const sampleCode = `
+        // t('options.option', { context: 'MONTHS', count: 1 })
+        // t('options.option', { context: 'WEEKS', count: 1 })
+        // t('options.option', { context: 'DAYS', count: 1 })
+      `
+
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const configWithDisabledBaseForms: I18nextToolkitConfig = {
+        ...mockConfig,
+        locales: ['en', 'ar-SA'], // Include Arabic to trigger all plural forms
+        extract: {
+          ...mockConfig.extract,
+          generateBasePluralForms: false, // New option to disable base forms
+        },
+      }
+
+      const results = await extract(configWithDisabledBaseForms)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+
+      // Should only generate context-specific plural forms, no base forms
+      expect(translationFile!.newTranslations).toEqual({
+        options: {
+          // Only context-specific forms
+          option_DAYS_one: 'options.option',
+          option_DAYS_other: 'options.option',
+          option_MONTHS_one: 'options.option',
+          option_MONTHS_other: 'options.option',
+          option_WEEKS_one: 'options.option',
+          option_WEEKS_other: 'options.option',
+          // No base forms like option_one, option_other
+        },
+      })
+
+      // Check Arabic file also only has context forms
+      const arabicFile = results.find(r => r.path.endsWith('/locales/ar-SA/translation.json'))
+      expect(arabicFile).toBeDefined()
+      expect(arabicFile!.newTranslations).toEqual({
+        options: {
+          // Arabic context-specific forms (all 6 plural categories)
+          option_DAYS_zero: '',
+          option_DAYS_one: '',
+          option_DAYS_two: '',
+          option_DAYS_few: '',
+          option_DAYS_many: '',
+          option_DAYS_other: '',
+          option_MONTHS_zero: '',
+          option_MONTHS_one: '',
+          option_MONTHS_two: '',
+          option_MONTHS_few: '',
+          option_MONTHS_many: '',
+          option_MONTHS_other: '',
+          option_WEEKS_zero: '',
+          option_WEEKS_one: '',
+          option_WEEKS_two: '',
+          option_WEEKS_few: '',
+          option_WEEKS_many: '',
+          option_WEEKS_other: '',
+          // No base forms
+        },
+      })
+    })
+
+    it('should still generate base plural forms when generateBasePluralForms is false but no context is used', async () => {
+      const sampleCode = `
+        // t('item', { count: 1 })
+        // t('product', { count: 2 })
+      `
+
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const configWithDisabledBaseForms: I18nextToolkitConfig = {
+        ...mockConfig,
+        locales: ['en', 'ar-SA'],
+        extract: {
+          ...mockConfig.extract,
+          generateBasePluralForms: false, // This should not affect keys without context
+        },
+      }
+
+      const results = await extract(configWithDisabledBaseForms)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+
+      // Should still generate base plural forms since no context is used
+      expect(translationFile!.newTranslations).toEqual({
+        item_one: 'item',
+        item_other: 'item',
+        product_one: 'product',
+        product_other: 'product',
+      })
+    })
+
+    it('should generate both base and context forms when generateBasePluralForms is true (default)', async () => {
+      const sampleCode = `
+        // t('options.option', { context: 'MONTHS', count: 1 })
+      `
+
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const configWithEnabledBaseForms: I18nextToolkitConfig = {
+        ...mockConfig,
+        extract: {
+          ...mockConfig.extract,
+          generateBasePluralForms: true, // Explicit true (this is the default)
+        },
+      }
+
+      const results = await extract(configWithEnabledBaseForms)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+
+      // Should generate both base and context forms
+      expect(translationFile!.newTranslations).toEqual({
+        options: {
+          // Base forms
+          option_one: 'options.option',
+          option_other: 'options.option',
+          // Context forms
+          option_MONTHS_one: 'options.option',
+          option_MONTHS_other: 'options.option',
+        },
+      })
+    })
   })
 
   it('should extract keys from a custom function with a member expression (i.e., i18n.t)', async () => {

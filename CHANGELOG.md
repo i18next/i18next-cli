@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.9.0](https://github.com/i18next/i18next-cli/compare/v1.8.0...v1.9.0) - 2025-10-07
 
-- Allow translating dynamic variables in TypeScript with `satisfies` [#42](https://github.com/i18next/i18next-cli/pull/42)
-- correctly generate plural forms when using t in comments
+### Enhanced
+- **Extractor (TypeScript):** Added support for dynamic variables in TypeScript using the `satisfies` operator. The extractor can now properly resolve variables constrained with `satisfies` expressions to extract all possible translation keys, enabling type-safe dynamic key generation patterns. [#42](https://github.com/i18next/i18next-cli/pull/42)
+
+### Fixed
+- **Extractor (Comments):** Fixed pluralization logic for commented `t()` calls to generate the correct plural forms for each target language. When Arabic (`ar-SA`) is included in the locales, the extractor now properly generates all 6 Arabic plural forms (`_zero`, `_one`, `_two`, `_few`, `_many`, `_other`) in Arabic files while maintaining the correct 2 forms (`_one`, `_other`) for English files. Previously, all languages would only receive English plural forms regardless of their actual pluralization rules.
+
+### Added
+- **Extractor:** Introduced the `generateBasePluralForms` configuration option to control whether base plural forms are generated when context is present. When set to `false`, calls like `t('key', { context: 'male', count: 1 })` will only generate context-specific forms (`key_male_one`, `key_male_other`) without creating base forms (`key_one`, `key_other`), reducing translation file clutter for context-only scenarios. Defaults to `true` to maintain backward compatibility.
 
 ## [1.8.0](https://github.com/i18next/i18next-cli/compare/v1.7.1...v1.8.0) - 2025-10-06
 

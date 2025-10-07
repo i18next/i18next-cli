@@ -362,6 +362,11 @@ export default defineConfig({
 
     /** If true, keys that are not found in the source code will be removed from translation files. (default: true) */
     removeUnusedKeys: true,
+
+    // Control whether base plural forms are generated when context is present
+    // When false, t('key', { context: 'male', count: 1 }) will only generate 
+    // key_male_one, key_male_other but NOT key_one, key_other
+    generateBasePluralForms: true, // Default: true
   },
   
   // TypeScript type generation
