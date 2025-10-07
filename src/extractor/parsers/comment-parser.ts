@@ -81,26 +81,38 @@ export function extractKeysFromComments (
       // 4. Final fallback to configured default namespace
       if (!ns) ns = config.extract.defaultNS
 
-      // 5. Handle context and count combinations
-      if (context && count) {
-        // Generate context+plural combinations
-        generateContextPluralKeys(key, defaultValue ?? key, ns, context, pluginContext, config, isOrdinal)
-
-        // Only generate base plural forms if generateBasePluralForms is not disabled
-        const shouldGenerateBaseForms = config.extract?.generateBasePluralForms !== false
-        if (shouldGenerateBaseForms) {
-          generatePluralKeys(key, defaultValue ?? key, ns, pluginContext, config, isOrdinal)
+      // 5. Handle context and count combinations based on disablePlurals setting
+      if (config.extract.disablePlurals) {
+        // When plurals are disabled, ignore count for key generation
+        if (context) {
+          // Only generate context variants (no base key when context is static)
+          pluginContext.addKey({ key: `${key}_${context}`, ns, defaultValue: defaultValue ?? key })
+        } else {
+          // Simple key (ignore count)
+          pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })
         }
-      } else if (context) {
-        // Just context variants
-        pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })
-        pluginContext.addKey({ key: `${key}_${context}`, ns, defaultValue: defaultValue ?? key })
-      } else if (count) {
-        // Just plural variants
-        generatePluralKeys(key, defaultValue ?? key, ns, pluginContext, config, isOrdinal)
       } else {
-        // Simple key
-        pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })
+        // Original plural handling logic when plurals are enabled
+        if (context && count) {
+          // Generate context+plural combinations
+          generateContextPluralKeys(key, defaultValue ?? key, ns, context, pluginContext, config, isOrdinal)
+
+          // Only generate base plural forms if generateBasePluralForms is not disabled
+          const shouldGenerateBaseForms = config.extract?.generateBasePluralForms !== false
+          if (shouldGenerateBaseForms) {
+            generatePluralKeys(key, defaultValue ?? key, ns, pluginContext, config, isOrdinal)
+          }
+        } else if (context) {
+          // Just context variants
+          pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })
+          pluginContext.addKey({ key: `${key}_${context}`, ns, defaultValue: defaultValue ?? key })
+        } else if (count) {
+          // Just plural variants
+          generatePluralKeys(key, defaultValue ?? key, ns, pluginContext, config, isOrdinal)
+        } else {
+          // Simple key
+          pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })
+        }
       }
     }
   }

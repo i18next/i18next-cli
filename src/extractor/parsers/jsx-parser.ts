@@ -126,7 +126,9 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
   )
   let contextExpression = (contextAttr?.type === 'JSXAttribute' && contextAttr.value?.type === 'JSXExpressionContainer')
     ? contextAttr.value.expression
-    : undefined
+    : (contextAttr?.type === 'JSXAttribute' && contextAttr.value?.type === 'StringLiteral')
+        ? contextAttr.value
+        : undefined
 
   // 1. Prioritize direct props for 'ns' and 'context'
   const nsAttr = node.opening.attributes?.find(attr => attr.type === 'JSXAttribute' && attr.name.type === 'Identifier' && attr.name.value === 'ns')

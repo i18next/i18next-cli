@@ -119,6 +119,9 @@ export interface I18nextToolkitConfig {
 
     // New option to control whether base plural forms are generated when context is present
     generateBasePluralForms?: boolean
+
+    // New option to completely disable plural generation
+    disablePlurals?: boolean
   };
 
   /** Configuration options for TypeScript type generation */

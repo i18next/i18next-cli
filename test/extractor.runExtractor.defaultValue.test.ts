@@ -689,7 +689,7 @@ describe('runExtractor: defaultValue option', () => {
       explicit: {
         key: 'Existing German Translation', // Preserved existing translation
       },
-      greeting: '[DE] translation/greeting',
+      greeting_formal: '[DE] translation/greeting_formal',
       // Note: context variants might not be generated for static string literals in JSX context
       item: {
         count_one: '[DE] translation/item.count_one', // Plural forms
@@ -712,7 +712,7 @@ describe('runExtractor: defaultValue option', () => {
       explicit: {
         key: '[FR] translation/explicit.key',
       },
-      greeting: '[FR] translation/greeting',
+      greeting_formal: '[FR] translation/greeting_formal',
       item: {
         count_one: '[FR] translation/item.count_one',
         count_other: '[FR] translation/item.count_other',
@@ -749,7 +749,7 @@ describe('runExtractor: defaultValue option', () => {
       explicit: {
         key: 'Explicit Default', // Uses explicit defaults prop
       },
-      greeting: 'Hello there',
+      greeting_formal: 'Hello there',
       item: {
         count_one: 'You have one item', // Plural forms get same default
         count_other: 'You have one item',

@@ -367,6 +367,11 @@ export default defineConfig({
     // When false, t('key', { context: 'male', count: 1 }) will only generate 
     // key_male_one, key_male_other but NOT key_one, key_other
     generateBasePluralForms: true, // Default: true
+
+    // Completely disable plural generation, even when count is present
+    // When true, t('key', { count: 1 }) will only generate 'key' (no _one, _other suffixes)
+    // The count option can still be used for {{count}} interpolation in the translation value
+    disablePlurals: false, // Default: false
   },
   
   // TypeScript type generation

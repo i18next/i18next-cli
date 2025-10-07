@@ -594,14 +594,19 @@ export class ASTVisitors {
         const hasCount = getObjectPropValue(options, 'count') !== undefined
         const isOrdinalByOption = getObjectPropValue(options, 'ordinal') === true
         if (hasCount || isOrdinalByKey) {
-          // If we have keys with context pluralize them
-          if (keysWithContext.length > 0) {
-            for (const { key, ns } of keysWithContext) {
-              // Pass the combined ordinal flag and the default value to the handler
-              this.handlePluralKeys(key, ns, options, isOrdinalByOption || isOrdinalByKey, finalDefaultValue)
+          // Check if plurals are disabled
+          if (this.config.extract.disablePlurals) {
+            // When plurals are disabled, treat count as a regular option (for interpolation only)
+            // Still handle context normally
+            if (keysWithContext.length > 0) {
+              keysWithContext.forEach(this.pluginContext.addKey)
+            } else {
+              // No context, just add the base key (no plurals even if count is present)
+              this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv })
             }
           } else {
-            // Otherwise pluralize the base key
+            // Original plural handling logic when plurals are enabled
+            // Always pass the base key to handlePluralKeys - it will handle context internally
             this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey, finalDefaultValue)
           }
 
@@ -725,20 +730,29 @@ export class ASTVisitors {
         }
       }
 
-      // Check if context is present
-      const contextValue = getObjectPropValue(options, 'context')
-      const hasContext = typeof contextValue === 'string' && contextValue.length > 0
-
-      // Determine which key variants to generate
+      // Handle context - both static and dynamic
+      const contextProp = getObjectProperty(options, 'context')
       const keysToGenerate: Array<{ key: string, context?: string }> = []
 
-      if (hasContext) {
-        // Generate keys for the specific context
-        keysToGenerate.push({ key, context: contextValue })
+      if (contextProp?.value) {
+        // Handle dynamic context by resolving all possible values
+        const contextValues = this.resolvePossibleContextStringValues(contextProp.value)
 
-        // Only generate base plural forms if generateBasePluralForms is not disabled
-        const shouldGenerateBaseForms = this.config.extract?.generateBasePluralForms !== false
-        if (shouldGenerateBaseForms) {
+        if (contextValues.length > 0) {
+          // Generate keys for each context value
+          for (const contextValue of contextValues) {
+            if (contextValue.length > 0) { // Skip empty contexts
+              keysToGenerate.push({ key, context: contextValue })
+            }
+          }
+
+          // For dynamic context, also generate base plural forms if generateBasePluralForms is not disabled
+          const shouldGenerateBaseForms = this.config.extract?.generateBasePluralForms !== false
+          if (shouldGenerateBaseForms) {
+            keysToGenerate.push({ key })
+          }
+        } else {
+          // Couldn't resolve context, fall back to base key only
           keysToGenerate.push({ key })
         }
       } else {
@@ -774,9 +788,10 @@ export class ASTVisitors {
           // 3. Construct the final plural key
           let finalKey: string
           if (context) {
+            const contextSeparator = this.config.extract.contextSeparator ?? '_'
             finalKey = isOrdinal
-              ? `${baseKey}${pluralSeparator}${context}${pluralSeparator}ordinal${pluralSeparator}${category}`
-              : `${baseKey}${pluralSeparator}${context}${pluralSeparator}${category}`
+              ? `${baseKey}${contextSeparator}${context}${pluralSeparator}ordinal${pluralSeparator}${category}`
+              : `${baseKey}${contextSeparator}${context}${pluralSeparator}${category}`
           } else {
             finalKey = isOrdinal
               ? `${baseKey}${pluralSeparator}ordinal${pluralSeparator}${category}`
@@ -901,39 +916,85 @@ export class ASTVisitors {
 
         // Handle the combination of context and count
         if (contextExpression && hasCount) {
-          // Find isOrdinal prop on the <Trans> component
-          const ordinalAttr = node.opening.attributes?.find(
-            (attr) =>
-              attr.type === 'JSXAttribute' &&
-              attr.name.type === 'Identifier' &&
-              attr.name.value === 'ordinal'
-          )
-          const isOrdinal = !!ordinalAttr
+          // Check if plurals are disabled
+          if (this.config.extract.disablePlurals) {
+            // When plurals are disabled, treat count as a regular option
+            // Still handle context normally
+            const contextValues = this.resolvePossibleContextStringValues(contextExpression)
+            const contextSeparator = this.config.extract.contextSeparator ?? '_'
 
-          const contextValues = this.resolvePossibleContextStringValues(contextExpression)
-          const contextSeparator = this.config.extract.contextSeparator ?? '_'
-
-          // Generate all combinations of context and plural forms
-          if (contextValues.length > 0) {
-            // Generate base plural forms (no context)
-            extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode))
-
-            // Generate context + plural combinations
-            for (const context of contextValues) {
-              for (const extractedKey of extractedKeys) {
-                const contextKey = `${extractedKey.key}${contextSeparator}${context}`
-                this.generatePluralKeysForTrans(contextKey, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode)
+            if (contextValues.length > 0) {
+              // For static context (string literal), only add context variants
+              if (contextExpression.type === 'StringLiteral') {
+                for (const context of contextValues) {
+                  for (const extractedKey of extractedKeys) {
+                    const contextKey = `${extractedKey.key}${contextSeparator}${context}`
+                    this.pluginContext.addKey({ key: contextKey, ns: extractedKey.ns, defaultValue: extractedKey.defaultValue })
+                  }
+                }
+              } else {
+                // For dynamic context, add both base and context variants
+                extractedKeys.forEach(extractedKey => {
+                  this.pluginContext.addKey({
+                    key: extractedKey.key,
+                    ns: extractedKey.ns,
+                    defaultValue: extractedKey.defaultValue
+                  })
+                })
+                for (const context of contextValues) {
+                  for (const extractedKey of extractedKeys) {
+                    const contextKey = `${extractedKey.key}${contextSeparator}${context}`
+                    this.pluginContext.addKey({ key: contextKey, ns: extractedKey.ns, defaultValue: extractedKey.defaultValue })
+                  }
+                }
               }
+            } else {
+              // Fallback to just base keys if context resolution fails
+              extractedKeys.forEach(extractedKey => {
+                this.pluginContext.addKey({
+                  key: extractedKey.key,
+                  ns: extractedKey.ns,
+                  defaultValue: extractedKey.defaultValue
+                })
+              })
             }
           } else {
-            // Fallback to just plural forms if context resolution fails
-            extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode))
+            // Original plural handling logic when plurals are enabled
+            // Find isOrdinal prop on the <Trans> component
+            const ordinalAttr = node.opening.attributes?.find(
+              (attr) =>
+                attr.type === 'JSXAttribute' &&
+                attr.name.type === 'Identifier' &&
+                attr.name.value === 'ordinal'
+            )
+            const isOrdinal = !!ordinalAttr
+
+            const contextValues = this.resolvePossibleContextStringValues(contextExpression)
+            const contextSeparator = this.config.extract.contextSeparator ?? '_'
+
+            // Generate all combinations of context and plural forms
+            if (contextValues.length > 0) {
+              // Generate base plural forms (no context)
+              extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode))
+
+              // Generate context + plural combinations
+              for (const context of contextValues) {
+                for (const extractedKey of extractedKeys) {
+                  const contextKey = `${extractedKey.key}${contextSeparator}${context}`
+                  this.generatePluralKeysForTrans(contextKey, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode)
+                }
+              }
+            } else {
+              // Fallback to just plural forms if context resolution fails
+              extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode))
+            }
           }
         } else if (contextExpression) {
           const contextValues = this.resolvePossibleContextStringValues(contextExpression)
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
 
           if (contextValues.length > 0) {
+            // Add context variants
             for (const context of contextValues) {
               for (const { key, ns, defaultValue } of extractedKeys) {
                 this.pluginContext.addKey({ key: `${key}${contextSeparator}${context}`, ns, defaultValue })
@@ -941,22 +1002,57 @@ export class ASTVisitors {
             }
             // Only add the base key as a fallback if the context is dynamic (i.e., not a simple string).
             if (contextExpression.type !== 'StringLiteral') {
-              extractedKeys.forEach(this.pluginContext.addKey)
+              extractedKeys.forEach(extractedKey => {
+                this.pluginContext.addKey({
+                  key: extractedKey.key,
+                  ns: extractedKey.ns,
+                  defaultValue: extractedKey.defaultValue
+                })
+              })
             }
+          } else {
+            // If no context values were resolved, just add base keys
+            extractedKeys.forEach(extractedKey => {
+              this.pluginContext.addKey({
+                key: extractedKey.key,
+                ns: extractedKey.ns,
+                defaultValue: extractedKey.defaultValue
+              })
+            })
           }
         } else if (hasCount) {
-          // Find isOrdinal prop on the <Trans> component
-          const ordinalAttr = node.opening.attributes?.find(
-            (attr) =>
-              attr.type === 'JSXAttribute' &&
-              attr.name.type === 'Identifier' &&
-              attr.name.value === 'ordinal'
-          )
-          const isOrdinal = !!ordinalAttr
+          // Check if plurals are disabled
+          if (this.config.extract.disablePlurals) {
+            // When plurals are disabled, just add the base keys (no plural forms)
+            extractedKeys.forEach(extractedKey => {
+              this.pluginContext.addKey({
+                key: extractedKey.key,
+                ns: extractedKey.ns,
+                defaultValue: extractedKey.defaultValue
+              })
+            })
+          } else {
+            // Original plural handling logic when plurals are enabled
+            // Find isOrdinal prop on the <Trans> component
+            const ordinalAttr = node.opening.attributes?.find(
+              (attr) =>
+                attr.type === 'JSXAttribute' &&
+                attr.name.type === 'Identifier' &&
+                attr.name.value === 'ordinal'
+            )
+            const isOrdinal = !!ordinalAttr
 
-          extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode))
+            extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode))
+          }
         } else {
-          extractedKeys.forEach(this.pluginContext.addKey)
+          // No count or context - just add the base keys
+          extractedKeys.forEach(extractedKey => {
+            this.pluginContext.addKey({
+              key: extractedKey.key,
+              ns: extractedKey.ns,
+              defaultValue: extractedKey.defaultValue
+            })
+          })
         }
       }
     }

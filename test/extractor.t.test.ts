@@ -1145,37 +1145,36 @@ describe('extractor: advanced t features', () => {
         },
       })
     })
-  })
 
-  it('should extract keys from a custom function with a member expression (i.e., i18n.t)', async () => {
-    const sampleCode = `
+    it('should extract keys from a custom function with a member expression (i.e., i18n.t)', async () => {
+      const sampleCode = `
     import i18n from '@/i18n';
     const message = i18n.t('A key from a member expression');
   `
-    vol.fromJSON({ '/src/App.tsx': sampleCode })
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    const customConfig: I18nextToolkitConfig = {
-      ...mockConfig,
-      extract: {
-        ...mockConfig.extract,
-        keySeparator: false, // Use flat keys for simplicity
-        // Explicitly tell the extractor to look for 'i18n.t'
-        functions: ['t', 'i18n.t'],
-      },
-    }
+      const customConfig: I18nextToolkitConfig = {
+        ...mockConfig,
+        extract: {
+          ...mockConfig.extract,
+          keySeparator: false, // Use flat keys for simplicity
+          // Explicitly tell the extractor to look for 'i18n.t'
+          functions: ['t', 'i18n.t'],
+        },
+      }
 
-    const results = await extract(customConfig)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const results = await extract(customConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
 
-    // This test will fail before the fix because the key will not be found.
-    expect(translationFile).toBeDefined()
-    expect(translationFile!.newTranslations).toEqual({
-      'A key from a member expression': 'A key from a member expression',
+      // This test will fail before the fix because the key will not be found.
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        'A key from a member expression': 'A key from a member expression',
+      })
     })
-  })
 
-  it('should handle wildcard patterns in the functions array to match suffixes', async () => {
-    const sampleCode = `
+    it('should handle wildcard patterns in the functions array to match suffixes', async () => {
+      const sampleCode = `
       // These should all be matched by '*.t' or 't'
       t('key.simple');
       i18n.t('key.member');
@@ -1184,48 +1183,189 @@ describe('extractor: advanced t features', () => {
       // This should be ignored
       ignoreThis('key.ignored');
     `
-    vol.fromJSON({ '/src/App.tsx': sampleCode })
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    const customConfig: I18nextToolkitConfig = {
-      ...mockConfig,
-      extract: {
-        ...mockConfig.extract,
-        keySeparator: false,
-        // Use a wildcard to match any function ending in '.t', plus the base 't'
-        functions: ['*.t', 't'],
-      },
-    }
+      const customConfig: I18nextToolkitConfig = {
+        ...mockConfig,
+        extract: {
+          ...mockConfig.extract,
+          keySeparator: false,
+          // Use a wildcard to match any function ending in '.t', plus the base 't'
+          functions: ['*.t', 't'],
+        },
+      }
 
-    const results = await extract(customConfig)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const results = await extract(customConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
 
-    expect(translationFile).toBeDefined()
-    expect(translationFile!.newTranslations).toEqual({
-      'key.simple': 'key.simple',
-      'key.member': 'key.member',
-      'key.this': 'key.this',
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        'key.simple': 'key.simple',
+        'key.member': 'key.member',
+        'key.this': 'key.this',
+      })
     })
-  })
 
-  it('should treat empty string context as "no context" like i18next does', async () => {
-    const sampleCode = `
+    it('should treat empty string context as "no context" like i18next does', async () => {
+      const sampleCode = `
       const test = false;
       t('state.description', { context: test ? 'test' : '' });
     `
-    vol.fromJSON({ '/src/App.tsx': sampleCode })
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    const results = await extract(mockConfig)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
 
-    expect(translationFile).toBeDefined()
-    expect(translationFile!.newTranslations).toEqual({
-      state: {
-        description: 'state.description',
-        description_test: 'state.description',
-      },
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        state: {
+          description: 'state.description',
+          description_test: 'state.description',
+        },
+      })
+
+      // Ensure there's no key with an underscore suffix (state.description_)
+      expect(translationFile!.newTranslations.state).not.toHaveProperty('description_')
     })
 
-    // Ensure there's no key with an underscore suffix (state.description_)
-    expect(translationFile!.newTranslations.state).not.toHaveProperty('description_')
+    describe('disablePlurals', () => {
+      it('should not generate plural keys when disablePlurals is true', async () => {
+        const sampleCode = `
+          // These calls have count but should not generate plural forms
+          t('item', { count: 1, defaultValue: 'Item' })
+          t('product', { count: 5, defaultValue: 'Product' })
+          t('message', { count: 0 })
+          
+          // Context should still work normally
+          t('friend', { context: 'male', defaultValue: 'Friend' })
+          
+          // But context + count should not generate plurals
+          t('greeting', { context: 'formal', count: 2, defaultValue: 'Greeting' })
+        `
+
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+        const configWithDisabledPlurals: I18nextToolkitConfig = {
+          ...mockConfig,
+          extract: {
+            ...mockConfig.extract,
+            disablePlurals: true, // Disable all plural generation
+          },
+        }
+
+        const results = await extract(configWithDisabledPlurals)
+        const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+        expect(translationFile).toBeDefined()
+
+        // Should only generate base keys, no plural suffixes
+        expect(translationFile!.newTranslations).toEqual({
+          item: 'Item',
+          product: 'Product',
+          message: 'message',
+          friend_male: 'Friend', // Context still works
+          greeting_formal: 'Greeting', // Context works, but no plurals
+        })
+      })
+
+      it('should not generate plural keys for Trans components when disablePlurals is true', async () => {
+        const sampleCode = `
+          function App() {
+            return (
+              <div>
+                <Trans i18nKey="item" count={count}>Item</Trans>
+                <Trans i18nKey="greeting" context="formal" count={count}>Greeting</Trans>
+              </div>
+            );
+          }
+        `
+
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+        const configWithDisabledPlurals: I18nextToolkitConfig = {
+          ...mockConfig,
+          extract: {
+            ...mockConfig.extract,
+            disablePlurals: true, // Disable all plural generation
+          },
+        }
+
+        const results = await extract(configWithDisabledPlurals)
+        const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+        expect(translationFile).toBeDefined()
+
+        // Should only generate base keys, no plural suffixes
+        expect(translationFile!.newTranslations).toEqual({
+          item: 'Item',
+          greeting_formal: 'Greeting', // Context works, but no plurals
+        })
+      })
+
+      it('should not generate plural keys from comments when disablePlurals is true', async () => {
+        const sampleCode = `
+          // t('item.count', { count: 1, defaultValue: 'Item' })
+          // t('user.messages', { count: 5 })
+          // t('greeting.formal', { context: 'business', count: 2 })
+        `
+
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+        const configWithDisabledPlurals: I18nextToolkitConfig = {
+          ...mockConfig,
+          extract: {
+            ...mockConfig.extract,
+            disablePlurals: true,
+          },
+        }
+
+        const results = await extract(configWithDisabledPlurals)
+        const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+        expect(translationFile).toBeDefined()
+
+        // Should only generate base keys, no plural suffixes
+        expect(translationFile!.newTranslations).toEqual({
+          item: {
+            count: 'Item',
+          },
+          user: {
+            messages: 'user.messages',
+          },
+          greeting: {
+            formal_business: 'greeting.formal', // Context works, no plurals
+          },
+        })
+      })
+
+      it('should respect generateBasePluralForms when disablePlurals is false (default behavior)', async () => {
+        const sampleCode = `
+          t('item', { count: 1, context: 'small' })
+        `
+
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+        const configWithPluralsEnabled: I18nextToolkitConfig = {
+          ...mockConfig,
+          extract: {
+            ...mockConfig.extract,
+            disablePlurals: false, // Explicitly enable plurals (this is the default)
+            generateBasePluralForms: false, // But disable base forms when context is present
+          },
+        }
+
+        const results = await extract(configWithPluralsEnabled)
+        const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+        expect(translationFile).toBeDefined()
+
+        // Should generate context+plural combinations but not base plurals
+        expect(translationFile!.newTranslations).toEqual({
+          item_small_one: 'item',
+          item_small_other: 'item',
+        // No item_one, item_other because generateBasePluralForms is false
+        })
+      })
+    })
   })
 })
