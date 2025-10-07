@@ -421,3 +421,85 @@ export interface ScopeInfo {
   /** Key prefix to prepend to all translation keys in this scope */
   keyPrefix?: string;
 }
+
+/**
+ * Configuration for useTranslation hook patterns.
+ * Defines how to extract namespace and key prefix information from hook calls.
+ *
+ * @example
+ * ```typescript
+ * // For: const { t } = useTranslation('common', { keyPrefix: 'user' })
+ * const config: UseTranslationHookConfig = {
+ *   name: 'useTranslation',
+ *   nsArg: 0,      // namespace is first argument
+ *   keyPrefixArg: 1 // keyPrefix is in second argument (options object)
+ * }
+ * ```
+ */
+export interface UseTranslationHookConfig {
+  /** The name of the hook function (e.g., 'useTranslation', 'getT') */
+  name: string;
+  /** Zero-based index of the argument containing the namespace */
+  nsArg: number;
+  /** Zero-based index of the argument containing options with keyPrefix */
+  keyPrefixArg: number;
+}
+
+/**
+ * Optional hooks for customizing AST visitor behavior during extraction.
+ * Allows plugins and external code to extend the visitor's capabilities.
+ *
+ * @example
+ * ```typescript
+ * const hooks: ASTVisitorHooks = {
+ *   onBeforeVisitNode: (node) => {
+ *     console.log(`Visiting ${node.type}`)
+ *   },
+ *
+ *   resolvePossibleKeyStringValues: (expression) => {
+ *     // Custom logic to extract keys from complex expressions
+ *     if (isCustomKeyExpression(expression)) {
+ *       return ['custom.key.1', 'custom.key.2']
+ *     }
+ *     return []
+ *   }
+ * }
+ * ```
+ */
+export interface ASTVisitorHooks {
+  /**
+   * Called before visiting each AST node during traversal.
+   * Useful for logging, debugging, or pre-processing nodes.
+   *
+   * @param node - The AST node about to be visited
+   */
+  onBeforeVisitNode?: (node: Node) => void
+
+  /**
+   * Called after visiting each AST node during traversal.
+   * Useful for cleanup, post-processing, or collecting statistics.
+   *
+   * @param node - The AST node that was just visited
+   */
+  onAfterVisitNode?: (node: Node) => void
+
+  /**
+   * Custom resolver for extracting context values from expressions.
+   * Supplements the built-in expression resolution with plugin-specific logic.
+   *
+   * @param expression - The expression to extract context from
+   * @param returnEmptyStrings - Whether to include empty strings in results
+   * @returns Array of possible context string values
+   */
+  resolvePossibleContextStringValues?: (expression: Expression, returnEmptyStrings?: boolean) => string[]
+
+  /**
+   * Custom resolver for extracting translation keys from expressions.
+   * Supplements the built-in expression resolution with plugin-specific logic.
+   *
+   * @param expression - The expression to extract keys from
+   * @param returnEmptyStrings - Whether to include empty strings in results
+   * @returns Array of possible translation key values
+   */
+  resolvePossibleKeyStringValues?: (expression: Expression, returnEmptyStrings?: boolean) => string[]
+}

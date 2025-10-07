@@ -1,10 +1,10 @@
 import { glob } from 'glob'
 import type { Expression } from '@swc/core'
-import type { ExtractedKey, Logger, I18nextToolkitConfig } from '../../types'
+import type { ExtractedKey, Logger, I18nextToolkitConfig, ASTVisitorHooks } from '../../types'
 import { processFile } from './extractor'
 import { ConsoleLogger } from '../../utils/logger'
 import { initializePlugins, createPluginContext } from '../plugin-manager'
-import { type ASTVisitorHooks, ASTVisitors } from '../parsers/ast-visitors'
+import { ASTVisitors } from './ast-visitors'
 
 /**
  * Main function for finding translation keys across all source files in a project.

@@ -1,7 +1,7 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { processFile } from '../src/extractor/core/extractor'
-import { ASTVisitors } from '../src/extractor/parsers/ast-visitors'
+import { ASTVisitors } from '../src/extractor/core/ast-visitors'
 import { createPluginContext } from '../src/extractor/plugin-manager'
 import { ConsoleLogger } from '../src/utils/logger'
 import type { I18nextToolkitConfig, ExtractedKey, Plugin } from '../src/index'
