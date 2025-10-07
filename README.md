@@ -647,6 +647,9 @@ This will:
 - Preserve custom settings where possible
 - Create a new `i18next.config.ts` file
 
+Important: File Management Differences <br/>
+Unlike `i18next-parser`, `i18next-cli` takes full ownership of translation files in the output directory. If you have manually managed translation files that should not be modified, place them in a separate directory or use different naming patterns to avoid conflicts.
+
 ## CI/CD Integration
 
 Use the `--ci` flag to fail builds when translations are outdated:
