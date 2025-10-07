@@ -63,7 +63,48 @@ function buildNewTranslationsForNs (
     removeUnusedKeys = true,
     primaryLanguage,
     defaultValue: emptyDefaultValue = '',
+    pluralSeparator = '_',
   } = config.extract
+
+  // Get the plural categories for the target language
+  const targetLanguagePluralCategories = new Set<string>()
+  try {
+    const cardinalRules = new Intl.PluralRules(locale, { type: 'cardinal' })
+    const ordinalRules = new Intl.PluralRules(locale, { type: 'ordinal' })
+
+    cardinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
+    ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
+  } catch (e) {
+    // Fallback to English if locale is invalid
+    const cardinalRules = new Intl.PluralRules(primaryLanguage || 'en', { type: 'cardinal' })
+    const ordinalRules = new Intl.PluralRules(primaryLanguage || 'en', { type: 'ordinal' })
+
+    cardinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
+    ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
+  }
+
+  // Filter nsKeys to only include keys relevant to this language
+  const filteredKeys = nsKeys.filter(({ key, hasCount, isOrdinal }) => {
+    if (!hasCount) {
+      // Non-plural keys are always included
+      return true
+    }
+
+    // For plural keys, check if this specific plural form is needed for the target language
+    const keyParts = key.split(pluralSeparator)
+
+    if (isOrdinal && keyParts.includes('ordinal')) {
+      // For ordinal plurals: key_context_ordinal_category or key_ordinal_category
+      const lastPart = keyParts[keyParts.length - 1]
+      return targetLanguagePluralCategories.has(`ordinal_${lastPart}`)
+    } else if (hasCount) {
+      // For cardinal plurals: key_context_category or key_category
+      const lastPart = keyParts[keyParts.length - 1]
+      return targetLanguagePluralCategories.has(lastPart)
+    }
+
+    return true
+  })
 
   // If `removeUnusedKeys` is true, start with an empty object. Otherwise, start with a clone of the existing translations.
   let newTranslations: Record<string, any> = removeUnusedKeys
@@ -80,9 +121,9 @@ function buildNewTranslationsForNs (
   }
 
   // 1. Build the object first, without any sorting.
-  for (const { key, defaultValue } of nsKeys) {
+  for (const { key, defaultValue } of filteredKeys) {
     const existingValue = getNestedValue(existingTranslations, key, keySeparator ?? '.')
-    const isLeafInNewKeys = !nsKeys.some(otherKey => otherKey.key.startsWith(`${key}${keySeparator}`) && otherKey.key !== key)
+    const isLeafInNewKeys = !filteredKeys.some(otherKey => otherKey.key.startsWith(`${key}${keySeparator}`) && otherKey.key !== key)
 
     // Determine if we should preserve an existing object
     const shouldPreserveObject = typeof existingValue === 'object' && existingValue !== null && (
@@ -127,7 +168,7 @@ function buildNewTranslationsForNs (
     // Create a map of top-level keys to a representative ExtractedKey object.
     // This is needed for the custom sort function.
     const keyMap = new Map<string, ExtractedKey>()
-    for (const ek of nsKeys) {
+    for (const ek of filteredKeys) {
       const topLevelKey = keySeparator === false ? ek.key : ek.key.split(keySeparator as string)[0]
       if (!keyMap.has(topLevelKey)) {
         keyMap.set(topLevelKey, ek)

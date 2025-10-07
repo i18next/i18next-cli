@@ -306,7 +306,7 @@ describe('extractor: runExtractor', () => {
     const enJson = JSON.parse(enFileContent as string)
 
     expect(enJson).toEqual({
-    // Plural keys for English
+      // Plural keys for English
       item_one: 'An item',
       item_other: 'An item',
       // Context keys
@@ -1463,11 +1463,11 @@ describe('extractor: runExtractor', () => {
 
   it('should handle TypeScript satisfies operator with nested types', async () => {
     const sampleCode = `
-        const role = 'role_ADMIN';
-        t('test.key')
-        t(\`profile.role.\${role satisfies \`role_\${'ADMIN' | 'MANAGER'}\`}.description\`);
-        t(\`profile.role.\${role satisfies \`role_\${'ADMIN' | 'MANAGER' | ROLES}\`}.title\`);
-      `
+      const role = 'role_ADMIN';
+      t('test.key')
+      t(\`profile.role.\${role satisfies \`role_\${'ADMIN' | 'MANAGER'}\`}.description\`);
+      t(\`profile.role.\${role satisfies \`role_\${'ADMIN' | 'MANAGER' | ROLES}\`}.title\`);
+    `
 
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
@@ -1498,9 +1498,9 @@ describe('extractor: runExtractor', () => {
 
   it('should handle TypeScript as operator in template literals', async () => {
     const sampleCode = `
-        const status = getStatus();
-        t(\`alert.\${status as 'success' | 'error' | 'warning'}.message\`);
-      `
+      const status = getStatus();
+      t(\`alert.\${status as 'success' | 'error' | 'warning'}.message\`);
+    `
 
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 

@@ -114,8 +114,24 @@ function generatePluralKeys (
 ): void {
   try {
     const type = isOrdinal ? 'ordinal' : 'cardinal'
-    const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
-    const pluralCategories = new Intl.PluralRules(primaryLanguage, { type }).resolvedOptions().pluralCategories
+
+    // Generate plural forms for ALL target languages to ensure we have all necessary keys
+    const allPluralCategories = new Set<string>()
+
+    for (const locale of config.locales) {
+      try {
+        const pluralRules = new Intl.PluralRules(locale, { type })
+        const categories = pluralRules.resolvedOptions().pluralCategories
+        categories.forEach(cat => allPluralCategories.add(cat))
+      } catch (e) {
+        // If a locale is invalid, fall back to English rules
+        const englishRules = new Intl.PluralRules('en', { type })
+        const categories = englishRules.resolvedOptions().pluralCategories
+        categories.forEach(cat => allPluralCategories.add(cat))
+      }
+    }
+
+    const pluralCategories = Array.from(allPluralCategories).sort()
     const pluralSeparator = config.extract.pluralSeparator ?? '_'
 
     // Generate keys for each plural category
@@ -152,8 +168,24 @@ function generateContextPluralKeys (
 ): void {
   try {
     const type = isOrdinal ? 'ordinal' : 'cardinal'
-    const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
-    const pluralCategories = new Intl.PluralRules(primaryLanguage, { type }).resolvedOptions().pluralCategories
+
+    // Generate plural forms for ALL target languages to ensure we have all necessary keys
+    const allPluralCategories = new Set<string>()
+
+    for (const locale of config.locales) {
+      try {
+        const pluralRules = new Intl.PluralRules(locale, { type })
+        const categories = pluralRules.resolvedOptions().pluralCategories
+        categories.forEach(cat => allPluralCategories.add(cat))
+      } catch (e) {
+        // If a locale is invalid, fall back to English rules
+        const englishRules = new Intl.PluralRules(config.extract.primaryLanguage || 'en', { type })
+        const categories = englishRules.resolvedOptions().pluralCategories
+        categories.forEach(cat => allPluralCategories.add(cat))
+      }
+    }
+
+    const pluralCategories = Array.from(allPluralCategories).sort()
     const pluralSeparator = config.extract.pluralSeparator ?? '_'
 
     // Generate keys for each context + plural combination

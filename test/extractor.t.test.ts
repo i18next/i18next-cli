@@ -879,6 +879,142 @@ describe('extractor: advanced t features', () => {
         state_production_other: '{{count}} cars',
       })
     })
+
+    it('should generate all Arabic plural forms when ar-SA is in locales with context', async () => {
+      const sampleCode = `
+        // t('options.option', { ns: 'common', context: 'MONTHS', count: 1 })
+        // t('options.option', { ns: 'common', context: 'WEEKS', count: 1 })
+        // t('options.option', { ns: 'common', context: 'DAYS', count: 1 })
+      `
+
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      // Include Arabic to trigger all plural forms
+      const arabicConfig: I18nextToolkitConfig = {
+        ...mockConfig,
+        locales: ['en', 'ar-SA'], // Include Arabic
+        extract: {
+          ...mockConfig.extract,
+        },
+      }
+
+      const results = await extract(arabicConfig)
+
+      // Check English file - should only have English plural forms (one, other)
+      const englishCommonFile = results.find(r => r.path.endsWith('/locales/en/common.json'))
+      expect(englishCommonFile).toBeDefined()
+      expect(englishCommonFile!.newTranslations).toEqual({
+        options: {
+          // English only has 2 plural forms
+          option_DAYS_one: 'options.option',
+          option_DAYS_other: 'options.option',
+          option_MONTHS_one: 'options.option',
+          option_MONTHS_other: 'options.option',
+          option_WEEKS_one: 'options.option',
+          option_WEEKS_other: 'options.option',
+          // Base forms
+          option_one: 'options.option',
+          option_other: 'options.option',
+        },
+      })
+
+      // Check Arabic file - should have all 6 Arabic plural forms
+      const arabicCommonFile = results.find(r => r.path.endsWith('/locales/ar-SA/common.json'))
+      expect(arabicCommonFile).toBeDefined()
+      expect(arabicCommonFile!.newTranslations).toEqual({
+        options: {
+          // Arabic has 6 plural forms: zero, one, two, few, many, other
+          option_DAYS_zero: '',
+          option_DAYS_one: '',
+          option_DAYS_two: '',
+          option_DAYS_few: '',
+          option_DAYS_many: '',
+          option_DAYS_other: '',
+          option_MONTHS_zero: '',
+          option_MONTHS_one: '',
+          option_MONTHS_two: '',
+          option_MONTHS_few: '',
+          option_MONTHS_many: '',
+          option_MONTHS_other: '',
+          option_WEEKS_zero: '',
+          option_WEEKS_one: '',
+          option_WEEKS_two: '',
+          option_WEEKS_few: '',
+          option_WEEKS_many: '',
+          option_WEEKS_other: '',
+          // Base forms
+          option_zero: '',
+          option_one: '',
+          option_two: '',
+          option_few: '',
+          option_many: '',
+          option_other: '',
+        },
+      })
+    })
+
+    it('should generate all Arabic plural forms when ar-SA is in locales without context', async () => {
+      const sampleCode = `
+        // t('item', { count: 1 })
+      `
+
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      // Include Arabic to trigger all plural forms
+      const arabicConfig: I18nextToolkitConfig = {
+        ...mockConfig,
+        locales: ['en', 'ar-SA'], // Include Arabic
+      }
+
+      const results = await extract(arabicConfig)
+
+      // Check English file - should only have English plural forms
+      const englishTranslationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      expect(englishTranslationFile).toBeDefined()
+      expect(englishTranslationFile!.newTranslations).toEqual({
+        // English only has 2 plural forms
+        item_one: 'item',
+        item_other: 'item',
+      })
+
+      // Check Arabic file - should have all 6 Arabic plural forms
+      const arabicTranslationFile = results.find(r => r.path.endsWith('/locales/ar-SA/translation.json'))
+      expect(arabicTranslationFile).toBeDefined()
+      expect(arabicTranslationFile!.newTranslations).toEqual({
+        // Arabic has 6 plural forms
+        item_zero: '',
+        item_one: '',
+        item_two: '',
+        item_few: '',
+        item_many: '',
+        item_other: '',
+      })
+    })
+
+    it('should only generate English plural forms when only English is in locales', async () => {
+      const sampleCode = `
+        // t('item', { count: 1 })
+      `
+
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      // Only English
+      const englishOnlyConfig: I18nextToolkitConfig = {
+        ...mockConfig,
+        locales: ['en'], // Only English
+      }
+
+      const results = await extract(englishOnlyConfig)
+      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+
+      // Should only generate English plural forms
+      expect(translationFile!.newTranslations).toEqual({
+        item_one: 'item',
+        item_other: 'item',
+      })
+    })
   })
 
   it('should extract keys from a custom function with a member expression (i.e., i18n.t)', async () => {
