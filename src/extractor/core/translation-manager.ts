@@ -19,26 +19,79 @@ function globToRegex (glob: string): RegExp {
 /**
  * Recursively sorts the keys of an object.
  */
-function sortObject (obj: any): any {
+function sortObject (obj: any, config?: I18nextToolkitConfig): any {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
     return obj
   }
 
   const sortedObj: Record<string, any> = {}
-  const keys = Object.keys(obj).sort((a, b) => {
-    // First, compare case-insensitively
-    const caseInsensitiveComparison = a.localeCompare(b, undefined, { sensitivity: 'base' })
+  const pluralSeparator = config?.extract?.pluralSeparator ?? '_'
 
-    // If they're equal case-insensitively, sort by case (lowercase first)
+  // Define the canonical order for plural forms
+  const pluralOrder = ['zero', 'one', 'two', 'few', 'many', 'other']
+  const ordinalPluralOrder = pluralOrder.map(form => `ordinal_${form}`)
+
+  const keys = Object.keys(obj).sort((a, b) => {
+    // Helper function to extract base key and form info
+    const getKeyInfo = (key: string) => {
+      // Handle ordinal plurals: key_ordinal_form or key_context_ordinal_form
+      for (const form of ordinalPluralOrder) {
+        if (key.endsWith(`${pluralSeparator}${form}`)) {
+          const base = key.slice(0, -(pluralSeparator.length + form.length))
+          return { base, form, isOrdinal: true, isPlural: true, fullKey: key }
+        }
+      }
+      // Handle cardinal plurals: key_form or key_context_form
+      for (const form of pluralOrder) {
+        if (key.endsWith(`${pluralSeparator}${form}`)) {
+          const base = key.slice(0, -(pluralSeparator.length + form.length))
+          return { base, form, isOrdinal: false, isPlural: true, fullKey: key }
+        }
+      }
+      return { base: key, form: '', isOrdinal: false, isPlural: false, fullKey: key }
+    }
+
+    const aInfo = getKeyInfo(a)
+    const bInfo = getKeyInfo(b)
+
+    // If both are plural forms
+    if (aInfo.isPlural && bInfo.isPlural) {
+      // First compare by base key (alphabetically)
+      const baseComparison = aInfo.base.localeCompare(bInfo.base, undefined, { sensitivity: 'base' })
+      if (baseComparison !== 0) {
+        return baseComparison
+      }
+
+      // Same base key - now sort by plural form order
+      // Ordinal forms come after cardinal forms
+      if (aInfo.isOrdinal !== bInfo.isOrdinal) {
+        return aInfo.isOrdinal ? 1 : -1
+      }
+
+      // Both same type (cardinal or ordinal), sort by canonical order
+      const orderArray = aInfo.isOrdinal ? ordinalPluralOrder : pluralOrder
+      const aIndex = orderArray.indexOf(aInfo.form)
+      const bIndex = orderArray.indexOf(bInfo.form)
+
+      if (aIndex !== -1 && bIndex !== -1) {
+        return aIndex - bIndex
+      }
+
+      // Fallback to alphabetical if forms not found in order array
+      return aInfo.form.localeCompare(bInfo.form)
+    }
+
+    // If one is plural and one is not, or both are non-plural
+    // Regular alphabetical sorting (case-insensitive, then by case)
+    const caseInsensitiveComparison = a.localeCompare(b, undefined, { sensitivity: 'base' })
     if (caseInsensitiveComparison === 0) {
       return a.localeCompare(b, undefined, { sensitivity: 'case' })
     }
-
     return caseInsensitiveComparison
   })
 
   for (const key of keys) {
-    sortedObj[key] = sortObject(obj[key])
+    sortedObj[key] = sortObject(obj[key], config)
   }
 
   return sortedObj
@@ -125,6 +178,33 @@ function buildNewTranslationsForNs (
     }
   }
 
+  // SPECIAL HANDLING: Preserve existing _zero forms even if not in extracted keys
+  // This ensures that optional _zero forms are not removed when they exist
+  if (removeUnusedKeys) {
+    const existingKeys = getNestedKeys(existingTranslations, keySeparator ?? '.')
+    for (const existingKey of existingKeys) {
+      // Check if this is a _zero form that should be preserved
+      const keyParts = existingKey.split(pluralSeparator)
+      const lastPart = keyParts[keyParts.length - 1]
+
+      if (lastPart === 'zero') {
+        // Check if the base plural key exists in our extracted keys
+        const baseKey = keyParts.slice(0, -1).join(pluralSeparator)
+        const hasBaseInExtracted = filteredKeys.some(({ key }) => {
+          const extractedParts = key.split(pluralSeparator)
+          const extractedBase = extractedParts.slice(0, -1).join(pluralSeparator)
+          return extractedBase === baseKey
+        })
+
+        if (hasBaseInExtracted) {
+          // Preserve the existing _zero form
+          const value = getNestedValue(existingTranslations, existingKey, keySeparator ?? '.')
+          setNestedValue(newTranslations, existingKey, value, keySeparator ?? '.')
+        }
+      }
+    }
+  }
+
   // 1. Build the object first, without any sorting.
   for (const { key, defaultValue } of filteredKeys) {
     const existingValue = getNestedValue(existingTranslations, key, keySeparator ?? '.')
@@ -162,7 +242,7 @@ function buildNewTranslationsForNs (
   // 2. If sorting is enabled, recursively sort the entire object.
   // This correctly handles both top-level and nested keys.
   if (sort === true) {
-    return sortObject(newTranslations)
+    return sortObject(newTranslations, config)
   }
   // Custom sort function logic remains as a future enhancement if needed,
   // but for now, this robustly handles the most common `sort: true` case.
@@ -195,7 +275,7 @@ function buildNewTranslationsForNs (
 
     // 3. Rebuild the object in the final sorted order.
     for (const key of topLevelKeys) {
-      sortedObject[key] = newTranslations[key]
+      sortedObject[key] = sortObject(newTranslations[key], config)
     }
     newTranslations = sortedObject
   }

@@ -250,4 +250,475 @@ describe('extractor.getTranslations', () => {
     const resultKeys = Object.keys(result.newTranslations)
     expect(resultKeys).toEqual(['foo', 'FOO'])
   })
+
+  describe('plural forms sorting', () => {
+    it('should sort plural forms in canonical order (zero, one, two, few, many, other)', async () => {
+      const keysMap = new Map<string, any>()
+      // Add plural keys in mixed order to test sorting - only forms that English supports
+      keysMap.set('item_other', { key: 'item_other', hasCount: true })
+      keysMap.set('item_one', { key: 'item_one', hasCount: true })
+      // Add a regular key to ensure it sorts separately
+      keysMap.set('label', { key: 'label', defaultValue: 'Label' })
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          sort: true,
+        }
+      }
+
+      const [result] = await getTranslations(keysMap, new Set(), config)
+
+      // Convert to array to check order
+      const resultKeys = Object.keys(result.newTranslations)
+
+      // Should have regular key first, then plural forms in canonical order
+      expect(resultKeys).toEqual([
+        'item_one',
+        'item_other',
+        'label'
+      ])
+    })
+
+    it('should group plural forms by base key and sort each group canonically', async () => {
+      const keysMap = new Map<string, any>()
+      // Multiple plural groups in mixed order - only English-supported forms
+      keysMap.set('calculator.option_days_other', { key: 'calculator.option_days_other', hasCount: true })
+      keysMap.set('calculator.option_one', { key: 'calculator.option_one', hasCount: true })
+      keysMap.set('calculator.option_days_one', { key: 'calculator.option_days_one', hasCount: true })
+      keysMap.set('calculator.option_other', { key: 'calculator.option_other', hasCount: true })
+      keysMap.set('calculator.label', { key: 'calculator.label', defaultValue: 'Label' })
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          sort: true,
+        }
+      }
+
+      const [result] = await getTranslations(keysMap, new Set(), config)
+
+      // Check the nested structure
+      const calculatorKeys = Object.keys(result.newTranslations.calculator)
+
+      expect(calculatorKeys).toEqual([
+        'label',                    // Regular key first
+        'option_one',              // Base option group in canonical order
+        'option_other',
+        'option_days_one',         // Days group in canonical order
+        'option_days_other'
+      ])
+    })
+
+    it('should sort ordinal plurals after cardinal plurals', async () => {
+      const keysMap = new Map<string, any>()
+      // Mix of cardinal and ordinal plurals - English forms only
+      keysMap.set('place_ordinal_other', { key: 'place_ordinal_other', hasCount: true, isOrdinal: true })
+      keysMap.set('place_one', { key: 'place_one', hasCount: true })
+      keysMap.set('place_ordinal_one', { key: 'place_ordinal_one', hasCount: true, isOrdinal: true })
+      keysMap.set('place_other', { key: 'place_other', hasCount: true })
+      keysMap.set('place_ordinal_few', { key: 'place_ordinal_few', hasCount: true, isOrdinal: true })
+      keysMap.set('place_ordinal_two', { key: 'place_ordinal_two', hasCount: true, isOrdinal: true })
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          sort: true,
+        }
+      }
+
+      const [result] = await getTranslations(keysMap, new Set(), config)
+
+      const resultKeys = Object.keys(result.newTranslations)
+
+      // Cardinal plurals should come first, then ordinal plurals
+      expect(resultKeys).toEqual([
+        'place_one',
+        'place_other',
+        'place_ordinal_one',
+        'place_ordinal_two',
+        'place_ordinal_few',
+        'place_ordinal_other'
+      ])
+    })
+
+    it('should work with custom plural separators', async () => {
+      const keysMap = new Map<string, any>()
+      // Using custom separator - English forms only
+      keysMap.set('item-other', { key: 'item-other', hasCount: true })
+      keysMap.set('item-one', { key: 'item-one', hasCount: true })
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          sort: true,
+          pluralSeparator: '-', // Custom separator
+        }
+      }
+
+      const [result] = await getTranslations(keysMap, new Set(), config)
+
+      const resultKeys = Object.keys(result.newTranslations)
+
+      // Should sort in canonical order with custom separator
+      expect(resultKeys).toEqual([
+        'item-one',
+        'item-other'
+      ])
+    })
+
+    it('should preserve alphabetical sorting for non-plural keys while sorting plural groups canonically', async () => {
+      const keysMap = new Map<string, any>()
+      // Mix of regular and plural keys
+      keysMap.set('zebra', { key: 'zebra', defaultValue: 'Zebra' })
+      keysMap.set('item_other', { key: 'item_other', hasCount: true })
+      keysMap.set('apple', { key: 'apple', defaultValue: 'Apple' })
+      keysMap.set('item_one', { key: 'item_one', hasCount: true })
+      keysMap.set('banana', { key: 'banana', defaultValue: 'Banana' })
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          sort: true,
+        }
+      }
+
+      const [result] = await getTranslations(keysMap, new Set(), config)
+
+      const resultKeys = Object.keys(result.newTranslations)
+
+      // Regular keys alphabetically, plural keys grouped and sorted canonically
+      expect(resultKeys).toEqual([
+        'apple',
+        'banana',
+        'item_one',
+        'item_other',
+        'zebra'
+      ])
+    })
+
+    it('should not apply plural sorting when sort is false', async () => {
+      const keysMap = new Map<string, any>()
+      // Add plural keys in non-canonical order
+      keysMap.set('item_other', { key: 'item_other', hasCount: true })
+      keysMap.set('item_one', { key: 'item_one', hasCount: true })
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          sort: false, // Sorting disabled
+        }
+      }
+
+      const [result] = await getTranslations(keysMap, new Set(), config)
+
+      const resultKeys = Object.keys(result.newTranslations)
+
+      // Should preserve insertion order when sorting is disabled
+      expect(resultKeys).toEqual([
+        'item_other',
+        'item_one'
+      ])
+    })
+  })
+
+  describe('optional _zero suffix handling', () => {
+    it('should preserve existing _zero forms when related plural keys are present', async () => {
+      const keysMap = new Map<string, any>()
+      // Only include non-zero plural forms in extracted keys
+      keysMap.set('item_one', { key: 'item_one', hasCount: true })
+      keysMap.set('item_other', { key: 'item_other', hasCount: true })
+
+      // Create existing file with _zero form
+      await vol.promises.mkdir(resolve(process.cwd(), 'locales/en'), { recursive: true })
+      await vol.promises.writeFile(
+        resolve(process.cwd(), 'locales/en/translation.json'),
+        JSON.stringify({
+          item_zero: 'No items',
+          item_one: 'One item',
+          item_other: '{{count}} items'
+        }, null, 2)
+      )
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          sort: true,
+        }
+      }
+
+      const [result] = await getTranslations(keysMap, new Set(), config)
+
+      // Should preserve the existing _zero form
+      expect(result.newTranslations.item_zero).toBe('No items')
+      expect(result.newTranslations.item_one).toBe('One item')
+      expect(result.newTranslations.item_other).toBe('{{count}} items')
+
+      // Check sorting order
+      const resultKeys = Object.keys(result.newTranslations)
+      expect(resultKeys).toEqual(['item_zero', 'item_one', 'item_other'])
+    })
+
+    it('should remove _zero forms when no related plural keys exist', async () => {
+      const keysMap = new Map<string, any>()
+      // Only include unrelated keys
+      keysMap.set('message_one', { key: 'message_one', hasCount: true })
+      keysMap.set('message_other', { key: 'message_other', hasCount: true })
+
+      // Create existing file with _zero form for different base key
+      await vol.promises.mkdir(resolve(process.cwd(), 'locales/en'), { recursive: true })
+      await vol.promises.writeFile(
+        resolve(process.cwd(), 'locales/en/translation.json'),
+        JSON.stringify({
+          item_zero: 'No items',
+          item_one: 'One item',
+          item_other: '{{count}} items',
+          message_one: 'One message',
+          message_other: '{{count}} messages'
+        }, null, 2)
+      )
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          sort: true,
+          removeUnusedKeys: true,
+        }
+      }
+
+      const [result] = await getTranslations(keysMap, new Set(), config)
+
+      // Should NOT preserve item_zero since item_* keys are not extracted
+      expect(result.newTranslations.item_zero).toBeUndefined()
+      expect(result.newTranslations.item_one).toBeUndefined()
+      expect(result.newTranslations.item_other).toBeUndefined()
+
+      // Should keep message keys
+      expect(result.newTranslations.message_one).toBe('One message')
+      expect(result.newTranslations.message_other).toBe('{{count}} messages')
+    })
+
+    it('should handle _zero with context keys correctly', async () => {
+      const keysMap = new Map<string, any>()
+      keysMap.set('item_days_one', { key: 'item_days_one', hasCount: true, context: 'days' })
+      keysMap.set('item_days_other', { key: 'item_days_other', hasCount: true, context: 'days' })
+      keysMap.set('item_one', { key: 'item_one', hasCount: true })
+      keysMap.set('item_other', { key: 'item_other', hasCount: true })
+
+      // Create existing file with _zero forms
+      await vol.promises.mkdir(resolve(process.cwd(), 'locales/en'), { recursive: true })
+      await vol.promises.writeFile(
+        resolve(process.cwd(), 'locales/en/translation.json'),
+        JSON.stringify({
+          item_zero: 'No items',
+          item_one: 'One item',
+          item_other: '{{count}} items',
+          item_days_zero: 'No days',
+          item_days_one: 'One day',
+          item_days_other: '{{count}} days'
+        }, null, 2)
+      )
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          sort: true,
+        }
+      }
+
+      const [result] = await getTranslations(keysMap, new Set(), config)
+
+      // Should preserve both _zero forms
+      expect(result.newTranslations.item_zero).toBe('No items')
+      expect(result.newTranslations.item_days_zero).toBe('No days')
+
+      // Check sorting order
+      const resultKeys = Object.keys(result.newTranslations)
+      expect(resultKeys).toEqual([
+        'item_zero',
+        'item_one',
+        'item_other',
+        'item_days_zero',
+        'item_days_one',
+        'item_days_other'
+      ])
+    })
+
+    it('should handle _zero with custom plural separators', async () => {
+      const keysMap = new Map<string, any>()
+      keysMap.set('count-one', { key: 'count-one', hasCount: true })
+      keysMap.set('count-other', { key: 'count-other', hasCount: true })
+
+      // Create existing file with _zero form using custom separator
+      await vol.promises.mkdir(resolve(process.cwd(), 'locales/en'), { recursive: true })
+      await vol.promises.writeFile(
+        resolve(process.cwd(), 'locales/en/translation.json'),
+        JSON.stringify({
+          'count-zero': 'No count',
+          'count-one': 'One count',
+          'count-other': '{{count}} counts'
+        }, null, 2)
+      )
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          pluralSeparator: '-',
+          sort: true,
+        }
+      }
+
+      const [result] = await getTranslations(keysMap, new Set(), config)
+
+      // Should preserve _zero form with custom separator
+      expect(result.newTranslations['count-zero']).toBe('No count')
+      expect(result.newTranslations['count-one']).toBe('One count')
+      expect(result.newTranslations['count-other']).toBe('{{count}} counts')
+    })
+
+    it('should handle ordinal _zero forms correctly', async () => {
+      const keysMap = new Map<string, any>()
+      keysMap.set('rank_ordinal_one', { key: 'rank_ordinal_one', hasCount: true, isOrdinal: true })
+      keysMap.set('rank_ordinal_other', { key: 'rank_ordinal_other', hasCount: true, isOrdinal: true })
+      keysMap.set('rank_one', { key: 'rank_one', hasCount: true })
+      keysMap.set('rank_other', { key: 'rank_other', hasCount: true })
+
+      // Create existing file with ordinal _zero forms
+      await vol.promises.mkdir(resolve(process.cwd(), 'locales/en'), { recursive: true })
+      await vol.promises.writeFile(
+        resolve(process.cwd(), 'locales/en/translation.json'),
+        JSON.stringify({
+          rank_zero: 'No rank',
+          rank_one: '1st rank',
+          rank_other: '{{count}}th rank',
+          rank_ordinal_zero: 'No ordinal rank',
+          rank_ordinal_one: '1st',
+          rank_ordinal_other: '{{count}}th'
+        }, null, 2)
+      )
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          sort: true,
+        }
+      }
+
+      const [result] = await getTranslations(keysMap, new Set(), config)
+
+      // Should preserve both cardinal and ordinal _zero forms
+      expect(result.newTranslations.rank_zero).toBe('No rank')
+      expect(result.newTranslations.rank_ordinal_zero).toBe('No ordinal rank')
+
+      // Check sorting order: cardinal forms first, then ordinal forms
+      const resultKeys = Object.keys(result.newTranslations)
+      expect(resultKeys).toEqual([
+        'rank_zero',
+        'rank_one',
+        'rank_other',
+        'rank_ordinal_zero',
+        'rank_ordinal_one',
+        'rank_ordinal_other'
+      ])
+    })
+
+    it('should not preserve _zero when removeUnusedKeys is false', async () => {
+      const keysMap = new Map<string, any>()
+      keysMap.set('item_one', { key: 'item_one', hasCount: true })
+      keysMap.set('item_other', { key: 'item_other', hasCount: true })
+
+      // Create existing file with additional keys including _zero
+      await vol.promises.mkdir(resolve(process.cwd(), 'locales/en'), { recursive: true })
+      await vol.promises.writeFile(
+        resolve(process.cwd(), 'locales/en/translation.json'),
+        JSON.stringify({
+          item_zero: 'No items',
+          item_one: 'One item',
+          item_other: '{{count}} items',
+          legacy_key: 'Legacy value'
+        }, null, 2)
+      )
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          removeUnusedKeys: false, // Keep all existing keys
+          sort: true,
+        }
+      }
+
+      const [result] = await getTranslations(keysMap, new Set(), config)
+
+      // Should preserve all existing keys when removeUnusedKeys is false
+      expect(result.newTranslations.item_zero).toBe('No items')
+      expect(result.newTranslations.item_one).toBe('One item')
+      expect(result.newTranslations.item_other).toBe('{{count}} items')
+      expect(result.newTranslations.legacy_key).toBe('Legacy value')
+    })
+
+    it('should handle nested _zero keys correctly', async () => {
+      const keysMap = new Map<string, any>()
+      keysMap.set('dashboard.alerts.count_one', { key: 'dashboard.alerts.count_one', hasCount: true })
+      keysMap.set('dashboard.alerts.count_other', { key: 'dashboard.alerts.count_other', hasCount: true })
+
+      // Create existing file with nested _zero form
+      await vol.promises.mkdir(resolve(process.cwd(), 'locales/en'), { recursive: true })
+      await vol.promises.writeFile(
+        resolve(process.cwd(), 'locales/en/translation.json'),
+        JSON.stringify({
+          dashboard: {
+            alerts: {
+              count_zero: 'No alerts',
+              count_one: 'One alert',
+              count_other: '{{count}} alerts'
+            }
+          }
+        }, null, 2)
+      )
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          sort: true,
+        }
+      }
+
+      const [result] = await getTranslations(keysMap, new Set(), config)
+
+      // Should preserve nested _zero form
+      expect(result.newTranslations.dashboard.alerts.count_zero).toBe('No alerts')
+      expect(result.newTranslations.dashboard.alerts.count_one).toBe('One alert')
+      expect(result.newTranslations.dashboard.alerts.count_other).toBe('{{count}} alerts')
+
+      // Check nested sorting
+      const alertKeys = Object.keys(result.newTranslations.dashboard.alerts)
+      expect(alertKeys).toEqual(['count_zero', 'count_one', 'count_other'])
+    })
+  })
 })

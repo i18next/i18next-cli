@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.2](https://github.com/i18next/i18next-cli/compare/v1.10.1...v1.10.2) - 2025-10-08
+
+### Fixed
+- **Extractor:** Fixed plural form sorting to follow canonical i18next order (zero, one, two, few, many, other) instead of alphabetical sorting. Plural keys are now properly grouped by their base key and sorted within each group according to i18next's pluralization rules, ensuring consistent and predictable translation file structure. For example, `item_other`, `item_one`, `item_zero` now correctly sorts to `item_zero`, `item_one`, `item_other`. [#57](https://github.com/i18next/i18next-cli/issues/57)
+
+### Enhanced  
+- **Extractor:** Added intelligent handling for the optional `_zero` suffix in plural forms. The extractor now preserves existing `_zero` keys when related plural forms are present in the extracted keys, but removes them when no related plurals exist. This aligns with i18next's special handling of `count: 0` scenarios where `_zero` provides more natural language expressions (e.g., "No items" instead of "0 items"), while ensuring unused `_zero` forms don't accumulate in translation files.
+
 ## [1.10.1](https://github.com/i18next/i18next-cli/compare/v1.10.0...v1.10.1) - 2025-10-07
 
 - **Extractor:** Fixed incorrect behavior of the `preservePatterns` option where keys matching the specified patterns were being extracted instead of being excluded from extraction. The option now correctly skips keys that match the glob patterns during both AST-based extraction and comment parsing, preventing re-extraction of keys that already exist in other translation files (e.g., when `BUILDINGS.*` keys exist in `assets.json` but shouldn't be duplicated in `app.json`). This resolves issues where dynamic key references were incorrectly creating duplicate entries in extracted translation files, allowing developers to use patterns like `t('BUILDINGS.ACADEMY.NAME')` directly without workarounds. [#53](https://github.com/i18next/i18next-cli/issues/53)
