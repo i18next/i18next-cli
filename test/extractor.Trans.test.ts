@@ -353,4 +353,19 @@ describe('extractor: advanced Trans features', () => {
       },
     })
   })
+
+  it('should extract variable placeholders from object expressions in Trans components', async () => {
+    const sampleCode = `
+      <Trans i18nKey="greeting">Hello {{name: userName}}, you have {{count: messageCount}} messages</Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      greeting: 'Hello {{name}}, you have {{count}} messages',
+    })
+  })
 })

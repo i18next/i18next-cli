@@ -289,8 +289,12 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
         } else if (expr.type === 'Identifier') {
           out += `{{${expr.value}}}`
         } else if (expr.type === 'ObjectExpression') {
+          // Handle object expressions like {{bar: 1}} -> {{bar}}
           const prop = expr.properties[0]
-          if (prop && prop.type === 'Identifier') {
+          if (prop && prop.type === 'KeyValueProperty' && prop.key && prop.key.type === 'Identifier') {
+            out += `{{${prop.key.value}}}`
+          } else if (prop && prop.type === 'Identifier') {
+            // Handle the case where properties[0] is directly an Identifier
             out += `{{${prop.value}}}`
           }
         }
