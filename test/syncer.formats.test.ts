@@ -57,6 +57,67 @@ describe('syncer: file formats and namespace merging', () => {
     expect(updatedDeContent).toContain('export default')
   })
 
+  it('should correctly sync TypeScript files using the real file system', async () => {
+    // Define paths within our temp directory
+    const enPath = resolve(TEMP_DIR, 'locales/en/index.ts')
+    const dePath = resolve(TEMP_DIR, 'locales/de/index.ts')
+
+    // Mock glob to find the real temp file
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue([enPath])
+
+    // Create the directories and write the real files
+    await mkdir(dirname(enPath), { recursive: true })
+    await mkdir(dirname(dePath), { recursive: true })
+
+    const enContent = `export default {
+  Accordion: {
+    clickToClose: ', click to close details',
+    clickToOpen: ', click to open details',
+  },
+  Button: {
+    save: 'Save',
+    cancel: 'Cancel',
+  },
+} as const;`
+
+    const deContent = `export default {
+  Accordion: {
+    clickToClose: ', klicken zum Schließen',
+    clickToOpen: ', klicken zum Öffnen',
+  },
+} as const;`
+
+    await writeFile(enPath, enContent)
+    await writeFile(dePath, deContent)
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: `${TEMP_DIR}/locales/{{language}}/{{namespace}}.ts`,
+        outputFormat: 'ts',
+        defaultNS: 'index',
+      },
+    }
+
+    await runSyncer(config)
+
+    // Read the updated file from the real file system
+    const updatedDeContent = await readFile(dePath, 'utf-8')
+
+    // Should contain the missing keys with empty values (checking for JSON format)
+    expect(updatedDeContent).toContain('Button')
+    expect(updatedDeContent).toContain('"save": ""')
+    expect(updatedDeContent).toContain('"cancel": ""')
+    // Should preserve existing translations
+    expect(updatedDeContent).toContain('"clickToClose": ", klicken zum Schließen"')
+    expect(updatedDeContent).toContain('"clickToOpen": ", klicken zum Öffnen"')
+    // Should maintain TypeScript format
+    expect(updatedDeContent).toContain('export default')
+    expect(updatedDeContent).toContain('as const')
+  })
+
   it('should correctly sync merged namespace files', async () => {
     const enPath = resolve(TEMP_DIR, 'locales/en.json')
     const dePath = resolve(TEMP_DIR, 'locales/de.json')

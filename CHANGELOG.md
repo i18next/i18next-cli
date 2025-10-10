@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.4](https://github.com/i18next/i18next-cli/compare/v1.10.3...v1.10.4) - 2025-10-10
+
+- **Syncer:** Fixed `sync` command failure when using TypeScript resource files with `outputFormat: 'ts'`. The syncer now properly loads and parses TypeScript translation files (e.g., `export default { ... } as const`) using jiti with TypeScript path alias support, enabling seamless synchronization across all supported file formats. [#59](https://github.com/i18next/i18next-cli/issues/59)
+
 ## [1.10.3](https://github.com/i18next/i18next-cli/compare/v1.10.2...v1.10.3) - 2025-10-08
 
 - **Extractor (`<Trans>`):** Fixed variable placeholder extraction from object expressions in Trans components. Previously, expressions like `<Trans>Hello {{name: userName}}</Trans>` would lose the variable placeholder and extract as `"Hello "` instead of `"Hello {{name}}"`. The JSX children serializer now correctly handles both simple identifiers (`{{name}}`) and object expressions (`{{name: value}}`) to preserve variable placeholders in the extracted translation keys. [#58](https://github.com/i18next/i18next-cli/issues/58)

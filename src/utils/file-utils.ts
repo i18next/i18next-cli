@@ -1,7 +1,8 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
+import { dirname, extname } from 'node:path'
 import { createJiti } from 'jiti'
 import type { I18nextToolkitConfig } from '../types'
+import { getTsConfigAliases } from '../config'
 
 /**
  * Ensures that the directory for a given file path exists.
@@ -89,19 +90,47 @@ export function getOutputPath (
  */
 export async function loadTranslationFile (filePath: string): Promise<Record<string, any> | null> {
   try {
-    if (filePath.endsWith('.json')) {
+    // Check if file exists first
+    await access(filePath)
+  } catch {
+    return null // File doesn't exist
+  }
+
+  try {
+    const ext = extname(filePath).toLowerCase()
+
+    if (ext === '.json') {
       const content = await readFile(filePath, 'utf-8')
       return JSON.parse(content)
-    } else if (filePath.endsWith('.ts') || filePath.endsWith('.js')) {
-      const jiti = createJiti(import.meta.url)
-      const module = await jiti.import(filePath, { default: true })
-      return module as Record<string, any> | null
+    } else if (ext === '.ts' || ext === '.js') {
+      // Load TypeScript path aliases for proper module resolution
+      const aliases = await getTsConfigAliases()
+
+      const jiti = createJiti(import.meta.url, {
+        alias: aliases,
+        interopDefault: true,
+      })
+
+      const module = await jiti.import(filePath) as any
+
+      // Handle different export patterns
+      if (module && typeof module === 'object') {
+        // If module.default exists, use it
+        if ('default' in module && module.default !== undefined) {
+          return module.default
+        }
+        // Otherwise, use the module itself (might be a CommonJS export)
+        return module
+      }
+
+      return null
     }
-  } catch (e) {
-    // File not found or parse error
+
+    return null // Unsupported file type
+  } catch (error) {
+    console.warn(`Could not parse translation file ${filePath}:`, error)
     return null
   }
-  return null
 }
 
 /**
