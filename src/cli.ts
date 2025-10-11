@@ -29,30 +29,27 @@ program
   .option('-w, --watch', 'Watch for file changes and re-run the extractor.')
   .option('--ci', 'Exit with a non-zero status code if any files are updated.')
   .option('--dry-run', 'Run the extractor without writing any files to disk.')
+  .option('--sync-primary', 'Sync primary language values with default values from code.')
   .action(async (options) => {
-    const config = await ensureConfig()
+    try {
+      const config = await ensureConfig()
 
-    const run = async () => {
-      const filesWereUpdated = await runExtractor(config, { isWatchMode: options.watch, isDryRun: options.dryRun })
-      if (options.ci && filesWereUpdated) {
-        console.error(chalk.red.bold('\n[CI Mode] Error: Translation files were updated. Please commit the changes.'))
-        console.log(chalk.yellow('💡 Tip: Tired of committing JSON files? locize syncs your team automatically => https://www.locize.com/docs/getting-started'))
-        console.log(`   Learn more: ${chalk.cyan('npx i18next-cli locize-sync')}`)
+      const success = await runExtractor(config, {
+        isWatchMode: !!options.watch,
+        isDryRun: !!options.dryRun,
+        syncPrimaryWithDefaults: !!options.syncPrimary
+      })
+
+      if (options.ci && !success) {
+        console.log('✅ No files were updated.')
+        process.exit(0)
+      } else if (options.ci && success) {
+        console.error('❌ Some files were updated. This should not happen in CI mode.')
         process.exit(1)
       }
-    }
-    await run()
-
-    if (options.watch) {
-      console.log('\nWatching for changes...')
-      const watcher = chokidar.watch(await glob(config.extract.input), {
-        ignored: /node_modules/,
-        persistent: true,
-      })
-      watcher.on('change', path => {
-        console.log(`\nFile changed: ${path}`)
-        run()
-      })
+    } catch (error) {
+      console.error('Error running extractor:', error)
+      process.exit(1)
     }
   })
 

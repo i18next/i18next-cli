@@ -112,6 +112,7 @@ npx i18next-cli extract [options]
 - `--watch, -w`: Re-run automatically when files change
 - `--ci`: Exit with non-zero status if any files are updated (for CI/CD)
 - `--dry-run`: Does not change any files - useful in combination with `--ci` (for CI/CD)
+- `--sync-primary`: Sync primary language values with default values from code
 
 **Examples:**
 ```bash
@@ -123,6 +124,12 @@ npx i18next-cli extract --watch
 
 # CI mode (fails if files changed)
 npx i18next-cli extract --ci
+
+# Sync primary language with code defaults
+npx i18next-cli extract --sync-primary
+
+# Combine options for optimal development workflow
+npx i18next-cli extract --sync-primary --watch
 ```
 
 ### `status [locale]`

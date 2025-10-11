@@ -131,4 +131,26 @@ describe('CLI command parsing and dispatching', () => {
       expect.objectContaining({ dryRun: true, updateValues: true })
     )
   })
+
+  it('should parse the "extract --sync-primary" command and pass syncPrimaryWithDefaults option', async () => {
+    vi.resetModules()
+    process.argv = ['node', 'cli.ts', 'extract', '--sync-primary']
+
+    mockEnsureConfig.mockResolvedValue(validMockConfig)
+    mockRunExtractor.mockResolvedValue(false)
+
+    await import('../src/cli')
+
+    // Allow async operations in the action handler to complete
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockRunExtractor).toHaveBeenCalledWith(
+      validMockConfig,
+      expect.objectContaining({
+        isWatchMode: false,
+        isDryRun: false,
+        syncPrimaryWithDefaults: true
+      })
+    )
+  })
 })

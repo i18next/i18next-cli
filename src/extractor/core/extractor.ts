@@ -43,10 +43,12 @@ export async function runExtractor (
   config: I18nextToolkitConfig,
   {
     isWatchMode = false,
-    isDryRun = false
+    isDryRun = false,
+    syncPrimaryWithDefaults = false
   }: {
     isWatchMode?: boolean,
     isDryRun?: boolean,
+    syncPrimaryWithDefaults?: boolean,
   } = {},
   logger: Logger = new ConsoleLogger()
 ): Promise<boolean> {
@@ -67,7 +69,7 @@ export async function runExtractor (
     const { allKeys, objectKeys } = await findKeys(config, logger)
     spinner.text = `Found ${allKeys.size} unique keys. Updating translation files...`
 
-    const results = await getTranslations(allKeys, objectKeys, config)
+    const results = await getTranslations(allKeys, objectKeys, config, { syncPrimaryWithDefaults })
 
     let anyFileUpdated = false
     for (const result of results) {
@@ -188,13 +190,13 @@ export async function processFile (
  * }
  * ```
  */
-export async function extract (config: I18nextToolkitConfig) {
+export async function extract (config: I18nextToolkitConfig, { syncPrimaryWithDefaults = false }: { syncPrimaryWithDefaults?: boolean } = {}) {
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
   config.extract.functions ||= ['t', '*.t']
   config.extract.transComponents ||= ['Trans']
   const { allKeys, objectKeys } = await findKeys(config)
-  return getTranslations(allKeys, objectKeys, config)
+  return getTranslations(allKeys, objectKeys, config, { syncPrimaryWithDefaults })
 }
 
 /**
