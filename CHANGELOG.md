@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.1](https://github.com/i18next/i18next-cli/compare/v1.11.0...v1.11.1) - 2025-10-12
+
+- **Syncer:** Enhanced fix for TypeScript resource file handling in `sync` command. Building on the initial fix in v1.10.4 that resolved sync command failures with `outputFormat: 'ts'`, this release improves the TypeScript file parsing reliability and error handling when loading translation files with complex export patterns and TypeScript-specific syntax. [#59](https://github.com/i18next/i18next-cli/issues/59)
+
 ## [1.11.0](https://github.com/i18next/i18next-cli/compare/v1.10.4...v1.11.0) - 2025-10-11
 
 - **Extractor:** Introduced `--sync-primary` CLI option to automatically synchronize primary language values with default values from code. When enabled, the extractor updates existing primary language translations to match the default values specified in your source code (e.g., `t('key', 'New default')` will update the primary language JSON), while preserving secondary language translations and keys without explicit defaults. This enables a streamlined development workflow where developers can focus on editing translation defaults directly in code without manually managing JSON files. Perfect for rapid prototyping and watch mode development. [#60](https://github.com/i18next/i18next-cli/issues/60)

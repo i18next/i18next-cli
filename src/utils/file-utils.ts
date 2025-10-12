@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
-import { dirname, extname } from 'node:path'
+import { dirname, extname, resolve } from 'node:path'
 import { createJiti } from 'jiti'
 import type { I18nextToolkitConfig } from '../types'
 import { getTsConfigAliases } from '../config'
@@ -89,41 +89,30 @@ export function getOutputPath (
  * @returns The parsed content of the file, or null if not found or failed to parse.
  */
 export async function loadTranslationFile (filePath: string): Promise<Record<string, any> | null> {
+  const fullPath = resolve(process.cwd(), filePath)
   try {
-    // Check if file exists first
-    await access(filePath)
+    await access(fullPath)
   } catch {
     return null // File doesn't exist
   }
 
   try {
-    const ext = extname(filePath).toLowerCase()
+    const ext = extname(fullPath).toLowerCase()
 
     if (ext === '.json') {
-      const content = await readFile(filePath, 'utf-8')
+      const content = await readFile(fullPath, 'utf-8')
       return JSON.parse(content)
     } else if (ext === '.ts' || ext === '.js') {
       // Load TypeScript path aliases for proper module resolution
       const aliases = await getTsConfigAliases()
 
-      const jiti = createJiti(import.meta.url, {
+      const jiti = createJiti(process.cwd(), {
         alias: aliases,
         interopDefault: true,
       })
 
-      const module = await jiti.import(filePath) as any
-
-      // Handle different export patterns
-      if (module && typeof module === 'object') {
-        // If module.default exists, use it
-        if ('default' in module && module.default !== undefined) {
-          return module.default
-        }
-        // Otherwise, use the module itself (might be a CommonJS export)
-        return module
-      }
-
-      return null
+      const module = await jiti.import(fullPath, { default: true }) as unknown
+      return module as Record<string, any> | null
     }
 
     return null // Unsupported file type
