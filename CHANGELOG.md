@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.3](https://github.com/i18next/i18next-cli/compare/v1.11.2...v1.11.3) - 2025-10-13
+
+- **Extractor:** Fixed the `--watch` flag being ignored in the `extract` command. The watch mode now properly monitors source files for changes and re-runs extraction automatically, matching the behavior of other commands like `types` and `lint`. [#62](https://github.com/i18next/i18next-cli/issues/62)
+
 ## [1.11.2](https://github.com/i18next/i18next-cli/compare/v1.11.1...v1.11.2) - 2025-10-13
 
 - **Extractor (`--sync-primary`):** Fixed critical bug where keys without explicit defaultValue were being overwritten with empty strings when using the `--sync-primary` flag. The `syncPrimaryWithDefaults` feature now correctly distinguishes between explicit default values provided in code (e.g., `t('key', 'New default')`) and derived defaults (e.g., when defaultValue equals the key name). Keys without explicit defaults now preserve their existing translations in the primary language, while only keys with meaningful code-specified defaults are updated. This ensures the feature works as intended for incremental translation updates without destroying existing content. [#61](https://github.com/i18next/i18next-cli/issues/61)

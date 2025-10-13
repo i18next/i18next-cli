@@ -34,18 +34,38 @@ program
     try {
       const config = await ensureConfig()
 
-      const success = await runExtractor(config, {
-        isWatchMode: !!options.watch,
-        isDryRun: !!options.dryRun,
-        syncPrimaryWithDefaults: !!options.syncPrimary
-      })
+      const runExtract = async () => {
+        const success = await runExtractor(config, {
+          isWatchMode: !!options.watch,
+          isDryRun: !!options.dryRun,
+          syncPrimaryWithDefaults: !!options.syncPrimary
+        })
 
-      if (options.ci && !success) {
-        console.log('✅ No files were updated.')
-        process.exit(0)
-      } else if (options.ci && success) {
-        console.error('❌ Some files were updated. This should not happen in CI mode.')
-        process.exit(1)
+        if (options.ci && !success) {
+          console.log('✅ No files were updated.')
+          process.exit(0)
+        } else if (options.ci && success) {
+          console.error('❌ Some files were updated. This should not happen in CI mode.')
+          process.exit(1)
+        }
+
+        return success
+      }
+
+      // Run the extractor once initially
+      await runExtract()
+
+      // If in watch mode, set up the chokidar watcher
+      if (options.watch) {
+        console.log('\nWatching for changes...')
+        const watcher = chokidar.watch(await glob(config.extract.input), {
+          ignored: /node_modules/,
+          persistent: true,
+        })
+        watcher.on('change', path => {
+          console.log(`\nFile changed: ${path}`)
+          runExtract()
+        })
       }
     } catch (error) {
       console.error('Error running extractor:', error)
