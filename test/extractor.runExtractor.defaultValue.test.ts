@@ -841,8 +841,7 @@ describe('runExtractor: defaultValue option', () => {
 
   it('should extract translations with context and pluralization', async () => {
     const sampleCode = `
-      t('item.count', 'You have {{count}} item', { count: 1 });
-      t('item.count', 'You have {{count}} items', { count: 2 });
+      t('item.count', { count: 1, defaultValue_one: 'You have {{count}} item', defaultValue_other: 'You have {{count}} items' });
       t('greeting', 'Hello', { context: 'formal' });
       t('greeting', 'Hi', { context: 'informal' });
     `
@@ -889,8 +888,8 @@ describe('runExtractor: defaultValue option', () => {
       greeting_formal: 'Hello', // Context variants
       greeting_informal: 'Hi',
       item: {
-        count_one: 'You have {{count}} item', // Should use the actual default value for singular
-        count_other: 'You have {{count}} items', // Should use the actual default value for plural
+        count_one: 'You have {{count}} item', // Uses specific defaultValue_one
+        count_other: 'You have {{count}} items', // Uses specific defaultValue_other
       },
     })
   })

@@ -175,4 +175,458 @@ describe('extractor: runExtractor (sync primary language defaults)', () => {
       }
     })
   })
+
+  it('should preserve existing plural keys when syncPrimaryWithDefaults is true and no defaultValue is provided', async () => {
+    // This test reproduces issue #61
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        
+        // Plural key without defaultValue - should preserve existing plurals
+        export const getMessage = t('Hello.multiple', { count: 2 })
+        
+        // Regular key with defaultValue - should be updated
+        const title = t('app.title', 'New Title')
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        Hello: {
+          multiple_one: 'Hello {count} time',
+          multiple_other: 'Hello {count} times'
+        },
+        app: {
+          title: 'Old Title'
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      Hello: {
+        multiple_one: 'Hello {count} time',   // Should be preserved (no code default)
+        multiple_other: 'Hello {count} times' // Should be preserved (no code default)
+      },
+      app: {
+        title: 'New Title' // Should be updated (has code default)
+      }
+    })
+  })
+
+  it('should preserve existing plural keys across all locales when no defaultValue is provided', async () => {
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        export const getMessage = t('Hello.multiple', { count: 2 })
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        Hello: {
+          multiple_one: 'Hello {count} time',
+          multiple_other: 'Hello {count} times'
+        }
+      }, null, 2),
+      [dePath]: JSON.stringify({
+        Hello: {
+          multiple_one: 'Hallo {count} Mal',
+          multiple_other: 'Hallo {count} Mal'
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(false) // No changes should be made since we're preserving existing values
+
+    // Both languages should preserve their plural forms
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      Hello: {
+        multiple_one: 'Hello {count} time',
+        multiple_other: 'Hello {count} times'
+      }
+    })
+
+    const deContent = JSON.parse(vol.readFileSync(dePath, 'utf8') as string)
+    expect(deContent).toEqual({
+      Hello: {
+        multiple_one: 'Hallo {count} Mal',
+        multiple_other: 'Hallo {count} Mal'
+      }
+    })
+  })
+
+  it('should update plural keys when defaultValue is explicitly provided in code', async () => {
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        
+        // Plural with explicit defaultValue - should update primary
+        export const getMessage = t('Hello.multiple', 'Updated default', { count: 2 })
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        Hello: {
+          multiple_one: 'Hello {count} time',
+          multiple_other: 'Hello {count} times'
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      Hello: {
+        multiple_one: 'Updated default',
+        multiple_other: 'Updated default'
+      }
+    })
+  })
+
+  it('should preserve context variant keys when no defaultValue is provided', async () => {
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        
+        // Context key without defaultValue - should preserve existing variants
+        export const getGreeting = t('greeting', { context: 'formal' })
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        greeting_formal: 'Good day',
+        greeting_informal: 'Hey there'
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      greeting_formal: 'Good day',
+      greeting_informal: 'Hey there'
+    })
+  })
+
+  it('should preserve nested plural keys when no defaultValue is provided', async () => {
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        export const getItemCount = t('items.found', { count: 5 })
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        items: {
+          found_one: '{{count}} item found',
+          found_other: '{{count}} items found',
+          title: 'My Items'
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      items: {
+        found_one: '{{count}} item found',
+        found_other: '{{count}} items found',
+        // Note: 'title' should be removed if removeUnusedKeys is true, but our mock config has it as false
+        title: 'My Items'
+      }
+    })
+  })
+
+  it('should handle mixed plural and non-plural keys correctly with syncPrimaryWithDefaults', async () => {
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        
+        // Plural without defaultValue - should preserve
+        const itemCount = t('items.count', { count: 5 })
+        
+        // Regular key with defaultValue - should update
+        const welcome = t('welcome.message', 'Welcome to our app!')
+        
+        // Regular key without defaultValue - should preserve
+        const goodbye = t('goodbye.message')
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        items: {
+          count_one: 'Found {{count}} item',
+          count_other: 'Found {{count}} items'
+        },
+        welcome: {
+          message: 'Old welcome message'
+        },
+        goodbye: {
+          message: 'Existing goodbye message'
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      items: {
+        count_one: 'Found {{count}} item',    // Preserved (no code default)
+        count_other: 'Found {{count}} items'  // Preserved (no code default)
+      },
+      welcome: {
+        message: 'Welcome to our app!'        // Updated (has code default)
+      },
+      goodbye: {
+        message: 'Existing goodbye message'   // Preserved (no code default)
+      }
+    })
+  })
+
+  it('should handle ordinal plurals correctly when no defaultValue is provided', async () => {
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        
+        // Ordinal plural without defaultValue - should preserve existing
+        const position = t('ranking.position', { ordinal: true, count: 3 })
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        ranking: {
+          position_ordinal_one: '{{count}}st place',
+          position_ordinal_two: '{{count}}nd place',
+          position_ordinal_few: '{{count}}rd place',
+          position_ordinal_other: '{{count}}th place'
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      ranking: {
+        position_ordinal_one: '{{count}}st place',
+        position_ordinal_two: '{{count}}nd place',
+        position_ordinal_few: '{{count}}rd place',
+        position_ordinal_other: '{{count}}th place'
+      }
+    })
+  })
+
+  it('should handle context + plural combinations when no defaultValue is provided', async () => {
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        
+        // Context + plural without defaultValue - should preserve existing
+        const notification = t('notifications.new', { context: 'email', count: 3 })
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        notifications: {
+          new_email_one: 'You have {{count}} new email',
+          new_email_other: 'You have {{count}} new emails',
+          new_sms_one: 'You have {{count}} new SMS',
+          new_sms_other: 'You have {{count}} new SMS messages'
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      notifications: {
+        new_email_one: 'You have {{count}} new email',
+        new_email_other: 'You have {{count}} new emails',
+        new_sms_one: 'You have {{count}} new SMS',
+        new_sms_other: 'You have {{count}} new SMS messages'
+      }
+    })
+  })
+
+  it('should preserve existing translations when extracting new keys without defaults', async () => {
+    // This test ensures that when new keys are found in code but existing keys are not touched
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        
+        // New key without defaultValue
+        const newKey = t('new.feature')
+        
+        // Existing plural without defaultValue
+        const existingPlural = t('existing.count', { count: 2 })
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        existing: {
+          count_one: 'One item',
+          count_other: '{{count}} items'
+        },
+        old: {
+          unused: 'This should be removed if removeUnusedKeys was true'
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true) // Changes are made because new key is added
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      new: {
+        feature: ''  // New key gets empty default since no defaultValue provided
+      },
+      existing: {
+        count_one: 'One item',      // Preserved (no code default)
+        count_other: '{{count}} items' // Preserved (no code default)
+      },
+      old: {
+        unused: 'This should be removed if removeUnusedKeys was true' // Preserved because removeUnusedKeys is false
+      }
+    })
+  })
+
+  it('should handle partial plural forms when some exist and some don\'t', async () => {
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        
+        // Plural key that only has some forms in existing translations
+        const partial = t('messages.unread', { count: 5 })
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        messages: {
+          unread_one: 'One unread message',
+          // missing unread_other - should be generated with empty default
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      messages: {
+        unread_one: 'One unread message', // Preserved existing
+        unread_other: ''  // Generated with empty default since no code defaultValue
+      }
+    })
+  })
+
+  it('should handle deeply nested keys with plurals correctly', async () => {
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        
+        // Deeply nested plural without defaultValue
+        const result = t('features.search.results.found', { count: 10 })
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        features: {
+          search: {
+            results: {
+              found_one: 'Found {{count}} result',
+              found_other: 'Found {{count}} results'
+            }
+          }
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      features: {
+        search: {
+          results: {
+            found_one: 'Found {{count}} result',
+            found_other: 'Found {{count}} results'
+          }
+        }
+      }
+    })
+  })
 })

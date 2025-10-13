@@ -29,7 +29,7 @@ function sortObject (obj: any, config?: I18nextToolkitConfig): any {
 
   // Define the canonical order for plural forms
   const pluralOrder = ['zero', 'one', 'two', 'few', 'many', 'other']
-  const ordinalPluralOrder = pluralOrder.map(form => `ordinal_${form}`)
+  const ordinalPluralOrder = pluralOrder.map(form => `ordinal${pluralSeparator}${form}`)
 
   const keys = Object.keys(obj).sort((a, b) => {
     // Helper function to extract base key and form info
@@ -118,6 +118,7 @@ function buildNewTranslationsForNs (
     primaryLanguage,
     defaultValue: emptyDefaultValue = '',
     pluralSeparator = '_',
+    contextSeparator = '_',
   } = config.extract
 
   // Get the plural categories for the target language
@@ -227,17 +228,45 @@ function buildNewTranslationsForNs (
 
     let valueToSet: string
     if (existingValue === undefined || isStaleObject) {
+      // New key or stale object - determine what value to use
       if (locale === primaryLanguage) {
-        valueToSet = defaultValue || key
+        if (syncPrimaryWithDefaults) {
+          // When syncPrimaryWithDefaults is true:
+          // - Use defaultValue if it exists and is meaningful (not derived from key pattern)
+          // - Otherwise use empty string for new keys
+          const isDerivedDefault = defaultValue && (
+            defaultValue === key || // Exact match
+            // For variant keys (plural/context), check if defaultValue is the base
+            (key !== defaultValue &&
+            (key.startsWith(defaultValue + pluralSeparator) ||
+              key.startsWith(defaultValue + contextSeparator)))
+          )
+
+          valueToSet = (defaultValue && !isDerivedDefault) ? defaultValue : resolveDefaultValue(emptyDefaultValue, key, namespace, locale)
+        } else {
+          // syncPrimaryWithDefaults is false - use original behavior
+          valueToSet = defaultValue || key
+        }
       } else {
-        // For secondary languages, use the resolved default value
+        // For secondary languages, always use empty string
         valueToSet = resolveDefaultValue(emptyDefaultValue, key, namespace, locale)
       }
     } else {
-      // Check CLI flag for syncing primary language with code defaults
-      if (locale === primaryLanguage && syncPrimaryWithDefaults && defaultValue && defaultValue !== key) {
-        valueToSet = defaultValue
+      // Existing value exists - decide whether to preserve or sync
+      if (locale === primaryLanguage && syncPrimaryWithDefaults) {
+        // For primary language with syncPrimaryWithDefaults enabled:
+        // Only update if we have a meaningful defaultValue that's not derived from key pattern
+        const isDerivedDefault = defaultValue && (
+          defaultValue === key || // Exact match
+          // For variant keys (plural/context), check if defaultValue is the base
+          (key !== defaultValue &&
+          (key.startsWith(defaultValue + pluralSeparator) ||
+            key.startsWith(defaultValue + contextSeparator)))
+        )
+
+        valueToSet = (defaultValue && !isDerivedDefault) ? defaultValue : existingValue
       } else {
+        // Not primary language or not syncing - always preserve existing
         valueToSet = existingValue
       }
     }

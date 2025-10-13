@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.2](https://github.com/i18next/i18next-cli/compare/v1.11.1...v1.11.2) - 2025-10-13
+
+- **Extractor (`--sync-primary`):** Fixed critical bug where keys without explicit defaultValue were being overwritten with empty strings when using the `--sync-primary` flag. The `syncPrimaryWithDefaults` feature now correctly distinguishes between explicit default values provided in code (e.g., `t('key', 'New default')`) and derived defaults (e.g., when defaultValue equals the key name). Keys without explicit defaults now preserve their existing translations in the primary language, while only keys with meaningful code-specified defaults are updated. This ensures the feature works as intended for incremental translation updates without destroying existing content. [#61](https://github.com/i18next/i18next-cli/issues/61)
+- **Extractor (AST):** Fixed inconsistent defaultValue generation for plural keys where different plural forms of the same base key could receive different default values during AST extraction. All plural forms now correctly inherit the same explicit defaultValue from the `t()` call's second argument.
+- **Extractor (AST):** Fixed context+plural combinations generating unwanted base plural keys. When extracting keys with static context (e.g., `t('notifications.new', { context: 'email', count: 3 })`), the extractor now only generates context-specific plural forms (`notifications.new_email_one`, `notifications.new_email_other`) without creating redundant base plural forms (`notifications.new_one`, `notifications.new_other`).
+
 ## [1.11.1](https://github.com/i18next/i18next-cli/compare/v1.11.0...v1.11.1) - 2025-10-12
 
 - **Syncer:** Enhanced fix for TypeScript resource file handling in `sync` command. Building on the initial fix in v1.10.4 that resolved sync command failures with `outputFormat: 'ts'`, this release improves the TypeScript file parsing reliability and error handling when loading translation files with complex export patterns and TypeScript-specific syntax. [#59](https://github.com/i18next/i18next-cli/issues/59)

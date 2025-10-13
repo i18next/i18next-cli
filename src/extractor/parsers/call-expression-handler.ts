@@ -367,20 +367,6 @@ export class CallExpressionHandler {
       const otherDefault = getObjectPropValue(options, `defaultValue${pluralSeparator}other`)
       const ordinalOtherDefault = getObjectPropValue(options, `defaultValue${pluralSeparator}ordinal${pluralSeparator}other`)
 
-      // Get the count value and determine target category if available
-      const countValue = getObjectPropValue(options, 'count')
-      let targetCategory: string | undefined
-
-      if (typeof countValue === 'number') {
-        try {
-          const primaryLanguage = this.config.extract?.primaryLanguage || this.config.locales[0] || 'en'
-          const pluralRules = new Intl.PluralRules(primaryLanguage, { type })
-          targetCategory = pluralRules.select(countValue)
-        } catch (e) {
-          // If we can't determine the category, continue with normal logic
-        }
-      }
-
       // Handle context - both static and dynamic
       const contextProp = getObjectProperty(options, 'context')
       const keysToGenerate: Array<{ key: string, context?: string }> = []
@@ -390,17 +376,27 @@ export class CallExpressionHandler {
         const contextValues = this.expressionResolver.resolvePossibleContextStringValues(contextProp.value)
 
         if (contextValues.length > 0) {
-          // Generate keys for each context value
-          for (const contextValue of contextValues) {
-            if (contextValue.length > 0) {
-              keysToGenerate.push({ key, context: contextValue })
+          // For static context (string literal), only generate context variants
+          if (contextProp.value.type === 'StringLiteral') {
+            // Only generate context-specific plural forms, no base forms
+            for (const contextValue of contextValues) {
+              if (contextValue.length > 0) {
+                keysToGenerate.push({ key, context: contextValue })
+              }
             }
-          }
+          } else {
+            // For dynamic context, generate context variants AND base forms
+            for (const contextValue of contextValues) {
+              if (contextValue.length > 0) {
+                keysToGenerate.push({ key, context: contextValue })
+              }
+            }
 
-          // For dynamic context, also generate base plural forms if generateBasePluralForms is not disabled
-          const shouldGenerateBaseForms = this.config.extract?.generateBasePluralForms !== false
-          if (shouldGenerateBaseForms) {
-            keysToGenerate.push({ key })
+            // Only generate base plural forms if generateBasePluralForms is not disabled
+            const shouldGenerateBaseForms = this.config.extract?.generateBasePluralForms !== false
+            if (shouldGenerateBaseForms) {
+              keysToGenerate.push({ key })
+            }
           }
         } else {
           // Couldn't resolve context, fall back to base key only
@@ -418,21 +414,31 @@ export class CallExpressionHandler {
           const specificDefaultKey = isOrdinal ? `defaultValue${pluralSeparator}ordinal${pluralSeparator}${category}` : `defaultValue${pluralSeparator}${category}`
           const specificDefault = getObjectPropValue(options, specificDefaultKey)
 
-          // 2. Determine the final default value using a clear fallback chain
+          // 2. Determine the final default value using the ORIGINAL fallback chain with corrections
           let finalDefaultValue: string | undefined
           if (typeof specificDefault === 'string') {
+            // Most specific: defaultValue_one, defaultValue_ordinal_other, etc.
             finalDefaultValue = specificDefault
           } else if (category === 'one' && typeof defaultValue === 'string') {
+            // For "one" category, prefer the general defaultValue
             finalDefaultValue = defaultValue
+          } else if (category === 'one' && typeof defaultValueFromCall === 'string') {
+            // For "one" category, also consider defaultValueFromCall
+            finalDefaultValue = defaultValueFromCall
           } else if (isOrdinal && typeof ordinalOtherDefault === 'string') {
+            // For ordinals (non-one categories), fall back to ordinal_other
             finalDefaultValue = ordinalOtherDefault
           } else if (!isOrdinal && typeof otherDefault === 'string') {
+            // For cardinals (non-one categories), fall back to _other
             finalDefaultValue = otherDefault
           } else if (typeof defaultValue === 'string') {
+            // General defaultValue as fallback
             finalDefaultValue = defaultValue
-          } else if (defaultValueFromCall && targetCategory === category) {
+          } else if (typeof defaultValueFromCall === 'string') {
+            // defaultValueFromCall as fallback
             finalDefaultValue = defaultValueFromCall
           } else {
+            // Final fallback to the base key itself
             finalDefaultValue = baseKey
           }
 
