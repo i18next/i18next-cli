@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.4](https://github.com/i18next/i18next-cli/compare/v1.11.3...v1.11.4) - 2025-10-15
+
+- **Extractor:** Ignore formatting-only JSXText nodes that contain only whitespace/newlines when serializing `<Trans>` children. This prevents inflated component placeholder indexes caused by indentation/newlines while preserving intentional spaces (e.g. `{' '}`). Resulting keys now match react-i18next runtime normalization. See [#63](https://github.com/i18next/i18next-cli/issues/63).
+
 ## [1.11.3](https://github.com/i18next/i18next-cli/compare/v1.11.2...v1.11.3) - 2025-10-13
 
 - **Extractor:** Fixed the `--watch` flag being ignored in the `extract` command. The watch mode now properly monitors source files for changes and re-runs extraction automatically, matching the behavior of other commands like `types` and `lint`. [#62](https://github.com/i18next/i18next-cli/issues/62)

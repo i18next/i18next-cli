@@ -368,4 +368,32 @@ describe('extractor: advanced Trans features', () => {
       greeting: 'Hello {{name}}, you have {{count}} messages',
     })
   })
+
+  it('should ignore boundary whitespace-only JSXText nodes so component indexes start at first meaningful child', async () => {
+    const sampleCode = `
+      <Trans i18nKey={'ticket_received_msg'} count={1}>
+        <span className="font-extrabold">
+          {{ username: item.userName }}
+        </span>{' '}
+        got{' '}
+        <span className="font-extrabold text-brand">
+          {{ count: 1 }}
+        </span>{' '}
+        ticket
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue = '<0>{{username}}</0> got <2>{{count}}</2> ticket'
+
+    expect(translationFile!.newTranslations).toEqual({
+      ticket_received_msg_one: expectedDefaultValue,
+      ticket_received_msg_other: expectedDefaultValue,
+    })
+  })
 })

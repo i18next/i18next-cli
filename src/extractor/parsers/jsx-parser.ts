@@ -270,6 +270,57 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
 function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): string {
   const allowedTags = new Set(config.extract.transKeepBasicHtmlNodesFor ?? ['br', 'strong', 'i', 'p'])
 
+  // Remove formatting-only JSXText nodes (those that are entirely whitespace and
+  // contain newlines). These are introduced by pretty-printing/indentation and
+  // should not affect component indexing. Keep single-space text and explicit
+  // {' '} expression containers.
+  function normalizeChildren (nodes: any[]): any[] {
+    if (!nodes || !nodes.length) return []
+
+    // 1) Remove purely formatting whitespace nodes (those that are whitespace-only and include newlines)
+    const filtered = nodes.filter(n => {
+      if (!n) return false
+      if (n.type === 'JSXText' && /^\s*$/.test(n.value) && n.value.includes('\n')) return false
+      return true
+    })
+
+    // 2) Convert explicit {' '} expression containers into text nodes so they can be merged
+    const converted = filtered.map(n => {
+      if (n.type === 'JSXExpressionContainer' && n.expression?.type === 'StringLiteral') {
+        return { type: 'JSXText', value: n.expression.value }
+      }
+      return n
+    })
+
+    // 3) Collapse consecutive text-like nodes into a single JSXText node and normalize whitespace
+    const collapsed: any[] = []
+    for (const n of converted) {
+      if (n.type === 'JSXText') {
+        const last = collapsed[collapsed.length - 1]
+        if (last && last.type === 'JSXText') {
+          last.value = last.value + n.value
+        } else {
+          // clone to avoid mutating original AST nodes
+          collapsed.push({ type: 'JSXText', value: String(n.value) })
+        }
+      } else {
+        collapsed.push(n)
+      }
+    }
+
+    // 4) Normalize whitespace inside text nodes: collapse runs of whitespace/newlines into a single space
+    for (const item of collapsed) {
+      if (item.type === 'JSXText') {
+        // keep intentional single spaces, collapse multi whitespace/newlines
+        item.value = String(item.value).replace(/\s+/g, ' ')
+      }
+    }
+
+    return collapsed
+  }
+
+  children = normalizeChildren(children)
+
   /**
    * Recursively processes JSX children and converts them to string format.
    *
@@ -277,8 +328,11 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
    * @returns Serialized string content
    */
   function serializeChildren (children: any[]): string {
+    // Normalize at each recursion level so formatting whitespace inside
+    // elements doesn't produce extra text nodes or surrounding spaces.
+    children = normalizeChildren(children)
     let out = ''
-    // Use forEach to get the direct index of each child in the array
+    // Use forEach to get the direct index of each child in the (normalized) array
     children.forEach((child, index) => {
       if (child.type === 'JSXText') {
         out += child.value
