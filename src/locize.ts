@@ -2,7 +2,7 @@ import { execa } from 'execa'
 import chalk from 'chalk'
 import ora from 'ora'
 import inquirer from 'inquirer'
-import { resolve } from 'node:path'
+import { resolve, sep } from 'node:path'
 import type { I18nextToolkitConfig } from './types'
 
 /**
@@ -143,7 +143,15 @@ function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: a
     if (dryRun) commandArgs.push('--dry', 'true')
   }
 
-  const basePath = resolve(process.cwd(), extract.output.split('/{{language}}/')[0])
+  // Normalize path separators in the configured output so splitting works on both POSIX and Windows
+  const outputNormalized = String(extract.output || '').replace(/\\/g, '/')
+  const baseCandidate = outputNormalized.includes('/{{language}}/')
+    ? outputNormalized.split('/{{language}}/')[0]
+    : outputNormalized.replace('{{language}}', '')
+  // Convert to OS-specific separators before resolving so the resulting path uses path.sep
+  const baseCandidateWithSep = baseCandidate.split('/').join(sep)
+  const basePath = resolve(process.cwd(), baseCandidateWithSep)
+
   commandArgs.push('--path', basePath)
 
   return commandArgs

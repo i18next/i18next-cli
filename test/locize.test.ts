@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { runLocizeSync } from '../src/locize'
+import { pathEndsWith } from './utils/path'
 import type { I18nextToolkitConfig } from '../src/types'
 import { execa } from 'execa'
 import inquirer from 'inquirer'
@@ -38,10 +39,21 @@ describe('locize', () => {
   it('should call execa with the correct arguments for a successful sync', async () => {
     vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
     await runLocizeSync(mockConfig)
-    expect(execa).toHaveBeenCalledWith('locize',
-      expect.arrayContaining(['sync', '--project-id', 'test-project-id', '--path', '/locales']),
-      expect.anything()
-    )
+    // Find the call that runs the actual `sync` command (the first call is `--version`)
+    const calls = vi.mocked(execa).mock.calls
+    const syncCall = calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+    expect(syncCall).toBeDefined()
+    const syncArgs = syncCall![1] as string[]
+    expect(syncArgs).toEqual(expect.arrayContaining(['sync', '--project-id', 'test-project-id']))
+
+    // Ensure the --path value ends with 'locales' in a cross-platform safe way
+    const pathIndex = syncArgs.findIndex(a => a === '--path')
+    expect(pathIndex).toBeGreaterThan(-1)
+    const pathValue = syncArgs[pathIndex + 1]
+    expect(pathEndsWith(pathValue, '/locales')).toBe(true)
+    // Ensure options were passed (stdio: 'pipe')
+    const syncOptions = (syncCall as unknown as any[])[2]
+    expect(syncOptions).toEqual(expect.objectContaining({ stdio: 'pipe' }))
   })
 
   it('should exit gracefully if locize-cli is not found', async () => {

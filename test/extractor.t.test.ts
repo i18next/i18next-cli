@@ -2,6 +2,7 @@ import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { extract } from '../src/index'
 import type { I18nextToolkitConfig } from '../src/index'
+import { pathEndsWith } from './utils/path'
 
 // Mocks
 vi.mock('fs/promises', async () => {
@@ -46,8 +47,8 @@ describe('extractor: advanced t features', () => {
 
     const results = await extract(configWithNs)
 
-    const commonFile = results.find(r => r.path.endsWith('/locales/en/common.json'))
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/app.json'))
+    const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/app.json'))
 
     expect(commonFile).toBeDefined()
     expect(translationFile).toBeDefined()
@@ -74,7 +75,7 @@ describe('extractor: advanced t features', () => {
     }
 
     const results = await extract(configWithNsOptions)
-    const commonFile = results.find(r => r.path.endsWith('/locales/en/common.json'))
+    const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
 
     expect(commonFile).toBeDefined()
     expect(commonFile!.newTranslations).toEqual({
@@ -93,7 +94,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const commonFile = results.find(r => r.path.endsWith('/locales/en/common.json'))
+      const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
 
       expect(commonFile).toBeDefined()
       expect(commonFile!.newTranslations).toEqual({ button: { save: 'Save' } })
@@ -107,7 +108,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const commonFile = results.find(r => r.path.endsWith('/locales/en/common.json'))
+      const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
 
       expect(commonFile).toBeDefined()
       expect(commonFile!.newTranslations).toEqual({ button: { save: 'Save' } })
@@ -121,7 +122,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const commonFile = results.find(r => r.path.endsWith('/locales/en/common.json'))
+      const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
 
       expect(commonFile).toBeDefined()
       expect(commonFile!.newTranslations).toEqual({ button: { save: 'Save' } })
@@ -135,7 +136,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const headerFile = results.find(r => r.path.endsWith('/locales/en/header.json'))
+      const headerFile = results.find(r => pathEndsWith(r.path, '/locales/en/header.json'))
 
       expect(headerFile).toBeDefined()
       expect(headerFile!.newTranslations).toEqual({ title: 'A Header' })
@@ -149,7 +150,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const headerFile = results.find(r => r.path.endsWith('/locales/en/header.json'))
+      const headerFile = results.find(r => pathEndsWith(r.path, '/locales/en/header.json'))
 
       expect(headerFile).toBeDefined()
       expect(headerFile!.newTranslations).toEqual({ title: 'A Header' })
@@ -170,10 +171,10 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const clipFile = results.find(r => r.path.endsWith('/locales/en/clip.json'))
+      const clipFile = results.find(r => pathEndsWith(r.path, '/locales/en/clip.json'))
       expect(clipFile).toBeDefined()
       expect(clipFile!.newTranslations).toEqual({ changes: 'changes' })
-      const commonFile = results.find(r => r.path.endsWith('/locales/en/common.json'))
+      const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
       expect(commonFile).toBeDefined()
       expect(commonFile!.newTranslations).toEqual({ news: 'news' })
     })
@@ -186,7 +187,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile).toBeDefined()
       expect(translationFile!.newTranslations).toEqual({
@@ -210,8 +211,8 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const ns1File = results.find(r => r.path.endsWith('/locales/en/ns1.json'))
-      const ns2File = results.find(r => r.path.endsWith('/locales/en/ns2.json'))
+      const ns1File = results.find(r => pathEndsWith(r.path, '/locales/en/ns1.json'))
+      const ns2File = results.find(r => pathEndsWith(r.path, '/locales/en/ns2.json'))
 
       expect(ns1File).toBeDefined()
       expect(ns2File).toBeDefined()
@@ -228,7 +229,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const commonFile = results.find(r => r.path.endsWith('/locales/en/common.json'))
+      const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
 
       expect(commonFile).toBeDefined()
       expect(commonFile!.newTranslations).toEqual({ button: { submit: 'Submit' } })
@@ -243,7 +244,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       // This expectation is correct: for dynamic context, we need the base key and all variants.
       expect(translationFile!.newTranslations).toEqual({
@@ -263,7 +264,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       // This expectation is correct: for dynamic context, we need the base key and all variants.
       expect(translationFile!.newTranslations).toEqual({
@@ -282,7 +283,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile!.newTranslations).toEqual({
         alert: {
@@ -303,7 +304,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile!.newTranslations).toEqual({
         open: 'Open',
@@ -320,7 +321,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile!.newTranslations).toEqual({
         state: {
@@ -343,7 +344,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile!.newTranslations).toEqual({
         messages: {
@@ -367,7 +368,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile!.newTranslations).toEqual({
         states: {
@@ -394,7 +395,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile!.newTranslations).toEqual({
         state: {
@@ -427,7 +428,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract({ ...mockConfig, extract: { ...mockConfig.extract, keySeparator: false, } })
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile!.newTranslations).toEqual({
         'section.intro.header.marketing': 'section.intro.header.marketing',
@@ -460,7 +461,7 @@ describe('extractor: advanced t features', () => {
       const config = { ...mockConfig, extract: { ...mockConfig.extract, functions: ['t'], useTranslationNames: ['useTranslation'] } }
 
       const results = await extract(config)
-      const file = results.find(r => r.path.endsWith('/locales/en/test.json'))
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/test.json'))
 
       expect(file).toBeDefined()
       expect(file!.newTranslations).toEqual({
@@ -502,7 +503,7 @@ describe('extractor: advanced t features', () => {
       const results = await extract(customHookConfig)
 
       // Find the generated file for our custom namespace
-      const customNsFile = results.find(r => r.path.endsWith('/locales/en/custom-ns.json'))
+      const customNsFile = results.find(r => pathEndsWith(r.path, '/locales/en/custom-ns.json'))
 
       expect(customNsFile).toBeDefined()
       expect(customNsFile!.newTranslations).toEqual({
@@ -546,7 +547,7 @@ describe('extractor: advanced t features', () => {
       const results = await extract(customHookConfig)
 
       // Find the generated file for our custom namespace
-      const customNsFile = results.find(r => r.path.endsWith('/locales/en/custom-ns.json'))
+      const customNsFile = results.find(r => pathEndsWith(r.path, '/locales/en/custom-ns.json'))
 
       expect(customNsFile).toBeDefined()
       expect(customNsFile!.newTranslations).toEqual({
@@ -584,7 +585,7 @@ describe('extractor: advanced t features', () => {
       }
 
       const results = await extract(customHookConfig)
-      const authFile = results.find(r => r.path.endsWith('/locales/en/auth.signin.json'))
+      const authFile = results.find(r => pathEndsWith(r.path, '/locales/en/auth.signin.json'))
 
       // This test will fail before the fix because `authFile` will be undefined.
       expect(authFile).toBeDefined()
@@ -607,7 +608,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile).toBeDefined()
       expect(translationFile!.newTranslations).toEqual({
@@ -629,7 +630,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const commonFile = results.find(r => r.path.endsWith('/locales/en/common.json'))
+      const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
 
       expect(commonFile).toBeDefined()
       expect(commonFile!.newTranslations).toEqual({ button: { save: 'button.save' } })
@@ -643,7 +644,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const commonFile = results.find(r => r.path.endsWith('/locales/en/common.json'))
+      const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
 
       expect(commonFile).toBeDefined()
       expect(commonFile!.newTranslations).toEqual({
@@ -661,7 +662,7 @@ describe('extractor: advanced t features', () => {
       const sampleCode = "t($ => $.app['title'].main)"
       vol.fromJSON({ '/src/App.tsx': sampleCode })
       const results = await extract(mockConfig)
-      const file = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
       expect(file!.newTranslations).toEqual({ app: { title: { main: 'app.title.main' } } })
     })
 
@@ -679,7 +680,7 @@ describe('extractor: advanced t features', () => {
 
       // @ts-ignore
       const results = await extract(flatKeyConfig)
-      const file = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       // The key should be extracted as a single flat string
       expect(file!.newTranslations).toEqual({
@@ -702,7 +703,7 @@ describe('extractor: advanced t features', () => {
       `
       vol.fromJSON({ '/src/App.tsx': sampleCode })
       const results = await extract(mockConfig)
-      const file = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(file).toBeDefined()
 
@@ -726,7 +727,7 @@ describe('extractor: advanced t features', () => {
       `
       vol.fromJSON({ '/src/App.tsx': sampleCode })
       const results = await extract(mockConfig)
-      const file = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(file).toBeDefined()
       expect(file!.newTranslations).toEqual({
@@ -756,7 +757,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile!.newTranslations).toEqual({
         DogCount_one: '{{count}} dog', // From generic defaultValue
@@ -787,7 +788,7 @@ describe('extractor: advanced t features', () => {
       }
 
       const results = await extract(arabicConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/ar/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/ar/translation.json'))
 
       expect(translationFile).toBeDefined()
 
@@ -817,7 +818,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile).toBeDefined()
 
@@ -842,7 +843,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile).toBeDefined()
       // English has 4 ordinal forms: one, two, few, other
@@ -868,7 +869,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile!.newTranslations).toEqual({
         state_one: '{{count}} car',
@@ -901,7 +902,7 @@ describe('extractor: advanced t features', () => {
       const results = await extract(arabicConfig)
 
       // Check English file - should only have English plural forms (one, other)
-      const englishCommonFile = results.find(r => r.path.endsWith('/locales/en/common.json'))
+      const englishCommonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
       expect(englishCommonFile).toBeDefined()
       expect(englishCommonFile!.newTranslations).toEqual({
         options: {
@@ -919,7 +920,7 @@ describe('extractor: advanced t features', () => {
       })
 
       // Check Arabic file - should have all 6 Arabic plural forms
-      const arabicCommonFile = results.find(r => r.path.endsWith('/locales/ar-SA/common.json'))
+      const arabicCommonFile = results.find(r => pathEndsWith(r.path, '/locales/ar-SA/common.json'))
       expect(arabicCommonFile).toBeDefined()
       expect(arabicCommonFile!.newTranslations).toEqual({
         options: {
@@ -969,7 +970,7 @@ describe('extractor: advanced t features', () => {
       const results = await extract(arabicConfig)
 
       // Check English file - should only have English plural forms
-      const englishTranslationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const englishTranslationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
       expect(englishTranslationFile).toBeDefined()
       expect(englishTranslationFile!.newTranslations).toEqual({
         // English only has 2 plural forms
@@ -978,7 +979,7 @@ describe('extractor: advanced t features', () => {
       })
 
       // Check Arabic file - should have all 6 Arabic plural forms
-      const arabicTranslationFile = results.find(r => r.path.endsWith('/locales/ar-SA/translation.json'))
+      const arabicTranslationFile = results.find(r => pathEndsWith(r.path, '/locales/ar-SA/translation.json'))
       expect(arabicTranslationFile).toBeDefined()
       expect(arabicTranslationFile!.newTranslations).toEqual({
         // Arabic has 6 plural forms
@@ -1005,7 +1006,7 @@ describe('extractor: advanced t features', () => {
       }
 
       const results = await extract(englishOnlyConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile).toBeDefined()
 
@@ -1035,7 +1036,7 @@ describe('extractor: advanced t features', () => {
       }
 
       const results = await extract(configWithDisabledBaseForms)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile).toBeDefined()
 
@@ -1054,7 +1055,7 @@ describe('extractor: advanced t features', () => {
       })
 
       // Check Arabic file also only has context forms
-      const arabicFile = results.find(r => r.path.endsWith('/locales/ar-SA/translation.json'))
+      const arabicFile = results.find(r => pathEndsWith(r.path, '/locales/ar-SA/translation.json'))
       expect(arabicFile).toBeDefined()
       expect(arabicFile!.newTranslations).toEqual({
         options: {
@@ -1100,7 +1101,7 @@ describe('extractor: advanced t features', () => {
       }
 
       const results = await extract(configWithDisabledBaseForms)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile).toBeDefined()
 
@@ -1129,7 +1130,7 @@ describe('extractor: advanced t features', () => {
       }
 
       const results = await extract(configWithEnabledBaseForms)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile).toBeDefined()
 
@@ -1164,7 +1165,7 @@ describe('extractor: advanced t features', () => {
       }
 
       const results = await extract(customConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       // This test will fail before the fix because the key will not be found.
       expect(translationFile).toBeDefined()
@@ -1196,7 +1197,7 @@ describe('extractor: advanced t features', () => {
       }
 
       const results = await extract(customConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile).toBeDefined()
       expect(translationFile!.newTranslations).toEqual({
@@ -1214,7 +1215,7 @@ describe('extractor: advanced t features', () => {
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
       const results = await extract(mockConfig)
-      const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
       expect(translationFile).toBeDefined()
       expect(translationFile!.newTranslations).toEqual({
@@ -1254,7 +1255,7 @@ describe('extractor: advanced t features', () => {
         }
 
         const results = await extract(configWithDisabledPlurals)
-        const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+        const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
         expect(translationFile).toBeDefined()
 
@@ -1291,7 +1292,7 @@ describe('extractor: advanced t features', () => {
         }
 
         const results = await extract(configWithDisabledPlurals)
-        const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+        const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
         expect(translationFile).toBeDefined()
 
@@ -1320,7 +1321,7 @@ describe('extractor: advanced t features', () => {
         }
 
         const results = await extract(configWithDisabledPlurals)
-        const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+        const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
         expect(translationFile).toBeDefined()
 
@@ -1355,7 +1356,7 @@ describe('extractor: advanced t features', () => {
         }
 
         const results = await extract(configWithPluralsEnabled)
-        const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+        const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
         expect(translationFile).toBeDefined()
 

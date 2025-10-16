@@ -2,6 +2,7 @@ import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { extract } from '../src/index'
 import type { I18nextToolkitConfig } from '../src/index'
+import { pathEndsWith } from './utils/path'
 
 // Mocks
 vi.mock('fs/promises', async () => {
@@ -33,7 +34,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const commonFile = results.find(r => r.path.endsWith('/locales/en/common.json'))
+    const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
 
     expect(commonFile).toBeDefined()
     expect(commonFile!.newTranslations).toEqual({
@@ -57,7 +58,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const myNamespaceFile = results.find(r => r.path.endsWith('/locales/en/myNamespace.json'))
+    const myNamespaceFile = results.find(r => pathEndsWith(r.path, '/locales/en/myNamespace.json'))
 
     expect(myNamespaceFile).toBeDefined()
     expect(myNamespaceFile!.newTranslations).toEqual({
@@ -79,7 +80,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const myNamespaceFile = results.find(r => r.path.endsWith('/locales/en/myOtherNamespace.json'))
+    const myNamespaceFile = results.find(r => pathEndsWith(r.path, '/locales/en/myOtherNamespace.json'))
 
     expect(myNamespaceFile).toBeDefined()
     expect(myNamespaceFile!.newTranslations).toEqual({
@@ -96,7 +97,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
     expect(translationFile).toBeDefined()
 
@@ -118,7 +119,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
     expect(translationFile).toBeDefined()
 
@@ -160,7 +161,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
     expect(translationFile).toBeDefined()
 
@@ -188,7 +189,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
     expect(translationFile!.newTranslations).toEqual({
       open: 'Open',
@@ -204,7 +205,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
     expect(translationFile!.newTranslations).toEqual({
       friend: 'A friend',
@@ -224,7 +225,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
     expect(translationFile!.newTranslations).toEqual({
       state: {
@@ -248,7 +249,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
     expect(translationFile!.newTranslations).toEqual({
       state: {
@@ -277,7 +278,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
     expect(translationFile).toBeDefined()
 
@@ -304,7 +305,7 @@ describe('extractor: advanced Trans features', () => {
     const results = await extract(mockConfig)
 
     // It should extract to 'my-ns', not the default 'translation'
-    const myNsFile = results.find(r => r.path.endsWith('/locales/en/my-ns.json'))
+    const myNsFile = results.find(r => pathEndsWith(r.path, '/locales/en/my-ns.json'))
 
     expect(myNsFile).toBeDefined()
     // It should apply the context suffix
@@ -333,7 +334,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const eventFile = results.find(r => r.path.endsWith('/locales/en/event.json'))
+    const eventFile = results.find(r => pathEndsWith(r.path, '/locales/en/event.json'))
 
     expect(eventFile).toBeDefined()
     expect(eventFile!.newTranslations).toEqual({
@@ -361,7 +362,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
@@ -385,7 +386,7 @@ describe('extractor: advanced Trans features', () => {
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
     const results = await extract(mockConfig)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
     expect(translationFile).toBeDefined()
 

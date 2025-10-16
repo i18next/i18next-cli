@@ -1,6 +1,7 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { detectConfig } from '../src/heuristic-config'
+import { normalizePath } from './utils/path'
 
 // Mocks
 vi.mock('fs/promises', async () => {
@@ -30,7 +31,7 @@ describe('heuristic-config', () => {
 
     expect(config).not.toBeNull()
     expect(config?.locales).toEqual(['en', 'de', 'fr'])
-    expect(config?.extract?.output).toBe('locales/{{language}}/{{namespace}}.json')
+    expect(normalizePath(config?.extract?.output)).toBe('locales/{{language}}/{{namespace}}.json')
     expect(config?.extract?.primaryLanguage).toBe('en')
     expect(config?.extract?.input).toEqual([
       'src/**/*.{js,jsx,ts,tsx}',

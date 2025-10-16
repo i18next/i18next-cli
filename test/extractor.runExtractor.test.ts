@@ -3,6 +3,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { runExtractor, extract } from '../src/index'
 import type { I18nextToolkitConfig } from '../src/index'
 import { resolve } from 'path'
+import { pathEndsWith } from './utils/path'
 
 // Mock the 'fs/promises' module to use our in-memory file system from 'memfs'
 vi.mock('fs/promises', async () => {
@@ -36,7 +37,22 @@ describe('extractor: runExtractor', () => {
 
     // Dynamically import the mocked glob after mocks are set up
     const { glob } = await import('glob')
-    ;(glob as any).mockResolvedValue(['/src/App.tsx'])
+    vi.mocked(glob).mockImplementation(async (pattern, options) => {
+      const ignore = (options?.ignore as string[]) || []
+      // Normalize backslashes to forward slashes so this works cross-platform (Windows/Posix)
+      const hasIgnoredPattern = ignore.some(p => p.replace(/\\/g, '/').includes('**/*.ignored.ts'))
+
+      // Base candidates the tests expect
+      const candidates = ['/src/App.tsx', '/src/ignored-file.ts']
+      // Only return files that actually exist in the memfs volume to avoid ENOENT
+      const existing = candidates.filter(p => vol.existsSync(p))
+
+      if (hasIgnoredPattern) {
+        // Filter out ignored-file if pattern is present
+        return existing.filter(p => !pathEndsWith(p, '/src/ignored-file.ts'))
+      }
+      return existing
+    })
   })
 
   it('should extract keys from t() functions and Trans components', async () => {
@@ -554,7 +570,7 @@ describe('extractor: runExtractor', () => {
   })
 
   it('should ignore files specified in the "ignore" option during extraction', async () => {
-  // Setup: Create two files, one of which should be ignored.
+    // Setup: Create two files, one of which should be ignored.
     vol.fromJSON({
       '/src/App.tsx': "t('key.from.app')",
       '/src/ignored-file.ts': "t('key.from.ignored')",
@@ -564,10 +580,16 @@ describe('extractor: runExtractor', () => {
     // In reality, `glob` itself would do the filtering, but this tests our code's intent.
     const { glob } = await import('glob')
     vi.mocked(glob).mockImplementation(async (pattern, options) => {
-      if ((options?.ignore as string[]).includes('**/*.ignored.ts')) {
-        return ['/src/App.tsx'] // Simulate glob filtering
+      const ignore = (options?.ignore as string[]) || []
+      const hasIgnoredPattern = ignore.some(p => p.replace(/\\/g, '/').includes('**/*.ignored.ts'))
+
+      const candidates = ['/src/App.tsx', '/src/ignored-file.ts']
+      const existing = candidates.filter(p => vol.existsSync(p))
+
+      if (hasIgnoredPattern) {
+        return existing.filter(p => !pathEndsWith(p, '/src/ignored-file.ts'))
       }
-      return ['/src/App.tsx', '/src/ignored-file.ts'] // Default return
+      return existing
     })
 
     const config: I18nextToolkitConfig = {
@@ -582,7 +604,9 @@ describe('extractor: runExtractor', () => {
 
     // Action: Run the extractor
     const results = await extract(config)
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+    const translationFile = results.find(r =>
+      pathEndsWith(r.path, '/locales/en/translation.json')
+    )
 
     // Assertions
     expect(translationFile).toBeDefined()

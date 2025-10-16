@@ -5,6 +5,7 @@ import { promises as fs } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { mkdtemp, rm } from 'fs/promises'
+import { normalizePath } from './utils/path'
 
 describe('runExtractor: defaultValue option', () => {
   let tempDir: string
@@ -66,8 +67,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de', 'fr'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         defaultNS: 'translation',
         defaultValue: '[NEEDS_TRANSLATION]', // Custom default value for missing keys
@@ -143,8 +144,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de', 'fr'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         defaultNS: 'translation',
         // defaultValue not specified, should default to empty string
@@ -200,8 +201,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de', 'fr'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         defaultNS: 'translation',
         defaultValue: '{{TODO}}', // Distinctive placeholder
@@ -269,8 +270,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de', 'fr'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         defaultNS: 'translation',
         defaultValue: '[MISSING]',
@@ -319,8 +320,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de', 'fr'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         defaultNS: 'translation',
         defaultValue: (key: string, namespace: string, language: string) => {
@@ -400,8 +401,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         defaultNS: 'translation',
         nsSeparator: ':',
@@ -464,8 +465,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         transComponents: ['Trans'],
         defaultNS: 'translation',
@@ -520,8 +521,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         defaultNS: 'translation',
         defaultValue: (key: string, namespace: string, language: string) => {
@@ -571,8 +572,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         defaultNS: 'translation',
         defaultValue: (key: string, namespace: string, language: string) => {
@@ -662,8 +663,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de', 'fr'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         transComponents: ['Trans'],
         defaultNS: 'translation',
@@ -794,8 +795,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         transComponents: ['Trans'],
         defaultNS: 'translation',
         defaultValue: (key: string, namespace: string, language: string) => {
@@ -851,8 +852,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         defaultNS: 'translation',
         defaultValue: (key: string, namespace: string, language: string) => {
@@ -917,8 +918,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         defaultNS: 'translation',
         nsSeparator: ':',
@@ -1005,8 +1006,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         defaultNS: 'translation',
         nsSeparator: ':',
@@ -1101,8 +1102,8 @@ describe('runExtractor: defaultValue option', () => {
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de', 'fr'],
       extract: {
-        input: [join(tempDir, 'src/**/*.{ts,tsx}')],
-        output: join(tempDir, 'locales/{{language}}/{{namespace}}.json'),
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
         functions: ['t'],
         defaultNS: 'translation',
         // This mimics i18next-parser behavior: use the key itself as the default value

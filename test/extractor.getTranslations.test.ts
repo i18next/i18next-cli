@@ -3,6 +3,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { getTranslations } from '../src/index'
 import type { I18nextToolkitConfig } from '../src/index'
 import { resolve } from 'path'
+import { pathEndsWith } from './utils/path'
 
 vi.mock('fs/promises', async () => {
   const memfs = await vi.importActual<typeof import('memfs')>('memfs')
@@ -34,8 +35,8 @@ describe('extractor.getTranslations', () => {
     // two locales
     expect(res1.length).toBe(2)
 
-    const enItem = res1.find(r => r.path.endsWith('/locales/en/translation.json'))
-    const deItem = res1.find(r => r.path.endsWith('/locales/de/translation.json'))
+    const enItem = res1.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    const deItem = res1.find(r => pathEndsWith(r.path, '/locales/de/translation.json'))
     expect(enItem).toBeDefined()
     expect(deItem).toBeDefined()
     expect(enItem!.updated).toBe(true)
@@ -61,8 +62,8 @@ describe('extractor.getTranslations', () => {
 
     // 3) Call again -> updated should be false as files match generated content
     const res2 = await getTranslations(keysMap as any, new Set(), config)
-    const enItem2 = res2.find(r => r.path.endsWith('/locales/en/translation.json'))!
-    const deItem2 = res2.find(r => r.path.endsWith('/locales/de/translation.json'))!
+    const enItem2 = res2.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))!
+    const deItem2 = res2.find(r => pathEndsWith(r.path, '/locales/de/translation.json'))!
     expect(enItem2.updated).toBe(false)
     expect(deItem2.updated).toBe(false)
 
