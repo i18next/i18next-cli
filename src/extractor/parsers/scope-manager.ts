@@ -12,6 +12,14 @@ export class ScopeManager {
   }
 
   /**
+   * Clears the legacy scope map between file processing.
+   * This prevents scope information from leaking across files.
+   */
+  clearLegacyScope (): void {
+    this.scope.clear()
+  }
+
+  /**
    * Enters a new variable scope by pushing a new scope map onto the stack.
    * Used when entering functions to isolate variable declarations.
    */

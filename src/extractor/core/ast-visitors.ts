@@ -78,6 +78,7 @@ export class ASTVisitors {
    * @param node - The root module node to traverse
    */
   public visit (node: Module): void {
+    this.scopeManager.clearLegacyScope() // Clear before processing new file
     this.scopeManager.enterScope() // Create the root scope for the file
     this.walk(node)
     this.scopeManager.exitScope()  // Clean up the root scope
