@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.5](https://github.com/i18next/i18next-cli/compare/v1.11.4...v1.11.5) - 2025-10-17
+
+- **Extractor:** ignore formatting-only JSXText nodes when serializing <Trans> children to avoid inflated component placeholder indexes and incorrect keys caused by indentation/newlines — fixes [#66](https://github.com/i18next/i18next-cli/issues/66)
+- **Extractor:** prevent scope leakage and ensure correct namespace resolution for t()/getFixedT() when functions reference `t` declared later in the same file; restores idempotent extraction regardless of input file ordering — fixes [#65](https://github.com/i18next/i18next-cli/issues/65)
+
 ## [1.11.4](https://github.com/i18next/i18next-cli/compare/v1.11.3...v1.11.4) - 2025-10-15
 
 - **Extractor:** Ignore formatting-only JSXText nodes that contain only whitespace/newlines when serializing `<Trans>` children. This prevents inflated component placeholder indexes caused by indentation/newlines while preserving intentional spaces (e.g. `{' '}`). Resulting keys now match react-i18next runtime normalization. See [#63](https://github.com/i18next/i18next-cli/issues/63).

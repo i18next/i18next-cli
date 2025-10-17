@@ -239,140 +239,95 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
 }
 
 /**
- * Serializes JSX children into a string representation suitable for i18next.
- *
- * This function converts JSX children into the format expected by i18next:
- * - Text nodes are preserved as-is
- * - HTML elements are converted to indexed placeholders or preserved if allowed
- * - JSX expressions become interpolation placeholders: `{{variable}}`
- * - Fragments are flattened
- * - Whitespace is normalized
- *
- * The serialization respects the `transKeepBasicHtmlNodesFor` configuration
- * to determine which HTML tags should be preserved vs. converted to indexed placeholders.
- *
- * @param children - Array of JSX child nodes to serialize
- * @param config - Configuration containing HTML preservation settings
- * @returns Serialized string representation
- *
- * @example
- * ```typescript
- * // JSX: Hello <strong>{{name}}</strong>, you have <Link to="/msgs">{{count}} messages</Link>.
- * // With transKeepBasicHtmlNodesFor: ['strong']
- * // Returns: "Hello <strong>{{name}}</strong>, you have <1>{{count}} messages</1>."
- * //          (strong preserved, Link becomes indexed placeholder <1>)
- *
- * const serialized = serializeJSXChildren(children, config)
- * ```
- *
- * @internal
+ * Serializes JSX children into a string, correctly indexing component placeholders.
+ * This version correctly calculates an element's index based on its position
+ * among its sibling *elements*, ignoring text nodes for indexing purposes.
  */
 function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): string {
+  if (!children || children.length === 0) return ''
+
   const allowedTags = new Set(config.extract.transKeepBasicHtmlNodesFor ?? ['br', 'strong', 'i', 'p'])
 
-  // Remove formatting-only JSXText nodes (those that are entirely whitespace and
-  // contain newlines). These are introduced by pretty-printing/indentation and
-  // should not affect component indexing. Keep single-space text and explicit
-  // {' '} expression containers.
-  function normalizeChildren (nodes: any[]): any[] {
-    if (!nodes || !nodes.length) return []
+  const isFormattingWhitespace = (n: any) =>
+    n &&
+    n.type === 'JSXText' &&
+    /^\s*$/.test(n.value) &&
+    n.value.includes('\n')
 
-    // 1) Remove purely formatting whitespace nodes (those that are whitespace-only and include newlines)
-    const filtered = nodes.filter(n => {
-      if (!n) return false
-      if (n.type === 'JSXText' && /^\s*$/.test(n.value) && n.value.includes('\n')) return false
-      return true
-    })
+  // counter of "indexable" slots (increments for meaningful text, expression containers and non-preserved elements)
+  const counter = { n: 0 }
 
-    // 2) Convert explicit {' '} expression containers into text nodes so they can be merged
-    const converted = filtered.map(n => {
-      if (n.type === 'JSXExpressionContainer' && n.expression?.type === 'StringLiteral') {
-        return { type: 'JSXText', value: n.expression.value }
-      }
-      return n
-    })
-
-    // 3) Collapse consecutive text-like nodes into a single JSXText node and normalize whitespace
-    const collapsed: any[] = []
-    for (const n of converted) {
-      if (n.type === 'JSXText') {
-        const last = collapsed[collapsed.length - 1]
-        if (last && last.type === 'JSXText') {
-          last.value = last.value + n.value
-        } else {
-          // clone to avoid mutating original AST nodes
-          collapsed.push({ type: 'JSXText', value: String(n.value) })
-        }
-      } else {
-        collapsed.push(n)
-      }
-    }
-
-    // 4) Normalize whitespace inside text nodes: collapse runs of whitespace/newlines into a single space
-    for (const item of collapsed) {
-      if (item.type === 'JSXText') {
-        // keep intentional single spaces, collapse multi whitespace/newlines
-        item.value = String(item.value).replace(/\s+/g, ' ')
-      }
-    }
-
-    return collapsed
-  }
-
-  children = normalizeChildren(children)
-
-  /**
-   * Recursively processes JSX children and converts them to string format.
-   *
-   * @param children - Array of child nodes to process
-   * @returns Serialized string content
-   */
-  function serializeChildren (children: any[]): string {
-    // Normalize at each recursion level so formatting whitespace inside
-    // elements doesn't produce extra text nodes or surrounding spaces.
-    children = normalizeChildren(children)
+  function serialize (nodes: any[]): string {
+    if (!nodes || !nodes.length) return ''
     let out = ''
-    // Use forEach to get the direct index of each child in the (normalized) array
-    children.forEach((child, index) => {
+
+    for (const child of nodes) {
+      if (!child) continue
+
       if (child.type === 'JSXText') {
-        out += child.value
-      } else if (child.type === 'JSXExpressionContainer') {
+        if (!isFormattingWhitespace(child)) {
+          out += child.value
+          counter.n++
+        }
+        continue
+      }
+
+      if (child.type === 'JSXExpressionContainer') {
         const expr = child.expression
+        if (!expr) continue
+
         if (expr.type === 'StringLiteral') {
           out += expr.value
         } else if (expr.type === 'Identifier') {
           out += `{{${expr.value}}}`
         } else if (expr.type === 'ObjectExpression') {
-          // Handle object expressions like {{bar: 1}} -> {{bar}}
           const prop = expr.properties[0]
           if (prop && prop.type === 'KeyValueProperty' && prop.key && prop.key.type === 'Identifier') {
             out += `{{${prop.key.value}}}`
           } else if (prop && prop.type === 'Identifier') {
-            // Handle the case where properties[0] is directly an Identifier
             out += `{{${prop.value}}}`
           }
+        } else if (expr.type === 'MemberExpression' && expr.property && expr.property.type === 'Identifier') {
+          out += `{{${expr.property.value}}}`
+        } else if (expr.type === 'CallExpression' && expr.callee?.type === 'Identifier') {
+          out += `{{${expr.callee.value}}}`
         }
-      } else if (child.type === 'JSXElement') {
-        let tag
-        if (child.opening.name.type === 'Identifier') {
+        // expression containers (including explicit {' '}) consume a slot
+        counter.n++
+        continue
+      }
+
+      if (child.type === 'JSXElement') {
+        let tag: string | undefined
+        if (child.opening && child.opening.name && child.opening.name.type === 'Identifier') {
           tag = child.opening.name.value
         }
 
-        const innerContent = serializeChildren(child.children)
-
         if (tag && allowedTags.has(tag)) {
-          // If the tag is in the allowed list, preserve it
-          out += `<${tag}>${innerContent}</${tag}>`
+          // preserved HTML tag: do NOT consume a numeric slot for the tag itself
+          const inner = serialize(child.children || [])
+          out += `<${tag}>${inner}</${tag}>`
         } else {
-          // Otherwise, replace it with ITS INDEX IN THE CHILDREN ARRAY
-          out += `<${index}>${innerContent}</${index}>`
+          // non-preserved element: use current counter value as numeric index, then consume the slot
+          const myIndex = counter.n
+          counter.n++
+          const inner = serialize(child.children || [])
+          out += `<${myIndex}>${inner}</${myIndex}>`
         }
-      } else if (child.type === 'JSXFragment') {
-        out += serializeChildren(child.children)
+        continue
       }
-    })
+
+      if (child.type === 'JSXFragment') {
+        out += serialize(child.children || [])
+        continue
+      }
+
+      // unknown node types: ignore
+    }
+
     return out
   }
 
-  return serializeChildren(children).trim().replace(/\s{2,}/g, ' ')
+  const result = serialize(children)
+  return String(result).replace(/\s+/g, ' ').trim()
 }

@@ -78,6 +78,8 @@ export class ASTVisitors {
    * @param node - The root module node to traverse
    */
   public visit (node: Module): void {
+    // Reset any per-file scope state to avoid leaking scopes between files.
+    this.scopeManager.reset()
     this.scopeManager.enterScope() // Create the root scope for the file
     this.walk(node)
     this.scopeManager.exitScope()  // Clean up the root scope
@@ -133,6 +135,29 @@ export class ASTVisitors {
 
       const child = node[key]
       if (Array.isArray(child)) {
+        // Pre-scan array children to register VariableDeclarator-based scopes
+        // (e.g., `const { t } = useTranslation(...)`) before walking the rest
+        // of the items. This ensures that functions/arrow-functions defined
+        // earlier in the same block that reference t will resolve to the
+        // correct scope even if the `useTranslation` declarator appears later.
+        for (const item of child) {
+          if (!item || typeof item !== 'object') continue
+
+          // Direct declarator present in arrays (rare)
+          if (item.type === 'VariableDeclarator') {
+            this.scopeManager.handleVariableDeclarator(item)
+            continue
+          }
+
+          // Common case: VariableDeclaration which contains .declarations (VariableDeclarator[])
+          if (item.type === 'VariableDeclaration' && Array.isArray(item.declarations)) {
+            for (const decl of item.declarations) {
+              if (decl && typeof decl === 'object' && decl.type === 'VariableDeclarator') {
+                this.scopeManager.handleVariableDeclarator(decl)
+              }
+            }
+          }
+        }
         for (const item of child) {
           // Be less strict: if it's a non-null object, walk it.
           // This allows traversal into nodes that might not have a `.type` property

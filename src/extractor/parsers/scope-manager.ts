@@ -12,6 +12,18 @@ export class ScopeManager {
   }
 
   /**
+   * Reset per-file scope state.
+   *
+   * This clears both the scope stack and the legacy scope map. It should be
+   * called at the start of processing each file so that scope info does not
+   * leak between files.
+   */
+  public reset (): void {
+    this.scopeStack = []
+    this.scope = new Map()
+  }
+
+  /**
    * Enters a new variable scope by pushing a new scope map onto the stack.
    * Used when entering functions to isolate variable declarations.
    */

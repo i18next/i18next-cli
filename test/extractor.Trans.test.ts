@@ -124,8 +124,8 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
 
     // The serializer now produces the correct indexed output based on the children's array positions
-    // <div> is at index 1, <Link> is at index 5
-    const expectedDefaultValue = 'Hello <1>{{name}}</1>, you have {{count}} unread message. <5>Go to messages</5>.'
+    // <div> is at index 1, <Link> is at index 6
+    const expectedDefaultValue = 'Hello <1>{{name}}</1>, you have {{count}} unread message. <6>Go to messages</6>.'
 
     // This also correctly extracts the key from the `title` prop inside the Trans component
     expect(translationFile!.newTranslations).toEqual({
@@ -390,11 +390,79 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
 
-    const expectedDefaultValue = '<0>{{username}}</0> got <2>{{count}}</2> ticket'
+    const expectedDefaultValue = '<0>{{username}}</0> got <5>{{count}}</5> ticket'
 
     expect(translationFile!.newTranslations).toEqual({
       ticket_received_msg_one: expectedDefaultValue,
       ticket_received_msg_other: expectedDefaultValue,
+    })
+  })
+
+  it('should calculate correct index for children', async () => {
+    const sampleCode = `
+      <Trans i18nKey="children_receive_wrong_index">
+        First line with empty JSXTextNode
+        <p>
+          <span>Span that should have index 1 but has index 0</span>
+        </p>
+        Second line
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue = 'First line with empty JSXTextNode <p><1>Span that should have index 1 but has index 0</1></p> Second line'
+
+    expect(translationFile!.newTranslations).toEqual({
+      children_receive_wrong_index: expectedDefaultValue,
+    })
+  })
+
+  it('should calculate correct index for children', async () => {
+    const sampleCode = `
+      <Trans i18nKey="children_receive_wrong_index">
+        First line with empty JSXTextNode
+        <a href="http://www.grafana.com">Span that should have index 1 but has index 0</a>
+        Second line
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue = 'First line with empty JSXTextNode <1>Span that should have index 1 but has index 0</1> Second line'
+
+    expect(translationFile!.newTranslations).toEqual({
+      children_receive_wrong_index: expectedDefaultValue,
+    })
+  })
+
+  it('should calculate correct index for children', async () => {
+    const sampleCode = `
+      <Trans i18nKey="children_receive_wrong_index">
+        First line with empty JSXTextNode{' '}
+        <a href="http://www.grafana.com">Span that should have index 1 but has index 0</a>
+        Second line
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue = 'First line with empty JSXTextNode <2>Span that should have index 1 but has index 0</2> Second line'
+
+    expect(translationFile!.newTranslations).toEqual({
+      children_receive_wrong_index: expectedDefaultValue,
     })
   })
 })
