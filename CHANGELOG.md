@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.6](https://github.com/i18next/i18next-cli/compare/v1.11.5...v1.11.6) - 2025-10-19
+
+- Fix Trans child indexing to match react-i18next and handle layout-only whitespace correctly [#63](https://github.com/i18next/i18next-cli/issues/63)
+
 ## [1.11.5](https://github.com/i18next/i18next-cli/compare/v1.11.4...v1.11.5) - 2025-10-17
 
 - **Extractor:** ignore formatting-only JSXText nodes when serializing <Trans> children to avoid inflated component placeholder indexes and incorrect keys caused by indentation/newlines — fixes [#66](https://github.com/i18next/i18next-cli/issues/66)

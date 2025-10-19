@@ -182,7 +182,6 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
 
       // Validate that the key is not empty
       if (!processedKeyValue || processedKeyValue.trim() === '') {
-        console.warn('Ignoring Trans component with empty i18nKey')
         return null
       }
 
@@ -197,7 +196,6 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
 
           // Validate processed key is not empty
           if (!processedKeyValue || processedKeyValue.trim() === '') {
-            console.warn('Ignoring Trans component with i18nKey that becomes empty after namespace removal')
             return null
           }
 
@@ -254,26 +252,203 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
     /^\s*$/.test(n.value) &&
     n.value.includes('\n')
 
-  // counter of "indexable" slots (increments for meaningful text, expression containers and non-preserved elements)
-  const counter = { n: 0 }
+  // Build deterministic global slot list (pre-order)
+  function collectSlots (nodes: any[], slots: any[], parentIsNonPreserved = false) {
+    if (!nodes || !nodes.length) return
 
-  function serialize (nodes: any[]): string {
-    if (!nodes || !nodes.length) return ''
-    let out = ''
+    // First, identify boundary whitespace nodes (start and end of sibling list)
+    // We trim ONLY pure-whitespace JSXText nodes from the boundaries
+    let startIdx = 0
+    let endIdx = nodes.length - 1
 
-    for (const child of nodes) {
-      if (!child) continue
+    // Skip leading boundary whitespace (pure whitespace JSXText only)
+    while (startIdx <= endIdx && isFormattingWhitespace(nodes[startIdx])) {
+      startIdx++
+    }
 
-      if (child.type === 'JSXText') {
-        if (!isFormattingWhitespace(child)) {
-          out += child.value
-          counter.n++
+    // Skip trailing boundary whitespace (pure whitespace JSXText only)
+    while (endIdx >= startIdx && isFormattingWhitespace(nodes[endIdx])) {
+      endIdx--
+    }
+
+    // Now process all nodes in the range [startIdx, endIdx] - this includes interior whitespace
+    const meaningfulNodes = startIdx <= endIdx ? nodes.slice(startIdx, endIdx + 1) : []
+
+    for (let i = 0; i < meaningfulNodes.length; i++) {
+      const n = meaningfulNodes[i]
+      if (!n) continue
+
+      if (n.type === 'JSXText') {
+        // Skip/merge pure-whitespace JSXText according to context:
+        // - If it immediately follows an expression container (and that expression
+        //   wasn't originally a JSXText sibling), skip it (it's formatting).
+        // - If it follows an original JSXText sibling, merge it into that text.
+        if (isFormattingWhitespace(n)) {
+          const prevSlot = slots[slots.length - 1]
+          const prevOriginal = meaningfulNodes[i - 1]
+
+          if (prevSlot) {
+            // If the previous original sibling is an expression container, treat
+            // this formatting whitespace as formatting after an expression and skip it.
+            if (prevOriginal && prevOriginal.type === 'JSXExpressionContainer') {
+              continue
+            }
+            // Only merge into previous text when the previous original sibling was also JSXText.
+            if (prevSlot.type === 'JSXText' && prevOriginal && prevOriginal.type === 'JSXText') {
+              prevSlot.value = String(prevSlot.value) + n.value
+              continue
+            }
+          }
+        }
+        // Add all other JSXText nodes
+        slots.push(n)
+        continue
+      }
+
+      if (n.type === 'JSXExpressionContainer') {
+        // If this expression is an object-expression placeholder like
+        // {{ key: value }} and we're inside a non-preserved parent element,
+        // treat it as part of the parent (do NOT add as a sibling/global slot).
+        if (parentIsNonPreserved && n.expression && n.expression.type === 'ObjectExpression') {
+          const prop = n.expression.properties && n.expression.properties[0]
+          if (prop && prop.type === 'KeyValueProperty') {
+            continue
+          }
+        }
+
+        // Handle pure-string expression containers (e.g. {" "}):
+        // - If it's pure space (no newline) and it directly follows a non-text sibling
+        //   (element/fragment), treat it as formatting and skip it.
+        // - Otherwise, count it as a slot (do NOT merge it into previous JSXText).
+        if (n.expression && n.expression.type === 'StringLiteral') {
+          const textVal = String(n.expression.value || '')
+          const isPureSpaceNoNewline = /^\s*$/.test(textVal) && !textVal.includes('\n')
+          const prevOriginal = meaningfulNodes[i - 1]
+          const nextOriginal = meaningfulNodes[i + 1]
+
+          if (isPureSpaceNoNewline) {
+            // If the explicit {" "} is followed by a newline-only JSXText which
+            // itself is followed by an element/fragment, treat the {" "}
+            // as layout-only and skip it. This covers cases where the space
+            // precedes a newline-only separator before an element (fixes index
+            // shifting in object-expression span tests).
+            const nextNextOriginal = meaningfulNodes[i + 2]
+            if (
+              nextOriginal &&
+              nextOriginal.type === 'JSXText' &&
+              isFormattingWhitespace(nextOriginal) &&
+              nextNextOriginal &&
+              (nextNextOriginal.type === 'JSXElement' || nextNextOriginal.type === 'JSXFragment')
+            ) {
+              // Only skip this pure-space when it appears in one of these cases:
+              // - there is no previous original sibling (leading)
+              // - the previous original sibling is not a JSXText (e.g. element/expr)
+              // - OR the previous original is JSXText but it itself follows an expression
+              //   (pattern: <expr>, JSXText, {" "}, newline-only JSXText, <element>)
+              const prevOriginal = meaningfulNodes[i - 1]
+              const prevPrevOriginal = meaningfulNodes[i - 2]
+              const shouldSkip =
+                !prevOriginal ||
+                prevOriginal.type !== 'JSXText' ||
+                (prevPrevOriginal && prevPrevOriginal.type === 'JSXExpressionContainer')
+
+              if (shouldSkip) {
+                continue
+              }
+            }
+
+            // Only treat {" "} as pure formatting to skip when it sits between
+            // an element/fragment and a newline-only JSXText. In that specific
+            // boundary case the explicit space is merely layout and must be ignored.
+            if (
+              prevOriginal &&
+              (prevOriginal.type === 'JSXElement' || prevOriginal.type === 'JSXFragment') &&
+              nextOriginal &&
+              nextOriginal.type === 'JSXText' &&
+              isFormattingWhitespace(nextOriginal)
+            ) {
+              continue
+            }
+
+            // 1) Merge into previous text when the previous original sibling is JSXText
+            //    and the next original sibling is either missing or a non-formatting JSXText.
+            //    This preserves "foo{' '}bar" as a single text node but avoids merging
+            //    when the {" "} is followed by newline-only formatting before an element.
+            const nextIsTextNonFormatting = !nextOriginal || (nextOriginal.type === 'JSXText' && !isFormattingWhitespace(nextOriginal))
+            if (prevOriginal && prevOriginal.type === 'JSXText' && nextIsTextNonFormatting) {
+              const prevSlot = slots[slots.length - 1]
+              if (prevSlot && prevSlot.type === 'JSXText') {
+                prevSlot.value = String(prevSlot.value) + n.expression.value
+                continue
+              }
+            }
+
+            // 2) Skip when this explicit space sits between an element/fragment
+            //    and a newline-only formatting JSXText (boundary formatting).
+            if (
+              prevOriginal &&
+              (prevOriginal.type === 'JSXElement' || prevOriginal.type === 'JSXFragment') &&
+              nextOriginal &&
+              nextOriginal.type === 'JSXText' &&
+              isFormattingWhitespace(nextOriginal)
+            ) {
+              continue
+            }
+            // 3) Otherwise fallthrough and count this expression as a slot.
+          }
+        }
+
+        // All JSXExpressionContainers count as slots for indexing.
+        slots.push(n)
+        continue
+      }
+
+      if (n.type === 'JSXElement') {
+        const tagName = n.opening && n.opening.name && n.opening.name.type === 'Identifier'
+          ? n.opening.name.value
+          : undefined
+        if (tagName && allowedTags.has(tagName)) {
+          // preserved tag: descend into children (tag itself is not a slot)
+          collectSlots(n.children || [], slots, false)
+        } else {
+          // non-preserved element: the element itself is a single slot.
+          // Pre-order: allocate the parent's slot first, then descend into its
+          // children. While descending, mark parentIsNonPreserved so
+          // KeyValueProperty-style object-expression placeholders are not added
+          // as separate sibling slots.
+          slots.push(n)
+          collectSlots(n.children || [], slots, true)
         }
         continue
       }
 
-      if (child.type === 'JSXExpressionContainer') {
-        const expr = child.expression
+      if (n.type === 'JSXFragment') {
+        collectSlots(n.children || [], slots, parentIsNonPreserved)
+        continue
+      }
+
+      // ignore unknown node types
+    }
+  }
+
+  // prepare the global slot list for the whole subtree
+  const globalSlots: any[] = []
+  collectSlots(children, globalSlots, false)
+
+  function visitNodes (nodes: any[]): string {
+    if (!nodes || nodes.length === 0) return ''
+    let out = ''
+
+    for (const node of nodes) {
+      if (!node) continue
+
+      if (node.type === 'JSXText') {
+        if (!isFormattingWhitespace(node)) out += node.value
+        continue
+      }
+
+      if (node.type === 'JSXExpressionContainer') {
+        const expr = node.expression
         if (!expr) continue
 
         if (expr.type === 'StringLiteral') {
@@ -286,39 +461,40 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             out += `{{${prop.key.value}}}`
           } else if (prop && prop.type === 'Identifier') {
             out += `{{${prop.value}}}`
+          } else {
+            out += '{{value}}'
           }
         } else if (expr.type === 'MemberExpression' && expr.property && expr.property.type === 'Identifier') {
           out += `{{${expr.property.value}}}`
         } else if (expr.type === 'CallExpression' && expr.callee?.type === 'Identifier') {
           out += `{{${expr.callee.value}}}`
+        } else {
+          out += '{{value}}'
         }
-        // expression containers (including explicit {' '}) consume a slot
-        counter.n++
         continue
       }
 
-      if (child.type === 'JSXElement') {
+      if (node.type === 'JSXElement') {
         let tag: string | undefined
-        if (child.opening && child.opening.name && child.opening.name.type === 'Identifier') {
-          tag = child.opening.name.value
+        if (node.opening && node.opening.name && node.opening.name.type === 'Identifier') {
+          tag = node.opening.name.value
         }
 
         if (tag && allowedTags.has(tag)) {
-          // preserved HTML tag: do NOT consume a numeric slot for the tag itself
-          const inner = serialize(child.children || [])
+          const inner = visitNodes(node.children || [])
           out += `<${tag}>${inner}</${tag}>`
         } else {
-          // non-preserved element: use current counter value as numeric index, then consume the slot
-          const myIndex = counter.n
-          counter.n++
-          const inner = serialize(child.children || [])
-          out += `<${myIndex}>${inner}</${myIndex}>`
+          // Use the pre-order globalSlots index so placeholder numbers reflect
+          // the global ordering (including nested slots collected earlier).
+          const idx = globalSlots.indexOf(node)
+          const inner = visitNodes(node.children || [])
+          out += `<${idx}>${inner}</${idx}>`
         }
         continue
       }
 
-      if (child.type === 'JSXFragment') {
-        out += serialize(child.children || [])
+      if (node.type === 'JSXFragment') {
+        out += visitNodes(node.children || [])
         continue
       }
 
@@ -328,6 +504,6 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
     return out
   }
 
-  const result = serialize(children)
+  const result = visitNodes(children)
   return String(result).replace(/\s+/g, ' ').trim()
 }
