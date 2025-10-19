@@ -370,7 +370,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.only('should ignore boundary whitespace-only JSXText nodes so component indexes start at first meaningful child', async () => {
+  it('should ignore boundary whitespace-only JSXText nodes so component indexes start at first meaningful child', async () => {
     const sampleCode = `
       <Trans i18nKey={'ticket_received_msg'} count={1}>
         <span className="font-extrabold">
@@ -444,7 +444,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.only('should calculate correct index for children (next index)', async () => {
+  it('should calculate correct index for children (next index)', async () => {
     const sampleCode = `
       <Trans i18nKey="children_receive_wrong_second_index">
         First line with empty JSXTextNode{' '}
