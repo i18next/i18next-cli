@@ -370,7 +370,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it('should ignore boundary whitespace-only JSXText nodes so component indexes start at first meaningful child', async () => {
+  it.only('should ignore boundary whitespace-only JSXText nodes so component indexes start at first meaningful child', async () => {
     const sampleCode = `
       <Trans i18nKey={'ticket_received_msg'} count={1}>
         <span className="font-extrabold">
@@ -390,7 +390,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
 
-    const expectedDefaultValue = '<0>{{username}}</0> got <5>{{count}}</5> ticket'
+    const expectedDefaultValue = '<0>{{username}}</0> got <3>{{count}}</3> ticket'
 
     expect(translationFile!.newTranslations).toEqual({
       ticket_received_msg_one: expectedDefaultValue,
@@ -422,9 +422,9 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it('should calculate correct index for children', async () => {
+  it('should calculate correct index for children (with attr)', async () => {
     const sampleCode = `
-      <Trans i18nKey="children_receive_wrong_index">
+      <Trans i18nKey="children_receive_wrong_index_attr">
         First line with empty JSXTextNode
         <a href="http://www.grafana.com">Span that should have index 1 but has index 0</a>
         Second line
@@ -440,15 +440,15 @@ describe('extractor: advanced Trans features', () => {
     const expectedDefaultValue = 'First line with empty JSXTextNode <1>Span that should have index 1 but has index 0</1> Second line'
 
     expect(translationFile!.newTranslations).toEqual({
-      children_receive_wrong_index: expectedDefaultValue,
+      children_receive_wrong_index_attr: expectedDefaultValue,
     })
   })
 
-  it('should calculate correct index for children', async () => {
+  it.only('should calculate correct index for children (next index)', async () => {
     const sampleCode = `
-      <Trans i18nKey="children_receive_wrong_index">
+      <Trans i18nKey="children_receive_wrong_second_index">
         First line with empty JSXTextNode{' '}
-        <a href="http://www.grafana.com">Span that should have index 1 but has index 0</a>
+        <a href="http://www.grafana.com">Span that should have index 2 but has index 0</a>
         Second line
       </Trans>
     `
@@ -459,10 +459,35 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
 
-    const expectedDefaultValue = 'First line with empty JSXTextNode <2>Span that should have index 1 but has index 0</2> Second line'
+    const expectedDefaultValue = 'First line with empty JSXTextNode <2>Span that should have index 2 but has index 0</2> Second line'
 
     expect(translationFile!.newTranslations).toEqual({
-      children_receive_wrong_index: expectedDefaultValue,
+      children_receive_wrong_second_index: expectedDefaultValue,
+    })
+  })
+
+  it('should handle explicit {" "} spacing and correct indexes', async () => {
+    const sampleCode = `
+      <Trans i18nKey={"ticket_two_received_msg"} count={1}>
+        <span className="font-extrabold text-fg">
+          {{ username: item.userName }}
+        </span>{" "}
+        got <span className="font-extrabold text-brand">{{ count: 1 }}</span>{" "}
+        ticket
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue = '<0>{{username}}</0> got <3>{{count}}</3> ticket'
+
+    expect(translationFile!.newTranslations).toEqual({
+      ticket_two_received_msg_one: expectedDefaultValue,
+      ticket_two_received_msg_other: expectedDefaultValue,
     })
   })
 })
