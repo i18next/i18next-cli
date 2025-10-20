@@ -210,8 +210,54 @@ export class CallExpressionHandler {
         }
 
         // 2. Handle Plurals
-        const hasCount = getObjectPropValue(options, 'count') !== undefined
-        const isOrdinalByOption = getObjectPropValue(options, 'ordinal') === true
+        // Robust detection for `{ count }`, `{ count: x }`, `{ 'count': x }` etc.
+        // Support KeyValueProperty and common shorthand forms that SWC may emit.
+        const propNameFromNode = (p: any): string | undefined => {
+          if (!p) return undefined
+          // Standard key:value property
+          if (p.type === 'KeyValueProperty' && p.key) {
+            if (p.key.type === 'Identifier') return p.key.value
+            if (p.key.type === 'StringLiteral') return p.key.value
+          }
+          // SWC may represent shorthand properties differently (no explicit key node).
+          // Try common shapes: property with `value` being an Identifier (shorthand).
+          if (p.type === 'KeyValueProperty' && p.value && p.value.type === 'Identifier') {
+            // e.g. { count: count } - already covered above, but keep safe fallback
+            return p.key && p.key.type === 'Identifier' ? p.key.value : undefined
+          }
+          // Some AST variants use 'ShorthandProperty' or keep the Identifier directly.
+          if ((p.type === 'ShorthandProperty' || p.type === 'Identifier') && (p as any).value) {
+            return (p as any).value
+          }
+          // Fallback: if node has an 'id' or 'key' string value
+          if (p.key && typeof p.key === 'string') return p.key
+          return undefined
+        }
+
+        const hasCount = (() => {
+          if (!options || !Array.isArray(options.properties)) return false
+          for (const p of options.properties as any[]) {
+            const name = propNameFromNode(p)
+            if (name === 'count') return true
+          }
+          return false
+        })()
+
+        const isOrdinalByOption = (() => {
+          if (!options || !Array.isArray(options.properties)) return false
+          for (const p of options.properties as any[]) {
+            const name = propNameFromNode(p)
+            if (name === 'ordinal') {
+              // If it's a key:value pair with a BooleanLiteral true, respect it.
+              if (p.type === 'KeyValueProperty' && p.value && p.value.type === 'BooleanLiteral') {
+                return Boolean(p.value.value)
+              }
+              // shorthand `ordinal` without explicit true -> treat as false
+              return false
+            }
+          }
+          return false
+        })()
         if (hasCount || isOrdinalByKey) {
           // Check if plurals are disabled
           if (this.config.extract.disablePlurals) {

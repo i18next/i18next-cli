@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.11.9](https://github.com/i18next/i18next-cli/compare/v1.11.8...v1.11.9) - 2025-10-20
 
 - Fix: Make --sync-primary (syncPrimaryWithDefaults) smarter — only overwrite primary-language plural/context variants when the source actually provides an explicit default [#67](https://github.com/i18next/i18next-cli/issues/67)
+- Fix: Detect shorthand object property "count" in t(...) calls (e.g. t('key', { count })) so plural keys are generated correctly. Adds handling for shorthand AST shapes and tests to cover the case. [#68](https://github.com/i18next/i18next-cli/issues/68)
 
 ## [1.11.8](https://github.com/i18next/i18next-cli/compare/v1.11.7...v1.11.8) - 2025-10-20
 

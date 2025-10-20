@@ -765,6 +765,30 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should detect plural when options object uses shorthand property for count (shorthand { count })', async () => {
+      const sampleCode = `
+        let someVar = 3;
+        let count = 2;
+
+        // shorthand property for count should be treated like { count: count }
+        t('brokenExtraction', { count });
+        // explicit form for comparison
+        t('validExtraction', { count: someVar });
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        brokenExtraction_one: 'brokenExtraction',
+        brokenExtraction_other: 'brokenExtraction',
+        validExtraction_one: 'validExtraction',
+        validExtraction_other: 'validExtraction',
+      })
+    })
+
     it('should generate all required keys for languages with multiple plural forms (e.g., Arabic)', async () => {
       const sampleCode = `
         t('item', { 
