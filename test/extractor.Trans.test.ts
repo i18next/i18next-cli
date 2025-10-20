@@ -490,4 +490,73 @@ describe('extractor: advanced Trans features', () => {
       ticket_two_received_msg_other: expectedDefaultValue,
     })
   })
+
+  it.skip('should handle explicit {" "} spacing and produce index 4 for the count element', async () => {
+    const sampleCode = `
+      <Trans i18nKey={"ticket_received_msg"} count={1}>
+        <span className="font-extrabold text-fg">
+          {{ username: item.userName }}
+        </span>{" "}
+        got{" "}
+        <span className="font-extrabold text-brand">{{ count: 1 }}</span>{" "}
+        ticket
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue = '<0>{{username}}</0> got <4>{{count}}</4> ticket'
+
+    expect(translationFile!.newTranslations).toEqual({
+      ticket_received_msg_one: expectedDefaultValue,
+      ticket_received_msg_other: expectedDefaultValue,
+    })
+  })
+
+  it.skip('should serialize mixed inline tags and preserve indexes for <pre> and nested text', async () => {
+    const sampleCode = `
+      <Trans i18nKey="children_receive_wronger_index">
+        If you use a <pre variant="code">parse_mode</pre> option other than <pre variant="code">None</pre>,
+        truncation may result in an invalid message, causing the notification to fail. For longer messages, we
+        recommend using an alternative contact method.
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue =
+      'If you use a <1>parse_mode</1> option other than <3>None</3>, truncation may result in an invalid message, causing the notification to fail. For longer messages, we recommend using an alternative contact method.'
+
+    expect(translationFile!.newTranslations).toEqual({
+      children_receive_wronger_index: expectedDefaultValue,
+    })
+  })
+
+  it.skip('should serialize code-wrapped placeholders and assign correct indexes for multiple code tags', async () => {
+    const sampleCode = `
+      <Trans i18nKey="children_receive_more_wronger_index" values={{ from: fromLabel, to: toLabel }}>
+        <code>{'{{from}}'}</code> to <code>{'{{to}}'}</code>        
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue = '<0>{{from}}</0> to <2>{{to}}</2>'
+
+    expect(translationFile!.newTranslations).toEqual({
+      children_receive_more_wronger_index: expectedDefaultValue,
+    })
+  })
 })

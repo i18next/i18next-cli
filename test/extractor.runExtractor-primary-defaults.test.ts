@@ -37,7 +37,20 @@ describe('extractor: runExtractor (sync primary language defaults)', () => {
 
     // Dynamically import the mocked glob after mocks are set up
     const { glob } = await import('glob')
-    ;(glob as any).mockResolvedValue(['/src/App.tsx'])
+
+    // Return different results depending on the glob pattern:
+    // - patterns that target source files should return source paths
+    // - patterns that target locale files should return locale paths (or an empty list)
+    ;(glob as any).mockImplementation(async (pattern: string) => {
+      if (pattern.includes('src')) {
+        return ['/src/App.tsx', '/src/app.ts'].filter(Boolean)
+      }
+      if (pattern.includes('locales') || pattern.includes('{{language}}')) {
+        // Return locale files if they exist (tests create them), otherwise empty array
+        return ['/locales/en/translation.json', '/locales/de/translation.json'].filter(Boolean)
+      }
+      return []
+    })
   })
 
   it('should sync primary language values with code defaults when syncPrimaryWithDefaults is true', async () => {
@@ -628,5 +641,50 @@ describe('extractor: runExtractor (sync primary language defaults)', () => {
         }
       }
     })
+  })
+
+  it.only('should preserve existing plural translations for Trans without plural defaults when syncPrimaryWithDefaults is true (regression: #67)', async () => {
+    vol.fromJSON({
+      'src/App.tsx': `
+        import React from 'react'
+        import { Trans } from 'react-i18next'
+
+        export const Comp = ({ numberOfAlertInstances, item }: any) => (
+          <Trans i18nKey="alerting.policies.metadata.n-instances" count={numberOfAlertInstances ?? 0}>
+            instance
+          </Trans>
+        )
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+    const existing = {
+      alerting: {
+        policies: {
+          metadata: {
+            'n-instances_one': 'instance',
+            'n-instances_other': 'instances'
+          }
+        }
+      }
+    }
+
+    vol.fromJSON({
+      [enPath]: JSON.stringify(existing, null, 2),
+      [dePath]: JSON.stringify(existing, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['/src/App.tsx'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual(existing)
+
+    // No changes should be needed — existing plural forms must be preserved.
+    expect(result).toBe(false)
   })
 })

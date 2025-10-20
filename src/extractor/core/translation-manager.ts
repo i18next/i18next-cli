@@ -227,6 +227,7 @@ function buildNewTranslationsForNs (
     }
 
     let valueToSet: string
+
     if (existingValue === undefined || isStaleObject) {
       // New key or stale object - determine what value to use
       if (locale === primaryLanguage) {
@@ -264,7 +265,20 @@ function buildNewTranslationsForNs (
             key.startsWith(defaultValue + contextSeparator)))
         )
 
-        valueToSet = (defaultValue && !isDerivedDefault) ? defaultValue : existingValue
+        // Check if the current key is a plural or context variant
+        const isVariantKey = key.includes(pluralSeparator) || key.includes(contextSeparator)
+        // A simple check to see if the default value seems like a base value reused for a variant
+        // This is true if the key IS a variant, but the default value is NOT derived from the key itself.
+        const isBaseDefaultReusedForVariant = isVariantKey && defaultValue && !isDerivedDefault
+
+        if (defaultValue && !isDerivedDefault && !isBaseDefaultReusedForVariant) {
+          // Use the defaultValue from code if it's meaningful AND
+          // it's either not a variant key, OR it IS a variant key but the default seems specific to it (not just the base reused).
+          valueToSet = defaultValue
+        } else {
+          // Otherwise (default is derived, or it's a variant key reusing the base default), preserve the existing value.
+          valueToSet = existingValue
+        }
       } else {
         // Not primary language or not syncing - always preserve existing
         valueToSet = existingValue
