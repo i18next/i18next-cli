@@ -2,7 +2,8 @@ export type {
   I18nextToolkitConfig,
   Plugin,
   PluginContext,
-  ExtractedKey
+  ExtractedKey,
+  TranslationResult
 } from './types'
 export { defineConfig } from './config'
 export {
