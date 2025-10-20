@@ -116,6 +116,7 @@ describe('plugin system: html', () => {
     const tsxKey = keys.get('translation:a.tsx.key')
     expect(tsxKey).toEqual({
       key: 'a.tsx.key',
+      explicitDefault: true,
       ns: 'translation',
       defaultValue: 'From TSX'
     })
@@ -138,6 +139,7 @@ describe('plugin system: html', () => {
     expect(keys).toEqual(new Map([
       ['translation:a.tsx.key', {
         key: 'a.tsx.key',
+        explicitDefault: true,
         ns: 'translation',
         defaultValue: 'From TSX'
       }],

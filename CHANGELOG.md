@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.9](https://github.com/i18next/i18next-cli/compare/v1.11.8...v1.11.9) - 2025-10-20
+
+- Fix: Make --sync-primary (syncPrimaryWithDefaults) smarter — only overwrite primary-language plural/context variants when the source actually provides an explicit default [#67](https://github.com/i18next/i18next-cli/issues/67)
+
 ## [1.11.8](https://github.com/i18next/i18next-cli/compare/v1.11.7...v1.11.8) - 2025-10-20
 
 - Fix: Make `<Trans>` child indexing more robust by recognizing self-closing HTML tags (e.g. `<br/>`) and treating them as layout-only when appropriate. This prevents preserved HTML and surrounding formatting whitespace from shifting component placeholder indexes, so extracted default values now match react‑i18next runtime normalization. [#63](https://github.com/i18next/i18next-cli/issues/63)

@@ -98,6 +98,28 @@ export class CallExpressionHandler {
     const defaultValueFromOptions = options ? getObjectPropValue(options, 'defaultValue') : undefined
     const finalDefaultValue = (typeof defaultValueFromOptions === 'string' ? defaultValueFromOptions : defaultValue)
 
+    // Helper: detect if options object contains any defaultValue* properties
+    const optionsHasDefaultProps = (opts?: ObjectExpression) => {
+      if (!opts || !Array.isArray(opts.properties)) return false
+      for (const p of opts.properties as any[]) {
+        if (p && p.type === 'KeyValueProperty' && p.key) {
+          const keyName = (p.key.type === 'Identifier' && p.key.value) || (p.key.type === 'StringLiteral' && p.key.value)
+          if (typeof keyName === 'string' && keyName.startsWith('defaultValue')) return true
+        }
+      }
+      return false
+    }
+
+    // explicit for base key when a string default was provided OR explicit plural defaults are present
+    const explicitDefaultForBase = typeof finalDefaultValue === 'string' || optionsHasDefaultProps(options)
+    // detect if options contain plural-specific defaultValue_* props
+    const explicitPluralDefaultsInOptions = optionsHasDefaultProps(options)
+    // If a base default string exists, consider it explicit for plural VARIANTS only when
+    // it does NOT contain a count interpolation like '{{count}}' — templates with count
+    // are often the runtime interpolation form and should NOT overwrite existing variant forms.
+    const containsCountPlaceholder = (s?: string) => typeof s === 'string' && /{{\s*count\s*}}/.test(s)
+    const explicitPluralForVariants = Boolean(explicitPluralDefaultsInOptions || (typeof finalDefaultValue === 'string' && !containsCountPlaceholder(finalDefaultValue)))
+
     // Loop through each key found (could be one or more) and process it
     for (let i = 0; i < keysToProcess.length; i++) {
       let key = keysToProcess[i]
@@ -172,7 +194,7 @@ export class CallExpressionHandler {
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
           // Ignore context: ''
           if (contextValue !== '') {
-            keysWithContext.push({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv })
+            keysWithContext.push({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
           }
         } else if (contextProp?.value) {
           const contextValues = this.expressionResolver.resolvePossibleContextStringValues(contextProp.value)
@@ -180,10 +202,10 @@ export class CallExpressionHandler {
 
           if (contextValues.length > 0) {
             contextValues.forEach(context => {
-              keysWithContext.push({ key: `${finalKey}${contextSeparator}${context}`, ns, defaultValue: dv })
+              keysWithContext.push({ key: `${finalKey}${contextSeparator}${context}`, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
             })
             // For dynamic context, also add the base key as a fallback
-            keysWithContext.push({ key: finalKey, ns, defaultValue: dv })
+            keysWithContext.push({ key: finalKey, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
           }
         }
 
@@ -198,12 +220,15 @@ export class CallExpressionHandler {
             if (keysWithContext.length > 0) {
               keysWithContext.forEach(this.pluginContext.addKey)
             } else {
-              this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv })
+              this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
             }
           } else {
             // Original plural handling logic when plurals are enabled
-            // Always pass the base key to handlePluralKeys - it will handle context internally
-            this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey, finalDefaultValue)
+            // Always pass the base key to handlePluralKeys - it will handle context internally.
+            // Pass explicitDefaultForBase so that when a call-site provided an explicit
+            // base default (e.g. t('key', 'Default', { count })), plural variant keys
+            // are treated as explicit and may be synced to that default.
+            this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey, finalDefaultValue, explicitPluralForVariants)
           }
 
           continue // This key is fully handled
@@ -229,7 +254,7 @@ export class CallExpressionHandler {
       }
 
       // 5. Default case: Add the simple key
-      this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv })
+      this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
     }
   }
 
@@ -339,7 +364,7 @@ export class CallExpressionHandler {
    * @param options - object expression options
    * @param isOrdinal - isOrdinal flag
    */
-  private handlePluralKeys (key: string, ns: string | undefined, options: ObjectExpression, isOrdinal: boolean, defaultValueFromCall?: string): void {
+  private handlePluralKeys (key: string, ns: string | undefined, options: ObjectExpression, isOrdinal: boolean, defaultValueFromCall?: string, explicitDefaultFromSource?: boolean): void {
     try {
       const type = isOrdinal ? 'ordinal' : 'cardinal'
 
@@ -460,7 +485,12 @@ export class CallExpressionHandler {
             ns,
             defaultValue: finalDefaultValue,
             hasCount: true,
-            isOrdinal
+            isOrdinal,
+            // Only treat plural/context variant as explicit when:
+            // - the extractor marked the source as explicitly providing plural defaults
+            // - OR a plural-specific default was provided in the options (specificDefault/otherDefault)
+            // Do NOT treat the presence of a general base defaultValueFromCall as making variants explicit.
+            explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string')
           })
         }
       }

@@ -70,6 +70,7 @@ export class JSXHandler {
               defaultValue: defaultValue || serializedChildren,
               hasCount,
               isOrdinal,
+              explicitDefault: extractedAttributes.explicitDefault,
             }
           })
 
@@ -184,12 +185,12 @@ export class JSXHandler {
               for (const context of contextValues) {
                 for (const extractedKey of extractedKeys) {
                   const contextKey = `${extractedKey.key}${contextSeparator}${context}`
-                  this.generatePluralKeysForTrans(contextKey, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode)
+                  this.generatePluralKeysForTrans(contextKey, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, extractedKey.explicitDefault)
                 }
               }
             } else {
               // Fallback to just plural forms if context resolution fails
-              extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode))
+              extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, extractedKey.explicitDefault))
             }
           }
         } else if (contextExpression) {
@@ -245,7 +246,7 @@ export class JSXHandler {
             )
             const isOrdinal = !!ordinalAttr
 
-            extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode))
+            extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, extractedKey.explicitDefault))
           }
         } else {
           // No count or context - just add the base keys
@@ -270,7 +271,7 @@ export class JSXHandler {
    * @param isOrdinal - Whether to generate ordinal plural forms
    * @param optionsNode - Optional tOptions object expression for plural-specific defaults
    */
-  private generatePluralKeysForTrans (key: string, defaultValue: string | undefined, ns: string | undefined, isOrdinal: boolean, optionsNode?: ObjectExpression): void {
+  private generatePluralKeysForTrans (key: string, defaultValue: string | undefined, ns: string | undefined, isOrdinal: boolean, optionsNode?: ObjectExpression, explicitDefaultFromSource?: boolean): void {
     try {
       const type = isOrdinal ? 'ordinal' : 'cardinal'
       const pluralCategories = new Intl.PluralRules(this.config.extract?.primaryLanguage, { type }).resolvedOptions().pluralCategories
@@ -321,7 +322,11 @@ export class JSXHandler {
           ns,
           defaultValue: finalDefaultValue,
           hasCount: true,
-          isOrdinal
+          isOrdinal,
+          // Only treat plural/context variant as explicit when:
+          // - the extractor indicated the default was explicit on the source element
+          // - OR a plural-specific default was provided in tOptions (specificDefault/otherDefault)
+          explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string')
         })
       }
     } catch (e) {

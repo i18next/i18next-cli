@@ -26,6 +26,9 @@ export interface ExtractedJSXAttributes {
 
   /** hold the raw context expression from the AST */
   contextExpression?: Expression;
+
+  /** Whether the defaultValue was explicitly provided on the <Trans /> (defaults prop or tOptions defaultValue*) */
+  explicitDefault?: boolean;
 }
 
 /**
@@ -224,6 +227,23 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
     defaultValue = serialized
   }
 
+  // Determine if tOptions contained explicit defaultValue* properties
+  const optionsHasDefaultProps = (opts?: ObjectExpression) => {
+    if (!opts || !Array.isArray((opts as any).properties)) return false
+    for (const p of (opts as any).properties) {
+      if (p && p.type === 'KeyValueProperty' && p.key) {
+        const keyName = (p.key.type === 'Identifier' && p.key.value) || (p.key.type === 'StringLiteral' && p.key.value)
+        if (typeof keyName === 'string' && keyName.startsWith('defaultValue')) return true
+      }
+    }
+    return false
+  }
+
+  const explicitDefault = Boolean(
+    (defaultsAttr && defaultsAttr.type === 'JSXAttribute' && defaultsAttr.value?.type === 'StringLiteral') ||
+    optionsHasDefaultProps(optionsNode)
+  )
+
   return {
     keyExpression,
     serializedChildren: serialized,
@@ -233,6 +253,7 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
     isOrdinal,
     contextExpression,
     optionsNode,
+    explicitDefault
   }
 }
 

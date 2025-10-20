@@ -208,7 +208,7 @@ function buildNewTranslationsForNs (
   }
 
   // 1. Build the object first, without any sorting.
-  for (const { key, defaultValue } of filteredKeys) {
+  for (const { key, defaultValue, explicitDefault } of filteredKeys) {
     const existingValue = getNestedValue(existingTranslations, key, keySeparator ?? '.')
     const isLeafInNewKeys = !filteredKeys.some(otherKey => otherKey.key.startsWith(`${key}${keySeparator}`) && otherKey.key !== key)
 
@@ -255,8 +255,7 @@ function buildNewTranslationsForNs (
     } else {
       // Existing value exists - decide whether to preserve or sync
       if (locale === primaryLanguage && syncPrimaryWithDefaults) {
-        // For primary language with syncPrimaryWithDefaults enabled:
-        // Only update if we have a meaningful defaultValue that's not derived from key pattern
+        // Only update when we have a meaningful defaultValue that's not derived from the key pattern.
         const isDerivedDefault = defaultValue && (
           defaultValue === key || // Exact match
           // For variant keys (plural/context), check if defaultValue is the base
@@ -265,20 +264,16 @@ function buildNewTranslationsForNs (
             key.startsWith(defaultValue + contextSeparator)))
         )
 
-        // Check if the current key is a plural or context variant
-        // const isVariantKey = key.includes(pluralSeparator) || key.includes(contextSeparator)
-        // A simple check to see if the default value seems like a base value reused for a variant
-        // This is true if the key IS a variant, but the default value is NOT derived from the key itself.
-        // const isBaseDefaultReusedForVariant = isVariantKey && defaultValue && !isDerivedDefault
-
-        // If a meaningful (non-derived) defaultValue is provided in code, apply it.
-        // This includes plural/context variant keys generated from a single explicit
-        // default (e.g. t('key', 'Default', { count })) — we should update all
-        // generated variant forms to that explicit default.
-        if (defaultValue && !isDerivedDefault) {
+        // If this key looks like a plural/context variant and the default
+        // wasn't explicitly provided in source code, preserve the existing value.
+        const isVariantKey = key.includes(pluralSeparator) || key.includes(contextSeparator)
+        if (isVariantKey && !explicitDefault) {
+          valueToSet = existingValue
+        } else if (defaultValue && !isDerivedDefault) {
+          // Otherwise, if we have a meaningful (non-derived) default, apply it.
           valueToSet = defaultValue
         } else {
-          // Otherwise preserve existing translations.
+          // Fallback: preserve existing translation.
           valueToSet = existingValue
         }
       } else {

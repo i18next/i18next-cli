@@ -306,6 +306,9 @@ export interface ExtractedKey {
 
   /** hold the raw context expression from the AST */
   contextExpression?: Expression;
+
+  /** Whether the defaultValue was explicitly provided in source code (vs derived from children/key) */
+  explicitDefault?: boolean;
 }
 
 /**
