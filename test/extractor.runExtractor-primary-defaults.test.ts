@@ -687,4 +687,45 @@ describe('extractor: runExtractor (sync primary language defaults)', () => {
     // No changes should be needed — existing plural forms must be preserved.
     expect(result).toBe(false)
   })
+
+  it('should sync primary language when syncPrimaryWithDefaults is true but only for keys with code defaults', async () => {
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        const withDefault = t('app.withDefault', 'Has default')
+        const withoutDefault = t('app.withoutDefault')
+        const total = t('app.total', '{{count}} item', { count: total, defaultValue_one: 'item', defaultValue_other: 'items' })
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        app: {
+          withDefault: 'Old value',
+          withoutDefault: 'Existing value',
+          onlyInJson: 'Should be preserved',
+          total_one: 'item',
+          total_other: 'items'
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      app: {
+        withDefault: 'Has default',         // Updated (has code default)
+        withoutDefault: 'Existing value',   // Preserved (no code default)
+        onlyInJson: 'Should be preserved',  // Preserved (not in code)
+        total_one: 'item',                  // Preserved (has code default with count)
+        total_other: 'items'                // Preserved (has code default with count)
+      }
+    })
+  })
 })
