@@ -295,17 +295,29 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
     // Now process all nodes in the range [startIdx, endIdx] - this includes interior whitespace
     const meaningfulNodes = startIdx <= endIdx ? nodes.slice(startIdx, endIdx + 1) : []
 
+    // If the parent is non-preserved but it contains element/fragment children,
+    // we want to keep meaningful text & simple expressions so inline-tags inside
+    // a single wrapper (e.g. <span>.. <code/> ..</span>) preserve sibling ordering.
+    // If there are NO element children (e.g. <pre>some text</pre>) then all inner
+    // text/expressions should be treated as part of the parent and NOT create slots.
+    const parentHasElementChildren = meaningfulNodes.some(
+      (n) => n && (n.type === 'JSXElement' || n.type === 'JSXFragment')
+    )
+
     for (let i = 0; i < meaningfulNodes.length; i++) {
       const n = meaningfulNodes[i]
       if (!n) continue
 
       if (n.type === 'JSXText') {
-        // Do NOT add plain text nodes as separate global slots when they are
-        // children of a non-preserved parent element (e.g. <pre>). The parent
-        // element itself is the slot; inner text must not shift indexes.
-        if (parentIsNonPreserved) {
-          // Still allow formatting-whitespace handling to be ignored here (skip)
-          // so they don't pollute the slot ordering.
+        // When inside a non-preserved parent that has no element children (e.g. <pre>),
+        // skip all inner text nodes — they're part of the parent and must not shift indexes.
+        if (parentIsNonPreserved && !parentHasElementChildren) {
+          continue
+        }
+
+        // For non-preserved parents that DO have element children, only skip pure
+        // formatting whitespace; keep meaningful text so inline sibling indexes stay correct.
+        if (parentIsNonPreserved && isFormattingWhitespace(n)) {
           continue
         }
 
@@ -327,18 +339,25 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             }
           }
         }
+
+        // Don't treat the FIRST meaningful text node inside a non-preserved parent
+        // that also contains element children as an independent global slot.
+        // This preserves expected placeholder indexing for inline tags wrapped
+        // inside a single container (e.g. <span>text <code/> more <code/> ...</span>).
+        if (parentIsNonPreserved && parentHasElementChildren && i === 0) {
+          continue
+        }
+
         // Add all other JSXText nodes
         slots.push(n)
         continue
       }
 
       if (n.type === 'JSXExpressionContainer') {
-        // If this expression is inside a non-preserved parent element, treat
-        // simple content-bearing expressions as part of the parent and do NOT
-        // add them as separate sibling/global slots. This prevents inner nodes
-        // (like <code>{'{{x}}'}</code> or <pre>{'foo'}</pre>) from being treated
-        // as extra slots which shifts global indexes.
-        if (parentIsNonPreserved && n.expression) {
+        // If this expression is inside a non-preserved parent element that has NO
+        // element children (e.g. <pre>{'foo'}</pre>), treat common simple expressions
+        // as part of the parent and do NOT add them as separate sibling/global slots.
+        if (parentIsNonPreserved && !parentHasElementChildren && n.expression) {
           const exprType = n.expression.type
           // ObjectExpression placeholders ({{ key: value }}) should be treated
           // as part of the parent.
@@ -388,21 +407,11 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
               nextNextOriginal &&
               (nextNextOriginal.type === 'JSXElement' || nextNextOriginal.type === 'JSXFragment')
             ) {
-              // Only skip this pure-space when it appears in one of these cases:
-              // - there is no previous original sibling (leading)
-              // - the previous original sibling is not a JSXText (e.g. element/expr)
-              // - OR the previous original is JSXText but it itself follows an expression
-              //   (pattern: <expr>, JSXText, {" "}, newline-only JSXText, <element>)
-              const prevOriginal = meaningfulNodes[i - 1]
+              const prevOriginalCandidate = meaningfulNodes[i - 1]
               const prevPrevOriginal = meaningfulNodes[i - 2]
-              // Only skip when there's no previous original OR when the previous
-              // original is not text AND the node before that is an expression.
-              // The previous logic skipped too aggressively when prevOriginal was
-              // just a non-text element (e.g. <span>), which removed the slot
-              // that should keep the later element index (fixes index off-by-one).
               const shouldSkip =
-                !prevOriginal ||
-                (prevOriginal.type !== 'JSXText' && prevPrevOriginal && prevPrevOriginal.type === 'JSXExpressionContainer')
+                !prevOriginalCandidate ||
+                (prevOriginalCandidate.type !== 'JSXText' && prevPrevOriginal && prevPrevOriginal.type === 'JSXExpressionContainer')
 
               if (shouldSkip) {
                 continue
@@ -574,7 +583,9 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           // the global ordering (including nested slots collected earlier).
           const idx = globalSlots.indexOf(node)
           const inner = visitNodes(node.children || [])
-          out += `<${idx}>${inner}</${idx}>`
+          // Trim leading/trailing whitespace inside non-preserved element placeholders
+          // so formatting/indentation in source doesn't leak into the output.
+          out += `<${idx}>${String(inner).trim()}</${idx}>`
           lastWasSelfClosing = false
         }
         continue

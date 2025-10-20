@@ -582,4 +582,28 @@ describe('extractor: advanced Trans features', () => {
       another_children_receive_wrong_index: expectedDefaultValue,
     })
   })
+
+  it('should serialize nested inline tags inside a single <span> and assign correct indexes', async () => {
+    const sampleCode = `
+      <Trans i18nKey="another_children_receive_wrong_code_index">
+        <span>
+          Specifies the time column used for filtering. Defaults to the first tables <code>timeSpan</code> column,
+          the first <code>datetime</code> column found or <code>TimeGenerated</code>.
+        </span>
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue =
+      '<0>Specifies the time column used for filtering. Defaults to the first tables <1>timeSpan</1> column, the first <3>datetime</3> column found or <5>TimeGenerated</5>.</0>'
+
+    expect(translationFile!.newTranslations).toEqual({
+      another_children_receive_wrong_code_index: expectedDefaultValue,
+    })
+  })
 })
