@@ -559,4 +559,27 @@ describe('extractor: advanced Trans features', () => {
       children_receive_more_wronger_index: expectedDefaultValue,
     })
   })
+
+  it('should handle Badge and TextLink placeholders and preserve indexes', async () => {
+    const sampleCode = `
+      <Trans i18nKey="another_children_receive_wrong_index">
+        Maybe you mistyped the URL or the plugin with the id <Badge text={id} color="orange" /> is unavailable.
+        <br />
+        To see a list of available datasources please <TextLink href={ROUTES.AddNewConnection}>click here</TextLink>.
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue =
+      'Maybe you mistyped the URL or the plugin with the id <1></1> is unavailable.<br/>To see a list of available datasources please <5>click here</5>.'
+
+    expect(translationFile!.newTranslations).toEqual({
+      another_children_receive_wrong_index: expectedDefaultValue,
+    })
+  })
 })

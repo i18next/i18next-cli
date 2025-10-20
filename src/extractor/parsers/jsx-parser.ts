@@ -439,7 +439,15 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           ? n.opening.name.value
           : undefined
         if (tagName && allowedTags.has(tagName)) {
-          // preserved tag: descend into children (tag itself is not a slot)
+          // Count preserved HTML element as a global slot only when the AST
+          // marks it self-closing (e.g. <br />). Self-closing preserved tags
+          // should influence placeholder indexes (they appear inline without
+          // children), while non-self-closing preserved tags (e.g. <strong>)
+          // should not.
+          const isAstSelfClosing = !!(n.opening && (n.opening as any).selfClosing)
+          if (isAstSelfClosing) {
+            slots.push(n)
+          }
           collectSlots(n.children || [], slots, false)
         } else {
           // non-preserved element: the element itself is a single slot.
@@ -469,12 +477,20 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
   function visitNodes (nodes: any[]): string {
     if (!nodes || nodes.length === 0) return ''
     let out = ''
+    let lastWasSelfClosing = false
 
-    for (const node of nodes) {
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i]
       if (!node) continue
 
       if (node.type === 'JSXText') {
-        if (!isFormattingWhitespace(node)) out += node.value
+        if (isFormattingWhitespace(node)) continue
+        if (lastWasSelfClosing) {
+          out += node.value.replace(/^\s+/, '')
+          lastWasSelfClosing = false
+        } else {
+          out += node.value
+        }
         continue
       }
 
@@ -502,6 +518,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
         } else {
           out += '{{value}}'
         }
+        lastWasSelfClosing = false
         continue
       }
 
@@ -513,19 +530,38 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
 
         if (tag && allowedTags.has(tag)) {
           const inner = visitNodes(node.children || [])
-          out += `<${tag}>${inner}</${tag}>`
+          // consider element self-closing for rendering when AST marks it so or it has no meaningful children
+          const isAstSelfClosing = !!(node.opening && (node.opening as any).selfClosing)
+          const hasMeaningfulChildren = String(inner).trim() !== ''
+          if (isAstSelfClosing || !hasMeaningfulChildren) {
+            // If the previous original sibling is a JSXText that ends with a
+            // newline (the tag was placed on its own indented line), trim any
+            // trailing space we've accumulated so we don't leave " ... . <br/>".
+            // This targeted trimming avoids breaking other spacing-sensitive cases.
+            const prevOriginal = nodes[i - 1]
+            if (prevOriginal && prevOriginal.type === 'JSXText' && /\n\s*$/.test(prevOriginal.value)) {
+              out = out.replace(/\s+$/, '')
+            }
+            out += `<${tag}/>`
+            lastWasSelfClosing = true
+          } else {
+            out += `<${tag}>${inner}</${tag}>`
+            lastWasSelfClosing = false
+          }
         } else {
           // Use the pre-order globalSlots index so placeholder numbers reflect
           // the global ordering (including nested slots collected earlier).
           const idx = globalSlots.indexOf(node)
           const inner = visitNodes(node.children || [])
           out += `<${idx}>${inner}</${idx}>`
+          lastWasSelfClosing = false
         }
         continue
       }
 
       if (node.type === 'JSXFragment') {
         out += visitNodes(node.children || [])
+        lastWasSelfClosing = false
         continue
       }
 
