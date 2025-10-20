@@ -7,7 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.11.7](https://github.com/i18next/i18next-cli/compare/v1.11.6...v1.11.7) - 2025-10-20
 
-- fix: extractor --sync-primary (--syncPrimaryWithDefaults) incorrectly reset plural variants to empty strings, effectively removing existing plural translations [#67](https://github.com/i18next/i18next-cli/issues/67)
+- improve: extractor --sync-primary (--syncPrimaryWithDefaults) incorrectly reset plural variants to empty strings, effectively removing existing plural translations [#67](https://github.com/i18next/i18next-cli/issues/67)
+- improve Trans child indexing further [#63](https://github.com/i18next/i18next-cli/issues/63)
 
 ## [1.11.6](https://github.com/i18next/i18next-cli/compare/v1.11.5...v1.11.6) - 2025-10-19
 

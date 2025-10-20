@@ -390,7 +390,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
 
-    const expectedDefaultValue = '<0>{{username}}</0> got <3>{{count}}</3> ticket'
+    const expectedDefaultValue = '<0>{{username}}</0> got <4>{{count}}</4> ticket'
 
     expect(translationFile!.newTranslations).toEqual({
       ticket_received_msg_one: expectedDefaultValue,
@@ -491,7 +491,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.skip('should handle explicit {" "} spacing and produce index 4 for the count element', async () => {
+  it('should handle explicit {" "} spacing and produce index 4 for the count element', async () => {
     const sampleCode = `
       <Trans i18nKey={"ticket_received_msg"} count={1}>
         <span className="font-extrabold text-fg">
@@ -517,7 +517,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.skip('should serialize mixed inline tags and preserve indexes for <pre> and nested text', async () => {
+  it('should serialize mixed inline tags and preserve indexes for <pre> and nested text', async () => {
     const sampleCode = `
       <Trans i18nKey="children_receive_wronger_index">
         If you use a <pre variant="code">parse_mode</pre> option other than <pre variant="code">None</pre>,
@@ -540,7 +540,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.skip('should serialize code-wrapped placeholders and assign correct indexes for multiple code tags', async () => {
+  it('should serialize code-wrapped placeholders and assign correct indexes for multiple code tags', async () => {
     const sampleCode = `
       <Trans i18nKey="children_receive_more_wronger_index" values={{ from: fromLabel, to: toLabel }}>
         <code>{'{{from}}'}</code> to <code>{'{{to}}'}</code>        

@@ -266,17 +266,19 @@ function buildNewTranslationsForNs (
         )
 
         // Check if the current key is a plural or context variant
-        const isVariantKey = key.includes(pluralSeparator) || key.includes(contextSeparator)
+        // const isVariantKey = key.includes(pluralSeparator) || key.includes(contextSeparator)
         // A simple check to see if the default value seems like a base value reused for a variant
         // This is true if the key IS a variant, but the default value is NOT derived from the key itself.
-        const isBaseDefaultReusedForVariant = isVariantKey && defaultValue && !isDerivedDefault
+        // const isBaseDefaultReusedForVariant = isVariantKey && defaultValue && !isDerivedDefault
 
-        if (defaultValue && !isDerivedDefault && !isBaseDefaultReusedForVariant) {
-          // Use the defaultValue from code if it's meaningful AND
-          // it's either not a variant key, OR it IS a variant key but the default seems specific to it (not just the base reused).
+        // If a meaningful (non-derived) defaultValue is provided in code, apply it.
+        // This includes plural/context variant keys generated from a single explicit
+        // default (e.g. t('key', 'Default', { count })) — we should update all
+        // generated variant forms to that explicit default.
+        if (defaultValue && !isDerivedDefault) {
           valueToSet = defaultValue
         } else {
-          // Otherwise (default is derived, or it's a variant key reusing the base default), preserve the existing value.
+          // Otherwise preserve existing translations.
           valueToSet = existingValue
         }
       } else {

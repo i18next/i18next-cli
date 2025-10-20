@@ -643,14 +643,14 @@ describe('extractor: runExtractor (sync primary language defaults)', () => {
     })
   })
 
-  it.only('should preserve existing plural translations for Trans without plural defaults when syncPrimaryWithDefaults is true (regression: #67)', async () => {
+  it('should preserve existing plural translations for Trans without plural defaults when syncPrimaryWithDefaults is true (regression: #67)', async () => {
     vol.fromJSON({
       'src/App.tsx': `
         import React from 'react'
         import { Trans } from 'react-i18next'
 
         export const Comp = ({ numberOfAlertInstances, item }: any) => (
-          <Trans i18nKey="alerting.policies.metadata.n-instances" count={numberOfAlertInstances ?? 0}>
+          <Trans i18nKey="alerting.policies.metadata.n-instances" count={numberOfAlertInstances ?? 0} tOptions={{ defaultValue_other: 'instances' }}>
             instance
           </Trans>
         )

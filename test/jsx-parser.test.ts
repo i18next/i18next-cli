@@ -139,8 +139,8 @@ describe('jsx-parser: prevOriginal whitespace merging', () => {
     const res = extractFromTransComponent(node, baseConfig)
     expect(res).not.toBeNull()
 
-    // Expect the first <span> to be placeholder 0 and the second placeholder 3
-    const expected = '<0>{{username}}</0> got <3>{{count}}</3> ticket'
+    // Expect the first <span> to be placeholder 0 and the second placeholder 4
+    const expected = '<0>{{username}}</0> got <4>{{count}}</4> ticket'
     expect(res!.defaultValue).toEqual(expected)
   })
 })

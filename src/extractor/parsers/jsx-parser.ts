@@ -279,10 +279,16 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
       if (!n) continue
 
       if (n.type === 'JSXText') {
-        // Skip/merge pure-whitespace JSXText according to context:
-        // - If it immediately follows an expression container (and that expression
-        //   wasn't originally a JSXText sibling), skip it (it's formatting).
-        // - If it follows an original JSXText sibling, merge it into that text.
+        // Do NOT add plain text nodes as separate global slots when they are
+        // children of a non-preserved parent element (e.g. <pre>). The parent
+        // element itself is the slot; inner text must not shift indexes.
+        if (parentIsNonPreserved) {
+          // Still allow formatting-whitespace handling to be ignored here (skip)
+          // so they don't pollute the slot ordering.
+          continue
+        }
+
+        // Otherwise, preserve previous behavior for boundary/formatting merging.
         if (isFormattingWhitespace(n)) {
           const prevSlot = slots[slots.length - 1]
           const prevOriginal = meaningfulNodes[i - 1]
@@ -306,12 +312,33 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
       }
 
       if (n.type === 'JSXExpressionContainer') {
-        // If this expression is an object-expression placeholder like
-        // {{ key: value }} and we're inside a non-preserved parent element,
-        // treat it as part of the parent (do NOT add as a sibling/global slot).
-        if (parentIsNonPreserved && n.expression && n.expression.type === 'ObjectExpression') {
-          const prop = n.expression.properties && n.expression.properties[0]
-          if (prop && prop.type === 'KeyValueProperty') {
+        // If this expression is inside a non-preserved parent element, treat
+        // simple content-bearing expressions as part of the parent and do NOT
+        // add them as separate sibling/global slots. This prevents inner nodes
+        // (like <code>{'{{x}}'}</code> or <pre>{'foo'}</pre>) from being treated
+        // as extra slots which shifts global indexes.
+        if (parentIsNonPreserved && n.expression) {
+          const exprType = n.expression.type
+          // ObjectExpression placeholders ({{ key: value }}) should be treated
+          // as part of the parent.
+          if (exprType === 'ObjectExpression') {
+            const prop = n.expression.properties && n.expression.properties[0]
+            if (prop && prop.type === 'KeyValueProperty') {
+              continue
+            }
+          }
+
+          // For common simple content expressions, don't allocate a separate slot.
+          // However, if it's a pure-space StringLiteral ({" "}) we want to keep the
+          // special-space handling below, so only skip non-whitespace string literals.
+          if (exprType === 'StringLiteral') {
+            const textVal = String(n.expression.value || '')
+            const isPureSpaceNoNewline = /^\s*$/.test(textVal) && !textVal.includes('\n')
+            if (!isPureSpaceNoNewline) {
+              continue
+            }
+            // otherwise fall through to the pure-space handling below
+          } else if (exprType === 'Identifier' || exprType === 'MemberExpression' || exprType === 'CallExpression') {
             continue
           }
         }
@@ -347,10 +374,14 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
               //   (pattern: <expr>, JSXText, {" "}, newline-only JSXText, <element>)
               const prevOriginal = meaningfulNodes[i - 1]
               const prevPrevOriginal = meaningfulNodes[i - 2]
+              // Only skip when there's no previous original OR when the previous
+              // original is not text AND the node before that is an expression.
+              // The previous logic skipped too aggressively when prevOriginal was
+              // just a non-text element (e.g. <span>), which removed the slot
+              // that should keep the later element index (fixes index off-by-one).
               const shouldSkip =
                 !prevOriginal ||
-                prevOriginal.type !== 'JSXText' ||
-                (prevPrevOriginal && prevPrevOriginal.type === 'JSXExpressionContainer')
+                (prevOriginal.type !== 'JSXText' && prevPrevOriginal && prevPrevOriginal.type === 'JSXExpressionContainer')
 
               if (shouldSkip) {
                 continue
