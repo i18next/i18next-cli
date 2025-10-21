@@ -606,4 +606,77 @@ describe('extractor: advanced Trans features', () => {
       another_children_receive_wrong_code_index: expectedDefaultValue,
     })
   })
+
+  it('should serialize nested small/strong with correct indexes (1)', async () => {
+    const sampleCode = `
+      <Trans i18nKey="another_wrong_code_index_1">
+        Your changes will be lost when you update the plugin.
+        <br />
+        <small>
+          Use <strong>Save As</strong> to create custom version.
+        </small>
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue =
+      'Your changes will be lost when you update the plugin.<br/><2>Use <strong>Save As</strong> to create custom version.</2>'
+
+    expect(translationFile!.newTranslations).toEqual({
+      another_wrong_code_index_1: expectedDefaultValue,
+    })
+  })
+
+  it('should serialize small with single-line text and correct indexes (2)', async () => {
+    const sampleCode = `
+      <Trans i18nKey="another_wrong_code_index_2">
+        A dashboard with the same name in selected folder already exists.
+        <br />
+        <small>Would you still like to save this dashboard?</small>
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue =
+      'A dashboard with the same name in selected folder already exists.<br/><2>Would you still like to save this dashboard?</2>'
+
+    expect(translationFile!.newTranslations).toEqual({
+      another_wrong_code_index_2: expectedDefaultValue,
+    })
+  })
+
+  it('should serialize nested TextLink and span inside div with correct nested indexes (3)', async () => {
+    const sampleCode = `
+      <Trans i18nKey="another_wrong_code_index_3">
+        <div>
+          <TextLink href="https://grafana.com/docs/grafana/latest/dashboards/time-range-controls" external>
+            Read the documentation
+          </TextLink>
+          <span> to find out more about how to enter custom time ranges.</span>
+        </div>
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue = '<0><0>Read the documentation</0><1> to find out more about how to enter custom time ranges.</1></0>'
+
+    expect(translationFile!.newTranslations).toEqual({
+      another_wrong_code_index_3: expectedDefaultValue,
+    })
+  })
 })

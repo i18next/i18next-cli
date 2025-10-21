@@ -323,6 +323,20 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
 
         // Otherwise, preserve previous behavior for boundary/formatting merging.
         if (isFormattingWhitespace(n)) {
+          // If this formatting whitespace sits between two element/fragment nodes
+          // (e.g. <br />\n  <small>...), treat it as layout-only and skip it so it
+          // doesn't become its own slot and shift subsequent element indexes.
+          const prevOrig = meaningfulNodes[i - 1]
+          const nextOrig = meaningfulNodes[i + 1]
+          if (
+            prevOrig &&
+            (prevOrig.type === 'JSXElement' || prevOrig.type === 'JSXFragment') &&
+            nextOrig &&
+            (nextOrig.type === 'JSXElement' || nextOrig.type === 'JSXFragment')
+          ) {
+            continue
+          }
+
           const prevSlot = slots[slots.length - 1]
           const prevOriginal = meaningfulNodes[i - 1]
 
@@ -504,7 +518,16 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
   const globalSlots: any[] = []
   collectSlots(children, globalSlots, false)
 
-  function visitNodes (nodes: any[]): string {
+  // Trim only newline-only indentation at the edges of serialized inner text.
+  // This preserves single leading/trailing spaces which are meaningful between inline placeholders.
+  const trimFormattingEdges = (s: string) =>
+    String(s)
+      // remove leading newline-only indentation
+      .replace(/^\s*\n\s*/g, '')
+      // remove trailing newline-only indentation
+      .replace(/\s*\n\s*$/g, '')
+
+  function visitNodes (nodes: any[], localIndexMap?: Map<any, number>): string {
     if (!nodes || nodes.length === 0) return ''
     let out = ''
     let lastWasSelfClosing = false
@@ -559,7 +582,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
         }
 
         if (tag && allowedTags.has(tag)) {
-          const inner = visitNodes(node.children || [])
+          const inner = visitNodes(node.children || [], localIndexMap)
           // consider element self-closing for rendering when AST marks it so or it has no meaningful children
           const isAstSelfClosing = !!(node.opening && (node.opening as any).selfClosing)
           const hasMeaningfulChildren = String(inner).trim() !== ''
@@ -579,14 +602,49 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             lastWasSelfClosing = false
           }
         } else {
-          // Use the pre-order globalSlots index so placeholder numbers reflect
-          // the global ordering (including nested slots collected earlier).
-          const idx = globalSlots.indexOf(node)
-          const inner = visitNodes(node.children || [])
-          // Trim leading/trailing whitespace inside non-preserved element placeholders
-          // so formatting/indentation in source doesn't leak into the output.
-          out += `<${idx}>${String(inner).trim()}</${idx}>`
-          lastWasSelfClosing = false
+          // Decide whether to use local (restarted) indexes for this element's
+          // immediate children or fall back to the global pre-order indexes.
+          // If the element's children contain non-element slots (JSXText /
+          // JSXExpressionContainer) that were collected as global slots, we must
+          // use the global indexes so those text slots keep their positions.
+          const children = node.children || []
+          const hasNonElementGlobalSlots = children.some((ch: any) =>
+            ch && (ch.type === 'JSXText' || ch.type === 'JSXExpressionContainer') && globalSlots.indexOf(ch) !== -1
+          )
+
+          // If there are non-element global slots among the children, render using
+          // global indexes. Otherwise build a compact local index map so nested
+          // placeholders restart at 0 inside this parent element.
+          if (hasNonElementGlobalSlots) {
+            const idx = globalSlots.indexOf(node)
+            const inner = visitNodes(children, undefined)
+            out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
+            lastWasSelfClosing = false
+          } else {
+            const childrenLocalMap = new Map<any, number>()
+            let localIdxCounter = 0
+            for (const ch of children) {
+              if (!ch) continue
+              if (ch.type === 'JSXElement') {
+                const chTag = ch.opening && ch.opening.name && ch.opening.name.type === 'Identifier'
+                  ? ch.opening.name.value
+                  : undefined
+                if (chTag && allowedTags.has(chTag)) {
+                  const isChSelfClosing = !!(ch.opening && (ch.opening as any).selfClosing)
+                  if (isChSelfClosing) {
+                    childrenLocalMap.set(ch, localIdxCounter++)
+                  }
+                } else {
+                  childrenLocalMap.set(ch, localIdxCounter++)
+                }
+              }
+            }
+
+            const idx = localIndexMap && localIndexMap.has(node) ? localIndexMap.get(node) : globalSlots.indexOf(node)
+            const inner = visitNodes(children, childrenLocalMap.size ? childrenLocalMap : undefined)
+            out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
+            lastWasSelfClosing = false
+          }
         }
         continue
       }
