@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.13](https://github.com/i18next/i18next-cli/compare/v1.11.12...v1.11.13) - 2025-10-22
+
+- Fix: Stop infinite watch loops by properly honoring extract.ignore patterns [#70](https://github.com/i18next/i18next-cli/issues/70)
+
 ## [1.11.12](https://github.com/i18next/i18next-cli/compare/v1.11.11...v1.11.12) - 2025-10-21
 
 - further improve jsx-parser [#66](https://github.com/i18next/i18next-cli/issues/66)

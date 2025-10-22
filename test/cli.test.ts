@@ -28,6 +28,15 @@ vi.mock('../src/config', () => ({
   loadConfig: mockLoadConfig,
 }))
 
+vi.mock('chokidar', () => {
+  const mockWatch = vi.fn(() => ({ on: vi.fn() }))
+  return {
+    default: { watch: mockWatch },
+    watch: mockWatch,
+  }
+})
+vi.mock('glob', () => ({ glob: vi.fn().mockResolvedValue([]) }))
+
 describe('CLI command parsing and dispatching', () => {
   let originalArgv: string[]
   let exitSpy: any
@@ -150,6 +159,38 @@ describe('CLI command parsing and dispatching', () => {
         isWatchMode: false,
         isDryRun: false,
         syncPrimaryWithDefaults: true
+      })
+    )
+  })
+
+  it('should honor extract.ignore when running in watch mode', async () => {
+    vi.resetModules()
+    const mockWatch = (await import('chokidar')).watch as any
+    process.argv = ['node', 'cli.ts', 'extract', '--watch']
+
+    const watchConfig = {
+      locales: ['en-US'],
+      extract: {
+        input: ['src/**/*.{ts,tsx}'],
+        ignore: ['src/i18n/locales/**'],
+        output: 'src/i18n/locales/{{language}}/{{namespace}}.ts',
+      }
+    }
+
+    mockEnsureConfig.mockResolvedValue(watchConfig)
+    mockRunExtractor.mockResolvedValue(false)
+
+    await import('../src/cli')
+
+    // Allow async operations in the action handler to complete
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockWatch).toHaveBeenCalledTimes(1)
+    const calledOptions = mockWatch.mock.calls[0][1]
+    // Ensure the ignore option contains the configured ignore pattern
+    expect(calledOptions).toEqual(
+      expect.objectContaining({
+        ignored: expect.arrayContaining([expect.stringContaining('src/i18n/locales')]),
       })
     )
   })

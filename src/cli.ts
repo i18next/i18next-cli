@@ -2,7 +2,6 @@
 
 import { Command } from 'commander'
 import chokidar from 'chokidar'
-import { glob } from 'glob'
 import chalk from 'chalk'
 import { loadConfig, ensureConfig } from './config'
 import { detectConfig } from './heuristic-config'
@@ -58,8 +57,14 @@ program
       // If in watch mode, set up the chokidar watcher
       if (options.watch) {
         console.log('\nWatching for changes...')
-        const watcher = chokidar.watch(await glob(config.extract.input), {
-          ignored: /node_modules/,
+        // Respect configured ignore patterns and pass the original glob(s) to chokidar
+        const ignoredPatterns = [
+          /node_modules/,
+          ...(Array.isArray(config.extract.ignore) ? config.extract.ignore : (config.extract.ignore ? [config.extract.ignore] : [])),
+        ]
+        const watchTargets = config.extract.input || []
+        const watcher = chokidar.watch(watchTargets, {
+          ignored: ignoredPatterns,
           persistent: true,
         })
         watcher.on('change', path => {
@@ -105,7 +110,14 @@ program
 
     if (options.watch) {
       console.log('\nWatching for changes...')
-      const watcher = chokidar.watch(await glob(config.types?.input || []), {
+      // Use the configured input patterns and respect extract.ignore if present
+      const ignoredPatterns = [
+        /node_modules/,
+        ...(Array.isArray(config.extract?.ignore) ? config.extract.ignore : (config.extract?.ignore ? [config.extract?.ignore] : [])),
+      ]
+      const watchTargets = config.types?.input || []
+      const watcher = chokidar.watch(watchTargets, {
+        ignored: ignoredPatterns,
         persistent: true,
       })
       watcher.on('change', path => {
@@ -166,8 +178,13 @@ program
       // Re-load the config to get the correct input paths for the watcher
       const config = await loadConfig()
       if (config?.extract?.input) {
-        const watcher = chokidar.watch(await glob(config.extract.input), {
-          ignored: /node_modules/,
+        const ignoredPatterns = [
+          /node_modules/,
+          ...(Array.isArray(config.extract.ignore) ? config.extract.ignore : (config.extract.ignore ? [config.extract.ignore] : [])),
+        ]
+        const watchTargets = config.extract.input || []
+        const watcher = chokidar.watch(watchTargets, {
+          ignored: ignoredPatterns,
           persistent: true,
         })
         watcher.on('change', path => {
