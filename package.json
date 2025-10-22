@@ -79,6 +79,7 @@
     "inquirer": "12.9.6",
     "jiti": "2.6.1",
     "jsonc-parser": "3.3.1",
+    "minimatch": "10.0.3",
     "ora": "9.0.0",
     "swc-walk": "1.0.0"
   }

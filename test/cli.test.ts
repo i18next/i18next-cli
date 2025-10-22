@@ -166,6 +166,13 @@ describe('CLI command parsing and dispatching', () => {
   it('should honor extract.ignore when running in watch mode', async () => {
     vi.resetModules()
     const mockWatch = (await import('chokidar')).watch as any
+    const mockGlob = (await import('glob')).glob as any
+    // simulate expanded files: one source file and one generated locale file
+    mockGlob.mockResolvedValue([
+      'src/app.tsx',
+      'src/i18n/locales/en/namespace.ts'
+    ])
+
     process.argv = ['node', 'cli.ts', 'extract', '--watch']
 
     const watchConfig = {
@@ -186,12 +193,60 @@ describe('CLI command parsing and dispatching', () => {
     await new Promise(resolve => setImmediate(resolve))
 
     expect(mockWatch).toHaveBeenCalledTimes(1)
-    const calledOptions = mockWatch.mock.calls[0][1]
-    // Ensure the ignore option contains the configured ignore pattern
-    expect(calledOptions).toEqual(
-      expect.objectContaining({
-        ignored: expect.arrayContaining([expect.stringContaining('src/i18n/locales')]),
-      })
-    )
+    const calledArgs = mockWatch.mock.calls[0]
+    const watchedFiles = calledArgs[0]
+    const calledOptions = calledArgs[1]
+
+    // expanded files should be filtered to exclude the ignored generated file
+    expect(watchedFiles).toEqual(expect.arrayContaining(['src/app.tsx']))
+    expect(watchedFiles).not.toEqual(expect.arrayContaining(['src/i18n/locales/en/namespace.ts']))
+
+    // chokidar options still include node_modules ignore
+    expect(calledOptions).toEqual(expect.objectContaining({
+      ignored: /node_modules/,
+    }))
+  })
+
+  it('watch mode should ignore generated output and listen for "change" events', async () => {
+    vi.resetModules()
+    const mockWatch = (await import('chokidar')).watch as any
+    const mockGlob = (await import('glob')).glob as any
+    mockGlob.mockResolvedValue([
+      'src/components/button.tsx',
+      'src/i18n/locales/en/translation.ts'
+    ])
+
+    process.argv = ['node', 'cli.ts', 'extract', '--watch']
+
+    const watchConfig = {
+      locales: ['en-US'],
+      extract: {
+        input: ['src/**/*.{ts,tsx}'],
+        ignore: ['src/i18n/locales/**'],
+        output: 'src/i18n/locales/{{language}}/{{namespace}}.ts',
+      }
+    }
+
+    mockEnsureConfig.mockResolvedValue(watchConfig)
+    mockRunExtractor.mockResolvedValue(false)
+
+    await import('../src/cli')
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockWatch).toHaveBeenCalledTimes(1)
+    const calledArgs = mockWatch.mock.calls[0]
+    const watchedFiles = calledArgs[0]
+    const calledOptions = calledArgs[1]
+
+    expect(watchedFiles).toEqual(expect.arrayContaining(['src/components/button.tsx']))
+    expect(watchedFiles).not.toEqual(expect.arrayContaining(['src/i18n/locales/en/translation.ts']))
+
+    expect(calledOptions).toEqual(expect.objectContaining({
+      ignored: /node_modules/,
+      persistent: true,
+    }))
+
+    const watcher = mockWatch.mock.results[0].value
+    expect(watcher.on).toHaveBeenCalledWith('change', expect.any(Function))
   })
 })

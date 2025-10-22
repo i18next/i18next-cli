@@ -2,6 +2,8 @@
 
 import { Command } from 'commander'
 import chokidar from 'chokidar'
+import { glob } from 'glob'
+import { minimatch } from 'minimatch'
 import chalk from 'chalk'
 import { loadConfig, ensureConfig } from './config'
 import { detectConfig } from './heuristic-config'
@@ -57,14 +59,17 @@ program
       // If in watch mode, set up the chokidar watcher
       if (options.watch) {
         console.log('\nWatching for changes...')
-        // Respect configured ignore patterns and pass the original glob(s) to chokidar
-        const ignoredPatterns = [
-          /node_modules/,
-          ...(Array.isArray(config.extract.ignore) ? config.extract.ignore : (config.extract.ignore ? [config.extract.ignore] : [])),
-        ]
-        const watchTargets = config.extract.input || []
-        const watcher = chokidar.watch(watchTargets, {
-          ignored: ignoredPatterns,
+        // expand configured input globs (keep original behavior for detection)
+        const expanded = await expandGlobs(config.extract.input)
+        // build ignore list (configured + derived from output template)
+        const configuredIgnore = toArray(config.extract.ignore)
+        const derivedIgnore = deriveOutputIgnore(config.extract.output)
+        const ignoreGlobs = [...configuredIgnore, ...derivedIgnore].filter(Boolean)
+        // filter expanded files by ignore globs
+        const watchFiles = expanded.filter(f => !ignoreGlobs.some(g => minimatch(f, g, { dot: true })))
+
+        const watcher = chokidar.watch(watchFiles, {
+          ignored: /node_modules/,
           persistent: true,
         })
         watcher.on('change', path => {
@@ -110,16 +115,10 @@ program
 
     if (options.watch) {
       console.log('\nWatching for changes...')
-      // Use the configured input patterns and respect extract.ignore if present
-      const ignoredPatterns = [
-        /node_modules/,
-        ...(Array.isArray(config.extract?.ignore) ? config.extract.ignore : (config.extract?.ignore ? [config.extract?.ignore] : [])),
-      ]
-      const watchTargets = config.types?.input || []
-      const watcher = chokidar.watch(watchTargets, {
-        ignored: ignoredPatterns,
-        persistent: true,
-      })
+      const expandedTypes = await expandGlobs(config.types?.input || [])
+      const ignoredTypes = [...toArray(config.extract?.ignore)].filter(Boolean)
+      const watchTypes = expandedTypes.filter(f => !ignoredTypes.some(g => minimatch(f, g, { dot: true })))
+      const watcher = chokidar.watch(watchTypes, { persistent: true })
       watcher.on('change', path => {
         console.log(`\nFile changed: ${path}`)
         run()
@@ -178,13 +177,14 @@ program
       // Re-load the config to get the correct input paths for the watcher
       const config = await loadConfig()
       if (config?.extract?.input) {
-        const ignoredPatterns = [
-          /node_modules/,
-          ...(Array.isArray(config.extract.ignore) ? config.extract.ignore : (config.extract.ignore ? [config.extract.ignore] : [])),
-        ]
-        const watchTargets = config.extract.input || []
-        const watcher = chokidar.watch(watchTargets, {
-          ignored: ignoredPatterns,
+        const expandedLint = await expandGlobs(config.extract.input)
+        const configuredIgnore2 = toArray(config.extract.ignore)
+        const derivedIgnore2 = deriveOutputIgnore(config.extract.output)
+        const ignoredLint = [...configuredIgnore2, ...derivedIgnore2].filter(Boolean)
+        const watchLint = expandedLint.filter(f => !ignoredLint.some(g => minimatch(f, g, { dot: true })))
+
+        const watcher = chokidar.watch(watchLint, {
+          ignored: /node_modules/,
           persistent: true,
         })
         watcher.on('change', path => {
@@ -224,3 +224,15 @@ program
   })
 
 program.parse(process.argv)
+
+const toArray = (v: any) => Array.isArray(v) ? v : (v ? [v] : [])
+const deriveOutputIgnore = (output?: string) => {
+  if (!output || typeof output !== 'string') return []
+  return [output.replace(/\{\{[^}]+\}\}/g, '*')]
+}
+// helper to expand one or many glob patterns
+const expandGlobs = async (patterns: string | string[] = []) => {
+  const arr = toArray(patterns)
+  const sets = await Promise.all(arr.map(p => glob(p || '', { nodir: true })))
+  return Array.from(new Set(sets.flat()))
+}
