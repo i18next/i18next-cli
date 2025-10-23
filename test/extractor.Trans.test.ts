@@ -269,6 +269,26 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should use defaults, components and values from Trans props', async () => {
+    const sampleCode = `
+      <Trans
+        i18nKey="myKey"
+        defaults="hello <italic>beautiful</italic> <bold>{{what}}</bold>"
+        values={{ what: 'world' }}
+        components={{ italic: <i />, bold: <strong /> }}
+      />
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      myKey: 'hello <italic>beautiful</italic> <bold>{{what}}</bold>',
+    })
+  })
+
   it('should extract plural-specific default values from tOptions', async () => {
     const sampleCode = `
       <Trans i18nKey="item" count={count} tOptions={{ defaultValue_other: "Items" }}>
