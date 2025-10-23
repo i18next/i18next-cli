@@ -1,8 +1,8 @@
 import { vol } from 'memfs'
-import { vi, describe, it, expect, beforeEach } from 'vitest'
-import { runSyncer } from '../src/index'
-import type { I18nextToolkitConfig } from '../src/index'
 import { resolve } from 'path'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { I18nextToolkitConfig } from '../src/index'
+import { runSyncer } from '../src/index'
 
 vi.mock('fs/promises', async () => {
   const memfs = await vi.importActual<typeof import('memfs')>('memfs')
@@ -126,8 +126,8 @@ describe('syncer', () => {
       ...mockConfig,
       extract: {
         ...mockConfig.extract,
-        defaultValue: (key: string, namespace: string, language: string) => {
-          return `${language.toUpperCase()}_${namespace}_${key}`
+        defaultValue: (key: string, namespace: string, language: string, value: string) => {
+          return `${language.toUpperCase()}_${namespace}_${key}_${value}`
         },
       },
     }
@@ -145,10 +145,10 @@ describe('syncer', () => {
     expect(updatedDeJson).toEqual({
       user: {
         name: 'Name', // Preserved existing value
-        email: 'DE_translation_user.email', // Function-generated default
+        email: 'DE_translation_user.email_Email', // Function-generated default
       },
       settings: {
-        theme: 'DE_translation_settings.theme', // Function-generated default
+        theme: 'DE_translation_settings.theme_Theme', // Function-generated default
       },
     })
   })

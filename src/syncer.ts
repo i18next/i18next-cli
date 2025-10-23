@@ -1,13 +1,13 @@
-import { writeFile, mkdir } from 'node:fs/promises'
-import { resolve, dirname, basename } from 'node:path'
 import chalk from 'chalk'
-import ora from 'ora'
 import { glob } from 'glob'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { basename, dirname, resolve } from 'node:path'
+import ora from 'ora'
 import type { I18nextToolkitConfig } from './types'
-import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-object'
-import { getOutputPath, loadTranslationFile, serializeTranslationFile } from './utils/file-utils'
-import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker'
 import { resolveDefaultValue } from './utils/default-value'
+import { getOutputPath, loadTranslationFile, serializeTranslationFile } from './utils/file-utils'
+import { recordFunnelShown, shouldShowFunnel } from './utils/funnel-msg-tracker'
+import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-object'
 
 /**
  * Synchronizes translation files across different locales by ensuring all secondary
@@ -84,10 +84,11 @@ export async function runSyncer (config: I18nextToolkitConfig) {
         const newSecondaryTranslations: Record<string, any> = {}
 
         for (const key of primaryKeys) {
+          const primaryValue = getNestedValue(primaryTranslations, key, keySeparator ?? '.')
           const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
 
           // Use the resolved default value if no existing value
-          const valueToSet = existingValue ?? resolveDefaultValue(defaultValue, key, ns, lang)
+          const valueToSet = existingValue ?? resolveDefaultValue(defaultValue, key, ns, lang, primaryValue)
           setNestedValue(newSecondaryTranslations, key, valueToSet, keySeparator ?? '.')
         }
 
