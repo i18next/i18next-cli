@@ -324,4 +324,55 @@ describe('linter', () => {
     // It should NOT report the string from the ignored file
     expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('An ignored hardcoded string'))
   })
+
+  it('should not flag spread operators in regular JavaScript code', async () => {
+    const sampleCode = `
+      const varovani = [1, 2, 3];
+      const sorted = [...varovani]
+        .sort((a, b) => a - b);
+      
+      const obj = { ...someObject };
+      const combined = [...array1, ...array2];
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    await runLinter(mockConfig)
+
+    // The linter should not find any issues with spread operators in JS code
+    expect(oraSpies.mockSucceed).toHaveBeenCalledWith(expect.stringContaining('No issues found.'))
+    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('...'))
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('should not flag three dots when used as JSX text or attributes, but flag other strings', async () => {
+    // This code contains "..." which should be ignored, and "Loading" which should be flagged.
+    const sampleCode = `
+      function Component() {
+        return (
+          <div>
+            <button>...</button>
+            <span title="...">Loading</span> 
+          </div>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    await runLinter(mockConfig)
+
+    // 1. Expect the linter to FAIL because "Loading" is found.
+    expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
+
+    // 2. Expect the log message for "Loading".
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('6: Error: Found hardcoded string: "Loading"'))
+
+    // 3. Expect that "..." was NOT logged.
+    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('...'))
+
+    // 4. Expect the process to exit with an error code.
+    expect(exitSpy).toHaveBeenCalledWith(1)
+
+    // 5. Ensure mockSucceed was NOT called.
+    expect(oraSpies.mockSucceed).not.toHaveBeenCalled()
+  })
 })

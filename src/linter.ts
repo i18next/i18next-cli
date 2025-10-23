@@ -110,6 +110,7 @@ const isUrlOrPath = (text: string) => /^(https|http|\/\/|^\/)/.test(text)
  * - Skips script and style tag content (technical, not user-facing)
  * - Filters out numeric values (usually not translatable)
  * - Ignores interpolation syntax starting with `{{`
+ * - Filters out ellipsis/spread operator notation `...`
  * - Only reports non-empty, trimmed strings
  *
  * @param ast - The parsed AST to analyze
@@ -157,7 +158,8 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
 
       if (!isIgnored) {
         const text = node.value.trim()
-        if (text && text.length > 1 && !isUrlOrPath(text) && isNaN(Number(text)) && !text.startsWith('{{')) {
+        // Filter out: empty strings, single chars, URLs, numbers, interpolations, and ellipsis
+        if (text && text.length > 1 && text !== '...' && !isUrlOrPath(text) && isNaN(Number(text)) && !text.startsWith('{{')) {
           nodesToLint.push(node) // Collect the node
         }
       }
@@ -167,7 +169,8 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
       const parent = currentAncestors[currentAncestors.length - 2]
       if (parent?.type === 'JSXAttribute' && !ignoredAttributes.has(parent.name.value)) {
         const text = node.value.trim()
-        if (text && !isUrlOrPath(text) && isNaN(Number(text))) {
+        // Filter out: empty strings, URLs, numbers, and ellipsis
+        if (text && text !== '...' && !isUrlOrPath(text) && isNaN(Number(text))) {
           nodesToLint.push(node) // Collect the node
         }
       }
