@@ -30,11 +30,11 @@ export function resolveDefaultValue (
   key: string,
   namespace: string,
   language: string,
-  value: string
+  value?: string
 ): string {
   if (typeof defaultValue === 'function') {
     try {
-      return defaultValue(key, namespace, language, value)
+      return defaultValue(key, namespace, language, value || key)
     } catch (error) {
       // If the function throws an error, fall back to empty string
       return ''

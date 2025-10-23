@@ -243,14 +243,14 @@ function buildNewTranslationsForNs (
               key.startsWith(defaultValue + contextSeparator)))
           )
 
-          valueToSet = (defaultValue && !isDerivedDefault) ? defaultValue : resolveDefaultValue(emptyDefaultValue, key, namespace, locale)
+          valueToSet = (defaultValue && !isDerivedDefault) ? defaultValue : resolveDefaultValue(emptyDefaultValue, key, namespace, locale, defaultValue)
         } else {
           // syncPrimaryWithDefaults is false - use original behavior
           valueToSet = defaultValue || key
         }
       } else {
         // For secondary languages, always use empty string
-        valueToSet = resolveDefaultValue(emptyDefaultValue, key, namespace, locale)
+        valueToSet = resolveDefaultValue(emptyDefaultValue, key, namespace, locale, defaultValue)
       }
     } else {
       // Existing value exists - decide whether to preserve or sync
