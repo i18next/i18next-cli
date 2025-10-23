@@ -1,4 +1,4 @@
-import type { Node, Expression, ObjectExpression } from '@swc/core'
+import type { Expression, Node, ObjectExpression } from '@swc/core'
 
 /**
  * Main configuration interface for the i18next toolkit.
@@ -88,7 +88,7 @@ export interface I18nextToolkitConfig {
     indentation?: number | string;
 
     /** Default value to use for missing translations in secondary languages */
-    defaultValue?: string | ((key: string, namespace: string, language: string) => string);
+    defaultValue?: string | ((key: string, namespace: string, language: string, value: string) => string);
 
     /** Primary language that provides default values (default: first locale) */
     primaryLanguage?: string;
