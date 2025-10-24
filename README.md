@@ -338,7 +338,7 @@ export default defineConfig({
     ignoredTags: ['pre'],
     
     // Namespace and key configuration
-    defaultNS: 'translation',
+    defaultNS: 'translation', // If set to false it will not generate any namespace, useful if i.e. the output is a single language json with 1 namespace (and no nesting).
     nsSeparator: ':',
     keySeparator: '.', // Or `false` to disable nesting and use flat keys
     contextSeparator: '_',

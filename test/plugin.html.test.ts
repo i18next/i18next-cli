@@ -118,7 +118,8 @@ describe('plugin system: html', () => {
       key: 'a.tsx.key',
       explicitDefault: true,
       ns: 'translation',
-      defaultValue: 'From TSX'
+      defaultValue: 'From TSX',
+      nsIsImplicit: false
     })
 
     const htmlTitleKey = keys.get('translation:html.title')
@@ -141,7 +142,8 @@ describe('plugin system: html', () => {
         key: 'a.tsx.key',
         explicitDefault: true,
         ns: 'translation',
-        defaultValue: 'From TSX'
+        defaultValue: 'From TSX',
+        nsIsImplicit: false
       }],
       ['translation:html.title', {
         key: 'html.title',

@@ -94,7 +94,7 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
 
   const keysByNs = new Map<string, ExtractedKey[]>()
   for (const key of allExtractedKeys.values()) {
-    const ns = key.ns || defaultNS
+    const ns = key.ns || defaultNS || 'translation'
     if (!keysByNs.has(ns)) keysByNs.set(ns, [])
     keysByNs.get(ns)!.push(key)
   }

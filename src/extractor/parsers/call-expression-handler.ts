@@ -123,7 +123,7 @@ export class CallExpressionHandler {
     // Loop through each key found (could be one or more) and process it
     for (let i = 0; i < keysToProcess.length; i++) {
       let key = keysToProcess[i]
-      let ns: string | undefined
+      let ns: string | false | undefined
 
       // Determine namespace (explicit ns > ns:key > scope ns > default)
       // See https://www.i18next.com/overview/api#getfixedt
@@ -410,7 +410,7 @@ export class CallExpressionHandler {
    * @param options - object expression options
    * @param isOrdinal - isOrdinal flag
    */
-  private handlePluralKeys (key: string, ns: string | undefined, options: ObjectExpression, isOrdinal: boolean, defaultValueFromCall?: string, explicitDefaultFromSource?: boolean): void {
+  private handlePluralKeys (key: string, ns: string | false | undefined, options: ObjectExpression, isOrdinal: boolean, defaultValueFromCall?: string, explicitDefaultFromSource?: boolean): void {
     try {
       const type = isOrdinal ? 'ordinal' : 'cardinal'
 

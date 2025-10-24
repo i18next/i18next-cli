@@ -1393,4 +1393,44 @@ describe('extractor: advanced t features', () => {
       })
     })
   })
+
+  it('reproduces wrapping existing flat keys into "translation" when extracting', async () => {
+    const sampleCode = '<Title>{t(\'settings.title\', \'The new settings title\')}</Title>'
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    // existing flat translations file
+    vol.fromJSON({
+      '/public/lang/en-GB.json': JSON.stringify({
+        settings: { title: 'Settings' },
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en-GB'],
+      extract: {
+        input: ['src/**/*.{ts,tsx}'],
+        output: 'public/lang/{{language}}.json',
+        functions: ['t'],
+        defaultNS: false,
+        // user-provided defaultValue behavior from the report
+        defaultValue: (lng: string, value: string) => {
+          if (lng === 'en-GB') return value
+          return `en: ${value}`
+        },
+        indentation: 2,
+        sort: true,
+      },
+    }
+
+    const results = await extract(config)
+    const file = results.find(r => pathEndsWith(r.path, '/public/lang/en-GB.json'))
+
+    expect(file).toBeDefined()
+
+    // The reported bug: the extractor wraps the extracted keys inside a "translation" object,
+    // replacing the previous flat structure. We assert that behavior to reproduce the issue.
+    expect(file!.newTranslations).toEqual({
+      settings: { title: 'The new settings title' },
+    })
+  })
 })

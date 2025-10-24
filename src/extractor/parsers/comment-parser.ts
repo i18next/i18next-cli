@@ -53,7 +53,7 @@ export function extractKeysFromComments (
         continue // Skip keys that match preserve patterns
       }
 
-      let ns: string | undefined
+      let ns: string | false | undefined
       const remainder = text.slice(match.index + match[0].length)
 
       const defaultValue = parseDefaultValueFromComment(remainder)
@@ -158,7 +158,7 @@ export function extractKeysFromComments (
 function generatePluralKeys (
   key: string,
   defaultValue: string,
-  ns: string | undefined,
+  ns: string | false | undefined,
   pluginContext: PluginContext,
   config: I18nextToolkitConfig,
   isOrdinal = false
@@ -211,7 +211,7 @@ function generatePluralKeys (
 function generateContextPluralKeys (
   key: string,
   defaultValue: string,
-  ns: string | undefined,
+  ns: string | false | undefined,
   context: string,
   pluginContext: PluginContext,
   config: I18nextToolkitConfig,

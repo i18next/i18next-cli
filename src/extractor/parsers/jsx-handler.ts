@@ -271,7 +271,7 @@ export class JSXHandler {
    * @param isOrdinal - Whether to generate ordinal plural forms
    * @param optionsNode - Optional tOptions object expression for plural-specific defaults
    */
-  private generatePluralKeysForTrans (key: string, defaultValue: string | undefined, ns: string | undefined, isOrdinal: boolean, optionsNode?: ObjectExpression, explicitDefaultFromSource?: boolean): void {
+  private generatePluralKeysForTrans (key: string, defaultValue: string | undefined, ns: string | false | undefined, isOrdinal: boolean, optionsNode?: ObjectExpression, explicitDefaultFromSource?: boolean): void {
     try {
       const type = isOrdinal ? 'ordinal' : 'cardinal'
       const pluralCategories = new Intl.PluralRules(this.config.extract?.primaryLanguage, { type }).resolvedOptions().pluralCategories

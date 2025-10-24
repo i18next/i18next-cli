@@ -106,9 +106,9 @@ function buildNewTranslationsForNs (
   existingTranslations: Record<string, any>,
   config: I18nextToolkitConfig,
   locale: string,
-  namespace: string,
-  preservePatterns: RegExp[],
-  objectKeys: Set<string>,
+  namespace?: string, // optional: undefined indicates "no namespace / top-level file"
+  preservePatterns: RegExp[] = [],
+  objectKeys: Set<string> = new Set(),
   syncPrimaryWithDefaults: boolean = false
 ): Record<string, any> {
   const {
@@ -243,14 +243,14 @@ function buildNewTranslationsForNs (
               key.startsWith(defaultValue + contextSeparator)))
           )
 
-          valueToSet = (defaultValue && !isDerivedDefault) ? defaultValue : resolveDefaultValue(emptyDefaultValue, key, namespace, locale, defaultValue)
+          valueToSet = (defaultValue && !isDerivedDefault) ? defaultValue : resolveDefaultValue(emptyDefaultValue, key, namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
         } else {
           // syncPrimaryWithDefaults is false - use original behavior
           valueToSet = defaultValue || key
         }
       } else {
         // For secondary languages, always use empty string
-        valueToSet = resolveDefaultValue(emptyDefaultValue, key, namespace, locale, defaultValue)
+        valueToSet = resolveDefaultValue(emptyDefaultValue, key, namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
       }
     } else {
       // Existing value exists - decide whether to preserve or sync
@@ -366,7 +366,6 @@ export async function getTranslations (
 ): Promise<TranslationResult[]> {
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
-  const defaultNS = config.extract.defaultNS ?? 'translation'
   const patternsToPreserve = [...(config.extract.preservePatterns || [])]
   const indentation = config.extract.indentation ?? 2
 
@@ -376,12 +375,18 @@ export async function getTranslations (
   }
   const preservePatterns = patternsToPreserve.map(globToRegex)
 
-  // Group keys by namespace
+  // Group keys by namespace. If the plugin recorded the namespace as implicit
+  // (nsIsImplicit) AND the user set defaultNS === false we treat those keys
+  // as "no namespace" (will be merged at top-level). Otherwise use the stored
+  // namespace (internally we keep implicit keys as 'translation').
+  const NO_NS_TOKEN = '__no_namespace__'
   const keysByNS = new Map<string, ExtractedKey[]>()
-  for (const key of keys.values()) {
-    const ns = key.ns || defaultNS
-    if (!keysByNS.has(ns)) keysByNS.set(ns, [])
-    keysByNS.get(ns)!.push(key)
+  for (const k of keys.values()) {
+    const nsKey = (k.nsIsImplicit && config.extract.defaultNS === false)
+      ? NO_NS_TOKEN
+      : String(k.ns ?? (config.extract.defaultNS ?? 'translation'))
+    if (!keysByNS.has(nsKey)) keysByNS.set(nsKey, [])
+    keysByNS.get(nsKey)!.push(k)
   }
 
   const results: TranslationResult[] = []
@@ -401,12 +406,17 @@ export async function getTranslations (
       const existingMergedFile = await loadTranslationFile(fullPath) || {}
 
       // The namespaces to process are from new keys AND the keys of the existing merged file
-      const namespacesToProcess = new Set([...keysByNS.keys(), ...Object.keys(existingMergedFile)])
-
-      for (const ns of namespacesToProcess) {
-        const nsKeys = keysByNS.get(ns) || []
-        const existingTranslations = existingMergedFile[ns] || {}
-        newMergedTranslations[ns] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, ns, preservePatterns, objectKeys, syncPrimaryWithDefaults)
+      const namespacesToProcess = new Set<string>([...keysByNS.keys(), ...Object.keys(existingMergedFile)])
+      for (const nsKey of namespacesToProcess) {
+        const nsKeys = keysByNS.get(nsKey) || []
+        if (nsKey === NO_NS_TOKEN) {
+          // keys without namespace -> merged into top-level of the merged file
+          const built = buildNewTranslationsForNs(nsKeys, existingMergedFile, config, locale, undefined, preservePatterns, objectKeys, syncPrimaryWithDefaults)
+          Object.assign(newMergedTranslations, built)
+        } else {
+          const existingTranslations = existingMergedFile[nsKey] || {}
+          newMergedTranslations[nsKey] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, nsKey, preservePatterns, objectKeys, syncPrimaryWithDefaults)
+        }
       }
 
       const oldContent = JSON.stringify(existingMergedFile, null, indentation)

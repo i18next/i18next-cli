@@ -47,8 +47,16 @@ export function createPluginContext (allKeys: Map<string, ExtractedKey>, plugins
 
   return {
     addKey: (keyInfo: ExtractedKey) => {
-      // Use namespace in the unique map key to avoid collisions across namespaces
-      const uniqueKey = `${keyInfo.ns ?? 'translation'}:${keyInfo.key}`
+      // Normalize boolean `false` namespace -> undefined (meaning "no explicit ns")
+      const explicitNs = keyInfo.ns === false ? undefined : keyInfo.ns
+      // Internally prefer 'translation' as the logical namespace when none was specified.
+      // Record whether the namespace was implicit so the output generator can
+      // special-case config.extract.defaultNS === false.
+      const storedNs = explicitNs ?? (config.extract?.defaultNS ?? 'translation')
+      const nsIsImplicit = explicitNs === undefined
+      const nsForKey = String(storedNs)
+
+      const uniqueKey = `${nsForKey}:${keyInfo.key}`
       const defaultValue = keyInfo.defaultValue ?? keyInfo.key
 
       // Check if key already exists
@@ -68,12 +76,12 @@ export function createPluginContext (allKeys: Map<string, ExtractedKey>, plugins
 
         // If existing value is a generic fallback and new value is specific, replace it
         if (isExistingGenericFallback && !isNewGenericFallback) {
-          allKeys.set(uniqueKey, { ...keyInfo, defaultValue })
+          allKeys.set(uniqueKey, { ...keyInfo, ns: storedNs || config.extract?.defaultNS || 'translation', nsIsImplicit, defaultValue })
         }
         // Otherwise keep the existing one
       } else {
         // New key, just add it
-        allKeys.set(uniqueKey, { ...keyInfo, defaultValue })
+        allKeys.set(uniqueKey, { ...keyInfo, ns: storedNs || config.extract?.defaultNS || 'translation', nsIsImplicit, defaultValue })
       }
     },
     config: pluginContextConfig,

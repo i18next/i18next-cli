@@ -36,8 +36,11 @@ export interface I18nextToolkitConfig {
     /** Output path template with placeholders: {{language}} for locale, {{namespace}} for namespace */
     output: string;
 
-    /** Default namespace when none is specified (default: 'translation') */
-    defaultNS?: string;
+    /**
+     * Default namespace when none is specified (default: 'translation').
+     * Set to false will not generate any namespace, useful if i.e. the output is a single language json with 1 namespace (and no nesting).
+     */
+    defaultNS?: string | false;
 
     /** Separator for nested keys, or false for flat keys (default: '.') */
     keySeparator?: string | false | null;
@@ -293,7 +296,14 @@ export interface ExtractedKey {
   defaultValue?: string;
 
   /** Namespace this key belongs to */
-  ns?: string;
+  ns?: string | false;
+
+  /**
+   * Whether the namespace was implicit (i.e. no explicit ns on the source).
+   * When true and config.extract.defaultNS === false the key should be treated
+   * as "no namespace" for output generation (top-level file).
+   */
+  nsIsImplicit?: boolean;
 
   /** Whether this key is used with pluralization (count parameter) */
   hasCount?: boolean;
