@@ -840,6 +840,10 @@ class I18nextExtractionPlugin {
 
 This programmatic API gives you the same power as the CLI but with full control over when and how it runs in your build process.
 
+## Known plugins
+
+- [i18next-cli-plugin-svelte](https://github.com/dreamscached/i18next-cli-plugin-svelte) &mdash; a simple plugin to extract translation keys from Svelte components
+
 ---
 
 <h3 align="center">Gold Sponsors</h3>
