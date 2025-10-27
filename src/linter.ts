@@ -143,6 +143,46 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
   const customIgnoredAttributes = config.extract.ignoredAttributes || []
   const ignoredAttributes = new Set([...defaultIgnoredAttributes, ...customIgnoredAttributes])
 
+  // Helper: robustly extract a JSX element name from different node shapes
+  const extractJSXName = (node: any): string | null => {
+    if (!node) return null
+    // node might be JSXOpeningElement / JSXSelfClosingElement (has .name)
+    const nameNode = node.name ?? node.opening?.name ?? node.opening?.name
+    if (!nameNode) {
+      // maybe this node is a full JSXElement with opening.name
+      if (node.opening?.name) return extractJSXName({ name: node.opening.name })
+      return null
+    }
+
+    const fromIdentifier = (n: any): string | null => {
+      if (!n) return null
+      if (n.type === 'JSXIdentifier' && (n.name || n.value)) return (n.name ?? n.value)
+      if (n.type === 'Identifier' && (n.name || n.value)) return (n.name ?? n.value)
+      if (n.type === 'JSXMemberExpression') {
+        const object = fromIdentifier(n.object)
+        const property = fromIdentifier(n.property)
+        return object && property ? `${object}.${property}` : (property ?? object)
+      }
+      // fallback attempts
+      return n.name ?? n.value ?? n.property?.name ?? n.property?.value ?? null
+    }
+
+    return fromIdentifier(nameNode)
+  }
+
+  // Helper: return true if any JSX ancestor is in the ignored tags set
+  const isWithinIgnoredElement = (ancestors: any[]): boolean => {
+    for (let i = ancestors.length - 1; i >= 0; i--) {
+      const an = ancestors[i]
+      if (!an || typeof an !== 'object') continue
+      if (an.type === 'JSXElement' || an.type === 'JSXOpeningElement' || an.type === 'JSXSelfClosingElement') {
+        const name = extractJSXName(an)
+        if (name && allIgnoredTags.has(name)) return true
+      }
+    }
+    return false
+  }
+
   // --- PHASE 1: Collect all potentially problematic nodes ---
   const walk = (node: any, ancestors: any[]) => {
     if (!node || typeof node !== 'object') return
@@ -150,11 +190,7 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
     const currentAncestors = [...ancestors, node]
 
     if (node.type === 'JSXText') {
-      const isIgnored = currentAncestors.some(ancestorNode => {
-        if (ancestorNode.type !== 'JSXElement') return false
-        const elementName = ancestorNode.opening?.name?.value
-        return allIgnoredTags.has(elementName)
-      })
+      const isIgnored = isWithinIgnoredElement(currentAncestors)
 
       if (!isIgnored) {
         const text = node.value.trim()
@@ -167,7 +203,10 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
 
     if (node.type === 'StringLiteral') {
       const parent = currentAncestors[currentAncestors.length - 2]
-      if (parent?.type === 'JSXAttribute' && !ignoredAttributes.has(parent.name.value)) {
+      // Determine whether this attribute is inside any ignored element (handles nested Trans etc.)
+      const insideIgnored = isWithinIgnoredElement(currentAncestors)
+
+      if (parent?.type === 'JSXAttribute' && !ignoredAttributes.has(parent.name.value) && !insideIgnored) {
         const text = node.value.trim()
         // Filter out: empty strings, URLs, numbers, and ellipsis
         if (text && text !== '...' && !isUrlOrPath(text) && isNaN(Number(text))) {

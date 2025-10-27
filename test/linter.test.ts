@@ -375,4 +375,40 @@ describe('linter', () => {
     // 5. Ensure mockSucceed was NOT called.
     expect(oraSpies.mockSucceed).not.toHaveBeenCalled()
   })
+
+  it('should ignore self-closing tags listed in ignoredTags (e.g. <path />)', async () => {
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        ignoredTags: ['svg', 'path'],
+      },
+    }
+
+    const sampleCode = `
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className="block"
+      >
+        <path
+          fillRule="evenodd"
+          clipRule="evenodd"
+          d="M2 12C2 6.47715 6.47715 2 12 2"
+          fill="currentColor"
+        />
+      </svg>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    await runLinter(customConfig)
+
+    // Should find no issues because 'svg' and 'path' are ignored (including self-closing path)
+    expect(oraSpies.mockSucceed).toHaveBeenCalledWith(expect.stringContaining('No issues found.'))
+    expect(oraSpies.mockFail).not.toHaveBeenCalled()
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
 })
