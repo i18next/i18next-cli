@@ -1664,4 +1664,26 @@ describe('extractor: runExtractor', () => {
       // The commented keys matching preservePatterns were NOT extracted (correct behavior)
     })
   })
+
+  it('should parse simple template literals as default values', async () => {
+    const sampleCode = `
+      t('app.title', { defaultValue: \`Welcome!\` });
+      t('app.subtitle', \`Glad to meet you!\`);
+    `
+
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    await runExtractor(mockConfig)
+
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+    const translationJson = JSON.parse(translationFileContent as string)
+
+    expect(translationJson).toEqual({
+      app: {
+        title: 'Welcome!',
+        subtitle: 'Glad to meet you!',
+      },
+    })
+  })
 })

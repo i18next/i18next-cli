@@ -1,7 +1,7 @@
 import type { CallExpression, ArrowFunctionExpression, ObjectExpression } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey, ScopeInfo } from '../../types'
 import { ExpressionResolver } from './expression-resolver'
-import { getObjectProperty, getObjectPropValue } from './ast-utils'
+import { getObjectProperty, getObjectPropValue, isSimpleTemplateLiteral } from './ast-utils'
 
 export class CallExpressionHandler {
   private pluginContext: PluginContext
@@ -87,6 +87,8 @@ export class CallExpressionHandler {
         options = arg2
       } else if (arg2.type === 'StringLiteral') {
         defaultValue = arg2.value
+      } else if (arg2.type === 'TemplateLiteral' && isSimpleTemplateLiteral(arg2)) {
+        defaultValue = arg2.quasis[0].cooked
       }
     }
     if (node.arguments.length > 2) {
