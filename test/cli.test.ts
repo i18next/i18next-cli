@@ -249,4 +249,41 @@ describe('CLI command parsing and dispatching', () => {
     const watcher = mockWatch.mock.results[0].value
     expect(watcher.on).toHaveBeenCalledWith('change', expect.any(Function))
   })
+
+  it('should forward --config to ensureConfig for extract', async () => {
+    vi.resetModules()
+    process.argv = ['node', 'cli.ts', 'extract', '--config', './config/i18next.config.ts']
+    mockEnsureConfig.mockResolvedValue(validMockConfig)
+    mockRunExtractor.mockResolvedValue(false)
+
+    await import('../src/cli')
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockEnsureConfig).toHaveBeenCalledWith('./config/i18next.config.ts')
+  })
+
+  it('should forward -c to ensureConfig for extract (short flag)', async () => {
+    vi.resetModules()
+    process.argv = ['node', 'cli.ts', 'extract', '-c', './cfg.js']
+    mockEnsureConfig.mockResolvedValue(validMockConfig)
+    mockRunExtractor.mockResolvedValue(false)
+
+    await import('../src/cli')
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockEnsureConfig).toHaveBeenCalledWith('./cfg.js')
+  })
+
+  it('should forward --config to loadConfig for status', async () => {
+    vi.resetModules()
+    process.argv = ['node', 'cli.ts', 'status', 'de', '--config', './custom/i18next.config.ts']
+    const config = { locales: ['en'], extract: {} }
+    mockLoadConfig.mockResolvedValue(config)
+
+    await import('../src/cli')
+
+    expect(mockRunStatus).toHaveBeenCalledTimes(1)
+    expect(mockLoadConfig).toHaveBeenCalledWith('./custom/i18next.config.ts')
+    expect(mockRunStatus).toHaveBeenCalledWith(config, { detail: 'de', namespace: undefined })
+  })
 })

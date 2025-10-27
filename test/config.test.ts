@@ -67,4 +67,29 @@ describe('config: loadConfig with real files', () => {
     expect(config).not.toBeNull()
     expect(config?.locales).toEqual(['en-US', 'de-DE'])
   })
+
+  it('should load config when given an explicit path (relative)', async () => {
+    // Create a config/ subdirectory and place the TS config there
+    await mkdir(join(tempDirPath, 'config'), { recursive: true })
+
+    const configContent = `
+      const defineConfig = (config) => config;
+      const SUPPORTED_LOCALES = ['en-US', 'de-DE'];
+      export default defineConfig({
+        locales: SUPPORTED_LOCALES,
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+        },
+      });
+    `
+    const relPath = join('config', 'i18next.config.ts')
+    await writeFile(join(tempDirPath, relPath), configContent)
+
+    // Call loadConfig with an explicit relative path
+    const config = await loadConfig(`./${relPath}`)
+
+    expect(config).not.toBeNull()
+    expect(config?.locales).toEqual(['en-US', 'de-DE'])
+  })
 })

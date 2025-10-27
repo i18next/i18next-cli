@@ -46,7 +46,18 @@ export function defineConfig (config: I18nextToolkitConfig): I18nextToolkitConfi
  *
  * @returns Promise that resolves to the full path of the found config file, or null if none found
  */
-async function findConfigFile (): Promise<string | null> {
+async function findConfigFile (configPath?: string): Promise<string | null> {
+  if (configPath) {
+    // Allow relative or absolute path provided by the user
+    const resolved = resolve(process.cwd(), configPath)
+    try {
+      await access(resolved)
+      return resolved
+    } catch {
+      return null
+    }
+  }
+
   for (const file of CONFIG_FILES) {
     const fullPath = resolve(process.cwd(), file)
     try {
@@ -60,30 +71,18 @@ async function findConfigFile (): Promise<string | null> {
 }
 
 /**
- * Loads and validates the i18next toolkit configuration from the project root.
+ * Loads and validates the i18next toolkit configuration from the project root or a provided path.
  *
- * This function:
- * 1. Searches for a config file using findConfigFile()
- * 2. Dynamically imports the config file using ESM import()
- * 3. Validates the configuration structure
- * 4. Sets default values for sync options
- * 5. Adds cache busting for watch mode
- *
- * @returns Promise that resolves to the loaded configuration object, or null if loading failed
- *
- * @example
- * ```typescript
- * const config = await loadConfig()
- * if (!config) {
- *   console.error('Failed to load configuration')
- *   process.exit(1)
- * }
- * ```
+ * @param configPath - Optional explicit path to a config file (relative to cwd or absolute)
+ * @param logger - Optional logger instance
  */
-export async function loadConfig (logger: Logger = new ConsoleLogger()): Promise<I18nextToolkitConfig | null> {
-  const configPath = await findConfigFile()
+export async function loadConfig (configPath?: string, logger: Logger = new ConsoleLogger()): Promise<I18nextToolkitConfig | null> {
+  const configPathFound = await findConfigFile(configPath)
 
-  if (!configPath) {
+  if (!configPathFound) {
+    if (configPath) {
+      logger.error(`Error: Config file not found at "${configPath}"`)
+    }
     // QUIETLY RETURN NULL: The caller will handle the "not found" case.
     return null
   }
@@ -92,23 +91,23 @@ export async function loadConfig (logger: Logger = new ConsoleLogger()): Promise
     let config: any
 
     // Use jiti for TypeScript files, native import for JavaScript
-    if (configPath.endsWith('.ts')) {
+    if (configPathFound.endsWith('.ts')) {
       const aliases = await getTsConfigAliases()
       const jiti = createJiti(process.cwd(), {
         alias: aliases,
         interopDefault: false,
       })
 
-      const configModule = await jiti.import(configPath, { default: true })
+      const configModule = await jiti.import(configPathFound, { default: true })
       config = configModule
     } else {
-      const configUrl = pathToFileURL(configPath).href
+      const configUrl = pathToFileURL(configPathFound).href
       const configModule = await import(`${configUrl}?t=${Date.now()}`)
       config = configModule.default
     }
 
     if (!config) {
-      logger.error(`Error: No default export found in ${configPath}`)
+      logger.error(`Error: No default export found in ${configPathFound}`)
       return null
     }
 
@@ -119,7 +118,7 @@ export async function loadConfig (logger: Logger = new ConsoleLogger()): Promise
 
     return config
   } catch (error) {
-    logger.error(`Error loading configuration from ${configPath}`)
+    logger.error(`Error loading configuration from ${configPathFound}`)
     logger.error(error)
     return null
   }
@@ -127,13 +126,10 @@ export async function loadConfig (logger: Logger = new ConsoleLogger()): Promise
 
 /**
  * Ensures a configuration exists, prompting the user to create one if necessary.
- * This function is a wrapper around loadConfig that provides an interactive fallback.
- *
- * @returns A promise that resolves to a valid configuration object.
- * @throws Exits the process if the user declines to create a config or if loading fails after creation.
+ * Accepts an optional configPath which will be used when loading the config.
  */
-export async function ensureConfig (logger: Logger = new ConsoleLogger()): Promise<I18nextToolkitConfig> {
-  let config = await loadConfig()
+export async function ensureConfig (configPath?: string, logger: Logger = new ConsoleLogger()): Promise<I18nextToolkitConfig> {
+  let config = await loadConfig(configPath, logger)
 
   if (config) {
     return config
@@ -148,9 +144,9 @@ export async function ensureConfig (logger: Logger = new ConsoleLogger()): Promi
   }])
 
   if (shouldInit) {
-    await runInit() // Run the interactive setup wizard
+    await runInit() // Run the interactive setup wizard (keeps existing behavior)
     logger.info(chalk.green('Configuration created. Resuming command...'))
-    config = await loadConfig() // Try loading the newly created config
+    config = await loadConfig(configPath, logger) // Try loading the newly created config
 
     if (config) {
       return config

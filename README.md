@@ -251,6 +251,19 @@ npx i18next-cli locize-sync [options]
 
 **Interactive Setup:** If your locize credentials are missing or invalid, the toolkit will guide you through an interactive setup process to configure your Project ID, API Key, and version.
 
+## Global Options
+
+- `-c, --config <path>` — Override automatic config detection and use the specified config file (relative to cwd or absolute). This option is forwarded to commands that load or ensure a config (e.g. extract, status, types, sync, locize-*).
+
+Examples:
+```bash
+# Use a config file stored in a package subfolder (monorepo)
+npx i18next-cli extract --config ./packages/my-package/config/i18next.config.ts
+
+# Short flag variant, for status
+npx i18next-cli status de -c ./packages/my-package/config/i18next.config.ts
+```
+
 ## Configuration
 
 The configuration file supports both TypeScript (`.ts`) and JavaScript (`.js`) formats. Use the `defineConfig` helper for type safety and IntelliSense.
