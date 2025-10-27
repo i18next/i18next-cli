@@ -1,6 +1,6 @@
-import type { Expression, JSXElement, ObjectExpression, Property } from '@swc/core'
+import type { Expression, JSXAttribute, JSXElement, JSXExpression, ObjectExpression, Property } from '@swc/core'
 import type { I18nextToolkitConfig } from '../../types'
-import { getObjectProperty, getObjectPropValue } from './ast-utils'
+import { getObjectProperty, getObjectPropValue, isSimpleTemplateLiteral } from './ast-utils'
 
 export interface ExtractedJSXAttributes {
   /** holds the raw key expression from the AST */
@@ -29,6 +29,32 @@ export interface ExtractedJSXAttributes {
 
   /** Whether the defaultValue was explicitly provided on the <Trans /> (defaults prop or tOptions defaultValue*) */
   explicitDefault?: boolean;
+}
+
+function getStringLiteralFromExpression (expression: JSXExpression | null): string | undefined {
+  if (!expression) return undefined
+
+  if (expression.type === 'StringLiteral') {
+    return expression.value
+  }
+
+  if (expression.type === 'TemplateLiteral' && isSimpleTemplateLiteral(expression)) {
+    return expression.quasis[0].cooked
+  }
+
+  return undefined
+}
+
+function getStringLiteralFromAttribute (attr: JSXAttribute): string | undefined {
+  if (attr.value?.type === 'StringLiteral') {
+    return attr.value.value
+  }
+
+  if (attr.value?.type === 'JSXExpressionContainer') {
+    return getStringLiteralFromExpression(attr.value.expression)
+  }
+
+  return undefined
 }
 
 /**
@@ -136,8 +162,8 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
   // 1. Prioritize direct props for 'ns' and 'context'
   const nsAttr = node.opening.attributes?.find(attr => attr.type === 'JSXAttribute' && attr.name.type === 'Identifier' && attr.name.value === 'ns')
   let ns: string | undefined
-  if (nsAttr?.type === 'JSXAttribute' && nsAttr.value?.type === 'StringLiteral') {
-    ns = nsAttr.value.value
+  if (nsAttr?.type === 'JSXAttribute') {
+    ns = getStringLiteralFromAttribute(nsAttr)
   } else {
     ns = undefined
   }
@@ -160,9 +186,10 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
   // Handle default value properly
   let defaultValue: string
 
-  if (defaultsAttr?.type === 'JSXAttribute' && defaultsAttr.value?.type === 'StringLiteral') {
+  const defaultAttributeLiteral = defaultsAttr?.type === 'JSXAttribute' ? getStringLiteralFromAttribute(defaultsAttr) : undefined
+  if (defaultAttributeLiteral !== undefined) {
     // Explicit defaults attribute takes precedence
-    defaultValue = defaultsAttr.value.value
+    defaultValue = defaultAttributeLiteral
   } else {
     // Use the configured default value or fall back to empty string
     const configuredDefault = config.extract.defaultValue
@@ -239,10 +266,7 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
     return false
   }
 
-  const explicitDefault = Boolean(
-    (defaultsAttr && defaultsAttr.type === 'JSXAttribute' && defaultsAttr.value?.type === 'StringLiteral') ||
-    optionsHasDefaultProps(optionsNode)
-  )
+  const explicitDefault = defaultAttributeLiteral !== undefined || optionsHasDefaultProps(optionsNode)
 
   return {
     keyExpression,
@@ -385,8 +409,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           // For common simple content expressions, don't allocate a separate slot.
           // However, if it's a pure-space StringLiteral ({" "}) we want to keep the
           // special-space handling below, so only skip non-whitespace string literals.
-          if (exprType === 'StringLiteral') {
-            const textVal = String(n.expression.value || '')
+          const textVal = getStringLiteralFromExpression(n.expression)
+          if (textVal !== undefined) {
             const isPureSpaceNoNewline = /^\s*$/.test(textVal) && !textVal.includes('\n')
             if (!isPureSpaceNoNewline) {
               continue
@@ -401,8 +425,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
         // - If it's pure space (no newline) and it directly follows a non-text sibling
         //   (element/fragment), treat it as formatting and skip it.
         // - Otherwise, count it as a slot (do NOT merge it into previous JSXText).
-        if (n.expression && n.expression.type === 'StringLiteral') {
-          const textVal = String(n.expression.value || '')
+        const textVal = getStringLiteralFromExpression(n.expression)
+        if (textVal !== undefined) {
           const isPureSpaceNoNewline = /^\s*$/.test(textVal) && !textVal.includes('\n')
           const prevOriginal = meaningfulNodes[i - 1]
           const nextOriginal = meaningfulNodes[i + 1]
@@ -551,8 +575,9 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
         const expr = node.expression
         if (!expr) continue
 
-        if (expr.type === 'StringLiteral') {
-          out += expr.value
+        const textVal = getStringLiteralFromExpression(expr)
+        if (textVal !== undefined) {
+          out += textVal
         } else if (expr.type === 'Identifier') {
           out += `{{${expr.value}}}`
         } else if (expr.type === 'ObjectExpression') {

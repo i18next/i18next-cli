@@ -44,6 +44,27 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should handle the "ns" prop as a string literal expression on the Trans component', async () => {
+    const sampleCode = `
+      <Fragment>
+        <Trans i18nKey="button.save1" ns={"common"}>Save</Trans>
+        <Trans i18nKey="button.save2" ns={\`common\`}>Save</Trans>
+      </Fragment>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
+
+    expect(commonFile).toBeDefined()
+    expect(commonFile!.newTranslations).toEqual({
+      button: {
+        save1: 'Save',
+        save2: 'Save',
+      },
+    })
+  })
+
   it('should extract children as key and get ns from t prop', async () => {
     const sampleCode = `
       import React from 'react';
@@ -286,6 +307,42 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
       myKey: 'hello <italic>beautiful</italic> <bold>{{what}}</bold>',
+    })
+  })
+
+  it('should use defaults as a string literal, from Trans props', async () => {
+    const sampleCode = `
+      <Trans
+        i18nKey="myKey"
+        defaults={"Hello!"}
+      />
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      myKey: 'Hello!',
+    })
+  })
+
+  it('should use defaults as a simple template string literal, from Trans props', async () => {
+    const sampleCode = `
+      <Trans
+        i18nKey="myKey"
+        defaults={\`Hello!\`}
+      />
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      myKey: 'Hello!',
     })
   })
 
@@ -697,6 +754,36 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile!.newTranslations).toEqual({
       another_wrong_code_index_3: expectedDefaultValue,
+    })
+  })
+
+  it('should serialize string literals', async () => {
+    const sampleCode = `
+      <Trans i18nKey="myKey">{"Hello!"}</Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      myKey: 'Hello!',
+    })
+  })
+
+  it('should serialize simple template string literals', async () => {
+    const sampleCode = `
+      <Trans i18nKey="myKey">{\`Hello pink\`} {\`fluffy \`}<strong>{\`world\`}</strong>!</Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      myKey: 'Hello pink fluffy <strong>world</strong>!',
     })
   })
 })

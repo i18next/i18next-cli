@@ -1,4 +1,4 @@
-import type { ObjectExpression } from '@swc/core'
+import type { ObjectExpression, TemplateLiteral } from '@swc/core'
 
 /**
  * Finds and returns the full property node (KeyValueProperty) for the given
@@ -28,6 +28,18 @@ export function getObjectProperty (object: ObjectExpression, propName: string) {
 }
 
 /**
+ * Checks if the given template literal has no interpolation expressions
+ *
+ * @param literal - Template literal to check
+ * @returns Boolean true if the literal has no expressions and can be parsed (no invalid escapes), false otherwise
+ *
+ * @private
+ */
+export function isSimpleTemplateLiteral (literal: TemplateLiteral): boolean {
+  return literal.quasis.length === 1 && literal.expressions.length === 0 && literal.quasis[0].cooked != null
+}
+
+/**
  * Extracts string value from object property.
  *
  * Looks for properties by name and returns their string values.
@@ -45,6 +57,7 @@ export function getObjectPropValue (object: ObjectExpression, propName: string):
   if (prop?.type === 'KeyValueProperty') {
     const val = prop.value
     if (val.type === 'StringLiteral') return val.value
+    if (val.type === 'TemplateLiteral' && isSimpleTemplateLiteral(val)) return val.quasis[0].cooked
     if (val.type === 'BooleanLiteral') return val.value
     if (val.type === 'NumericLiteral') return val.value
     return '' // Indicate presence for other types
