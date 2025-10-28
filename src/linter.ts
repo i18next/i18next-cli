@@ -1,9 +1,86 @@
 import { glob } from 'glob'
 import { readFile } from 'node:fs/promises'
 import { parse } from '@swc/core'
+import { EventEmitter } from 'node:events'
 import chalk from 'chalk'
 import ora from 'ora'
 import type { I18nextToolkitConfig } from './types'
+
+type LinterEventMap = {
+  progress: [{
+    message: string;
+  }];
+  done: [{
+    success: boolean;
+    message: string;
+    files: Record<string, HardcodedString[]>;
+  }];
+  error: [error: Error];
+}
+
+export class Linter extends EventEmitter<LinterEventMap> {
+  private config: I18nextToolkitConfig
+
+  constructor (config: I18nextToolkitConfig) {
+    super({ captureRejections: true })
+    this.config = config
+  }
+
+  wrapError (error: unknown) {
+    const prefix = 'Linter failed to run: '
+    if (error instanceof Error) {
+      if (error.message.startsWith(prefix)) {
+        return error
+      }
+      const wrappedError = new Error(`${prefix}${error.message}`)
+      wrappedError.stack = error.stack
+      return wrappedError
+    }
+    return new Error(`${prefix}${String(error)}`)
+  }
+
+  async run () {
+    const { config } = this
+    try {
+      this.emit('progress', { message: 'Finding source files to analyze...' })
+      const defaultIgnore = ['node_modules/**']
+      const userIgnore = Array.isArray(config.extract.ignore)
+        ? config.extract.ignore
+        : config.extract.ignore ? [config.extract.ignore] : []
+
+      const sourceFiles = await glob(config.extract.input, {
+        ignore: [...defaultIgnore, ...userIgnore]
+      })
+      this.emit('progress', { message: `Analyzing ${sourceFiles.length} source files...` })
+      let totalIssues = 0
+      const issuesByFile = new Map<string, HardcodedString[]>()
+
+      for (const file of sourceFiles) {
+        const code = await readFile(file, 'utf-8')
+        const ast = await parse(code, {
+          syntax: 'typescript',
+          tsx: true,
+          decorators: true
+        })
+        const hardcodedStrings = findHardcodedStrings(ast, code, config)
+
+        if (hardcodedStrings.length > 0) {
+          totalIssues += hardcodedStrings.length
+          issuesByFile.set(file, hardcodedStrings)
+        }
+      }
+
+      const files = Object.fromEntries(issuesByFile.entries())
+      const data = { success: totalIssues === 0, message: totalIssues > 0 ? `Linter found ${totalIssues} potential issues.` : 'No issues found.', files }
+      this.emit('done', data)
+      return data
+    } catch (error) {
+      const wrappedError = this.wrapError(error)
+      this.emit('error', wrappedError)
+      throw wrappedError
+    }
+  }
+}
 
 /**
  * Runs the i18next linter to detect hardcoded strings and other potential issues.
@@ -32,44 +109,25 @@ import type { I18nextToolkitConfig } from './types'
  *
  * await runLinter(config)
  * // Outputs issues found or success message
- * // Exits with code 1 if issues found, 0 if clean
  * ```
  */
 export async function runLinter (config: I18nextToolkitConfig) {
-  const spinner = ora('Analyzing source files...\n').start()
+  return new Linter(config).run()
+}
 
+export async function runLinterCli (config: I18nextToolkitConfig) {
+  const linter = new Linter(config)
+  const spinner = ora().start()
+  linter.on('progress', (event) => {
+    spinner.text = event.message
+  })
   try {
-    const defaultIgnore = ['node_modules/**']
-    const userIgnore = Array.isArray(config.extract.ignore)
-      ? config.extract.ignore
-      : config.extract.ignore ? [config.extract.ignore] : []
-
-    const sourceFiles = await glob(config.extract.input, {
-      ignore: [...defaultIgnore, ...userIgnore]
-    })
-    let totalIssues = 0
-    const issuesByFile = new Map<string, HardcodedString[]>()
-
-    for (const file of sourceFiles) {
-      const code = await readFile(file, 'utf-8')
-      const ast = await parse(code, {
-        syntax: 'typescript',
-        tsx: true,
-        decorators: true
-      })
-      const hardcodedStrings = findHardcodedStrings(ast, code, config)
-
-      if (hardcodedStrings.length > 0) {
-        totalIssues += hardcodedStrings.length
-        issuesByFile.set(file, hardcodedStrings)
-      }
-    }
-
-    if (totalIssues > 0) {
-      spinner.fail(chalk.red.bold(`Linter found ${totalIssues} potential issues.`))
+    const { success, message, files } = await linter.run()
+    if (!success) {
+      spinner.fail(chalk.red.bold(message))
 
       // Print detailed report after spinner fails
-      for (const [file, issues] of issuesByFile.entries()) {
+      for (const [file, issues] of Object.entries(files)) {
         console.log(chalk.yellow(`\n${file}`))
         issues.forEach(({ text, line }) => {
           console.log(`  ${chalk.gray(`${line}:`)} ${chalk.red('Error:')} Found hardcoded string: "${text}"`)
@@ -77,11 +135,12 @@ export async function runLinter (config: I18nextToolkitConfig) {
       }
       process.exit(1)
     } else {
-      spinner.succeed(chalk.green.bold('No issues found.'))
+      spinner.succeed(chalk.green.bold(message))
     }
   } catch (error) {
-    spinner.fail(chalk.red('Linter failed to run.'))
-    console.error(error)
+    const wrappedError = linter.wrapError(error)
+    spinner.fail(wrappedError.message)
+    console.error(wrappedError)
     process.exit(1)
   }
 }

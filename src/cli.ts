@@ -12,7 +12,7 @@ import { runTypesGenerator } from './types-generator'
 import { runSyncer } from './syncer'
 import { runMigrator } from './migrator'
 import { runInit } from './init'
-import { runLinter } from './linter'
+import { runLinterCli } from './linter'
 import { runStatus } from './status'
 import { runLocizeSync, runLocizeDownload, runLocizeMigrate } from './locize'
 import type { I18nextToolkitConfig } from './types'
@@ -174,7 +174,7 @@ program
         console.log(chalk.green('Project structure detected successfully!'))
         config = detected as I18nextToolkitConfig
       }
-      await runLinter(config)
+      await runLinterCli(config)
     }
 
     // Run the linter once initially

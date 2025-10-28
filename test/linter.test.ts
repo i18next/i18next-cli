@@ -1,6 +1,6 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { runLinter } from '../src/index'
+import { runLinterCli } from '../src/linter'
 import type { I18nextToolkitConfig } from '../src/index'
 
 // --- MOCKS ---
@@ -71,7 +71,7 @@ describe('linter', () => {
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinter(mockConfig)
+    await runLinterCli(mockConfig)
 
     expect(oraSpies.mockSucceed).toHaveBeenCalledWith(expect.stringContaining('No issues found.'))
     expect(exitSpy).not.toHaveBeenCalled()
@@ -81,7 +81,7 @@ describe('linter', () => {
     const sampleCode = '<p>This is a hardcoded string.</p>'
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinter(mockConfig)
+    await runLinterCli(mockConfig)
 
     expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Found hardcoded string: "This is a hardcoded string."'))
@@ -92,7 +92,7 @@ describe('linter', () => {
     const sampleCode = '<img alt="A hardcoded alt text" />'
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinter(mockConfig)
+    await runLinterCli(mockConfig)
 
     expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Found hardcoded string: "A hardcoded alt text"'))
@@ -103,7 +103,7 @@ describe('linter', () => {
     const sampleCode = '<Trans>This text is a key and should be ignored</Trans>'
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinter(mockConfig)
+    await runLinterCli(mockConfig)
 
     expect(oraSpies.mockSucceed).toHaveBeenCalledWith(expect.stringContaining('No issues found.'))
     expect(exitSpy).not.toHaveBeenCalled()
@@ -127,7 +127,7 @@ describe('linter', () => {
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinter(customConfig)
+    await runLinterCli(customConfig)
 
     // It should fail because "A hardcoded title" is still found
     expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
@@ -171,7 +171,7 @@ describe('linter', () => {
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinter(customConfig)
+    await runLinterCli(customConfig)
 
     // It should find exactly 2 issues
     expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 2 potential issues'))
@@ -208,7 +208,7 @@ describe('linter', () => {
 
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinter(mockConfig)
+    await runLinterCli(mockConfig)
 
     expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 2 potential issues'))
 
@@ -238,7 +238,7 @@ describe('linter', () => {
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinter(customConfig)
+    await runLinterCli(customConfig)
 
     // It should find exactly 1 issue
     expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
@@ -255,7 +255,7 @@ describe('linter', () => {
   it('should not crash on TypeScript code with decorators', async () => {
     const sampleCodeWithDecorators = `
       import { InjectManager, MedusaContext, MedusaService } from "@medusajs/framework/utils"
-      
+
       export default class WishlistModuleService extends MedusaService({
         Wishlist: {},
         WishlistItem: {}
@@ -277,7 +277,7 @@ describe('linter', () => {
 
     vol.fromJSON({ '/src/decorator-service.ts': sampleCodeWithDecorators })
 
-    await runLinter(mockConfig)
+    await runLinterCli(mockConfig)
 
     // Assert that the linter completes successfully and does not fail.
     // This proves the parser did not crash.
@@ -313,7 +313,7 @@ describe('linter', () => {
     }
 
     // Action: Run the linter
-    await runLinter(config)
+    await runLinterCli(config)
 
     // Assertions
     // It should only find 1 issue (from App.tsx), not 2.
@@ -330,13 +330,13 @@ describe('linter', () => {
       const varovani = [1, 2, 3];
       const sorted = [...varovani]
         .sort((a, b) => a - b);
-      
+
       const obj = { ...someObject };
       const combined = [...array1, ...array2];
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinter(mockConfig)
+    await runLinterCli(mockConfig)
 
     // The linter should not find any issues with spread operators in JS code
     expect(oraSpies.mockSucceed).toHaveBeenCalledWith(expect.stringContaining('No issues found.'))
@@ -351,14 +351,14 @@ describe('linter', () => {
         return (
           <div>
             <button>...</button>
-            <span title="...">Loading</span> 
+            <span title="...">Loading</span>
           </div>
         );
       }
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinter(mockConfig)
+    await runLinterCli(mockConfig)
 
     // 1. Expect the linter to FAIL because "Loading" is found.
     expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
@@ -404,7 +404,7 @@ describe('linter', () => {
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinter(customConfig)
+    await runLinterCli(customConfig)
 
     // Should find no issues because 'svg' and 'path' are ignored (including self-closing path)
     expect(oraSpies.mockSucceed).toHaveBeenCalledWith(expect.stringContaining('No issues found.'))
