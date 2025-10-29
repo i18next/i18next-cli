@@ -817,9 +817,6 @@ await runTypesGenerator(config);
 
 ### Build Tool Integration
 
-**ESLint Example:**
-
-
 **Gulp Example:**
 
 ```typescript
