@@ -765,6 +765,31 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should use base key for languages with only "other" plural category (e.g., ja)', async () => {
+      const sampleCode = `
+        t('key', { count: 5 });
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const jaConfig: I18nextToolkitConfig = {
+        ...mockConfig,
+        locales: ['ja'],
+        extract: {
+          ...mockConfig.extract,
+          primaryLanguage: 'ja',
+        },
+      }
+
+      const results = await extract(jaConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/ja/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      // For languages with only the "other" plural category, prefer the base key instead of "key_other"
+      expect(translationFile!.newTranslations).toEqual({
+        key: 'key',
+      })
+    })
+
     it('should detect plural when options object uses shorthand property for count (shorthand { count })', async () => {
       const sampleCode = `
         let someVar = 3;

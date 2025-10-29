@@ -123,18 +123,23 @@ function buildNewTranslationsForNs (
 
   // Get the plural categories for the target language
   const targetLanguagePluralCategories = new Set<string>()
+  // Track cardinal plural categories separately so we can special-case single-"other" languages
+  let cardinalCategories: string[] = []
   try {
     const cardinalRules = new Intl.PluralRules(locale, { type: 'cardinal' })
     const ordinalRules = new Intl.PluralRules(locale, { type: 'ordinal' })
 
-    cardinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
+    cardinalCategories = cardinalRules.resolvedOptions().pluralCategories
+    cardinalCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
     ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
   } catch (e) {
-    // Fallback to English if locale is invalid
-    const cardinalRules = new Intl.PluralRules(primaryLanguage || 'en', { type: 'cardinal' })
-    const ordinalRules = new Intl.PluralRules(primaryLanguage || 'en', { type: 'ordinal' })
+    // Fallback to primaryLanguage (or English) if locale is invalid
+    const fallbackLang = primaryLanguage || 'en'
+    const cardinalRules = new Intl.PluralRules(fallbackLang, { type: 'cardinal' })
+    const ordinalRules = new Intl.PluralRules(fallbackLang, { type: 'ordinal' })
 
-    cardinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
+    cardinalCategories = cardinalRules.resolvedOptions().pluralCategories
+    cardinalCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
     ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
   }
 
@@ -152,6 +157,16 @@ function buildNewTranslationsForNs (
 
     // For plural keys, check if this specific plural form is needed for the target language
     const keyParts = key.split(pluralSeparator)
+
+    // Special-case single-cardinal-"other" languages (ja/zh/ko etc.):
+    // when the target language's cardinal categories are exactly ['other'],
+    // the extractor may have emitted the base key (no "_other" suffix).
+    // Accept the base key in that situation, while still accepting explicit *_other variants.
+    if (cardinalCategories.length === 1 && cardinalCategories[0] === 'other') {
+      // If this is a plain/base key (no plural suffix), include it.
+      if (keyParts.length === 1) return true
+      // Otherwise fall through and check the explicit suffix as before.
+    }
 
     if (isOrdinal && keyParts.includes('ordinal')) {
       // For ordinal plurals: key_context_ordinal_category or key_ordinal_category

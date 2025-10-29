@@ -286,6 +286,24 @@ export class JSXHandler {
         ordinalOtherDefault = getObjectPropValue(optionsNode, `defaultValue${pluralSeparator}ordinal${pluralSeparator}other`) as string | undefined
       }
 
+      // Special-case single-"other" languages: generate base key (or context variant) instead of key_other
+      if (pluralCategories.length === 1 && pluralCategories[0] === 'other') {
+        // Determine final default for the base/other form
+        const specificDefault = optionsNode ? getObjectPropValue(optionsNode, `defaultValue${pluralSeparator}other`) as string | undefined : undefined
+        const finalDefault = typeof specificDefault === 'string' ? specificDefault : (typeof defaultValue === 'string' ? defaultValue : key)
+
+        // add base key (no suffix)
+        this.pluginContext.addKey({
+          key,
+          ns,
+          defaultValue: finalDefault,
+          hasCount: true,
+          isOrdinal,
+          explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string')
+        })
+        return
+      }
+
       for (const category of pluralCategories) {
         // Look for the most specific default value (e.g., defaultValue_ordinal_one)
         const specificDefaultKey = isOrdinal ? `defaultValue${pluralSeparator}ordinal${pluralSeparator}${category}` : `defaultValue${pluralSeparator}${category}`

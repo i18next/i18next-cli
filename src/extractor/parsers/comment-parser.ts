@@ -185,6 +185,18 @@ function generatePluralKeys (
     const pluralCategories = Array.from(allPluralCategories).sort()
     const pluralSeparator = config.extract.pluralSeparator ?? '_'
 
+    // If the only plural category is "other", prefer emitting the base key instead of "key_other"
+    if (pluralCategories.length === 1 && pluralCategories[0] === 'other') {
+      // Emit base key only
+      pluginContext.addKey({
+        key,
+        ns,
+        defaultValue,
+        hasCount: true
+      })
+      return
+    }
+
     // Generate keys for each plural category
     for (const category of pluralCategories) {
       const finalKey = isOrdinal

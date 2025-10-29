@@ -261,6 +261,67 @@ export class CallExpressionHandler {
           return false
         })()
         if (hasCount || isOrdinalByKey) {
+          // QUICK PATH: If ALL target locales only have the "other" category,
+          // emit base/context keys directly (avoid generating *_other). This
+          // mirrors the special-case in handlePluralKeys but is placed here as a
+          // defensive guard to ensure keys are always emitted.
+          try {
+            const typeForCheck = isOrdinalByKey ? 'ordinal' : 'cardinal'
+            // Prefer the configured primaryLanguage as the deciding signal for
+            // "single-other" languages (ja/zh/ko). Fall back to union of locales.
+            const primaryLang = this.config.extract?.primaryLanguage || (Array.isArray(this.config.locales) ? this.config.locales[0] : undefined) || 'en'
+            let isSingleOther = false
+            try {
+              const primaryCategories = new Intl.PluralRules(primaryLang, { type: typeForCheck }).resolvedOptions().pluralCategories
+              if (primaryCategories.length === 1 && primaryCategories[0] === 'other') {
+                isSingleOther = true
+              }
+            } catch {
+              // ignore and fall back to union-of-locales check below
+            }
+
+            if (!isSingleOther) {
+              const allPluralCategoriesCheck = new Set<string>()
+              for (const locale of this.config.locales) {
+                try {
+                  const rules = new Intl.PluralRules(locale, { type: typeForCheck })
+                  rules.resolvedOptions().pluralCategories.forEach(c => allPluralCategoriesCheck.add(c))
+                } catch {
+                  new Intl.PluralRules('en', { type: typeForCheck }).resolvedOptions().pluralCategories.forEach(c => allPluralCategoriesCheck.add(c))
+                }
+              }
+              const pluralCategoriesCheck = Array.from(allPluralCategoriesCheck).sort()
+              if (pluralCategoriesCheck.length === 1 && pluralCategoriesCheck[0] === 'other') {
+                isSingleOther = true
+              }
+            }
+
+            if (isSingleOther) {
+              // Emit only base/context keys (no _other) and skip the heavy plural path.
+              if (keysWithContext.length > 0) {
+                for (const k of keysWithContext) {
+                  this.pluginContext.addKey({
+                    key: k.key,
+                    ns: k.ns,
+                    defaultValue: k.defaultValue,
+                    hasCount: true,
+                    isOrdinal: isOrdinalByKey
+                  })
+                }
+              } else {
+                this.pluginContext.addKey({
+                  key: finalKey,
+                  ns,
+                  defaultValue: dv,
+                  hasCount: true,
+                  isOrdinal: isOrdinalByKey
+                })
+              }
+              continue
+            }
+          } catch (e) {
+            // Ignore Intl failures here and fall through to normal logic
+          }
           // Check if plurals are disabled
           if (this.config.extract.disablePlurals) {
             // When plurals are disabled, treat count as a regular option (for interpolation only)
@@ -478,6 +539,55 @@ export class CallExpressionHandler {
       } else {
         // No context, always generate base plural forms
         keysToGenerate.push({ key })
+      }
+
+      // If the only plural category across configured locales is "other",
+      // prefer the base key (no "_other" suffix) as it's more natural for languages
+      // with no grammatical plural forms (ja/zh/ko).
+      // Prefer the configured primaryLanguage as signal for single-"other" languages.
+      // If primaryLanguage indicates single-"other", treat as that case; otherwise
+      // fall back to earlier union-of-locales check that produced `pluralCategories`.
+      const primaryLang = this.config.extract?.primaryLanguage || (Array.isArray(this.config.locales) ? this.config.locales[0] : undefined) || 'en'
+      let primaryIsSingleOther = false
+      try {
+        const primaryCats = new Intl.PluralRules(primaryLang, { type }).resolvedOptions().pluralCategories
+        if (primaryCats.length === 1 && primaryCats[0] === 'other') primaryIsSingleOther = true
+      } catch {
+        primaryIsSingleOther = false
+      }
+
+      if (primaryIsSingleOther || (pluralCategories.length === 1 && pluralCategories[0] === 'other')) {
+        for (const { key: baseKey, context } of keysToGenerate) {
+          const specificOther = getObjectPropValue(options, `defaultValue${pluralSeparator}other`)
+          // Final default resolution:
+          // 1) plural-specific defaultValue_other
+          // 2) general defaultValue (from options)
+          // 3) defaultValueFromCall (string arg)
+          // 4) fallback to key (or context-key for context variants)
+          let finalDefaultValue: string | undefined
+          if (typeof specificOther === 'string') {
+            finalDefaultValue = specificOther
+          } else if (typeof defaultValue === 'string') {
+            finalDefaultValue = defaultValue
+          } else if (typeof defaultValueFromCall === 'string') {
+            finalDefaultValue = defaultValueFromCall
+          } else {
+            finalDefaultValue = context ? `${baseKey}_${context}` : baseKey
+          }
+
+          const ctxSep = this.config.extract.contextSeparator ?? '_'
+          const finalKey = context ? `${baseKey}${ctxSep}${context}` : baseKey
+
+          this.pluginContext.addKey({
+            key: finalKey,
+            ns,
+            defaultValue: finalDefaultValue,
+            hasCount: true,
+            isOrdinal,
+            explicitDefault: Boolean(explicitDefaultFromSource || typeof specificOther === 'string')
+          })
+        }
+        return
       }
 
       // Generate plural forms for each key variant
