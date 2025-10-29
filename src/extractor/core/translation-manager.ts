@@ -432,7 +432,9 @@ export async function getTranslations (
       // Find all namespaces that exist on disk for this locale
       const namespacesToProcess = new Set(keysByNS.keys())
       const existingNsPattern = getOutputPath(config.extract.output, locale, '*')
-      const existingNsFiles = await glob(existingNsPattern, { ignore: userIgnore })
+      // Ensure glob receives POSIX-style separators so pattern matching works cross-platform (Windows -> backslashes)
+      const existingNsGlobPattern = existingNsPattern.replace(/\\/g, '/')
+      const existingNsFiles = await glob(existingNsGlobPattern, { ignore: userIgnore })
       for (const file of existingNsFiles) {
         namespacesToProcess.add(basename(file, extname(file)))
       }
