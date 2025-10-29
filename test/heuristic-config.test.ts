@@ -31,7 +31,15 @@ describe('heuristic-config', () => {
 
     expect(config).not.toBeNull()
     expect(config?.locales).toEqual(['en', 'de', 'fr'])
-    expect(normalizePath(config?.extract?.output)).toBe('locales/{{language}}/{{namespace}}.json')
+    // accept either a string template or a function that resolves to a sample path
+    if (typeof config?.extract?.output === 'string') {
+      expect(normalizePath(config.extract.output)).toBe('locales/{{language}}/{{namespace}}.json')
+    } else if (typeof config?.extract?.output === 'function') {
+      const sample = config.extract.output('en', 'translation')
+      expect(normalizePath(sample)).toBe('locales/en/translation.json')
+    } else {
+      throw new Error('unexpected extract.output shape')
+    }
     expect(config?.extract?.primaryLanguage).toBe('en')
     expect(config?.extract?.input).toEqual([
       'src/**/*.{js,jsx,ts,tsx}',

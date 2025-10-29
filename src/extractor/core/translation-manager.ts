@@ -396,7 +396,10 @@ export async function getTranslations (
 
   // Process each locale one by one
   for (const locale of config.locales) {
-    const shouldMerge = config.extract.mergeNamespaces || !config.extract.output.includes('{{namespace}}')
+    // If output is a string we can detect the presence of the namespace placeholder.
+    // If it's a function we cannot reliably detect that here — default to not merged
+    // unless mergeNamespaces is explicitly true.
+    const shouldMerge = config.extract.mergeNamespaces || (typeof config.extract.output === 'string' ? !config.extract.output.includes('{{namespace}}') : false)
 
     // LOGIC PATH 1: Merged Namespaces
     if (shouldMerge) {

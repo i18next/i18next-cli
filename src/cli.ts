@@ -238,7 +238,7 @@ program
 program.parse(process.argv)
 
 const toArray = (v: any) => Array.isArray(v) ? v : (v ? [v] : [])
-const deriveOutputIgnore = (output?: string) => {
+const deriveOutputIgnore = (output?: string | ((language: string, namespace?: string) => string)) => {
   if (!output || typeof output !== 'string') return []
   return [output.replace(/\{\{[^}]+\}\}/g, '*')]
 }

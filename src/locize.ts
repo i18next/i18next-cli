@@ -143,14 +143,37 @@ function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: a
     if (dryRun) commandArgs.push('--dry', 'true')
   }
 
-  // Normalize path separators in the configured output so splitting works on both POSIX and Windows
-  const outputNormalized = String(extract.output || '').replace(/\\/g, '/')
-  const baseCandidate = outputNormalized.includes('/{{language}}/')
-    ? outputNormalized.split('/{{language}}/')[0]
-    : outputNormalized.replace('{{language}}', '')
-  // Convert to OS-specific separators before resolving so the resulting path uses path.sep
-  const baseCandidateWithSep = baseCandidate.split('/').join(sep)
-  const basePath = resolve(process.cwd(), baseCandidateWithSep)
+  // Derive a sensible base path for locize from the configured output.
+  // If output is a string template we can strip the language placeholder.
+  // If output is a function we cannot reliably infer the base; fall back to cwd.
+  let basePath: string
+  try {
+    if (typeof extract.output === 'string') {
+      const outputNormalized = extract.output.replace(/\\/g, '/')
+      const baseCandidate = outputNormalized.includes('/{{language}}/')
+        ? outputNormalized.split('/{{language}}/')[0]
+        : outputNormalized.replace('{{language}}', '')
+      const baseCandidateWithSep = baseCandidate.split('/').join(sep)
+      basePath = resolve(process.cwd(), baseCandidateWithSep)
+    } else if (typeof extract.output === 'function') {
+      // Try calling the function with the primary language to get an example path,
+      // then strip the language folder if present. If that fails, fallback to cwd.
+      try {
+        const sample = extract.output(config.extract.primaryLanguage || 'en')
+        const sampleNormalized = String(sample).replace(/\\/g, '/')
+        const baseCandidate = sampleNormalized.includes('/' + (config.extract.primaryLanguage || 'en') + '/')
+          ? sampleNormalized.split('/' + (config.extract.primaryLanguage || 'en') + '/')[0]
+          : sampleNormalized.replace(config.extract.primaryLanguage || 'en', '')
+        basePath = resolve(process.cwd(), baseCandidate.split('/').join(sep))
+      } catch {
+        basePath = resolve(process.cwd(), '.')
+      }
+    } else {
+      basePath = resolve(process.cwd(), '.')
+    }
+  } catch {
+    basePath = resolve(process.cwd(), '.')
+  }
 
   commandArgs.push('--path', basePath)
 

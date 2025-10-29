@@ -69,6 +69,12 @@ export async function runInit () {
   }
   if (typeof detectedConfig?.extract?.input === 'string') detectedConfig.extract.input = [detectedConfig?.extract?.input]
 
+  // If heuristic detection returned a function for extract.output, don't use it as a prompt default.
+  // Prompt defaults must be strings; leave undefined so the prompt falls back to a sensible default.
+  if (detectedConfig && typeof detectedConfig.extract?.output === 'function') {
+    delete (detectedConfig.extract as any).output
+  }
+
   const answers = await inquirer.prompt([
     {
       type: 'list',
@@ -93,7 +99,10 @@ export async function runInit () {
       type: 'input',
       name: 'output',
       message: 'What is the path for your output resource files?',
-      default: detectedConfig?.extract?.output || 'public/locales/{{language}}/{{namespace}}.json',
+      // ensure the default is a string (detectedConfig.extract.output may be a function)
+      default: typeof detectedConfig?.extract?.output === 'string'
+        ? detectedConfig!.extract!.output!
+        : 'public/locales/{{language}}/{{namespace}}.json',
     },
   ])
 

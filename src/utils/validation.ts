@@ -36,8 +36,11 @@ export function validateExtractorConfig (config: I18nextToolkitConfig): void {
     throw new ExtractorError('locales must be specified and non-empty')
   }
 
-  if (!config.extract.output.includes('{{language}}') && !config.extract.output.includes('{{lng}}')) {
-    throw new ExtractorError('extract.output must contain {{language}} placeholder')
+  // If output is a function, we accept it (user is responsible for producing a valid path).
+  if (typeof config.extract.output === 'string') {
+    if (!config.extract.output.includes('{{language}}') && !config.extract.output.includes('{{lng}}')) {
+      throw new ExtractorError('extract.output must contain {{language}} placeholder')
+    }
   }
 }
 

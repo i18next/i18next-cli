@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
-import { dirname, extname, resolve } from 'node:path'
+import { dirname, extname, resolve, normalize } from 'node:path'
 import { createJiti } from 'jiti'
 import type { I18nextToolkitConfig } from '../types'
 import { getTsConfigAliases } from '../config'
@@ -54,33 +54,48 @@ export async function writeFileAsync (filePath: string, data: string): Promise<v
 }
 
 /**
- * Generates a file path by replacing template placeholders with actual values.
- * Supports both legacy and modern placeholder formats for language and namespace.
+ * Resolve an output template (string or function) into an actual path string.
  *
- * @param template - The template string containing placeholders
- * @param locale - The locale/language code to substitute
- * @param namespace - The namespace to substitute
- * @returns The resolved file path with placeholders replaced
- *
- * @example
- * ```typescript
- * // Modern format
- * getOutputPath('locales/{{language}}/{{namespace}}.json', 'de', 'validation')
- * // Returns: 'locales/de/validation.json'
- *
- * // Legacy format (also supported)
- * getOutputPath('locales/{{lng}}/{{ns}}.json', 'en', 'common')
- * // Returns: 'locales/en/common.json'
- * ```
+ * - If `outputTemplate` is a function, call it with (language, namespace)
+ * - If it's a string, replace placeholders:
+ *    - {{language}} or {{lng}} -> language
+ *    - {{namespace}} -> namespace (or removed if namespace is undefined)
+ * - Normalizes duplicate slashes and returns a platform-correct path.
  */
 export function getOutputPath (
-  template: string,
-  locale: string,
-  namespace: string = ''
+  outputTemplate: string | ((language: string, namespace?: string) => string) | undefined,
+  language: string,
+  namespace?: string
 ): string {
-  return template
-    .replace('{{language}}', locale).replace('{{lng}}', locale)
-    .replace('{{namespace}}', namespace).replace('{{ns}}', namespace)
+  if (!outputTemplate) {
+    // Fallback to a sensible default
+    return normalize(`locales/${language}/${namespace ?? 'translation'}.json`)
+  }
+
+  if (typeof outputTemplate === 'function') {
+    try {
+      const result = String(outputTemplate(language, namespace))
+      return normalize(result.replace(/\/\/+/g, '/'))
+    } catch {
+      // If user function throws, fallback to default path
+      return normalize(`locales/${language}/${namespace ?? 'translation'}.json`)
+    }
+  }
+
+  // It's a string template
+  let out = String(outputTemplate)
+  out = out.replace(/\{\{language\}\}|\{\{lng\}\}/g, language)
+
+  if (namespace !== undefined && namespace !== null) {
+    out = out.replace(/\{\{namespace\}\}/g, namespace)
+  } else {
+    // remove any occurrences of /{{namespace}} or {{namespace}} (keeping surrounding slashes tidy)
+    out = out.replace(/\/?\{\{namespace\}\}/g, '')
+  }
+
+  // collapse duplicate slashes and normalize to platform-specific separators
+  out = out.replace(/\/\/+/g, '/')
+  return normalize(out)
 }
 
 /**

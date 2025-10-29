@@ -34,7 +34,7 @@ export interface I18nextToolkitConfig {
     ignore?: string | string[];
 
     /** Output path template with placeholders: {{language}} for locale, {{namespace}} for namespace */
-    output: string;
+    output: string | ((language: string, namespace?: string) => string);
 
     /**
      * Default namespace when none is specified (default: 'translation').
