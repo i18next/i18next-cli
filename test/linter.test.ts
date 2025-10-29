@@ -1,6 +1,6 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { runLinterCli } from '../src/linter'
+import { Linter, runLinter } from '../src/linter'
 import type { I18nextToolkitConfig } from '../src/index'
 
 // --- MOCKS ---
@@ -9,23 +9,6 @@ vi.mock('fs/promises', async () => {
   return memfs.fs.promises
 })
 vi.mock('glob', () => ({ glob: vi.fn() }))
-
-vi.mock('ora', () => {
-  const mockSucceed = vi.fn()
-  const mockFail = vi.fn()
-  const mockStart = vi.fn(() => ({
-    succeed: mockSucceed,
-    fail: mockFail,
-  }))
-  const mockOra = vi.fn(() => ({
-    start: mockStart,
-  }))
-
-  return {
-    default: mockOra,
-    __spies: { mockSucceed, mockFail },
-  }
-})
 // --- END MOCKS ---
 
 const mockConfig: I18nextToolkitConfig = {
@@ -37,26 +20,13 @@ const mockConfig: I18nextToolkitConfig = {
   },
 }
 
-describe('linter', () => {
-  let exitSpy: any
-  let consoleLogSpy: any
-  let oraSpies: any
-
+describe('Linter (core logic)', () => {
   beforeEach(async () => {
-    // CORRECTED LINE: Use a standard dynamic import() to get the mocked module
-    oraSpies = (await import('ora') as any).__spies
-
     vol.reset()
     vi.clearAllMocks()
-    oraSpies.mockSucceed.mockClear()
-    oraSpies.mockFail.mockClear()
 
     const { glob } = await import('glob')
     ;(glob as any).mockResolvedValue(['/src/App.tsx'])
-
-    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
   })
 
   afterEach(() => {
@@ -71,42 +41,46 @@ describe('linter', () => {
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinterCli(mockConfig)
+    const result = await runLinter(mockConfig)
 
-    expect(oraSpies.mockSucceed).toHaveBeenCalledWith(expect.stringContaining('No issues found.'))
-    expect(exitSpy).not.toHaveBeenCalled()
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
   })
 
   it('should detect a hardcoded string in a JSX element', async () => {
     const sampleCode = '<p>This is a hardcoded string.</p>'
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinterCli(mockConfig)
+    const result = await runLinter(mockConfig)
 
-    expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Found hardcoded string: "This is a hardcoded string."'))
-    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Linter found 1 potential issues')
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('This is a hardcoded string.')
   })
 
   it('should detect a hardcoded string in a JSX attribute', async () => {
     const sampleCode = '<img alt="A hardcoded alt text" />'
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinterCli(mockConfig)
+    const result = await runLinter(mockConfig)
 
-    expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Found hardcoded string: "A hardcoded alt text"'))
-    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Linter found 1 potential issues')
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('A hardcoded alt text')
   })
 
   it('should ignore text inside a Trans component', async () => {
     const sampleCode = '<Trans>This text is a key and should be ignored</Trans>'
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinterCli(mockConfig)
+    const result = await runLinter(mockConfig)
 
-    expect(oraSpies.mockSucceed).toHaveBeenCalledWith(expect.stringContaining('No issues found.'))
-    expect(exitSpy).not.toHaveBeenCalled()
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
   })
 
   it('should respect custom ignoredAttributes from config', async () => {
@@ -127,18 +101,14 @@ describe('linter', () => {
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinterCli(customConfig)
+    const result = await runLinter(customConfig)
 
-    // It should fail because "A hardcoded title" is still found
-    expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
-
-    // It should report the title attribute
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Found hardcoded string: "A hardcoded title"'))
-
-    // It should NOT report the data-testid attribute
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('a-test-id'))
-
-    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Linter found 1 potential issues')
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('A hardcoded title')
+    // Should NOT include data-testid
+    expect(result.files['/src/App.tsx'].some(issue => issue.text.includes('a-test-id'))).toBe(false)
   })
 
   it('should handle a complex component with mixed valid and invalid strings', async () => {
@@ -171,25 +141,21 @@ describe('linter', () => {
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinterCli(customConfig)
+    const result = await runLinter(customConfig)
 
-    // It should find exactly 2 issues
-    expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 2 potential issues'))
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Linter found 2 potential issues')
+    expect(result.files['/src/App.tsx']).toHaveLength(2)
 
-    // It should report the hardcoded text in the <h1>
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Found hardcoded string: "A hardcoded title"'))
+    const texts = result.files['/src/App.tsx'].map(issue => issue.text)
+    expect(texts).toContain('A hardcoded title')
+    expect(texts).toContain('Your placeholder here')
 
-    // It should report the hardcoded text in the placeholder attribute
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Found hardcoded string: "Your placeholder here"'))
-
-    // It should NOT report strings from ignored attributes or components
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('container')) // className
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('text')) // type
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('user-input')) // data-testid
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('123')) // numeric
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('This text is')) // inside Trans
-
-    expect(exitSpy).toHaveBeenCalledWith(1)
+    // Should NOT include these
+    expect(texts.some(text => text.includes('container'))).toBe(false)
+    expect(texts.some(text => text.includes('user-input'))).toBe(false)
+    expect(texts.some(text => text === '123')).toBe(false)
+    expect(texts.some(text => text.includes('This text is'))).toBe(false)
   })
 
   it('should report correct line numbers for issues', async () => {
@@ -208,17 +174,17 @@ describe('linter', () => {
 
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinterCli(mockConfig)
+    const result = await runLinter(mockConfig)
 
-    expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 2 potential issues'))
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Linter found 2 potential issues')
+    expect(result.files['/src/App.tsx']).toHaveLength(2)
 
-    const loggedMessages = consoleLogSpy.mock.calls.flat().join('\n')
-
-    // Assert that the line numbers are now correct
-    expect(loggedMessages).toContain('4: Error: Found hardcoded string: "A string on line 4"')
-    expect(loggedMessages).toContain('7: Error: Found hardcoded string: "An attribute on line 7"')
-
-    expect(exitSpy).toHaveBeenCalledWith(1)
+    const issues = result.files['/src/App.tsx']
+    expect(issues[0].line).toBe(4)
+    expect(issues[0].text).toBe('A string on line 4')
+    expect(issues[1].line).toBe(7)
+    expect(issues[1].text).toBe('An attribute on line 7')
   })
 
   it('should respect custom ignoredTags from config', async () => {
@@ -238,18 +204,14 @@ describe('linter', () => {
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinterCli(customConfig)
+    const result = await runLinter(customConfig)
 
-    // It should find exactly 1 issue
-    expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
-
-    // It should report the text from the <p> tag
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Found hardcoded string: "This should be flagged."'))
-
-    // It should NOT report the text from the <blockquote> tag
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('This text should be ignored.'))
-
-    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Linter found 1 potential issues')
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('This should be flagged.')
+    // Should NOT include blockquote text
+    expect(result.files['/src/App.tsx'].some(issue => issue.text.includes('This text should be ignored'))).toBe(false)
   })
 
   it('should not crash on TypeScript code with decorators', async () => {
@@ -277,17 +239,17 @@ describe('linter', () => {
 
     vol.fromJSON({ '/src/decorator-service.ts': sampleCodeWithDecorators })
 
-    await runLinterCli(mockConfig)
+    const result = await runLinter(mockConfig)
 
     // Assert that the linter completes successfully and does not fail.
     // This proves the parser did not crash.
-    expect(oraSpies.mockSucceed).toHaveBeenCalledWith(expect.stringContaining('No issues found.'))
-    expect(oraSpies.mockFail).not.toHaveBeenCalled()
-    expect(exitSpy).not.toHaveBeenCalled()
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
   })
 
   it('should ignore files specified in the "ignore" option during linting', async () => {
-  // Setup: Create two files with hardcoded strings. One should be ignored.
+    // Setup: Create two files with hardcoded strings. One should be ignored.
     vol.fromJSON({
       '/src/App.tsx': '<p>A valid hardcoded string</p>',
       '/src/legacy/ignored.tsx': '<h1>An ignored hardcoded string</h1>',
@@ -312,17 +274,15 @@ describe('linter', () => {
       },
     }
 
-    // Action: Run the linter
-    await runLinterCli(config)
+    const result = await runLinter(config)
 
-    // Assertions
     // It should only find 1 issue (from App.tsx), not 2.
-    expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
-
-    // It should report the string from the non-ignored file
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Found hardcoded string: "A valid hardcoded string"'))
-    // It should NOT report the string from the ignored file
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('An ignored hardcoded string'))
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Linter found 1 potential issues')
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('A valid hardcoded string')
+    // The ignored file should not be in the results
+    expect(result.files['/src/legacy/ignored.tsx']).toBeUndefined()
   })
 
   it('should not flag spread operators in regular JavaScript code', async () => {
@@ -336,12 +296,11 @@ describe('linter', () => {
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinterCli(mockConfig)
+    const result = await runLinter(mockConfig)
 
-    // The linter should not find any issues with spread operators in JS code
-    expect(oraSpies.mockSucceed).toHaveBeenCalledWith(expect.stringContaining('No issues found.'))
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('...'))
-    expect(exitSpy).not.toHaveBeenCalled()
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
   })
 
   it('should not flag three dots when used as JSX text or attributes, but flag other strings', async () => {
@@ -358,22 +317,15 @@ describe('linter', () => {
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinterCli(mockConfig)
+    const result = await runLinter(mockConfig)
 
-    // 1. Expect the linter to FAIL because "Loading" is found.
-    expect(oraSpies.mockFail).toHaveBeenCalledWith(expect.stringContaining('Linter found 1 potential issues'))
-
-    // 2. Expect the log message for "Loading".
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('6: Error: Found hardcoded string: "Loading"'))
-
-    // 3. Expect that "..." was NOT logged.
-    expect(consoleLogSpy).not.toHaveBeenCalledWith(expect.stringContaining('...'))
-
-    // 4. Expect the process to exit with an error code.
-    expect(exitSpy).toHaveBeenCalledWith(1)
-
-    // 5. Ensure mockSucceed was NOT called.
-    expect(oraSpies.mockSucceed).not.toHaveBeenCalled()
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Linter found 1 potential issues')
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('Loading')
+    expect(result.files['/src/App.tsx'][0].line).toBe(6)
+    // Should NOT include "..."
+    expect(result.files['/src/App.tsx'].some(issue => issue.text === '...')).toBe(false)
   })
 
   it('should ignore self-closing tags listed in ignoredTags (e.g. <path />)', async () => {
@@ -404,11 +356,63 @@ describe('linter', () => {
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
 
-    await runLinterCli(customConfig)
+    const result = await runLinter(customConfig)
 
-    // Should find no issues because 'svg' and 'path' are ignored (including self-closing path)
-    expect(oraSpies.mockSucceed).toHaveBeenCalledWith(expect.stringContaining('No issues found.'))
-    expect(oraSpies.mockFail).not.toHaveBeenCalled()
-    expect(exitSpy).not.toHaveBeenCalled()
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
+  it('should emit progress events during linting', async () => {
+    const sampleCode = '<p>Test string</p>'
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const linter = new Linter(mockConfig)
+    const progressEvents: string[] = []
+
+    linter.on('progress', (event) => {
+      progressEvents.push(event.message)
+    })
+
+    await linter.run()
+
+    expect(progressEvents).toContain('Finding source files to analyze...')
+    expect(progressEvents.some(msg => msg.includes('Analyzing'))).toBe(true)
+  })
+
+  it('should emit done event with results', async () => {
+    const sampleCode = '<p>Hardcoded text</p>'
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const linter = new Linter(mockConfig)
+    let doneEvent: any = null
+
+    linter.on('done', (event) => {
+      doneEvent = event
+    })
+
+    await linter.run()
+
+    expect(doneEvent).not.toBeNull()
+    expect(doneEvent.success).toBe(false)
+    expect(doneEvent.message).toContain('Linter found 1 potential issues')
+    expect(doneEvent.files['/src/App.tsx']).toHaveLength(1)
+  })
+
+  it('should emit error event and throw on failures', async () => {
+    const { glob } = await import('glob')
+    // Simulate glob throwing an error
+    vi.mocked(glob).mockRejectedValue(new Error('Glob failed'))
+
+    const linter = new Linter(mockConfig)
+    let errorEvent: Error | null = null
+
+    linter.on('error', (error) => {
+      errorEvent = error
+    })
+
+    await expect(linter.run()).rejects.toThrow('Linter failed to run: Glob failed')
+    expect(errorEvent).not.toBeNull()
+    expect((errorEvent as unknown as Error).message).toContain('Linter failed to run: Glob failed')
   })
 })
