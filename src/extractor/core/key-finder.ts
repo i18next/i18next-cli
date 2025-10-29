@@ -100,6 +100,17 @@ export async function findKeys (
     await plugin.onEnd?.(allKeys)
   }
 
+  // Normalization: mark already-expanded plural keys
+  const pluralSeparator = otherConfig.extract?.pluralSeparator ?? '_'
+  const categories = ['zero', 'one', 'two', 'few', 'many', 'other']
+  for (const ek of allKeys.values()) {
+    const parts = String(ek.key).split(pluralSeparator)
+    const last = parts[parts.length - 1]
+    const isOrdinal = parts.length >= 3 && parts[parts.length - 2] === 'ordinal'
+    if (categories.includes(last) || (isOrdinal && categories.includes(last))) {
+      ;(ek as any).isExpandedPlural = true
+    }
+  }
   return { allKeys, objectKeys: astVisitors.objectKeys }
 }
 

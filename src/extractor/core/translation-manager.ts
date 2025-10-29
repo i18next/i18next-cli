@@ -181,6 +181,24 @@ function buildNewTranslationsForNs (
     return true
   })
 
+  // NEW: detect bases that already have expanded plural variants extracted.
+  // If a base has explicit expanded variants (e.g. key_one, key_other or key_ordinal_one),
+  // we should avoid generating/expanding the base plural key for that base to prevent
+  // double-generation / duplicate counting.
+  const expandedBases = new Set<string>()
+  for (const ek of filteredKeys) {
+    if (ek.isExpandedPlural) {
+      const parts = String(ek.key).split(pluralSeparator)
+      // If ordinal form like "key_ordinal_one" -> base should strip "_ordinal_<cat>"
+      if (parts.length >= 3 && parts[parts.length - 2] === 'ordinal') {
+        expandedBases.add(parts.slice(0, -2).join(pluralSeparator))
+      } else {
+        // strip single trailing category
+        expandedBases.add(parts.slice(0, -1).join(pluralSeparator))
+      }
+    }
+  }
+
   // If `removeUnusedKeys` is true, start with an empty object. Otherwise, start with a clone of the existing translations.
   let newTranslations: Record<string, any> = removeUnusedKeys
     ? {}
@@ -223,7 +241,23 @@ function buildNewTranslationsForNs (
   }
 
   // 1. Build the object first, without any sorting.
-  for (const { key, defaultValue, explicitDefault } of filteredKeys) {
+  for (const { key, defaultValue, explicitDefault, hasCount, isExpandedPlural } of filteredKeys) {
+    // If this is a base plural key (hasCount true but not an already-expanded variant)
+    // and we detected explicit expanded variants for this base, skip expanding the base.
+    if (hasCount && !isExpandedPlural) {
+      const parts = String(key).split(pluralSeparator)
+      let base = key
+      if (parts.length >= 3 && parts[parts.length - 2] === 'ordinal') {
+        base = parts.slice(0, -2).join(pluralSeparator)
+      } else if (parts.length >= 2) {
+        base = parts.slice(0, -1).join(pluralSeparator)
+      }
+      if (expandedBases.has(base)) {
+        // Skip generating/expanding this base key because explicit expanded forms exist.
+        continue
+      }
+    }
+
     const existingValue = getNestedValue(existingTranslations, key, keySeparator ?? '.')
     const isLeafInNewKeys = !filteredKeys.some(otherKey => otherKey.key.startsWith(`${key}${keySeparator}`) && otherKey.key !== key)
 

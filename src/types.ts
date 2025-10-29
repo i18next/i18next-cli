@@ -319,6 +319,9 @@ export interface ExtractedKey {
 
   /** Whether the defaultValue was explicitly provided in source code (vs derived from children/key) */
   explicitDefault?: boolean;
+
+  /** True when the extractor returned an already-expanded plural form (e.g. "key_one") */
+  isExpandedPlural?: boolean
 }
 
 /**

@@ -124,20 +124,28 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
       const keyDetails: Array<{ key: string; isTranslated: boolean }> = []
 
       // This is the new, language-aware logic loop
-      for (const { key: baseKey, hasCount, isOrdinal } of keysInNs) {
+      for (const { key: baseKey, hasCount, isOrdinal, isExpandedPlural } of keysInNs) {
         if (hasCount) {
-          const type = isOrdinal ? 'ordinal' : 'cardinal'
-          // It's a plural key: expand it based on the current locale's rules
-          const pluralCategories = new Intl.PluralRules(locale, { type }).resolvedOptions().pluralCategories
-          for (const category of pluralCategories) {
+          // Rely only on the extractor-provided flag; extractor must set isExpandedPlural
+          if (isExpandedPlural) {
             totalInNs++
-            const pluralKey = isOrdinal
-              ? `${baseKey}${pluralSeparator}ordinal${pluralSeparator}${category}`
-              : `${baseKey}${pluralSeparator}${category}`
-            const value = getNestedValue(translationsForNs, pluralKey, keySeparator ?? '.')
+            const value = getNestedValue(translationsForNs, baseKey, keySeparator ?? '.')
             const isTranslated = !!value
             if (isTranslated) translatedInNs++
-            keyDetails.push({ key: pluralKey, isTranslated })
+            keyDetails.push({ key: baseKey, isTranslated })
+          } else {
+            const type = isOrdinal ? 'ordinal' : 'cardinal'
+            const pluralCategories = new Intl.PluralRules(locale, { type }).resolvedOptions().pluralCategories
+            for (const category of pluralCategories) {
+              totalInNs++
+              const pluralKey = isOrdinal
+                ? `${baseKey}${pluralSeparator}ordinal${pluralSeparator}${category}`
+                : `${baseKey}${pluralSeparator}${category}`
+              const value = getNestedValue(translationsForNs, pluralKey, keySeparator ?? '.')
+              const isTranslated = !!value
+              if (isTranslated) translatedInNs++
+              keyDetails.push({ key: pluralKey, isTranslated })
+            }
           }
         } else {
           // It's a simple key
