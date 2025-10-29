@@ -14,3 +14,9 @@ export function pathEndsWith (p: string | undefined, what: string): boolean {
   const nw = normalizePath(what)
   return nw.length > 0 && np.endsWith(nw)
 }
+
+export function pathContains (p: string | undefined, what: string): boolean {
+  const np = normalizePath(p)
+  const nw = normalizePath(what)
+  return nw.length > 0 && np.indexOf(nw) > -1
+}

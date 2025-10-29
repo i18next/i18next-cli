@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { runLocizeSync } from '../src/locize'
 import { execa } from 'execa'
+import { pathEndsWith, pathContains } from './utils/path'
 
 // Mock execa as a named export (no default export in this environment)
 vi.mock('execa', () => {
@@ -60,7 +61,7 @@ describe('locize: derive base path from functional extract.output', () => {
     const derivedPath = args[pathIndex + 1]
     // For sample output packages/<ns>/locales/en/<ns>.json, the base candidate becomes 'packages/<ns>/locales'
     // Using primaryLanguage 'en' and process.cwd '/project' we expect resolved path to include '/project/packages'
-    expect(derivedPath).toContain('/project/packages')
-    expect(derivedPath).toContain('/locales')
+    expect(pathContains(derivedPath, '/project/packages')).toBe(true)
+    expect(pathEndsWith(derivedPath, '/locales')).toBe(true)
   })
 })
