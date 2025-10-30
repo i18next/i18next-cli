@@ -1686,4 +1686,49 @@ describe('extractor: runExtractor', () => {
       },
     })
   })
+
+  it('should not overwrite existing plural variants when expanding base plural keys into secondary locales', async () => {
+    const sampleCode = `
+      function App() {
+        return <div>{t('key', { count: 5 })}</div>;
+      }
+    `
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const jaPath = resolve(process.cwd(), 'locales/ja/translation.json')
+
+    // Prepopulate existing English translations for the plural variants
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      [enPath]: JSON.stringify({
+        key_one: 'One item',
+        key_other: '{{count}} items'
+      }, null, 2),
+    })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      locales: ['ja', 'en'],
+      extract: {
+        ...mockConfig.extract,
+        primaryLanguage: 'ja',
+        // ensure output and functions are preserved from mockConfig
+      },
+    }
+
+    await runExtractor(config)
+
+    // JA (primary single-"other") should receive the base key
+    const jaFileContent = await vol.promises.readFile(jaPath, 'utf-8')
+    const jaJson = JSON.parse(jaFileContent as string)
+    expect(jaJson).toEqual({ key: 'key' })
+
+    // EN (secondary) should preserve existing variant translations (not be overwritten)
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+    expect(enJson).toEqual({
+      key_one: 'One item',
+      key_other: '{{count}} items'
+    })
+  })
 })

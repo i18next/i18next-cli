@@ -286,9 +286,24 @@ function buildNewTranslationsForNs (
               ? `${base}${pluralSeparator}ordinal${pluralSeparator}${category}`
               : `${base}${pluralSeparator}${category}`
 
-            // For secondary locales, prefer the extracted defaultValue (fallback to base) as test expects.
-            const valueToSet = (typeof defaultValue === 'string' && defaultValue !== undefined) ? defaultValue : base
-            setNestedValue(newTranslations, finalKey, valueToSet, keySeparator ?? '.')
+            // Preserve existing translation if present; otherwise set a sensible default
+            const existingVariantValue = getNestedValue(existingTranslations, finalKey, keySeparator ?? '.')
+            if (existingVariantValue === undefined) {
+              // Prefer explicit defaultValue extracted for this key; fall back to configured defaultValue
+              // (resolved via resolveDefaultValue which handles functions or strings and accepts the full parameter set).
+              let resolvedValue: string
+              if (typeof defaultValue === 'string') {
+                resolvedValue = defaultValue
+              } else {
+                // Use resolveDefaultValue to compute a sensible default, providing namespace and locale context.
+                resolvedValue = resolveDefaultValue(emptyDefaultValue, String(base), namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
+              }
+
+              setNestedValue(newTranslations, finalKey, resolvedValue, keySeparator ?? '.')
+            } else {
+              // Keep existing translation
+              setNestedValue(newTranslations, finalKey, existingVariantValue, keySeparator ?? '.')
+            }
           }
         }
         // We've expanded variants for this base key; skip the normal single-key handling.
