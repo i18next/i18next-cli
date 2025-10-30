@@ -799,8 +799,14 @@ console.log('Files updated:', wasUpdated);
 // Check translation status programmatically
 await runStatus(config);
 
-// Run linting
-await runLinter(config);
+// Run linting and get results
+const { success, message, files } = await runLinter(config);
+if (!success) {
+  console.error(message);
+  for (const [filename, issues] of Object.entries(files)) {
+    console.error(`${issues.length} issues found in ${filename}.`);
+  }
+}
 
 // Sync translation files
 await runSyncer(config);
@@ -846,10 +852,35 @@ class I18nextExtractionPlugin {
 ### Available Functions
 
 - `runExtractor(config, options?)` - Complete extraction with file writing
-- `runLinter(config)` - Run linting analysis
+- `runLinter(config)` - Run linting analysis and return results
 - `runSyncer(config)` - Sync translation files
 - `runStatus(config, options?)` - Get translation status
 - `runTypesGenerator(config)` - Generate types
+
+### Advanced Usage
+
+#### `Linter` - Class that lints your codebase and emits events along the way
+
+**Example usage**
+
+```typescript
+import { Linter } from 'i18next-cli';
+import type { I18nextToolkitConfig } from 'i18next-cli';
+
+const config: I18nextToolkitConfig = {
+  locales: ['en', 'de'],
+  extract: {
+    input: ['src/**/*.{ts,tsx,js,jsx}'],
+    output: 'locales/{{language}}/{{namespace}}.json',
+  },
+};
+
+const linter = new Linter(config);
+
+linter.addEventListener('progress', ({ message }) => console.log(message));
+
+await linter.run();
+```
 
 This programmatic API gives you the same power as the CLI but with full control over when and how it runs in your build process.
 
