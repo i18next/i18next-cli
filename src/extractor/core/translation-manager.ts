@@ -125,11 +125,13 @@ function buildNewTranslationsForNs (
   const targetLanguagePluralCategories = new Set<string>()
   // Track cardinal plural categories separately so we can special-case single-"other" languages
   let cardinalCategories: string[] = []
+  let ordinalCategories: string[] = []
   try {
     const cardinalRules = new Intl.PluralRules(locale, { type: 'cardinal' })
     const ordinalRules = new Intl.PluralRules(locale, { type: 'ordinal' })
 
     cardinalCategories = cardinalRules.resolvedOptions().pluralCategories
+    ordinalCategories = ordinalRules.resolvedOptions().pluralCategories
     cardinalCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
     ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
   } catch (e) {
@@ -139,6 +141,7 @@ function buildNewTranslationsForNs (
     const ordinalRules = new Intl.PluralRules(fallbackLang, { type: 'ordinal' })
 
     cardinalCategories = cardinalRules.resolvedOptions().pluralCategories
+    ordinalCategories = ordinalRules.resolvedOptions().pluralCategories
     cardinalCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
     ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
   }
@@ -157,6 +160,12 @@ function buildNewTranslationsForNs (
 
     // For plural keys, check if this specific plural form is needed for the target language
     const keyParts = key.split(pluralSeparator)
+
+    // If this is a base plural key (no plural suffix), keep it so that the
+    // builder can expand it to the target locale's plural forms.
+    if (hasCount && keyParts.length === 1) {
+      return true
+    }
 
     // Special-case single-cardinal-"other" languages (ja/zh/ko etc.):
     // when the target language's cardinal categories are exactly ['other'],
@@ -241,7 +250,7 @@ function buildNewTranslationsForNs (
   }
 
   // 1. Build the object first, without any sorting.
-  for (const { key, defaultValue, explicitDefault, hasCount, isExpandedPlural } of filteredKeys) {
+  for (const { key, defaultValue, explicitDefault, hasCount, isExpandedPlural, isOrdinal } of filteredKeys) {
     // If this is a base plural key (hasCount true but not an already-expanded variant)
     // and we detected explicit expanded variants for this base, skip expanding the base.
     if (hasCount && !isExpandedPlural) {
@@ -254,6 +263,35 @@ function buildNewTranslationsForNs (
       }
       if (expandedBases.has(base)) {
         // Skip generating/expanding this base key because explicit expanded forms exist.
+        continue
+      }
+    }
+
+    // If this is a base plural key (no explicit suffix) and the locale is NOT the primary,
+    // expand it into locale-specific plural variants (e.g. key_one, key_other).
+    // Use the extracted defaultValue (fallback to base) for variant values.
+    if (hasCount && !isExpandedPlural) {
+      const parts = String(key).split(pluralSeparator)
+      const isBaseKey = parts.length === 1
+      if (isBaseKey && locale !== primaryLanguage) {
+        // If explicit expanded variants exist, do not expand the base.
+        const base = key
+        if (expandedBases.has(base)) {
+          // Skip expansion when explicit variants were provided
+        } else {
+          // choose categories based on ordinal flag
+          const categories = isOrdinal ? ordinalCategories : cardinalCategories
+          for (const category of categories) {
+            const finalKey = isOrdinal
+              ? `${base}${pluralSeparator}ordinal${pluralSeparator}${category}`
+              : `${base}${pluralSeparator}${category}`
+
+            // For secondary locales, prefer the extracted defaultValue (fallback to base) as test expects.
+            const valueToSet = (typeof defaultValue === 'string' && defaultValue !== undefined) ? defaultValue : base
+            setNestedValue(newTranslations, finalKey, valueToSet, keySeparator ?? '.')
+          }
+        }
+        // We've expanded variants for this base key; skip the normal single-key handling.
         continue
       }
     }

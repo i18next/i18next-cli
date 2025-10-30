@@ -790,6 +790,39 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should expand base plural keys emitted for primary single-"other" language into secondary locales (e.g., ja -> en)', async () => {
+      const sampleCode = `
+        t('key', { count: 5 });
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const configJaEn: I18nextToolkitConfig = {
+        ...mockConfig,
+        locales: ['ja', 'en'],
+        extract: {
+          ...mockConfig.extract,
+          primaryLanguage: 'ja',
+          secondaryLanguages: ['en'],
+        },
+      }
+
+      const results = await extract(configJaEn)
+      const jaFile = results.find(r => pathEndsWith(r.path, '/locales/ja/translation.json'))
+      const enFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(jaFile).toBeDefined()
+      expect(enFile).toBeDefined()
+
+      // Primary (ja) is single-"other" so extractor emits base key
+      expect(jaFile!.newTranslations).toEqual({ key: 'key' })
+
+      // Secondary (en) should expand the base key into English plural variants
+      expect(enFile!.newTranslations).toEqual({
+        key_one: 'key',
+        key_other: 'key',
+      })
+    })
+
     it('should detect plural when options object uses shorthand property for count (shorthand { count })', async () => {
       const sampleCode = `
         let someVar = 3;
