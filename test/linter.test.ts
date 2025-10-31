@@ -415,4 +415,36 @@ describe('Linter (core logic)', () => {
     expect(errorEvent).not.toBeNull()
     expect((errorEvent as unknown as Error).message).toContain('Linter failed to run: Glob failed')
   })
+
+  it('should not crash on TypeScript angle-bracket assertions in .ts files', async () => {
+    const { glob } = await import('glob')
+    // Return a .ts file to ensure parser picks non-TSX mode
+    ;(glob as any).mockResolvedValue(['/src/angle-assertions.ts'])
+
+    const sampleWithAngleAssertions = `
+      type ExampleType = { key: string }
+
+      function getValues(): ExampleType[] {
+        return [{ key: 'value' }]
+      }
+
+      function getValue(): ExampleType {
+        return { key: 'value' }
+      }
+
+      // Angle-bracket type assertions that used to break parsing when treated as TSX
+      const multipleValues = <ExampleType[]>getValues()
+      const singleValue = <ExampleType>getValue()
+
+      // Ensure linter still completes (no hardcoded strings to flag)
+    `
+
+    vol.fromJSON({ '/src/angle-assertions.ts': sampleWithAngleAssertions })
+
+    const result = await runLinter(mockConfig)
+
+    // Should complete successfully and not throw due to parsing error
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+  })
 })

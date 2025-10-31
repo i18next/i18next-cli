@@ -1,6 +1,7 @@
 import { glob } from 'glob'
 import { readFile } from 'node:fs/promises'
 import { parse } from '@swc/core'
+import { extname } from 'node:path'
 import { EventEmitter } from 'node:events'
 import chalk from 'chalk'
 import ora from 'ora'
@@ -57,9 +58,15 @@ export class Linter extends EventEmitter<LinterEventMap> {
 
       for (const file of sourceFiles) {
         const code = await readFile(file, 'utf-8')
+
+        // Determine parser options from file extension so .ts is not parsed as TSX
+        const fileExt = extname(file).toLowerCase()
+        const isTypeScriptFile = fileExt === '.ts' || fileExt === '.tsx' || fileExt === '.mts' || fileExt === '.cts'
+        const isTSX = fileExt === '.tsx'
+
         const ast = await parse(code, {
-          syntax: 'typescript',
-          tsx: true,
+          syntax: isTypeScriptFile ? 'typescript' : 'ecmascript',
+          tsx: isTSX,
           decorators: true
         })
         const hardcodedStrings = findHardcodedStrings(ast, code, config)

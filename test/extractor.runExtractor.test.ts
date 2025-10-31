@@ -43,7 +43,7 @@ describe('extractor: runExtractor', () => {
       const hasIgnoredPattern = ignore.some(p => p.replace(/\\/g, '/').includes('**/*.ignored.ts'))
 
       // Base candidates the tests expect
-      const candidates = ['/src/App.tsx', '/src/ignored-file.ts']
+      const candidates = ['/src/App.tsx', '/src/App.ts', '/src/ignored-file.ts']
       // Only return files that actually exist in the memfs volume to avoid ENOENT
       const existing = candidates.filter(p => vol.existsSync(p))
 
@@ -1729,6 +1729,45 @@ describe('extractor: runExtractor', () => {
     expect(enJson).toEqual({
       key_one: 'One item',
       key_other: '{{count}} items'
+    })
+  })
+
+  it('does not fail parsing files using `<Type>expr` assertions and still extracts keys', async () => {
+    const sampleCode = `
+      type ExampleType = { key: string }
+
+      function getValues(): ExampleType[] {
+        return [{ key: 'value' }]
+      }
+
+      function getValue(): ExampleType {
+        return { key: 'value' }
+      }
+
+      export class ExampleService {
+        public getService() {
+          const multipleValues = <ExampleType[]>getValues()
+          console.log(multipleValues)
+
+          const singleValue = <ExampleType>getValue()
+          console.log(singleValue)
+
+          // Ensure extractor still finds normal t() keys in the same file
+          t('some.key', 'Default')
+        }
+      }
+    `
+
+    vol.fromJSON({
+      '/src/App.ts': sampleCode,
+    })
+
+    const results = await extract(mockConfig)
+
+    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      some: { key: 'Default' }
     })
   })
 })

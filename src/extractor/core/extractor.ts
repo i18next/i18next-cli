@@ -2,7 +2,7 @@ import ora from 'ora'
 import chalk from 'chalk'
 import { parse } from '@swc/core'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, extname } from 'node:path'
 import type { Logger, I18nextToolkitConfig, Plugin, PluginContext } from '../../types'
 import { findKeys } from './key-finder'
 import { getTranslations } from './translation-manager'
@@ -154,11 +154,17 @@ export async function processFile (
       }
     }
 
+    // Determine parser options from file extension so .ts is not parsed as TSX
+    const fileExt = extname(file).toLowerCase()
+    const isTypeScriptFile = fileExt === '.ts' || fileExt === '.tsx' || fileExt === '.mts' || fileExt === '.cts'
+    const isTSX = fileExt === '.tsx'
+
     const ast = await parse(code, {
-      syntax: 'typescript',
-      tsx: true,
+      syntax: isTypeScriptFile ? 'typescript' : 'ecmascript',
+      tsx: isTSX,
       decorators: true,
-      comments: true
+      dynamicImport: true,
+      comments: true,
     })
 
     // "Wire up" the visitor's scope method to the context.
