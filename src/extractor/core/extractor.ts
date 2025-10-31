@@ -154,9 +154,12 @@ export async function processFile (
       }
     }
 
+    // Only .tsx and .jsx files should have TSX parsing enabled
+    const enableTsx = file.endsWith('.tsx') || file.endsWith('.jsx')
+
     const ast = await parse(code, {
       syntax: 'typescript',
-      tsx: true,
+      tsx: enableTsx,
       decorators: true,
       comments: true
     })
