@@ -1764,7 +1764,7 @@ describe('extractor: runExtractor', () => {
 
     const results = await extract(mockConfig)
 
-    const translationFile = results.find(r => r.path.endsWith('/locales/en/translation.json'))
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
       some: { key: 'Default' }
