@@ -3,9 +3,64 @@ import type { ASTVisitorHooks } from '../../types'
 
 export class ExpressionResolver {
   private hooks: ASTVisitorHooks
+  // Simple per-file symbol table for statically analyzable variables.
+  // Maps variableName -> either:
+  //  - string[] (possible string values)
+  //  - Record<string, string> (object of static string properties)
+  private symbolTable: Map<string, string[] | Record<string, string>> = new Map()
 
   constructor (hooks: ASTVisitorHooks) {
     this.hooks = hooks
+  }
+
+  /**
+   * Capture a VariableDeclarator node to record simple statically analyzable
+   * initializers (string literals, object expressions of string literals,
+   * template literals and simple concatenations).
+   *
+   * This is called during AST traversal before deeper walking so later
+   * identifier/member-expression usage can be resolved.
+   *
+   * @param node - VariableDeclarator-like node (has .id and .init)
+   */
+  captureVariableDeclarator (node: any): void {
+    try {
+      if (!node || !node.id || !node.init) return
+      // only handle simple identifier bindings like `const x = ...`
+      if (node.id.type !== 'Identifier') return
+      const name = node.id.value
+      const init = node.init
+
+      // ObjectExpression -> map of string props
+      if (init.type === 'ObjectExpression' && Array.isArray(init.properties)) {
+        const map: Record<string, string> = {}
+        for (const p of init.properties as any[]) {
+          if (!p || p.type !== 'KeyValueProperty') continue
+          const keyNode = p.key
+          const keyName = keyNode?.type === 'Identifier' ? keyNode.value : keyNode?.type === 'StringLiteral' ? keyNode.value : undefined
+          if (!keyName) continue
+          const valExpr = p.value
+          const vals = this.resolvePossibleStringValuesFromExpression(valExpr)
+          // Only capture properties that we can statically resolve to a single string.
+          if (vals.length === 1) {
+            map[keyName] = vals[0]
+          }
+        }
+        // If at least one property was resolvable, record the partial map.
+        if (Object.keys(map).length > 0) {
+          this.symbolTable.set(name, map)
+          return
+        }
+      }
+
+      // For other initializers, try to resolve to one-or-more strings
+      const vals = this.resolvePossibleStringValuesFromExpression(init)
+      if (vals.length > 0) {
+        this.symbolTable.set(name, vals)
+      }
+    } catch {
+      // be silent - conservative only
+    }
   }
 
   /**
@@ -73,6 +128,42 @@ export class ExpressionResolver {
       return this.resolvePossibleStringValuesFromTemplateString(expression)
     }
 
+    // MemberExpression: try to resolve object identifier to an object map in the symbol table
+    if (expression.type === 'MemberExpression') {
+      try {
+        const obj = expression.object
+        const prop = expression.property
+        // only handle simple identifier base + simple property (Identifier or computed StringLiteral)
+        if (obj.type === 'Identifier') {
+          const base = this.symbolTable.get(obj.value)
+          if (base && typeof base !== 'string' && !Array.isArray(base)) {
+            let propName: string | undefined
+            if (prop.type === 'Identifier') propName = prop.value
+            else if (prop.type === 'Computed' && prop.expression?.type === 'StringLiteral') propName = prop.expression.value
+            if (propName && base[propName] !== undefined) return [base[propName]]
+          }
+        }
+      } catch {}
+    }
+
+    // Binary concatenation support (e.g., a + '_' + b)
+    // SWC binary expr can be represented as `BinExpr` with left/right; be permissive:
+    if ((expression as any).left && (expression as any).right) {
+      try {
+        const leftVals = this.resolvePossibleStringValuesFromExpression((expression as any).left, returnEmptyStrings)
+        const rightVals = this.resolvePossibleStringValuesFromExpression((expression as any).right, returnEmptyStrings)
+        if (leftVals.length > 0 && rightVals.length > 0) {
+          const combos: string[] = []
+          for (const L of leftVals) {
+            for (const R of rightVals) {
+              combos.push(`${L}${R}`)
+            }
+          }
+          return combos
+        }
+      } catch {}
+    }
+
     if (expression.type === 'NumericLiteral' || expression.type === 'BooleanLiteral') {
       return [`${expression.value}`] // Handle literals like 5 or true
     }
@@ -82,6 +173,15 @@ export class ExpressionResolver {
     if (expression.type === 'TsSatisfiesExpression' || expression.type === 'TsAsExpression') {
       const annotation = expression.typeAnnotation
       return this.resolvePossibleStringValuesFromType(annotation, returnEmptyStrings)
+    }
+
+    // Identifier resolution via captured symbol table
+    if (expression.type === 'Identifier') {
+      const v = this.symbolTable.get(expression.value)
+      if (!v) return []
+      if (Array.isArray(v)) return v
+      // object map - cannot be used directly as key, so return empty
+      return []
     }
 
     // We can't statically determine the value of other expressions (e.g., variables, function calls)

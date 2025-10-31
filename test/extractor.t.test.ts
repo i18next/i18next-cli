@@ -1491,4 +1491,137 @@ describe('extractor: advanced t features', () => {
       settings: { title: 'The new settings title' },
     })
   })
+
+  it('should extract keys from variables assigned string literals', async () => {
+    const sampleCode = `
+      const buttonKey = 'homepage_submit_button';
+      t(buttonKey, 'Click');
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      homepage_submit_button: 'Click',
+    })
+  })
+
+  it('should extract keys referenced via object properties', async () => {
+    const sampleCode = `
+      const messages = {
+        greeting: 'welcome_message',
+        error: 'error_message'
+      };
+      t(messages.greeting, 'Hello');
+      t(messages.error);
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      welcome_message: 'Hello',
+      error_message: 'error_message',
+    })
+  })
+
+  it('should resolve template and string-concatenated keys when variables are local literals', async () => {
+    const sampleCode = `
+      const module = 'user';
+      const action = 'create';
+      t(\`\${module}_\${action}_success\`, 'Done');
+      // also support binary concatenation
+      t(module + '_' + action + '_failure', 'Fail');
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      user_create_success: 'Done',
+      user_create_failure: 'Fail',
+    })
+  })
+
+  it('should NOT resolve keys from imported variables', async () => {
+    const sampleCode = `
+      import messages from './messages';
+      t('present.key', 'Present');
+      t(messages.greeting, 'Hello imported');
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    // Only the literal key should be extracted; imported-based key must NOT be resolved
+    expect(translationFile!.newTranslations).toEqual({
+      present: { key: 'Present' },
+    })
+  })
+
+  it('should NOT resolve keys assigned via later AssignmentExpression (not in initializer)', async () => {
+    const sampleCode = `
+      t('present', 'Present');
+      t(lateKey, 'Should not resolve');
+      let lateKey;
+      lateKey = 'late_key';
+      t(lateKey, 'Also should not resolve');
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    // Only the literal present key is expected because `lateKey` was not initialized in the declarator.
+    expect(translationFile!.newTranslations).toEqual({
+      present: 'Present',
+    })
+  })
+
+  it('should resolve keys when the variable declarator exists in the same block even if declared after use', async () => {
+    const sampleCode = `
+      t(declaredLater, 'Declared later');
+      const declaredLater = 'later_key';
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    // The extractor pre-scans block declarators and should resolve `declaredLater`.
+    expect(translationFile!.newTranslations).toEqual({
+      later_key: 'Declared later',
+    })
+  })
+
+  it('should NOT resolve object properties whose values are non-string/non-static', async () => {
+    const sampleCode = `
+      const dynamic = getValue();
+      const messages = { greeting: dynamic, error: 'error_message' };
+      t(messages.greeting);
+      t(messages.error, 'Error!');
+      t('present', 'Present');
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    // Only the static object property and literal should be extracted
+    expect(translationFile!.newTranslations).toEqual({
+      present: 'Present',
+      error_message: 'Error!',
+    })
+  })
 })

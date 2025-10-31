@@ -115,6 +115,9 @@ export class ASTVisitors {
     switch (node.type) {
       case 'VariableDeclarator':
         this.scopeManager.handleVariableDeclarator(node)
+        // Capture simple variable initializers so the expressionResolver can
+        // resolve identifiers / member expressions that reference them.
+        this.expressionResolver.captureVariableDeclarator(node)
         break
       case 'CallExpression':
         this.callExpressionHandler.handleCallExpression(node, this.scopeManager.getVarFromScope.bind(this.scopeManager))
@@ -146,6 +149,7 @@ export class ASTVisitors {
           // Direct declarator present in arrays (rare)
           if (item.type === 'VariableDeclarator') {
             this.scopeManager.handleVariableDeclarator(item)
+            this.expressionResolver.captureVariableDeclarator(item)
             continue
           }
 
@@ -154,6 +158,7 @@ export class ASTVisitors {
             for (const decl of item.declarations) {
               if (decl && typeof decl === 'object' && decl.type === 'VariableDeclarator') {
                 this.scopeManager.handleVariableDeclarator(decl)
+                this.expressionResolver.captureVariableDeclarator(decl)
               }
             }
           }
