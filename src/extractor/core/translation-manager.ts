@@ -120,19 +120,6 @@ function buildNewTranslationsForNs (
     pluralSeparator = '_',
     contextSeparator = '_',
   } = config.extract
-
-  // Debugging hook: enable detailed logs by setting environment variable
-  // I18NEXT_DEBUG=1 when running tests (or local runs).
-  const DEBUG = true
-  const debugLog = (...args: any[]) => { if (DEBUG) console.log('[i18next-debug]', ...args) }
-
-  if (DEBUG) {
-    debugLog('buildNewTranslationsForNs start', { locale, namespace, keySeparator, pluralSeparator, primaryLanguage })
-    debugLog('nsKeys (count):', nsKeys.length)
-    // shallow snapshot of existingTranslations (avoid huge dumps)
-    try { debugLog('existingTranslations keys:', getNestedKeys(existingTranslations, keySeparator ?? '.').slice(0, 50)) } catch (e) { debugLog('could not list existing keys', e) }
-  }
-
   // Get the plural categories for the target language
   const targetLanguagePluralCategories = new Set<string>()
   // Track cardinal plural categories separately so we can special-case single-"other" languages
@@ -310,11 +297,8 @@ function buildNewTranslationsForNs (
                 // Use resolveDefaultValue to compute a sensible default, providing namespace and locale context.
                 resolvedValue = resolveDefaultValue(emptyDefaultValue, String(base), namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
               }
-              debugLog('expanding plural variant', { finalKey, existingVariantValue, resolvedValue })
-
               setNestedValue(newTranslations, finalKey, resolvedValue, keySeparator ?? '.')
             } else {
-              debugLog('keeping existing plural variant', { finalKey, existingVariantValue })
               // Keep existing translation
               setNestedValue(newTranslations, finalKey, existingVariantValue, keySeparator ?? '.')
             }
@@ -340,10 +324,6 @@ function buildNewTranslationsForNs (
     )
 
     const isStaleObject = typeof existingValue === 'object' && existingValue !== null && isLeafInNewKeys && !objectKeys.has(key) && !shouldPreserveObject
-
-    if (DEBUG) {
-      debugLog('processing key', { key, existingValueType: typeof existingValue, isLeafInNewKeys, shouldPreserveObject, isStaleObject, defaultValue })
-    }
 
     // Special handling for existing objects that should be preserved
     if (shouldPreserveObject) {
@@ -405,10 +385,6 @@ function buildNewTranslationsForNs (
         // Not primary language or not syncing - always preserve existing
         valueToSet = existingValue
       }
-    }
-
-    if (DEBUG) {
-      debugLog('final decision for key', { key, existingValue, valueToSet, typeofExisting: typeof existingValue, typeofValueToSet: typeof valueToSet })
     }
 
     setNestedValue(newTranslations, key, valueToSet, keySeparator ?? '.')
@@ -541,7 +517,12 @@ export async function getTranslations (
       // or is a flat mapping of translation keys -> values.
       // If it's flat (values are primitives), we must NOT treat each translation key as a namespace.
       const existingKeys = Object.keys(existingMergedFile)
-      const existingIsNamespaced = existingKeys.some(k => {
+      // Treat the file as namespaced only when the user is using namespaces.
+      // If defaultNS === false the project stores translations at the top-level
+      // (possibly as nested objects when keySeparator is '.'), which should NOT
+      // be interpreted as "namespaced files". This avoids splitting a single
+      // merged translations file into artificial namespace buckets on re-extract.
+      const existingIsNamespaced = (config.extract.defaultNS !== false) && existingKeys.some(k => {
         const v = (existingMergedFile as any)[k]
         return typeof v === 'object' && v !== null && !Array.isArray(v)
       })
