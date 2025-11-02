@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.2](https://github.com/i18next/i18next-cli/compare/v1.19.1...v1.19.2) - 2025-11-02
+
+- fix(extractor): preserve flat output when extract.defaultNS is false on re-extracttion. [#73](https://github.com/i18next/i18next-cli/issues/73)
+
 ## [1.19.1](https://github.com/i18next/i18next-cli/compare/v1.19.0...v1.19.1) - 2025-10-31
 
 - fix: Prevent parser crashes on TypeScript files that use angle‑bracket type assertions (e.g. `const x = <SomeType>getValue()`). The extractor and linter now choose SWC's TSX parsing mode based on the file extension (`.tsx` => JSX enabled, `.ts`/`.mts`/`.cts` => JSX disabled), avoiding accidental JSX parsing of compile‑time casts. [#84](https://github.com/i18next/i18next-cli/issues/84)

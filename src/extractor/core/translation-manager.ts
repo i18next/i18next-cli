@@ -121,6 +121,18 @@ function buildNewTranslationsForNs (
     contextSeparator = '_',
   } = config.extract
 
+  // Debugging hook: enable detailed logs by setting environment variable
+  // I18NEXT_DEBUG=1 when running tests (or local runs).
+  const DEBUG = true
+  const debugLog = (...args: any[]) => { if (DEBUG) console.log('[i18next-debug]', ...args) }
+
+  if (DEBUG) {
+    debugLog('buildNewTranslationsForNs start', { locale, namespace, keySeparator, pluralSeparator, primaryLanguage })
+    debugLog('nsKeys (count):', nsKeys.length)
+    // shallow snapshot of existingTranslations (avoid huge dumps)
+    try { debugLog('existingTranslations keys:', getNestedKeys(existingTranslations, keySeparator ?? '.').slice(0, 50)) } catch (e) { debugLog('could not list existing keys', e) }
+  }
+
   // Get the plural categories for the target language
   const targetLanguagePluralCategories = new Set<string>()
   // Track cardinal plural categories separately so we can special-case single-"other" languages
@@ -298,9 +310,11 @@ function buildNewTranslationsForNs (
                 // Use resolveDefaultValue to compute a sensible default, providing namespace and locale context.
                 resolvedValue = resolveDefaultValue(emptyDefaultValue, String(base), namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
               }
+              debugLog('expanding plural variant', { finalKey, existingVariantValue, resolvedValue })
 
               setNestedValue(newTranslations, finalKey, resolvedValue, keySeparator ?? '.')
             } else {
+              debugLog('keeping existing plural variant', { finalKey, existingVariantValue })
               // Keep existing translation
               setNestedValue(newTranslations, finalKey, existingVariantValue, keySeparator ?? '.')
             }
@@ -312,7 +326,12 @@ function buildNewTranslationsForNs (
     }
 
     const existingValue = getNestedValue(existingTranslations, key, keySeparator ?? '.')
-    const isLeafInNewKeys = !filteredKeys.some(otherKey => otherKey.key.startsWith(`${key}${keySeparator}`) && otherKey.key !== key)
+    // When keySeparator === false we are working with flat keys (no nesting).
+    // Avoid concatenating false into strings (``${key}${false}`` => "keyfalse") which breaks the startsWith check.
+    // For flat keys there cannot be nested children, so treat them as leaves.
+    const isLeafInNewKeys = keySeparator === false
+      ? true
+      : !filteredKeys.some(otherKey => otherKey.key !== key && otherKey.key.startsWith(`${key}${keySeparator}`))
 
     // Determine if we should preserve an existing object
     const shouldPreserveObject = typeof existingValue === 'object' && existingValue !== null && (
@@ -321,6 +340,10 @@ function buildNewTranslationsForNs (
     )
 
     const isStaleObject = typeof existingValue === 'object' && existingValue !== null && isLeafInNewKeys && !objectKeys.has(key) && !shouldPreserveObject
+
+    if (DEBUG) {
+      debugLog('processing key', { key, existingValueType: typeof existingValue, isLeafInNewKeys, shouldPreserveObject, isStaleObject, defaultValue })
+    }
 
     // Special handling for existing objects that should be preserved
     if (shouldPreserveObject) {
@@ -382,6 +405,10 @@ function buildNewTranslationsForNs (
         // Not primary language or not syncing - always preserve existing
         valueToSet = existingValue
       }
+    }
+
+    if (DEBUG) {
+      debugLog('final decision for key', { key, existingValue, valueToSet, typeofExisting: typeof existingValue, typeofValueToSet: typeof valueToSet })
     }
 
     setNestedValue(newTranslations, key, valueToSet, keySeparator ?? '.')
@@ -510,8 +537,22 @@ export async function getTranslations (
       const fullPath = resolve(process.cwd(), outputPath)
       const existingMergedFile = await loadTranslationFile(fullPath) || {}
 
-      // The namespaces to process are from new keys AND the keys of the existing merged file
-      const namespacesToProcess = new Set<string>([...keysByNS.keys(), ...Object.keys(existingMergedFile)])
+      // Determine whether the existing merged file already uses namespace objects
+      // or is a flat mapping of translation keys -> values.
+      // If it's flat (values are primitives), we must NOT treat each translation key as a namespace.
+      const existingKeys = Object.keys(existingMergedFile)
+      const existingIsNamespaced = existingKeys.some(k => {
+        const v = (existingMergedFile as any)[k]
+        return typeof v === 'object' && v !== null && !Array.isArray(v)
+      })
+
+      // The namespaces to process:
+      // - If existing file is namespaced, combine keysByNS with existingMergedFile namespaces.
+      // - If existing file is flat (top-level translations), ensure NO_NS_TOKEN is processed.
+      const namespacesToProcess = existingIsNamespaced
+        ? new Set<string>([...keysByNS.keys(), ...existingKeys])
+        : new Set<string>([...keysByNS.keys(), NO_NS_TOKEN])
+
       for (const nsKey of namespacesToProcess) {
         const nsKeys = keysByNS.get(nsKey) || []
         if (nsKey === NO_NS_TOKEN) {
