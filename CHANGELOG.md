@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.1](https://github.com/i18next/i18next-cli/compare/v1.20.0...v1.20.1) - 2025-11-03
+
+- feat(extractor): handle nullish coalescing (??) when resolving static expression keys — the extractor now treats `a ?? b` as the union of possible left/right string values (e.g. `t(a ?? 'x')` yields both sides when statically resolvable). [#86](https://github.com/i18next/i18next-cli/issues/86)
+
 ## [1.20.0](https://github.com/i18next/i18next-cli/compare/v1.19.3...v1.20.0) - 2025-11-03
 
 - feat(extractor): statically extract keys referenced via TypeScript enums (e.g. `t(ERROR_CODE.UNKNOWN_ERROR)` → `'UNKNOWN_ERROR'`). Resolves only string-initialized enum members; conservative, non-breaking. [#87](https://github.com/i18next/i18next-cli/issues/87)

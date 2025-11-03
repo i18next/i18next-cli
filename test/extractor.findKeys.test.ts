@@ -303,4 +303,39 @@ describe('extractor.findKeys', () => {
     expect(extracted?.key).toBe('UNKNOWN_ERROR')
     expect(extracted?.defaultValue).toBe('UNKNOWN_ERROR')
   })
+
+  it('should handle nullish coalescing (??) when resolving keys', async () => {
+    const sampleCode = `
+      import { useTranslation } from "react-i18next";
+
+      export default function App() {
+        const { t } = useTranslation();
+
+        const a =
+          process.env.NODE_ENV === "production"
+            ? "test1"
+            : process.env.NODE_ENV === "test"
+            ? "test2"
+            : null;
+
+        const b = a ?? "test3";
+
+        const c = t(b);
+
+        return <>{c}</>;
+      }
+    `
+
+    mockGlob.mockResolvedValue(['/src/App.tsx'])
+
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    const { allKeys } = await findKeys(mockConfig)
+
+    expect(allKeys.has('translation:test1')).toBe(true)
+    expect(allKeys.has('translation:test2')).toBe(true)
+    expect(allKeys.has('translation:test3')).toBe(true)
+  })
 })

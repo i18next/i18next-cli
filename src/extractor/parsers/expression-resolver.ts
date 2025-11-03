@@ -180,16 +180,47 @@ export class ExpressionResolver {
     // SWC binary expr can be represented as `BinExpr` with left/right; be permissive:
     if ((expression as any).left && (expression as any).right) {
       try {
-        const leftVals = this.resolvePossibleStringValuesFromExpression((expression as any).left, returnEmptyStrings)
-        const rightVals = this.resolvePossibleStringValuesFromExpression((expression as any).right, returnEmptyStrings)
-        if (leftVals.length > 0 && rightVals.length > 0) {
-          const combos: string[] = []
-          for (const L of leftVals) {
-            for (const R of rightVals) {
-              combos.push(`${L}${R}`)
+        const exprAny = expression as any
+        const leftNode = exprAny.left
+        const rightNode = exprAny.right
+
+        // Detect explicit binary concatenation (plus) nodes and only then produce concatenated combos.
+        const isBinaryConcat =
+          // SWC older shape: BinExpr with op === '+'
+          (exprAny.type === 'BinExpr' && exprAny.op === '+') ||
+          // Standard AST: BinaryExpression with operator === '+'
+          (exprAny.type === 'BinaryExpression' && exprAny.operator === '+') ||
+          // Fallbacks
+          exprAny.operator === '+' || exprAny.op === '+'
+
+        if (isBinaryConcat) {
+          const leftVals = this.resolvePossibleStringValuesFromExpression(leftNode, returnEmptyStrings)
+          const rightVals = this.resolvePossibleStringValuesFromExpression(rightNode, returnEmptyStrings)
+          if (leftVals.length > 0 && rightVals.length > 0) {
+            const combos: string[] = []
+            for (const L of leftVals) {
+              for (const R of rightVals) {
+                combos.push(`${L}${R}`)
+              }
             }
+            return combos
           }
-          return combos
+        }
+
+        // Handle logical nullish coalescing (a ?? b): result is either left (when not null/undefined) OR right.
+        // Represent this conservatively as the union of possible left and right values.
+        const isNullishCoalesce =
+          // SWC may emit as BinaryExpression with operator '??'
+          (exprAny.type === 'BinaryExpression' && exprAny.operator === '??') ||
+          (exprAny.type === 'LogicalExpression' && exprAny.operator === '??') ||
+          exprAny.operator === '??' || exprAny.op === '??'
+
+        if (isNullishCoalesce) {
+          const leftVals = this.resolvePossibleStringValuesFromExpression(leftNode, returnEmptyStrings)
+          const rightVals = this.resolvePossibleStringValuesFromExpression(rightNode, returnEmptyStrings)
+          if (leftVals.length > 0 || rightVals.length > 0) {
+            return Array.from(new Set([...leftVals, ...rightVals]))
+          }
         }
       } catch {}
     }
