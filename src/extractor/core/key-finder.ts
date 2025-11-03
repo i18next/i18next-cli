@@ -5,6 +5,7 @@ import { processFile } from './extractor'
 import { ConsoleLogger } from '../../utils/logger'
 import { initializePlugins, createPluginContext } from '../plugin-manager'
 import { ASTVisitors } from './ast-visitors'
+import { ExpressionResolver } from '../parsers/expression-resolver'
 
 /**
  * Main function for finding translation keys across all source files in a project.
@@ -81,7 +82,9 @@ export async function findKeys (
   } satisfies ASTVisitorHooks
 
   // 3. Create the visitor instance, passing it the context.
-  const astVisitors = new ASTVisitors(otherConfig, pluginContext, logger, hooks)
+  // Use a shared ExpressionResolver so captured enums/objects in one file are available when resolving MemberExpressions
+  const sharedExpressionResolver = new ExpressionResolver(hooks)
+  const astVisitors = new ASTVisitors(otherConfig, pluginContext, logger, hooks, sharedExpressionResolver)
 
   // 4. "Wire up" the visitor's scope method to the context.
   // This avoids a circular dependency while giving plugins access to the scope.

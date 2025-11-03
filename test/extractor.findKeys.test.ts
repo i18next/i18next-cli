@@ -270,4 +270,37 @@ describe('extractor.findKeys', () => {
     expect(plugin1Spy.mock.calls.length).toBeGreaterThan(1)
     expect(plugin2Spy.mock.calls.length).toBeGreaterThan(1)
   })
+
+  it('should extract string value from TypeScript enum member used in t()', async () => {
+    const enumFile = `
+      export enum ERROR_CODE {
+        UNKNOWN_ERROR = 'UNKNOWN_ERROR',
+        NETWORK_ERROR = 'NETWORK_ERROR'
+      }
+    `
+
+    const usageFile = `
+      import { ERROR_CODE } from './types';
+      function App() {
+        const { t } = { t: (k: string) => k as any };
+        return <div>{t(ERROR_CODE.UNKNOWN_ERROR)}</div>;
+      }
+    `
+
+    vol.fromJSON({
+      '/src/types.ts': enumFile,
+      '/src/MyComponent.tsx': usageFile,
+    })
+
+    mockGlob.mockResolvedValue(['/src/types.ts', '/src/MyComponent.tsx'])
+
+    const { allKeys } = await findKeys(mockConfig)
+
+    const uniqueKey = 'translation:UNKNOWN_ERROR'
+    expect(allKeys.has(uniqueKey)).toBe(true)
+    const extracted = allKeys.get(uniqueKey)
+    expect(extracted).toBeDefined()
+    expect(extracted?.key).toBe('UNKNOWN_ERROR')
+    expect(extracted?.defaultValue).toBe('UNKNOWN_ERROR')
+  })
 })

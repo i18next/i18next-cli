@@ -64,6 +64,34 @@ export class ExpressionResolver {
   }
 
   /**
+   * Capture a TypeScript enum declaration so members can be resolved later.
+   * Accepts SWC node shapes like `TsEnumDeclaration` / `TSEnumDeclaration`.
+   */
+  captureEnumDeclaration (node: any): void {
+    try {
+      if (!node || !node.id || !Array.isArray(node.members)) return
+      const name = node.id.type === 'Identifier' ? node.id.value : undefined
+      if (!name) return
+      const map: Record<string, string> = {}
+      for (const m of node.members) {
+        if (!m || !m.id) continue
+        const keyNode = m.id
+        const memberName = keyNode.type === 'Identifier' ? keyNode.value : keyNode.type === 'StringLiteral' ? keyNode.value : undefined
+        if (!memberName) continue
+        const init = (m as any).init ?? (m as any).initializer
+        if (init && init.type === 'StringLiteral') {
+          map[memberName] = init.value
+        }
+      }
+      if (Object.keys(map).length > 0) {
+        this.symbolTable.set(name, map)
+      }
+    } catch {
+      // noop
+    }
+  }
+
+  /**
    * Resolves an expression to one or more possible context string values that can be
    * determined statically from the AST. This is a wrapper around the plugin hook
    * `extractContextFromExpression` and {@link resolvePossibleStringValuesFromExpression}.
@@ -140,7 +168,9 @@ export class ExpressionResolver {
             let propName: string | undefined
             if (prop.type === 'Identifier') propName = prop.value
             else if (prop.type === 'Computed' && prop.expression?.type === 'StringLiteral') propName = prop.expression.value
-            if (propName && base[propName] !== undefined) return [base[propName]]
+            if (propName && base[propName] !== undefined) {
+              return [base[propName]]
+            }
           }
         }
       } catch {}

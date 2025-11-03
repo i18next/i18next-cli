@@ -53,7 +53,8 @@ export class ASTVisitors {
     config: Omit<I18nextToolkitConfig, 'plugins'>,
     pluginContext: PluginContext,
     logger: Logger,
-    hooks?: ASTVisitorHooks
+    hooks?: ASTVisitorHooks,
+    expressionResolver?: ExpressionResolver
   ) {
     this.pluginContext = pluginContext
     this.config = config
@@ -66,7 +67,8 @@ export class ASTVisitors {
     }
 
     this.scopeManager = new ScopeManager(config)
-    this.expressionResolver = new ExpressionResolver(this.hooks)
+    // use shared resolver when provided so captured enums/objects are visible across files
+    this.expressionResolver = expressionResolver ?? new ExpressionResolver(this.hooks)
     this.callExpressionHandler = new CallExpressionHandler(config, pluginContext, logger, this.expressionResolver)
     this.jsxHandler = new JSXHandler(config, pluginContext, this.expressionResolver)
   }
@@ -119,6 +121,12 @@ export class ASTVisitors {
         // resolve identifiers / member expressions that reference them.
         this.expressionResolver.captureVariableDeclarator(node)
         break
+      case 'TSEnumDeclaration':
+      case 'TsEnumDeclaration':
+      case 'TsEnumDecl':
+        // capture enums into resolver symbol table
+        this.expressionResolver.captureEnumDeclaration(node)
+        break
       case 'CallExpression':
         this.callExpressionHandler.handleCallExpression(node, this.scopeManager.getVarFromScope.bind(this.scopeManager))
         break
@@ -152,7 +160,11 @@ export class ASTVisitors {
             this.expressionResolver.captureVariableDeclarator(item)
             continue
           }
-
+          // enum declarations can appear as ExportDeclaration.declaration earlier; be permissive
+          if (item && item.id && Array.isArray(item.members)) {
+            this.expressionResolver.captureEnumDeclaration(item)
+            // continue to allow further traversal
+          }
           // Common case: VariableDeclaration which contains .declarations (VariableDeclarator[])
           if (item.type === 'VariableDeclaration' && Array.isArray(item.declarations)) {
             for (const decl of item.declarations) {

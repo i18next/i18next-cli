@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.0](https://github.com/i18next/i18next-cli/compare/v1.19.3...v1.20.0) - 2025-11-03
+
+- feat(extractor): statically extract keys referenced via TypeScript enums (e.g. `t(ERROR_CODE.UNKNOWN_ERROR)` → `'UNKNOWN_ERROR'`). Resolves only string-initialized enum members; conservative, non-breaking. [#87](https://github.com/i18next/i18next-cli/issues/87)
+
 ## [1.19.3](https://github.com/i18next/i18next-cli/compare/v1.19.2...v1.19.3) - 2025-11-02
 
 - fix(extractor): improving preserve flat JSON output when extract.defaultNS is false during re-extraction. [#73](https://github.com/i18next/i18next-cli/issues/73)
