@@ -3,14 +3,24 @@ import type { ASTVisitorHooks } from '../../types'
 
 export class ExpressionResolver {
   private hooks: ASTVisitorHooks
-  // Simple per-file symbol table for statically analyzable variables.
+  // Per-file symbol table for statically analyzable variables.
   // Maps variableName -> either:
   //  - string[] (possible string values)
   //  - Record<string, string> (object of static string properties)
-  private symbolTable: Map<string, string[] | Record<string, string>> = new Map()
+  private variableTable: Map<string, string[] | Record<string, string>> = new Map()
+
+  // Shared (cross-file) table for enums / exported object maps that should persist
+  private sharedEnumTable: Map<string, Record<string, string>> = new Map()
 
   constructor (hooks: ASTVisitorHooks) {
     this.hooks = hooks
+  }
+
+  /**
+   * Clear per-file captured variables. Enums / shared maps are kept.
+   */
+  public resetFileSymbols (): void {
+    this.variableTable.clear()
   }
 
   /**
@@ -48,7 +58,7 @@ export class ExpressionResolver {
         }
         // If at least one property was resolvable, record the partial map.
         if (Object.keys(map).length > 0) {
-          this.symbolTable.set(name, map)
+          this.variableTable.set(name, map)
           return
         }
       }
@@ -56,7 +66,7 @@ export class ExpressionResolver {
       // For other initializers, try to resolve to one-or-more strings
       const vals = this.resolvePossibleStringValuesFromExpression(init)
       if (vals.length > 0) {
-        this.symbolTable.set(name, vals)
+        this.variableTable.set(name, vals)
       }
     } catch {
       // be silent - conservative only
@@ -66,6 +76,8 @@ export class ExpressionResolver {
   /**
    * Capture a TypeScript enum declaration so members can be resolved later.
    * Accepts SWC node shapes like `TsEnumDeclaration` / `TSEnumDeclaration`.
+   *
+   * Enums are stored in the shared table so they are available across files.
    */
   captureEnumDeclaration (node: any): void {
     try {
@@ -84,7 +96,7 @@ export class ExpressionResolver {
         }
       }
       if (Object.keys(map).length > 0) {
-        this.symbolTable.set(name, map)
+        this.sharedEnumTable.set(name, map)
       }
     } catch {
       // noop
@@ -163,7 +175,9 @@ export class ExpressionResolver {
         const prop = expression.property
         // only handle simple identifier base + simple property (Identifier or computed StringLiteral)
         if (obj.type === 'Identifier') {
-          const base = this.symbolTable.get(obj.value)
+          const baseVar = this.variableTable.get(obj.value)
+          const baseShared = this.sharedEnumTable.get(obj.value)
+          const base = baseVar ?? baseShared
           if (base && typeof base !== 'string' && !Array.isArray(base)) {
             let propName: string | undefined
             if (prop.type === 'Identifier') propName = prop.value
@@ -236,9 +250,9 @@ export class ExpressionResolver {
       return this.resolvePossibleStringValuesFromType(annotation, returnEmptyStrings)
     }
 
-    // Identifier resolution via captured symbol table
+    // Identifier resolution via captured per-file variable table only
     if (expression.type === 'Identifier') {
-      const v = this.symbolTable.get(expression.value)
+      const v = this.variableTable.get(expression.value)
       if (!v) return []
       if (Array.isArray(v)) return v
       // object map - cannot be used directly as key, so return empty

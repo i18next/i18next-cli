@@ -338,4 +338,30 @@ describe('extractor.findKeys', () => {
     expect(allKeys.has('translation:test2')).toBe(true)
     expect(allKeys.has('translation:test3')).toBe(true)
   })
+
+  it('should not find keys that are unknown', async () => {
+    vol.fromJSON({
+      '/src/Example1.tsx': `
+        function Example1() {
+          const category = 'example1';
+        }`,
+      '/src/Example2.tsx': `
+        function Example2() {
+          const category = getCategory();
+          t(category);
+        }`,
+      '/src/Example3.tsx': `
+        function Example3() {
+          const category = 'example3';
+        }`,
+    })
+
+    mockGlob.mockResolvedValue(['/src/Example1.tsx', '/src/Example2.tsx', '/src/Example3.tsx'])
+
+    const { allKeys } = await findKeys(mockConfig)
+
+    const foundKeys = [...allKeys.keys()]
+
+    expect(foundKeys).toHaveLength(0)
+  })
 })

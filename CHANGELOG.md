@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.2](https://github.com/i18next/i18next-cli/compare/v1.20.1...v1.20.2) - 2025-11-03
+
+- fix(extractor): prevent per-file variable leakage so unrelated variables in other files are not resolved as translation keys [#88](https://github.com/i18next/i18next-cli/issues/88)
+
 ## [1.20.1](https://github.com/i18next/i18next-cli/compare/v1.20.0...v1.20.1) - 2025-11-03
 
 - feat(extractor): handle nullish coalescing (??) when resolving static expression keys — the extractor now treats `a ?? b` as the union of possible left/right string values (e.g. `t(a ?? 'x')` yields both sides when statically resolvable). [#86](https://github.com/i18next/i18next-cli/issues/86)

@@ -82,6 +82,8 @@ export class ASTVisitors {
   public visit (node: Module): void {
     // Reset any per-file scope state to avoid leaking scopes between files.
     this.scopeManager.reset()
+    // Reset per-file captured variables in the expression resolver so variables from other files don't leak.
+    this.expressionResolver.resetFileSymbols()
     this.scopeManager.enterScope() // Create the root scope for the file
     this.walk(node)
     this.scopeManager.exitScope()  // Clean up the root scope
