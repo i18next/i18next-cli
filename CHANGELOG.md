@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.3](https://github.com/i18next/i18next-cli/compare/v1.20.2...v1.20.3) - 2025-11-04
+
+- improve(linter): tolerate JSX/TSX in `.ts` files by retrying parse with TSX enabled and emitting a per-file error (no global crash). [#75](https://github.com/i18next/i18next-cli/issues/75)
+
 ## [1.20.2](https://github.com/i18next/i18next-cli/compare/v1.20.1...v1.20.2) - 2025-11-03
 
 - fix(extractor): prevent per-file variable leakage so unrelated variables in other files are not resolved as translation keys [#88](https://github.com/i18next/i18next-cli/issues/88)

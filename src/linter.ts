@@ -64,11 +64,37 @@ export class Linter extends EventEmitter<LinterEventMap> {
         const isTypeScriptFile = fileExt === '.ts' || fileExt === '.tsx' || fileExt === '.mts' || fileExt === '.cts'
         const isTSX = fileExt === '.tsx'
 
-        const ast = await parse(code, {
-          syntax: isTypeScriptFile ? 'typescript' : 'ecmascript',
-          tsx: isTSX,
-          decorators: true
-        })
+        let ast: any
+        try {
+          ast = await parse(code, {
+            syntax: isTypeScriptFile ? 'typescript' : 'ecmascript',
+            tsx: isTSX,
+            decorators: true
+          })
+        } catch (err) {
+          // Some projects use JSX/TSX in .ts files. Try one fallback parse with tsx:true
+          // if the original file was a .ts (not .tsx). If that still fails, emit error and continue.
+          if (fileExt === '.ts' && !isTSX) {
+            try {
+              ast = await parse(code, {
+                syntax: 'typescript',
+                tsx: true,
+                decorators: true
+              })
+              // optional: emit a progress message so consumers know a fallback happened
+              this.emit('progress', { message: `Parsed ${file} using TSX fallback` })
+            } catch (err2) {
+              const wrapped = this.wrapError(err2)
+              this.emit('error', wrapped)
+              continue
+            }
+          } else {
+            const wrapped = this.wrapError(err)
+            this.emit('error', wrapped)
+            continue
+          }
+        }
+
         const hardcodedStrings = findHardcodedStrings(ast, code, config)
 
         if (hardcodedStrings.length > 0) {

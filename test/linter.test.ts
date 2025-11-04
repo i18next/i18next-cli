@@ -447,4 +447,72 @@ describe('Linter (core logic)', () => {
     expect(result.success).toBe(true)
     expect(result.message).toContain('No issues found.')
   })
+
+  it('should parse JSX in .ts files via TSX fallback and report issues (no throw)', async () => {
+    const { glob } = await import('glob')
+    ;(glob as any).mockResolvedValue(['/src/tsx-in-ts.ts'])
+
+    const sampleWithJsxInTs = `
+      import { QueryClientProvider } from '@tanstack/react-query'
+      const queryClient = {}
+
+      function App() {
+        return (
+          // Managing server side data FetchTokenConfig, caching and mutations via React Query.
+          <QueryClientProvider client={queryClient}>
+            {/* Intentionally simple JSX inside a .ts file to reproduce previous parser error */}
+            <div>Should not crash</div>
+          </QueryClientProvider>
+        )
+      }
+    `
+
+    vol.fromJSON({ '/src/tsx-in-ts.ts': sampleWithJsxInTs })
+
+    const linter = new Linter(mockConfig)
+    let errorEvent: Error | null = null
+    const progressEvents: string[] = []
+    linter.on('error', (err) => { errorEvent = err })
+    linter.on('progress', (e) => { progressEvents.push(e.message) })
+
+    const result = await linter.run()
+
+    // No global error should be emitted (fallback handled parsing)
+    expect(errorEvent).toBeNull()
+    // Fallback parse should have been announced
+    expect(progressEvents.some(msg => msg.includes('TSX fallback') || msg.includes('Parsed /src/tsx-in-ts.ts using TSX fallback'))).toBe(true)
+
+    // Linter should return results and report the hardcoded string found inside the .ts file
+    expect(result).toBeDefined()
+    expect(result.success).toBe(false)
+    expect(result.files['/src/tsx-in-ts.ts']).toBeDefined()
+    expect(result.files['/src/tsx-in-ts.ts'][0].text).toBe('Should not crash')
+  })
+
+  it('should handle identical JSX fine when file extension is .tsx', async () => {
+    const { glob } = await import('glob')
+    ;(glob as any).mockResolvedValue(['/src/App.tsx'])
+
+    const sampleTsx = `
+      import { QueryClientProvider } from '@tanstack/react-query'
+      const queryClient = {}
+
+      export default function App() {
+        return (
+          <QueryClientProvider client={queryClient}>
+            <div>Hardcoded string in TSX</div>
+          </QueryClientProvider>
+        )
+      }
+    `
+
+    vol.fromJSON({ '/src/App.tsx': sampleTsx })
+
+    const result = await runLinter(mockConfig)
+
+    // Linter should complete (may flag the hardcoded string), but should not crash.
+    expect(result).toBeDefined()
+    // If it flags the hardcoded string the run is considered a successful run with findings (success=false).
+    expect(typeof result.success).toBe('boolean')
+  })
 })
