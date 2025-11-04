@@ -159,13 +159,36 @@ export async function processFile (
     const isTypeScriptFile = fileExt === '.ts' || fileExt === '.tsx' || fileExt === '.mts' || fileExt === '.cts'
     const isTSX = fileExt === '.tsx'
 
-    const ast = await parse(code, {
-      syntax: isTypeScriptFile ? 'typescript' : 'ecmascript',
-      tsx: isTSX,
-      decorators: true,
-      dynamicImport: true,
-      comments: true,
-    })
+    let ast: any
+    try {
+      ast = await parse(code, {
+        syntax: isTypeScriptFile ? 'typescript' : 'ecmascript',
+        tsx: isTSX,
+        decorators: true,
+        dynamicImport: true,
+        comments: true,
+      })
+    } catch (err) {
+      // Some projects embed JSX/TSX inside .ts files. Try a one-time fallback parse
+      // enabling TSX when the file extension is `.ts`. If fallback fails, surface
+      // the original error as an ExtractorError.
+      if (fileExt === '.ts' && !isTSX) {
+        try {
+          ast = await parse(code, {
+            syntax: 'typescript',
+            tsx: true,
+            decorators: true,
+            dynamicImport: true,
+            comments: true,
+          })
+          logger.info?.(`Parsed ${file} using TSX fallback`)
+        } catch (err2) {
+          throw new ExtractorError('Failed to process file', file, err2 as Error)
+        }
+      } else {
+        throw new ExtractorError('Failed to process file', file, err as Error)
+      }
+    }
 
     // "Wire up" the visitor's scope method to the context.
     // This avoids a circular dependency while giving plugins access to the scope.

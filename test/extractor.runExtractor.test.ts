@@ -1770,4 +1770,37 @@ describe('extractor: runExtractor', () => {
       some: { key: 'Default' }
     })
   })
+
+  it('should extract keys from JSX inside .ts files using TSX fallback', async () => {
+    const { glob } = await import('glob')
+    ;(glob as any).mockResolvedValue(['/src/tsx-in-ts.ts'])
+
+    const sampleWithJsxInTs = `
+      import { Trans, useTranslation } from 'react-i18next';
+      export default function App() {
+        const { t } = useTranslation();
+        return (
+          <div>
+            <Trans i18nKey="app.title">Welcome</Trans>
+            <p>{t('inline.key', 'Inline default')}</p>
+          </div>
+        );
+      }
+    `
+
+    vol.fromJSON({ '/src/tsx-in-ts.ts': sampleWithJsxInTs })
+
+    // Run the extractor - it should not throw and should extract keys from the .ts file
+    await runExtractor(mockConfig)
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    expect(enJson).toBeDefined()
+    expect(enJson.app).toBeDefined()
+    expect(enJson.app.title).toBe('Welcome')
+    expect(enJson.inline).toBeDefined()
+    expect(enJson.inline.key).toBe('Inline default')
+  })
 })
