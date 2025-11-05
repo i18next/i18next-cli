@@ -1803,4 +1803,100 @@ describe('extractor: runExtractor', () => {
     expect(enJson.inline).toBeDefined()
     expect(enJson.inline.key).toBe('Inline default')
   })
+
+  it('should preserve entire namespace when preservePatterns contains namespace:*', async () => {
+    const sampleCode = `
+      function App() {
+        // This key should be extracted normally (different namespace)
+        t('app.title', 'My App Title');
+        
+        // These keys match the assets namespace pattern and should NOT be extracted
+        t('assets:image.logo', 'Logo Image');
+        t('icon.home', { ns: 'assets', defaultValue: 'Home Icon'});
+        t('completely.different', { ns: 'other', defaultValue: 'OTHER'});
+        
+        // Dynamic usage that also shouldn't be extracted
+        const assetId = 'banner';
+        t(\`assets:image.\${assetId}\`);
+      }
+    `
+    const assetsPath = resolve(process.cwd(), 'locales/en/assets.json')
+    const otherPath = resolve(process.cwd(), 'locales/en/other.json')
+
+    // Prepopulate an existing namespace file that should be preserved
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      [assetsPath]: JSON.stringify({
+        external: {
+          key: 'External Value'
+        },
+        image: {
+          banner: 'Existing Banner'
+        }
+      }, null, 2),
+      [otherPath]: JSON.stringify({
+        okey: 'here',
+        second: 'whatever',
+        secondTwo: 'whatever2',
+        bye: 'can be removed'
+      }, null, 2),
+    })
+
+    const configWithNamespacePattern: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        keySeparator: '.', // nested keys
+        nsSeparator: ':',
+        // Preserve whole namespace by pattern
+        preservePatterns: ['assets:*', 'other:okey', 'other:second*'],
+      },
+    }
+
+    await runExtractor(configWithNamespacePattern)
+
+    // Ensure the assets namespace file was preserved untouched (no new keys added)
+    const assetsContent = await vol.promises.readFile(assetsPath, 'utf-8')
+    const assetsJson = JSON.parse(assetsContent as string)
+
+    expect(assetsJson).toEqual({
+      external: {
+        key: 'External Value'
+      },
+      image: {
+        banner: 'Existing Banner'
+      }
+      // The keys from code (assets:image.logo, assets:icon.home) should NOT be here
+    })
+
+    // Verify they were NOT extracted
+    expect(assetsJson).not.toHaveProperty('image.logo')
+    expect(assetsJson).not.toHaveProperty('icon')
+
+    const otherContent = await vol.promises.readFile(otherPath, 'utf-8')
+    const otherJson = JSON.parse(otherContent as string)
+    expect(otherJson).toEqual({
+      okey: 'here',
+      completely: {
+        different: 'OTHER'
+      },
+      second: 'whatever',
+      secondTwo: 'whatever2'
+    })
+
+    // Ensure the normal extracted key went to translation.json
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    expect(enJson).toEqual({
+      app: {
+        title: 'My App Title'
+      }
+    })
+
+    // Verify assets keys didn't leak into translation.json
+    expect(enJson).not.toHaveProperty('assets:image.logo')
+    expect(enJson).not.toHaveProperty('assets:icon.home')
+  })
 })

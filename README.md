@@ -359,8 +359,17 @@ export default defineConfig({
     
     // Preserve dynamic keys matching patterns
     preservePatterns: [
-      'dynamic.feature.*',
-      'generated.*.key'
+      // Key patterns
+      'dynamic.feature.*',      // Matches dynamic.feature.anything
+      'generated.*.key',        // Matches generated.anything.key
+      
+      // Namespace patterns
+      'assets:*',               // Preserves ALL keys in the 'assets' namespace
+      'common:button.*',        // Preserves keys like common:button.save, common:button.cancel
+      'errors:api.*',           // Preserves keys like errors:api.timeout, errors:api.server
+      
+      // Specific key preservation across namespaces
+      'dynamic:user.*.profile', // Matches dynamic:user.admin.profile, dynamic:user.guest.profile
     ],
     
     // Output formatting

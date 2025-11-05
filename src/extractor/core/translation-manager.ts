@@ -106,7 +106,7 @@ function buildNewTranslationsForNs (
   existingTranslations: Record<string, any>,
   config: I18nextToolkitConfig,
   locale: string,
-  namespace?: string, // optional: undefined indicates "no namespace / top-level file"
+  namespace?: string,
   preservePatterns: RegExp[] = [],
   objectKeys: Set<string> = new Set(),
   syncPrimaryWithDefaults: boolean = false
@@ -120,6 +120,7 @@ function buildNewTranslationsForNs (
     pluralSeparator = '_',
     contextSeparator = '_',
   } = config.extract
+
   // Get the plural categories for the target language
   const targetLanguagePluralCategories = new Set<string>()
   // Track cardinal plural categories separately so we can special-case single-"other" languages
@@ -145,11 +146,69 @@ function buildNewTranslationsForNs (
     ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
   }
 
+  // Prepare namespace pattern checking helpers
+  const rawPreserve = config.extract.preservePatterns || []
+  const nsSep = typeof config.extract.nsSeparator === 'string' ? config.extract.nsSeparator : ':'
+
+  // Helper to check if a key should be filtered out during extraction
+  const shouldFilterKey = (key: string): boolean => {
+    // 1) regex based patterns (existing behavior)
+    if (preservePatterns.some(re => re.test(key))) {
+      return true
+    }
+    // 2) namespace:* style patterns (respect nsSeparator)
+    for (const rp of rawPreserve) {
+      if (typeof rp !== 'string') continue
+      if (rp.endsWith(`${nsSep}*`)) {
+        const nsPrefix = rp.slice(0, -(nsSep.length + 1))
+        // If namespace is provided to this builder, and pattern targets this namespace, skip keys from this ns
+        // Support wildcard namespace '*' to match any namespace
+        if (nsPrefix === '*' || (namespace && nsPrefix === namespace)) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  // Helper to check if an existing key should be preserved
+  const shouldPreserveExistingKey = (key: string): boolean => {
+    // 1) regex-style patterns
+    if (preservePatterns.some(re => re.test(key))) {
+      return true
+    }
+    // 2) namespace:key patterns - check if pattern matches this namespace:key combination
+    for (const rp of rawPreserve) {
+      if (typeof rp !== 'string') continue
+
+      // Handle namespace:* patterns
+      if (rp.endsWith(`${nsSep}*`)) {
+        const nsPrefix = rp.slice(0, -(nsSep.length + 1))
+        if (nsPrefix === '*' || (namespace && nsPrefix === namespace)) {
+          return true
+        }
+      }
+
+      // Handle namespace:specificKey patterns (e.g., 'other:okey', 'other:second*')
+      if (rp.includes(nsSep) && namespace) {
+        const [patternNs, patternKey] = rp.split(nsSep)
+        if (patternNs === namespace) {
+          // Convert the key part to regex (handle wildcards)
+          const keyRegex = globToRegex(patternKey)
+          if (keyRegex.test(key)) {
+            return true
+          }
+        }
+      }
+    }
+    return false
+  }
+
   // Filter nsKeys to only include keys relevant to this language
   const filteredKeys = nsKeys.filter(({ key, hasCount, isOrdinal }) => {
     // FIRST: Check if key matches preservePatterns and should be excluded
-    if (preservePatterns.some(re => re.test(key))) {
-      return false // Skip keys that match preserve patterns
+    if (shouldFilterKey(key)) {
+      return false
     }
 
     if (!hasCount) {
@@ -215,7 +274,7 @@ function buildNewTranslationsForNs (
   // Preserve keys that match the configured patterns
   const existingKeys = getNestedKeys(existingTranslations, keySeparator ?? '.')
   for (const existingKey of existingKeys) {
-    if (preservePatterns.some(re => re.test(existingKey))) {
+    if (shouldPreserveExistingKey(existingKey)) {
       const value = getNestedValue(existingTranslations, existingKey, keySeparator ?? '.')
       setNestedValue(newTranslations, existingKey, value, keySeparator ?? '.')
     }

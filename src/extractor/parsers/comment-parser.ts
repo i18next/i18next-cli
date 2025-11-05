@@ -34,7 +34,26 @@ export function extractKeysFromComments (
   const keyRegex = new RegExp(`\\b${functionNameToFind}\\s*\\(\\s*(['"])([^'"]+)\\1`, 'g')
 
   // Prepare preservePatterns for filtering
-  const preservePatterns = (config.extract.preservePatterns || []).map(globToRegex)
+  const rawPreservePatterns = config.extract.preservePatterns || []
+  const preservePatterns = rawPreservePatterns.map(globToRegex)
+  const nsSeparator = config.extract.nsSeparator ?? ':'
+
+  const matchesPreserve = (key: string, ns?: string) => {
+    // 1) regex-style matches (existing behavior)
+    if (preservePatterns.some(re => re.test(key))) return true
+    // 2) namespace:* style patterns => preserve entire namespace
+    for (const rp of rawPreservePatterns) {
+      if (typeof rp !== 'string') continue
+      if (rp.endsWith(`${nsSeparator}*`)) {
+        const nsPrefix = (typeof nsSeparator === 'string' && nsSeparator.length > 0)
+          ? rp.slice(0, -(nsSeparator.length + 1))
+          : rp.slice(0, -1)
+        // support '*' as a wildcard namespace
+        if (nsPrefix === '*' || (ns && nsPrefix === ns)) return true
+      }
+    }
+    return false
+  }
 
   const commentTexts = collectCommentTexts(code)
 
@@ -48,10 +67,7 @@ export function extractKeysFromComments (
         continue // Skip empty keys
       }
 
-      // Check if key matches preservePatterns and should be excluded from extraction
-      if (preservePatterns.some(re => re.test(key))) {
-        continue // Skip keys that match preserve patterns
-      }
+      // We'll check preservePatterns after namespace resolution below
 
       let ns: string | false | undefined
       const remainder = text.slice(match.index + match[0].length)
@@ -74,8 +90,8 @@ export function extractKeysFromComments (
           continue // Skip keys that become empty after normalization
         }
 
-        // Re-check preservePatterns after key normalization
-        if (preservePatterns.some(re => re.test(key))) {
+        // Re-check preservePatterns after key normalization (will check namespace-aware helper)
+        if (matchesPreserve(key, ns as string | undefined)) {
           continue // Skip normalized keys that match preserve patterns
         }
       }
@@ -97,8 +113,8 @@ export function extractKeysFromComments (
           continue // Skip keys that become empty after namespace removal
         }
 
-        // Re-check preservePatterns after namespace processing
-        if (preservePatterns.some(re => re.test(key))) {
+        // Re-check preservePatterns after namespace processing (namespace-aware)
+        if (matchesPreserve(key, ns as string | undefined)) {
           continue // Skip processed keys that match preserve patterns
         }
       }
@@ -110,6 +126,11 @@ export function extractKeysFromComments (
         if (scopeInfo?.defaultNs) {
           ns = scopeInfo.defaultNs
         }
+      }
+
+      // Final preserve check for keys without prior namespace normalization
+      if (matchesPreserve(key, ns as string | undefined)) {
+        continue
       }
 
       // 4. Final fallback to configured default namespace
