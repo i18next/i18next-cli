@@ -814,4 +814,79 @@ describe('extractor: runExtractor (sync primary language defaults)', () => {
       }
     })
   })
+
+  it('should NOT overwrite primary language values with code defaults if no code defaults exist', async () => {
+    // Setup source files with translation calls
+    vol.fromJSON({
+      'src/app.tsx': `
+        import { Trans, useTranslation } from 'react-i18next'
+        
+        export default function App() {
+          const { t } = useTranslation()
+          // Initial default value in code
+          const title = t('app.title', 'Welcome to My App')
+          const subtitle = t('app.subtitle', 'Best app ever')
+          const existing = t('app.existing', 'New default value')
+          const preserved = t('translation:app.preserved')
+
+          return <Trans i18nKey='translation:app.preservedTrans' />
+        }
+      `,
+    })
+
+    // Setup existing translation file with different values
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        app: {
+          title: 'Old Welcome Message',     // Should be updated
+          subtitle: 'Old subtitle',         // Should be updated
+          existing: 'Existing translation', // Should be updated
+          preserved: 'Should stay',          // Should remain (no code default)
+          preservedTrans: 'Should also stay'    // Should remain (no code default)
+        }
+      }, null, 2),
+      [dePath]: JSON.stringify({
+        app: {
+          title: 'Alte Willkommensnachricht',
+          existing: 'Bestehende Übersetzung',
+        }
+      }, null, 2)
+    })
+
+    // Mock glob to find the source files
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.tsx'])
+
+    // Run extractor with syncPrimaryWithDefaults enabled
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    // Check primary language (en) - should sync with code defaults
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      app: {
+        title: 'Welcome to My App',    // Updated from code
+        subtitle: 'Best app ever',     // Updated from code
+        existing: 'New default value', // Updated from code
+        preserved: 'Should stay',      // Preserved (no code default)
+        preservedTrans: 'Should also stay'  // Preserved (no code default)
+      }
+    })
+
+    // Check secondary language (de) - should preserve existing values and add new keys with empty defaults
+    const deContent = JSON.parse(vol.readFileSync(dePath, 'utf8') as string)
+    expect(deContent).toEqual({
+      app: {
+        title: 'Alte Willkommensnachricht', // Preserved existing value
+        preserved: '',                      // New key gets empty default
+        preservedTrans: '',                     // New key gets empty default
+        subtitle: '',                       // New key gets empty default
+        existing: 'Bestehende Übersetzung', // Preserved existing value
+        // Note: 'preserved' is NOT added to secondary language because it doesn't exist in code
+      }
+    })
+  })
 })

@@ -401,6 +401,8 @@ function buildNewTranslationsForNs (
           // - Otherwise use empty string for new keys
           const isDerivedDefault = defaultValue && (
             defaultValue === key || // Exact match
+            // Check if defaultValue includes namespace prefix (e.g., "translation:app.key")
+            defaultValue.includes(nsSep) ||
             // For variant keys (plural/context), check if defaultValue is the base
             (key !== defaultValue &&
             (key.startsWith(defaultValue + pluralSeparator) ||
@@ -422,6 +424,8 @@ function buildNewTranslationsForNs (
         // Only update when we have a meaningful defaultValue that's not derived from the key pattern.
         const isDerivedDefault = defaultValue && (
           defaultValue === key || // Exact match
+          // Check if defaultValue includes namespace prefix (e.g., "translation:app.key")
+          defaultValue.includes(nsSep) ||
           // For variant keys (plural/context), check if defaultValue is the base
           (key !== defaultValue &&
           (key.startsWith(defaultValue + pluralSeparator) ||
