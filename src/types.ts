@@ -322,6 +322,13 @@ export interface ExtractedKey {
 
   /** True when the extractor returned an already-expanded plural form (e.g. "key_one") */
   isExpandedPlural?: boolean
+
+  /** Source locations where this key was found (optional, populated by plugins) */
+  locations?: Array<{
+    file: string
+    line?: number
+    column?: number
+  }>
 }
 
 /**

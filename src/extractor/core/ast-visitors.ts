@@ -41,6 +41,8 @@ export class ASTVisitors {
   private readonly expressionResolver: ExpressionResolver
   private readonly callExpressionHandler: CallExpressionHandler
   private readonly jsxHandler: JSXHandler
+  private currentFile: string = ''
+  private currentCode: string = ''
 
   /**
    * Creates a new AST visitor instance.
@@ -69,8 +71,21 @@ export class ASTVisitors {
     this.scopeManager = new ScopeManager(config)
     // use shared resolver when provided so captured enums/objects are visible across files
     this.expressionResolver = expressionResolver ?? new ExpressionResolver(this.hooks)
-    this.callExpressionHandler = new CallExpressionHandler(config, pluginContext, logger, this.expressionResolver)
-    this.jsxHandler = new JSXHandler(config, pluginContext, this.expressionResolver)
+    this.callExpressionHandler = new CallExpressionHandler(
+      config,
+      pluginContext,
+      logger,
+      this.expressionResolver,
+      () => this.getCurrentFile(),
+      () => this.getCurrentCode()
+    )
+    this.jsxHandler = new JSXHandler(
+      config,
+      pluginContext,
+      this.expressionResolver,
+      () => this.getCurrentFile(),
+      () => this.getCurrentCode()
+    )
   }
 
   /**
@@ -210,5 +225,36 @@ export class ASTVisitors {
    */
   public getVarFromScope (name: string): ScopeInfo | undefined {
     return this.scopeManager.getVarFromScope(name)
+  }
+
+  /**
+   * Sets the current file path used by the extractor.
+   *
+   * @param file - The file path (absolute or relative) to set as the current processing context.
+   * @remarks
+   * Updating the current file allows subsequent AST visitors and extraction logic to
+   * associate nodes, messages, and errors with the correct source file.
+   */
+  public setCurrentFile (file: string, code: string): void {
+    this.currentFile = file
+    this.currentCode = code
+  }
+
+  /**
+   * Returns the currently set file path.
+   *
+   * @returns The current file path as a string, or `undefined` if no file has been set.
+   * @remarks
+   * Use this to retrieve the file context that was previously set via `setCurrentFile`.
+   */
+  public getCurrentFile (): string {
+    return this.currentFile
+  }
+
+  /**
+   * @returns The full source code string for the file currently under processing.
+   */
+  public getCurrentCode (): string {
+    return this.currentCode
   }
 }

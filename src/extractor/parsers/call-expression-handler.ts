@@ -9,17 +9,43 @@ export class CallExpressionHandler {
   private logger: Logger
   private expressionResolver: ExpressionResolver
   public objectKeys = new Set<string>()
+  private getCurrentFile: () => string
+  private getCurrentCode: () => string
 
   constructor (
     config: Omit<I18nextToolkitConfig, 'plugins'>,
     pluginContext: PluginContext,
     logger: Logger,
-    expressionResolver: ExpressionResolver
+    expressionResolver: ExpressionResolver,
+    getCurrentFile: () => string,
+    getCurrentCode: () => string
   ) {
     this.config = config
     this.pluginContext = pluginContext
     this.logger = logger
     this.expressionResolver = expressionResolver
+    this.getCurrentFile = getCurrentFile
+    this.getCurrentCode = getCurrentCode
+  }
+
+  /**
+   * Helper method to calculate line and column from byte offset.
+   * SWC provides byte offsets in span.start, not line/column directly.
+   */
+  private getLocationFromSpan (span: any): { line: number, column: number } | undefined {
+    if (!span || typeof span.start !== 'number') return undefined
+
+    const code = this.getCurrentCode()
+    const offset = span.start
+
+    // Calculate line and column from byte offset
+    const upToOffset = code.substring(0, offset)
+    const lines = upToOffset.split('\n')
+
+    return {
+      line: lines.length,
+      column: lines[lines.length - 1].length
+    }
   }
 
   /**
@@ -363,7 +389,24 @@ export class CallExpressionHandler {
       }
 
       // 5. Default case: Add the simple key
-      this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
+      {
+        // ✅ Use the helper method to calculate proper line/column
+        const location = node.span ? this.getLocationFromSpan(node.span) : undefined
+
+        this.pluginContext.addKey({
+          key: finalKey,
+          ns,
+          defaultValue: dv,
+          explicitDefault: explicitDefaultForBase,
+          locations: location
+            ? [{
+                file: this.getCurrentFile(),
+                line: location.line,
+                column: location.column
+              }]
+            : undefined
+        })
+      }
     }
   }
 

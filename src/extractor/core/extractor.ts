@@ -194,6 +194,9 @@ export async function processFile (
     // This avoids a circular dependency while giving plugins access to the scope.
     pluginContext.getVarFromScope = astVisitors.getVarFromScope.bind(astVisitors)
 
+    // Pass BOTH file and code
+    astVisitors.setCurrentFile(file, code)
+
     // 3. FIRST: Visit the AST to build scope information
     astVisitors.visit(ast)
 

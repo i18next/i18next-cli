@@ -39,7 +39,12 @@ export async function initializePlugins (plugins: any[]): Promise<void> {
  * })
  * ```
  */
-export function createPluginContext (allKeys: Map<string, ExtractedKey>, plugins: Plugin[], config: Omit<I18nextToolkitConfig, 'plugins'>, logger: Logger): PluginContext {
+export function createPluginContext (
+  allKeys: Map<string, ExtractedKey>,
+  plugins: Plugin[],
+  config: Omit<I18nextToolkitConfig, 'plugins'>,
+  logger: Logger
+): PluginContext {
   const pluginContextConfig = Object.freeze({
     ...config,
     plugins: [...plugins],
@@ -74,14 +79,33 @@ export function createPluginContext (allKeys: Map<string, ExtractedKey>, plugins
 
         const isNewGenericFallback = defaultValue === keyInfo.key
 
+        // Merge locations
+        if (keyInfo.locations) {
+          existingKey.locations = [
+            ...(existingKey.locations || []),
+            ...keyInfo.locations
+          ]
+        }
+
         // If existing value is a generic fallback and new value is specific, replace it
         if (isExistingGenericFallback && !isNewGenericFallback) {
-          allKeys.set(uniqueKey, { ...keyInfo, ns: storedNs || config.extract?.defaultNS || 'translation', nsIsImplicit, defaultValue })
+          allKeys.set(uniqueKey, {
+            ...keyInfo,
+            ns: storedNs || config.extract?.defaultNS || 'translation',
+            nsIsImplicit,
+            defaultValue,
+            locations: existingKey.locations // Preserve merged locations
+          })
         }
         // Otherwise keep the existing one
       } else {
         // New key, just add it
-        allKeys.set(uniqueKey, { ...keyInfo, ns: storedNs || config.extract?.defaultNS || 'translation', nsIsImplicit, defaultValue })
+        allKeys.set(uniqueKey, {
+          ...keyInfo,
+          ns: storedNs || config.extract?.defaultNS || 'translation',
+          nsIsImplicit,
+          defaultValue
+        })
       }
     },
     config: pluginContextConfig,

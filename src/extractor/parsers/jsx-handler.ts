@@ -8,15 +8,39 @@ export class JSXHandler {
   private config: Omit<I18nextToolkitConfig, 'plugins'>
   private pluginContext: PluginContext
   private expressionResolver: ExpressionResolver
+  private getCurrentFile: () => string
+  private getCurrentCode: () => string // ✅ Add this
 
   constructor (
     config: Omit<I18nextToolkitConfig, 'plugins'>,
     pluginContext: PluginContext,
-    expressionResolver: ExpressionResolver
+    expressionResolver: ExpressionResolver,
+    getCurrentFile: () => string,
+    getCurrentCode: () => string // ✅ Add parameter
   ) {
     this.config = config
     this.pluginContext = pluginContext
     this.expressionResolver = expressionResolver
+    this.getCurrentFile = getCurrentFile
+    this.getCurrentCode = getCurrentCode // ✅ Store it
+  }
+
+  /**
+   * Helper method to calculate line and column from byte offset.
+   */
+  private getLocationFromSpan (span: any): { line: number, column: number } | undefined {
+    if (!span || typeof span.start !== 'number') return undefined
+
+    const code = this.getCurrentCode()
+    const offset = span.start
+
+    const upToOffset = code.substring(0, offset)
+    const lines = upToOffset.split('\n')
+
+    return {
+      line: lines.length,
+      column: lines[lines.length - 1].length
+    }
   }
 
   /**
@@ -48,6 +72,16 @@ export class JSXHandler {
 
         const { contextExpression, optionsNode, defaultValue, hasCount, isOrdinal, serializedChildren } = extractedAttributes
 
+        // ✅ Extract location information using the helper method
+        const location = node.span ? this.getLocationFromSpan(node.span) : undefined
+        const locations = location
+          ? [{
+              file: this.getCurrentFile(),
+              line: location.line,
+              column: location.column
+            }]
+          : undefined
+
         // If ns is not explicitly set on the component, try to find it from the key
         // or the `t` prop
         if (!extractedAttributes.ns) {
@@ -71,6 +105,7 @@ export class JSXHandler {
               hasCount,
               isOrdinal,
               explicitDefault: extractedAttributes.explicitDefault,
+              locations
             }
           })
 
@@ -106,6 +141,7 @@ export class JSXHandler {
               defaultValue: defaultValue || serializedChildren,
               hasCount,
               isOrdinal,
+              locations
             }
           })
         }
@@ -133,7 +169,12 @@ export class JSXHandler {
                 for (const context of contextValues) {
                   for (const extractedKey of extractedKeys) {
                     const contextKey = `${extractedKey.key}${contextSeparator}${context}`
-                    this.pluginContext.addKey({ key: contextKey, ns: extractedKey.ns, defaultValue: extractedKey.defaultValue })
+                    this.pluginContext.addKey({
+                      key: contextKey,
+                      ns: extractedKey.ns,
+                      defaultValue: extractedKey.defaultValue,
+                      locations: extractedKey.locations
+                    })
                   }
                 }
               } else {
@@ -142,13 +183,19 @@ export class JSXHandler {
                   this.pluginContext.addKey({
                     key: extractedKey.key,
                     ns: extractedKey.ns,
-                    defaultValue: extractedKey.defaultValue
+                    defaultValue: extractedKey.defaultValue,
+                    locations: extractedKey.locations
                   })
                 })
                 for (const context of contextValues) {
                   for (const extractedKey of extractedKeys) {
                     const contextKey = `${extractedKey.key}${contextSeparator}${context}`
-                    this.pluginContext.addKey({ key: contextKey, ns: extractedKey.ns, defaultValue: extractedKey.defaultValue })
+                    this.pluginContext.addKey({
+                      key: contextKey,
+                      ns: extractedKey.ns,
+                      defaultValue: extractedKey.defaultValue,
+                      locations: extractedKey.locations
+                    })
                   }
                 }
               }
@@ -158,7 +205,8 @@ export class JSXHandler {
                 this.pluginContext.addKey({
                   key: extractedKey.key,
                   ns: extractedKey.ns,
-                  defaultValue: extractedKey.defaultValue
+                  defaultValue: extractedKey.defaultValue,
+                  locations: extractedKey.locations
                 })
               })
             }
@@ -179,18 +227,18 @@ export class JSXHandler {
             // Generate all combinations of context and plural forms
             if (contextValues.length > 0) {
               // Generate base plural forms (no context)
-              extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode))
+              extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, undefined, extractedKey.locations))
 
               // Generate context + plural combinations
               for (const context of contextValues) {
                 for (const extractedKey of extractedKeys) {
                   const contextKey = `${extractedKey.key}${contextSeparator}${context}`
-                  this.generatePluralKeysForTrans(contextKey, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, extractedKey.explicitDefault)
+                  this.generatePluralKeysForTrans(contextKey, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, extractedKey.explicitDefault, extractedKey.locations)
                 }
               }
             } else {
               // Fallback to just plural forms if context resolution fails
-              extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, extractedKey.explicitDefault))
+              extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, extractedKey.explicitDefault, extractedKey.locations))
             }
           }
         } else if (contextExpression) {
@@ -200,8 +248,13 @@ export class JSXHandler {
           if (contextValues.length > 0) {
             // Add context variants
             for (const context of contextValues) {
-              for (const { key, ns, defaultValue } of extractedKeys) {
-                this.pluginContext.addKey({ key: `${key}${contextSeparator}${context}`, ns, defaultValue })
+              for (const { key, ns, defaultValue, locations } of extractedKeys) {
+                this.pluginContext.addKey({
+                  key: `${key}${contextSeparator}${context}`,
+                  ns,
+                  defaultValue,
+                  locations
+                })
               }
             }
             // Only add the base key as a fallback if the context is dynamic (i.e., not a simple string).
@@ -210,7 +263,8 @@ export class JSXHandler {
                 this.pluginContext.addKey({
                   key: extractedKey.key,
                   ns: extractedKey.ns,
-                  defaultValue: extractedKey.defaultValue
+                  defaultValue: extractedKey.defaultValue,
+                  locations: extractedKey.locations
                 })
               })
             }
@@ -220,7 +274,8 @@ export class JSXHandler {
               this.pluginContext.addKey({
                 key: extractedKey.key,
                 ns: extractedKey.ns,
-                defaultValue: extractedKey.defaultValue
+                defaultValue: extractedKey.defaultValue,
+                locations: extractedKey.locations
               })
             })
           }
@@ -232,7 +287,8 @@ export class JSXHandler {
               this.pluginContext.addKey({
                 key: extractedKey.key,
                 ns: extractedKey.ns,
-                defaultValue: extractedKey.defaultValue
+                defaultValue: extractedKey.defaultValue,
+                locations: extractedKey.locations
               })
             })
           } else {
@@ -246,7 +302,7 @@ export class JSXHandler {
             )
             const isOrdinal = !!ordinalAttr
 
-            extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, extractedKey.explicitDefault))
+            extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, extractedKey.explicitDefault, extractedKey.locations))
           }
         } else {
           // No count or context - just add the base keys
@@ -254,7 +310,8 @@ export class JSXHandler {
             this.pluginContext.addKey({
               key: extractedKey.key,
               ns: extractedKey.ns,
-              defaultValue: extractedKey.defaultValue
+              defaultValue: extractedKey.defaultValue,
+              locations: extractedKey.locations
             })
           })
         }
@@ -270,8 +327,18 @@ export class JSXHandler {
    * @param ns - Namespace for the keys
    * @param isOrdinal - Whether to generate ordinal plural forms
    * @param optionsNode - Optional tOptions object expression for plural-specific defaults
+   * @param explicitDefaultFromSource - Whether the default was explicitly provided in source
+   * @param locations - Source location information for this key
    */
-  private generatePluralKeysForTrans (key: string, defaultValue: string | undefined, ns: string | false | undefined, isOrdinal: boolean, optionsNode?: ObjectExpression, explicitDefaultFromSource?: boolean): void {
+  private generatePluralKeysForTrans (
+    key: string,
+    defaultValue: string | undefined,
+    ns: string | false | undefined,
+    isOrdinal: boolean,
+    optionsNode?: ObjectExpression,
+    explicitDefaultFromSource?: boolean,
+    locations?: Array<{ file: string, line?: number, column?: number }>
+  ): void {
     try {
       const type = isOrdinal ? 'ordinal' : 'cardinal'
       const pluralCategories = new Intl.PluralRules(this.config.extract?.primaryLanguage, { type }).resolvedOptions().pluralCategories
@@ -299,7 +366,8 @@ export class JSXHandler {
           defaultValue: finalDefault,
           hasCount: true,
           isOrdinal,
-          explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string')
+          explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string'),
+          locations
         })
         return
       }
@@ -344,12 +412,18 @@ export class JSXHandler {
           // Only treat plural/context variant as explicit when:
           // - the extractor indicated the default was explicit on the source element
           // - OR a plural-specific default was provided in tOptions (specificDefault/otherDefault)
-          explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string')
+          explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string'),
+          locations
         })
       }
     } catch (e) {
       // Fallback to a simple key if Intl API fails
-      this.pluginContext.addKey({ key, ns, defaultValue })
+      this.pluginContext.addKey({
+        key,
+        ns,
+        defaultValue,
+        locations
+      })
     }
   }
 

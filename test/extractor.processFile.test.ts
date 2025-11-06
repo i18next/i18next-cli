@@ -35,6 +35,9 @@ describe('processFile', () => {
     astVisitors = {
       visit: vi.fn(),
       getVarFromScope: vi.fn().mockReturnValue(undefined),
+      setCurrentFile: vi.fn(),
+      getCurrentFile: vi.fn().mockReturnValue(''),
+      getCurrentCode: vi.fn().mockReturnValue(''),
       objectKeys: new Set(),
     } as any
   })
@@ -54,11 +57,11 @@ describe('processFile', () => {
     })
 
     const plugins: Plugin[] = []
-
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 
     await processFile('/src/App.tsx', plugins, astVisitors, pluginContext, mockConfig)
 
+    expect(astVisitors.setCurrentFile).toHaveBeenCalledWith('/src/App.tsx', sampleCode)
     expect(astVisitors.visit).toHaveBeenCalledTimes(1)
     expect(astVisitors.visit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -92,6 +95,7 @@ describe('processFile', () => {
     await processFile('/src/test.ts', plugins, astVisitors, pluginContext, configWithPlugin)
 
     expect(transformPlugin.onLoad).toHaveBeenCalledWith(originalCode, '/src/test.ts')
+    expect(astVisitors.setCurrentFile).toHaveBeenCalledWith('/src/test.ts', transformedCode)
     expect(astVisitors.visit).toHaveBeenCalledTimes(1)
   })
 
@@ -109,12 +113,11 @@ describe('processFile', () => {
     })
 
     const plugins: Plugin[] = []
-
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 
     await processFile('/src/test.ts', plugins, astVisitors, pluginContext, mockConfig)
 
-    // Keys should be added to allKeys map through the plugin context
+    expect(astVisitors.setCurrentFile).toHaveBeenCalledWith('/src/test.ts', sampleCode)
     expect(allKeys.size).toBeGreaterThan(0)
   })
 
@@ -136,11 +139,11 @@ describe('processFile', () => {
     })
 
     const plugins: Plugin[] = []
-
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 
     await processFile('/src/jsx-test.tsx', plugins, astVisitors, pluginContext, mockConfig)
 
+    expect(astVisitors.setCurrentFile).toHaveBeenCalledWith('/src/jsx-test.tsx', sampleCode)
     expect(astVisitors.visit).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'Module'
@@ -163,11 +166,11 @@ describe('processFile', () => {
     })
 
     const plugins: Plugin[] = []
-
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 
     await processFile('/src/decorator-test.ts', plugins, astVisitors, pluginContext, mockConfig)
 
+    expect(astVisitors.setCurrentFile).toHaveBeenCalledWith('/src/decorator-test.ts', sampleCode)
     expect(astVisitors.visit).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'Module'
@@ -176,7 +179,6 @@ describe('processFile', () => {
   })
 
   it('should throw ExtractorError when file processing fails', async () => {
-    // Create a file with invalid syntax
     const invalidCode = `
       this is not valid javascript syntax !!!
     `
@@ -186,7 +188,6 @@ describe('processFile', () => {
     })
 
     const plugins: Plugin[] = []
-
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 
     await expect(processFile('/src/invalid.ts', plugins, astVisitors, pluginContext, mockConfig))
@@ -195,7 +196,6 @@ describe('processFile', () => {
 
   it('should throw ExtractorError when file does not exist', async () => {
     const plugins: Plugin[] = []
-
     const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
 
     await expect(processFile('/nonexistent/file.ts', plugins, astVisitors, pluginContext, mockConfig))
@@ -208,13 +208,11 @@ describe('processFile', () => {
     const satisfiesPlugin: Plugin = {
       name: 'satisfies-extractor',
       onVisitNode: (node, context) => {
-        // Look for template literals with satisfies expressions
         if (node.type === 'TemplateLiteral' && 'expressions' in node && Array.isArray((node as any).expressions)) {
           const expressions = (node as any).expressions as any[]
           for (const expr of expressions) {
             const e = expr as any
             if (e.type === 'TsAsExpression' && e.typeAnnotation?.type === 'TsUnionType') {
-              // Extract possible values from union type
               const unionTypes = e.typeAnnotation.types
               for (const unionType of unionTypes) {
                 if (unionType.type === 'TsLiteralType' && unionType.literal?.type === 'StringLiteral') {
@@ -252,12 +250,12 @@ describe('processFile', () => {
     })
 
     const plugins = configWithSatisfiesPlugin.plugins
-
     const pluginContext = createPluginContext(allKeys, plugins, configWithSatisfiesPlugin, new ConsoleLogger())
 
     await processFile('/src/satisfies-plugin-test.ts', plugins, astVisitors, pluginContext, configWithSatisfiesPlugin)
 
-    // Verify that the plugin could potentially extract keys from satisfies expressions
+    expect(astVisitors.setCurrentFile).toHaveBeenCalledWith('/src/satisfies-plugin-test.ts', sampleCode)
+
     expect(extractedKeys.length).toBeGreaterThanOrEqual(0)
   })
 })

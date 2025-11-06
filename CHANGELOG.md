@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.0](https://github.com/i18next/i18next-cli/compare/v1.21.1...v1.22.0) - 2025-11-06
+
+- **Plugin System:** Enhanced `ExtractedKey` type and plugin hooks to support location metadata tracking. Plugins can now access file paths, etc. for each extracted translation key via the `locations` array property. [#95](https://github.com/i18next/i18next-cli/issues/95)
+
 ## [1.21.1](https://github.com/i18next/i18next-cli/compare/v1.21.0...v1.21.1) - 2025-11-05
 
 - **Extractor (`--sync-primary`):** Fixed a bug where `<Trans i18nKey='namespace:key' />` components with namespaced keys were having their existing primary language translations overwritten with the full namespaced key string (e.g., `'translation:app.preservedTrans'`) when using the `--sync-primary` flag. The extractor now correctly identifies namespaced keys in defaultValue as derived (auto-generated) defaults rather than explicit developer-provided values, preserving existing translations when no explicit defaultValue is provided. This ensures that `<Trans>` components without explicit defaults behave consistently with `t()` calls under `--sync-primary`. [#92](https://github.com/i18next/i18next-cli/issues/92)

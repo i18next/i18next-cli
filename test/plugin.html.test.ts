@@ -114,13 +114,16 @@ describe('plugin system: html', () => {
 
     // Test the complete extracted key objects, not just the keys
     const tsxKey = keys.get('translation:a.tsx.key')
-    expect(tsxKey).toEqual({
+    expect(tsxKey).toMatchObject({
       key: 'a.tsx.key',
-      explicitDefault: true,
       ns: 'translation',
       defaultValue: 'From TSX',
       nsIsImplicit: false
     })
+    // Verify locations field exists
+    expect(tsxKey?.locations).toBeDefined()
+    expect(tsxKey?.locations).toHaveLength(1)
+    expect(tsxKey?.locations?.[0]?.file).toBe('src/App.tsx')
 
     const htmlTitleKey = keys.get('translation:html.title')
     expect(htmlTitleKey).toEqual({
@@ -143,7 +146,14 @@ describe('plugin system: html', () => {
         explicitDefault: true,
         ns: 'translation',
         defaultValue: 'From TSX',
-        nsIsImplicit: false
+        nsIsImplicit: false,
+        locations: [
+          {
+            column: 7,
+            file: 'src/App.tsx',
+            line: 3,
+          },
+        ]
       }],
       ['translation:html.title', {
         key: 'html.title',
