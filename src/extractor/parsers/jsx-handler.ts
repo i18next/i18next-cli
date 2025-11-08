@@ -184,7 +184,8 @@ export class JSXHandler {
                     key: extractedKey.key,
                     ns: extractedKey.ns,
                     defaultValue: extractedKey.defaultValue,
-                    locations: extractedKey.locations
+                    locations: extractedKey.locations,
+                    keyAcceptingContext: extractedKey.key
                   })
                 })
                 for (const context of contextValues) {
@@ -226,14 +227,15 @@ export class JSXHandler {
 
             // Generate all combinations of context and plural forms
             if (contextValues.length > 0) {
-              // Generate base plural forms (no context)
-              extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, undefined, extractedKey.locations))
+              // Generate base plural forms (no context) - these also accept context
+              extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, undefined, extractedKey.locations, extractedKey.key))
 
               // Generate context + plural combinations
               for (const context of contextValues) {
                 for (const extractedKey of extractedKeys) {
                   const contextKey = `${extractedKey.key}${contextSeparator}${context}`
-                  this.generatePluralKeysForTrans(contextKey, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, extractedKey.explicitDefault, extractedKey.locations)
+                  // The base key that accepts context is extractedKey.key (without the context suffix)
+                  this.generatePluralKeysForTrans(contextKey, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, extractedKey.explicitDefault, extractedKey.locations, extractedKey.key)
                 }
               }
             } else {
@@ -253,7 +255,8 @@ export class JSXHandler {
                   key: `${key}${contextSeparator}${context}`,
                   ns,
                   defaultValue,
-                  locations
+                  locations,
+                  keyAcceptingContext: key
                 })
               }
             }
@@ -264,7 +267,8 @@ export class JSXHandler {
                   key: extractedKey.key,
                   ns: extractedKey.ns,
                   defaultValue: extractedKey.defaultValue,
-                  locations: extractedKey.locations
+                  locations: extractedKey.locations,
+                  keyAcceptingContext: extractedKey.key
                 })
               })
             }
@@ -327,8 +331,9 @@ export class JSXHandler {
    * @param ns - Namespace for the keys
    * @param isOrdinal - Whether to generate ordinal plural forms
    * @param optionsNode - Optional tOptions object expression for plural-specific defaults
-   * @param explicitDefaultFromSource - Whether the default was explicitly provided in source
+   * @param explicitDefaultFromSource - Whether the default was explicitly provided
    * @param locations - Source location information for this key
+   * @param keyAcceptingContext - The base key that accepts context (if this is a context variant)
    */
   private generatePluralKeysForTrans (
     key: string,
@@ -337,7 +342,8 @@ export class JSXHandler {
     isOrdinal: boolean,
     optionsNode?: ObjectExpression,
     explicitDefaultFromSource?: boolean,
-    locations?: Array<{ file: string, line?: number, column?: number }>
+    locations?: Array<{ file: string, line?: number, column?: number }>,
+    keyAcceptingContext?: string
   ): void {
     try {
       const type = isOrdinal ? 'ordinal' : 'cardinal'
@@ -367,7 +373,8 @@ export class JSXHandler {
           hasCount: true,
           isOrdinal,
           explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string'),
-          locations
+          locations,
+          keyAcceptingContext
         })
         return
       }
@@ -413,7 +420,9 @@ export class JSXHandler {
           // - the extractor indicated the default was explicit on the source element
           // - OR a plural-specific default was provided in tOptions (specificDefault/otherDefault)
           explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string'),
-          locations
+          locations,
+          // Pass through the base key that accepts context (if any)
+          keyAcceptingContext
         })
       }
     } catch (e) {

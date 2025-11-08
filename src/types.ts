@@ -84,6 +84,14 @@ export interface I18nextToolkitConfig {
     /** Glob patterns for keys to preserve even if not found in source (for dynamic keys) */
     preservePatterns?: string[];
 
+    /**
+     * When true, preserves all context variants of keys that use context parameters.
+     * For example, if 'friend' is used with context, all variants like 'friend_male',
+     * 'friend_female', etc. are preserved even if not explicitly found in source code.
+     * (default: false)
+     */
+    preserveContextVariants?: boolean;
+
     /** Whether to sort keys alphabetically in output files, or a comparator function to customize the order (default: true) */
     sort?: boolean | ((a: ExtractedKey, b: ExtractedKey) => number);
 
@@ -329,6 +337,14 @@ export interface ExtractedKey {
     line?: number
     column?: number
   }>
+
+  /**
+   * The base key (without context/plural suffixes) when this key accepts context.
+   * For example, if the key is 'friend_male' and it has context, this would be 'friend'.
+   * This is used to preserve all context variants in translation files.
+   * Empty/undefined if the key doesn't use context.
+   */
+  keyAcceptingContext?: string;
 }
 
 /**
