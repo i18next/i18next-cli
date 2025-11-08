@@ -288,10 +288,10 @@ describe('status (namespace filtering)', () => {
 
     await runStatus(config)
 
-    // When primaryLanguage is Arabic, totals are expanded to Arabic plural categories (6),
-    // so English having 2 translations becomes 2/6 -> ~33%
+    // English should be 100% complete (2/2 keys) because English only needs 'one' and 'other' forms
+    // Each language is evaluated based on its own plural rules, not the primary language's rules
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- en:'))
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('33% (2/6'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (2/2 keys)'))
   })
 })
 
@@ -345,5 +345,49 @@ describe('status (plurals)', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('🔑 Keys Found:         2'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('📚 Namespaces Found:   1'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de: [■■■■■■■■■■■■■■■■■■■■] 100% (2/2 keys)'))
+  })
+
+  it('should correctly report status for Swedish without requiring French plural forms', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/cake.tsx')]: `
+        import { useTranslation } from 'react-i18next'
+        export const CakeComponent = ({ cakeCount }) => {
+          const [t] = useTranslation("common")
+          return <div>{t('cake', { count: cakeCount })}</div>
+        }
+      `,
+      [resolve(process.cwd(), 'locales/en/common.json')]: JSON.stringify({
+        cake_one: 'One cake',
+        cake_other: '{{count}} cakes',
+      }),
+      [resolve(process.cwd(), 'locales/sv/common.json')]: JSON.stringify({
+        cake_one: 'En tårta',
+        cake_other: '{{count}} tårtor',
+      }),
+      [resolve(process.cwd(), 'locales/fr/common.json')]: JSON.stringify({
+        cake_one: 'Un gâteau',
+        cake_many: 'Beaucoup de gâteaux',
+        cake_other: '{{count}} gâteaux',
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'sv', 'fr'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        primaryLanguage: 'en',
+      },
+    }
+
+    await runStatus(config)
+
+    // Swedish should be 100% complete (2/2 keys), not 67% (2/3 keys)
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- sv:'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (2/2 keys)'))
+
+    // French should be 100% complete (3/3 keys)
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- fr:'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (3/3 keys)'))
   })
 })

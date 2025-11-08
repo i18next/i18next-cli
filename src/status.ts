@@ -123,20 +123,48 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
       let totalInNs = 0
       const keyDetails: Array<{ key: string; isTranslated: boolean }> = []
 
-      // This is the new, language-aware logic loop
+      // Get the plural categories for THIS specific locale
+      const getLocalePluralCategories = (locale: string, isOrdinal: boolean): string[] => {
+        try {
+          const type = isOrdinal ? 'ordinal' : 'cardinal'
+          const pluralRules = new Intl.PluralRules(locale, { type })
+          return pluralRules.resolvedOptions().pluralCategories
+        } catch (e) {
+          // Fallback to English if locale is invalid
+          const fallbackRules = new Intl.PluralRules('en', { type: isOrdinal ? 'ordinal' : 'cardinal' })
+          return fallbackRules.resolvedOptions().pluralCategories
+        }
+      }
+
       for (const { key: baseKey, hasCount, isOrdinal, isExpandedPlural } of keysInNs) {
         if (hasCount) {
-          // Rely only on the extractor-provided flag; extractor must set isExpandedPlural
           if (isExpandedPlural) {
-            totalInNs++
-            const value = getNestedValue(translationsForNs, baseKey, keySeparator ?? '.')
-            const isTranslated = !!value
-            if (isTranslated) translatedInNs++
-            keyDetails.push({ key: baseKey, isTranslated })
+            // This is an already-expanded plural variant key (e.g., key_one, key_other)
+            // Check if this specific variant is needed for the target locale
+            const keyParts = baseKey.split(pluralSeparator)
+            const lastPart = keyParts[keyParts.length - 1]
+
+            // Determine if this is an ordinal or cardinal plural
+            const isOrdinalVariant = keyParts.length >= 2 && keyParts[keyParts.length - 2] === 'ordinal'
+            const category = isOrdinalVariant ? keyParts[keyParts.length - 1] : lastPart
+
+            // Get the plural categories for this locale
+            const localePluralCategories = getLocalePluralCategories(locale, isOrdinalVariant)
+
+            // Only count this key if it's a plural form used by this locale
+            if (localePluralCategories.includes(category)) {
+              totalInNs++
+              const value = getNestedValue(translationsForNs, baseKey, keySeparator ?? '.')
+              const isTranslated = !!value
+              if (isTranslated) translatedInNs++
+              keyDetails.push({ key: baseKey, isTranslated })
+            }
           } else {
-            const type = isOrdinal ? 'ordinal' : 'cardinal'
-            const pluralCategories = new Intl.PluralRules(locale, { type }).resolvedOptions().pluralCategories
-            for (const category of pluralCategories) {
+            // This is a base plural key without expanded variants
+            // Expand it according to THIS locale's plural rules
+            const localePluralCategories = getLocalePluralCategories(locale, isOrdinal || false)
+
+            for (const category of localePluralCategories) {
               totalInNs++
               const pluralKey = isOrdinal
                 ? `${baseKey}${pluralSeparator}ordinal${pluralSeparator}${category}`
