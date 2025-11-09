@@ -232,9 +232,15 @@ export class CallExpressionHandler {
             contextValues.forEach(context => {
               keysWithContext.push({ key: `${finalKey}${contextSeparator}${context}`, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
             })
-            // For dynamic context, also add the base key as a fallback
-            keysWithContext.push({ key: finalKey, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
           }
+          // For dynamic context, also add the base key as a fallback
+          keysWithContext.push({
+            key: finalKey,
+            ns,
+            defaultValue: dv,
+            explicitDefault: explicitDefaultForBase,
+            keyAcceptingContext: finalKey
+          })
         }
 
         // 2. Handle Plurals
@@ -691,7 +697,9 @@ export class CallExpressionHandler {
             // - the extractor marked the source as explicitly providing plural defaults
             // - OR a plural-specific default was provided in the options (specificDefault/otherDefault)
             // Do NOT treat the presence of a general base defaultValueFromCall as making variants explicit.
-            explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string')
+            explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string'),
+            // If this is a context variant, track the base key (without context or plural suffixes)
+            keyAcceptingContext: context !== undefined ? key : undefined
           })
         }
       }

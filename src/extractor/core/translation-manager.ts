@@ -17,6 +17,70 @@ function globToRegex (glob: string): RegExp {
 }
 
 /**
+ * Checks if an existing key is a context variant of a base key that accepts context.
+ * This function handles complex cases where:
+ * - The key might have plural suffixes (_one, _other, etc.)
+ * - The context value itself might contain the separator (e.g., mc_laren)
+ *
+ * @param existingKey - The key from the translation file to check
+ * @param keysAcceptingContext - Set of base keys that were used with context in source code
+ * @param pluralSeparator - The separator used for plural forms (default: '_')
+ * @param contextSeparator - The separator used for context variants (default: '_')
+ * @returns true if the existing key is a context variant of a key accepting context
+ */
+function isContextVariantOfAcceptingKey (
+  existingKey: string,
+  keysAcceptingContext: ReadonlySet<string>,
+  pluralSeparator: string,
+  contextSeparator: string
+): boolean {
+  if (keysAcceptingContext.size === 0) {
+    return false
+  }
+
+  // Try to extract the base key from this existing key by removing context and/or plural suffixes
+  let potentialBaseKey = existingKey
+
+  // First, try removing plural suffixes if present
+  const pluralForms = ['zero', 'one', 'two', 'few', 'many', 'other']
+  for (const form of pluralForms) {
+    if (potentialBaseKey.endsWith(`${pluralSeparator}${form}`)) {
+      potentialBaseKey = potentialBaseKey.slice(0, -(pluralSeparator.length + form.length))
+      break
+    }
+    if (potentialBaseKey.endsWith(`${pluralSeparator}ordinal${pluralSeparator}${form}`)) {
+      potentialBaseKey = potentialBaseKey.slice(0, -(pluralSeparator.length + 'ordinal'.length + pluralSeparator.length + form.length))
+      break
+    }
+  }
+
+  // Then, try removing the context suffix to get the base key
+  // We need to check all possible base keys since the context value itself might contain separators
+  // For example: 'formula_one_mc_laren' could be:
+  //   - base: 'formula_one_mc', context: 'laren'
+  //   - base: 'formula_one', context: 'mc_laren'  ← correct
+  //   - base: 'formula', context: 'one_mc_laren'
+  const parts = potentialBaseKey.split(contextSeparator)
+  if (parts.length > 1) {
+    // Try removing 1, 2, 3... parts from the end to find a matching base key
+    for (let i = 1; i < parts.length; i++) {
+      const baseWithoutContext = parts.slice(0, -i).join(contextSeparator)
+      if (keysAcceptingContext.has(baseWithoutContext)) {
+        return true
+      }
+    }
+  }
+
+  // Also check if the key itself (after removing plural suffix) accepts context
+  // This handles cases like 'friend_other' where 'friend' accepts context
+  if (keysAcceptingContext.has(potentialBaseKey)) {
+    return true
+  }
+
+  return false
+}
+
+/**
  * Recursively sorts the keys of an object.
  */
 function sortObject (obj: any, config?: I18nextToolkitConfig): any {
@@ -119,7 +183,19 @@ function buildNewTranslationsForNs (
     defaultValue: emptyDefaultValue = '',
     pluralSeparator = '_',
     contextSeparator = '_',
+    preserveContextVariants = false,
   } = config.extract
+
+  // Build a set of base keys that accept context (only if preserveContextVariants is enabled)
+  // These are keys that were called with a context parameter in the source code
+  const keysAcceptingContext = new Set<string>()
+  if (preserveContextVariants) {
+    for (const { keyAcceptingContext } of nsKeys) {
+      if (keyAcceptingContext) {
+        keysAcceptingContext.add(keyAcceptingContext)
+      }
+    }
+  }
 
   // Get the plural categories for the target language
   const targetLanguagePluralCategories = new Set<string>()
@@ -271,10 +347,18 @@ function buildNewTranslationsForNs (
     ? {}
     : JSON.parse(JSON.stringify(existingTranslations))
 
-  // Preserve keys that match the configured patterns
+  // Preserve keys that match the configured patterns OR are context variants of keys accepting context
   const existingKeys = getNestedKeys(existingTranslations, keySeparator ?? '.')
   for (const existingKey of existingKeys) {
-    if (shouldPreserveExistingKey(existingKey)) {
+    const shouldPreserve = shouldPreserveExistingKey(existingKey)
+    const isContextVariant = !shouldPreserve && isContextVariantOfAcceptingKey(
+      existingKey,
+      keysAcceptingContext,
+      pluralSeparator,
+      contextSeparator
+    )
+
+    if (shouldPreserve || (preserveContextVariants && isContextVariant)) {
       const value = getNestedValue(existingTranslations, existingKey, keySeparator ?? '.')
       setNestedValue(newTranslations, existingKey, value, keySeparator ?? '.')
     }
