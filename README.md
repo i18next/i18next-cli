@@ -372,6 +372,14 @@ export default defineConfig({
       'dynamic:user.*.profile', // Matches dynamic:user.admin.profile, dynamic:user.guest.profile
     ],
     
+    /**
+     * When true, preserves all context variants of keys that use context parameters.
+     * For example, if 'friend' is used with context, all variants like 'friend_male',
+     * 'friend_female', etc. are preserved even if not explicitly found in source code.
+     * (default: false)
+     */
+    preserveContextVariants: false,
+
     // Output formatting
     sort: true, // can be also a sort function => i.e. (a, b) => a.key > b.key ? -1 : a.key < b.key ? 1 : 0, // sort in reverse order
     indentation: 2, // can be also a string
