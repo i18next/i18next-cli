@@ -22,7 +22,7 @@ const program = new Command()
 program
   .name('i18next-cli')
   .description('A unified, high-performance i18next CLI.')
-  .version('1.22.2')
+  .version('1.23.0')
 
 // new: global config override option
 program.option('-c, --config <path>', 'Path to i18next-cli config file (overrides detection)')
