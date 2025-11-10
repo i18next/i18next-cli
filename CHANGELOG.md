@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.3](https://github.com/i18next/i18next-cli/compare/v1.23.2...v1.23.3) - 2025-11-10
+
+- Fix preservingContextVariants with fully dynamic context in Trans. [#104](https://github.com/i18next/i18next-cli/pull/104)
+
 ## [1.23.2](https://github.com/i18next/i18next-cli/compare/v1.23.1...v1.23.2) - 2025-11-10
 
 - **Plugin System:** Exported `ExtractedKeysMap` type alias for improved TypeScript support in custom plugins. Plugin authors can now import and use `ExtractedKeysMap` directly instead of manually constructing `Map<string, ExtractedKey>` when typing the `onEnd` hook's keys parameter. This provides better discoverability and a more convenient API for plugin development. [#103](https://github.com/i18next/i18next-cli/issues/103)
