@@ -243,6 +243,50 @@ describe('context preservation in translation files', () => {
     expect(result.newTranslations.message_guest).toBe('Welcome, Guest')
   })
 
+  it('should preserve context variants when used in Trans component even if context is entirely dynamic', async () => {
+    const sampleCode = `
+      import { Trans } from 'react-i18next';
+
+      function MyComponent(props) {
+        return <Trans i18nKey="message" context={props.user}>Welcome</Trans>;
+      }
+    `
+
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    // Existing translation file with context variants
+    const existingTranslations = {
+      message: 'Welcome',
+      message_admin: 'Welcome, Administrator',
+      message_user: 'Welcome, User',
+      message_guest: 'Welcome, Guest',
+    }
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    await vol.promises.mkdir(resolve(process.cwd(), 'locales/en'), { recursive: true })
+    await vol.promises.writeFile(enPath, JSON.stringify(existingTranslations, null, 2))
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: ['src/**/*.tsx'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        removeUnusedKeys: true,
+        preserveContextVariants: true,
+      },
+    }
+
+    const [result] = await extract(config)
+
+    // All context variants should be preserved
+    expect(result.newTranslations.message).toBeDefined()
+    expect(result.newTranslations.message_admin).toBe('Welcome, Administrator')
+    expect(result.newTranslations.message_user).toBe('Welcome, User')
+    expect(result.newTranslations.message_guest).toBe('Welcome, Guest')
+  })
+
   it('should work with custom context separator', async () => {
     const sampleCode = `
       function MyComponent(props) {
