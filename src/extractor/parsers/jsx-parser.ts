@@ -620,7 +620,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             if (prevOriginal && prevOriginal.type === 'JSXText' && /\n\s*$/.test(prevOriginal.value)) {
               out = out.replace(/\s+$/, '')
             }
-            out += `<${tag}/>`
+            out += `<${tag} />`
             lastWasSelfClosing = true
           } else {
             out += `<${tag}>${inner}</${tag}>`

@@ -653,7 +653,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
 
     const expectedDefaultValue =
-      'Maybe you mistyped the URL or the plugin with the id <1></1> is unavailable.<br/>To see a list of available datasources please <5>click here</5>.'
+      'Maybe you mistyped the URL or the plugin with the id <1></1> is unavailable.<br />To see a list of available datasources please <5>click here</5>.'
 
     expect(translationFile!.newTranslations).toEqual({
       another_children_receive_wrong_index: expectedDefaultValue,
@@ -702,7 +702,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
 
     const expectedDefaultValue =
-      'Your changes will be lost when you update the plugin.<br/><2>Use <strong>Save As</strong> to create custom version.</2>'
+      'Your changes will be lost when you update the plugin.<br /><2>Use <strong>Save As</strong> to create custom version.</2>'
 
     expect(translationFile!.newTranslations).toEqual({
       another_wrong_code_index_1: expectedDefaultValue,
@@ -725,7 +725,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
 
     const expectedDefaultValue =
-      'A dashboard with the same name in selected folder already exists.<br/><2>Would you still like to save this dashboard?</2>'
+      'A dashboard with the same name in selected folder already exists.<br /><2>Would you still like to save this dashboard?</2>'
 
     expect(translationFile!.newTranslations).toEqual({
       another_wrong_code_index_2: expectedDefaultValue,
@@ -784,6 +784,27 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
       myKey: 'Hello pink fluffy <strong>world</strong>!',
+    })
+  })
+
+  it('should preserve spacing in self-closing tags like <br />', async () => {
+    const sampleCode = `
+      <Trans i18nKey='SomeKey'>
+        SomeText
+        <br />
+        <br />
+        Some other Text
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    // Should preserve the space before the closing slash
+    expect(translationFile!.newTranslations).toEqual({
+      SomeKey: 'SomeText<br /><br />Some other Text',
     })
   })
 })

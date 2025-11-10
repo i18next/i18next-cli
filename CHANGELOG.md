@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.23.0](https://github.com/i18next/i18next-cli/compare/v1.22.2...v1.23.0) - 2025-11-00
+## [1.23.1](https://github.com/i18next/i18next-cli/compare/v1.23.0...v1.23.1) - 2025-11-10
+
+- **Extractor (`<Trans>`):** Fixed self-closing tag formatting in Trans component extraction. Self-closing HTML tags like `<br />` (with space before slash) are now correctly preserved as `<br />` instead of being normalized to `<br/>` (without space). This ensures consistent formatting between source code and extracted translation keys, matching common JSX/HTML conventions and maintaining compatibility with existing translation workflows. [#101](https://github.com/i18next/i18next-cli/issues/101)
+
+## [1.23.0](https://github.com/i18next/i18next-cli/compare/v1.22.2...v1.23.0) - 2025-11-09
 
 - **Extractor:** Add a `preserveContextVariants` option to keep context variants when removing unused keys. When enabled, all context variants of keys that use context parameters are preserved in translation files even if not explicitly found in source code. [#99](https://github.com/i18next/i18next-cli/pull/99)
 
