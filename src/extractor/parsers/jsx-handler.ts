@@ -207,7 +207,8 @@ export class JSXHandler {
                   key: extractedKey.key,
                   ns: extractedKey.ns,
                   defaultValue: extractedKey.defaultValue,
-                  locations: extractedKey.locations
+                  locations: extractedKey.locations,
+                  keyAcceptingContext: extractedKey.key
                 })
               })
             }
@@ -256,7 +257,6 @@ export class JSXHandler {
                   ns,
                   defaultValue,
                   locations,
-                  keyAcceptingContext: key
                 })
               }
             }
@@ -279,7 +279,8 @@ export class JSXHandler {
                 key: extractedKey.key,
                 ns: extractedKey.ns,
                 defaultValue: extractedKey.defaultValue,
-                locations: extractedKey.locations
+                locations: extractedKey.locations,
+                keyAcceptingContext: extractedKey.key
               })
             })
           }
