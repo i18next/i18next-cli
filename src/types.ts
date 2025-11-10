@@ -270,7 +270,7 @@ export interface Plugin {
    *
    * @param keys - Final map of all extracted keys
    */
-  onEnd?: (keys: Map<string, ExtractedKey>) => void | Promise<void>;
+  onEnd?: (keys: ExtractedKeysMap) => void | Promise<void>;
 
   /**
    * Hook called after all files have been processed and translation files have been generated.
@@ -542,3 +542,22 @@ export interface ASTVisitorHooks {
    */
   resolvePossibleKeyStringValues?: (expression: Expression, returnEmptyStrings?: boolean) => string[]
 }
+
+/**
+ * Map of extracted translation keys with their metadata.
+ * Used in plugin hooks like `onEnd` to access all extracted keys.
+ *
+ * @example
+ * ```typescript
+ * const myPlugin = (): Plugin => ({
+ *   name: 'my-plugin',
+ *   async onEnd(keys: ExtractedKeysMap) {
+ *     console.log(`Found ${keys.size} keys`)
+ *     for (const [uniqueKey, extractedKey] of keys.entries()) {
+ *       // Process each key
+ *     }
+ *   }
+ * })
+ * ```
+ */
+export type ExtractedKeysMap = Map<string, ExtractedKey>

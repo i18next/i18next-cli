@@ -3,7 +3,8 @@ export type {
   Plugin,
   PluginContext,
   ExtractedKey,
-  TranslationResult
+  TranslationResult,
+  ExtractedKeysMap
 } from './types'
 export { defineConfig } from './config'
 export {
