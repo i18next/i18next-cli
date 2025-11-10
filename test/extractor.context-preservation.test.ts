@@ -287,6 +287,50 @@ describe('context preservation in translation files', () => {
     expect(result.newTranslations.message_guest).toBe('Welcome, Guest')
   })
 
+  it('should preserve context variants when base key is used with context using shorthand', async () => {
+    // Source code that uses a key with context - using conditional expression so we can extract both values
+    const sampleCode = `
+      function MyComponent({ context }) {
+        const { t } = useTranslation();
+        return <div>{t('friend', { context })}</div>;
+      }
+    `
+
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    // Existing translation file with context variants
+    const existingTranslations = {
+      friend: 'Friend',
+      friend_male: 'Male friend',
+      friend_female: 'Female friend',
+      friend_other: 'Other friend',
+    }
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    await vol.promises.mkdir(resolve(process.cwd(), 'locales/en'), { recursive: true })
+    await vol.promises.writeFile(enPath, JSON.stringify(existingTranslations, null, 2))
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: ['src/**/*.tsx'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        removeUnusedKeys: true,
+        preserveContextVariants: true,
+      },
+    }
+
+    const [result] = await extract(config)
+
+    // The base key and context variants should be preserved
+    expect(result.newTranslations.friend).toBe('Friend')
+    expect(result.newTranslations.friend_male).toBe('Male friend')
+    expect(result.newTranslations.friend_female).toBe('Female friend')
+    expect(result.newTranslations.friend_other).toBe('Other friend')
+  })
+
   it('should work with custom context separator', async () => {
     const sampleCode = `
       function MyComponent(props) {

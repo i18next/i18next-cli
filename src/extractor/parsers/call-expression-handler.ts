@@ -1,7 +1,7 @@
 import type { CallExpression, ArrowFunctionExpression, ObjectExpression } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey, ScopeInfo } from '../../types'
 import { ExpressionResolver } from './expression-resolver'
-import { getObjectProperty, getObjectPropValue, isSimpleTemplateLiteral } from './ast-utils'
+import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral } from './ast-utils'
 
 export class CallExpressionHandler {
   private pluginContext: PluginContext
@@ -210,22 +210,22 @@ export class CallExpressionHandler {
 
       // Handle plurals, context, and returnObjects
       if (options) {
-        const contextProp = getObjectProperty(options, 'context')
+        const contextPropValue = getObjectPropValueExpression(options, 'context')
 
         const keysWithContext: ExtractedKey[] = []
 
         // 1. Handle Context
-        if (contextProp?.value?.type === 'StringLiteral' || contextProp?.value.type === 'NumericLiteral' || contextProp?.value.type === 'BooleanLiteral') {
+        if (contextPropValue?.type === 'StringLiteral' || contextPropValue?.type === 'NumericLiteral' || contextPropValue?.type === 'BooleanLiteral') {
           // If the context is static, we don't need to add the base key
-          const contextValue = `${contextProp.value.value}`
+          const contextValue = `${contextPropValue.value}`
 
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
           // Ignore context: ''
           if (contextValue !== '') {
             keysWithContext.push({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
           }
-        } else if (contextProp?.value) {
-          const contextValues = this.expressionResolver.resolvePossibleContextStringValues(contextProp.value)
+        } else if (contextPropValue) {
+          const contextValues = this.expressionResolver.resolvePossibleContextStringValues(contextPropValue)
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
 
           if (contextValues.length > 0) {
@@ -551,16 +551,16 @@ export class CallExpressionHandler {
       const ordinalOtherDefault = getObjectPropValue(options, `defaultValue${pluralSeparator}ordinal${pluralSeparator}other`)
 
       // Handle context - both static and dynamic
-      const contextProp = getObjectProperty(options, 'context')
+      const contextPropValue = getObjectPropValueExpression(options, 'context')
       const keysToGenerate: Array<{ key: string, context?: string }> = []
 
-      if (contextProp?.value) {
+      if (contextPropValue) {
         // Handle dynamic context by resolving all possible values
-        const contextValues = this.expressionResolver.resolvePossibleContextStringValues(contextProp.value)
+        const contextValues = this.expressionResolver.resolvePossibleContextStringValues(contextPropValue)
 
         if (contextValues.length > 0) {
           // For static context (string literal), only generate context variants
-          if (contextProp.value.type === 'StringLiteral') {
+          if (contextPropValue.type === 'StringLiteral') {
             // Only generate context-specific plural forms, no base forms
             for (const contextValue of contextValues) {
               if (contextValue.length > 0) {
