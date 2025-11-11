@@ -1,7 +1,7 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { extract } from '../src/index'
-import type { I18nextToolkitConfig } from '../src/index'
+import type { I18nextToolkitConfig, ExtractedKey } from '../src/index'
 import { pathEndsWith } from './utils/path'
 
 // Mocks
@@ -1623,5 +1623,92 @@ describe('extractor: advanced t features', () => {
       present: 'Present',
       error_message: 'Error!',
     })
+  })
+
+  it('should sort keys alphabetically when sort: true', async () => {
+    const sampleCode = `
+      t('account.list.item.Delete', 'Delete')
+      t('account.list.item.Edit', 'Edit')
+      t('account.list.item.confirmDelete', 'Are you sure you wish to delete {{fullName}}?')
+      t('security.emailUpdate.cancel', 'Cancel')
+      t('security.emailUpdate.confirmNewEmail', 'Confirm new email address')
+      t('security.emailUpdate.emailUpdatedOn', 'You last updated your email on {{date}}.')
+      t('security.emailUpdate.emailsMustMatch', 'Email addresses must match')
+      t('security.emailUpdate.emailsUpdateLimit', 'Emails can only be updated once every 30 days.')
+      t('security.emailUpdate.enterNewEmail', 'Enter a new email address')
+      t('security.emailUpdate.enterPassword', 'Enter a password')
+      t('security.emailUpdate.header', 'Email address')
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const configWithSort = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        // sort: true,
+        sort: (a: ExtractedKey, b: ExtractedKey) => {
+          // Simple string comparison - respects character codes (uppercase < lowercase)
+          if (a.key < b.key) return -1
+          if (a.key > b.key) return 1
+          return 0
+        }
+      },
+    }
+
+    const results = await extract(configWithSort)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+
+    // Verify the structure is created correctly with case-insensitive sorting
+    expect(translationFile!.newTranslations).toEqual({
+      account: {
+        list: {
+          item: {
+            Delete: 'Delete',
+            Edit: 'Edit',
+            confirmDelete: 'Are you sure you wish to delete {{fullName}}?',
+          },
+        },
+      },
+      security: {
+        emailUpdate: {
+          cancel: 'Cancel',
+          confirmNewEmail: 'Confirm new email address',
+          emailUpdatedOn: 'You last updated your email on {{date}}.',
+          emailsMustMatch: 'Email addresses must match',
+          emailsUpdateLimit: 'Emails can only be updated once every 30 days.',
+          enterNewEmail: 'Enter a new email address',
+          enterPassword: 'Enter a password',
+          header: 'Email address',
+        },
+      },
+    })
+
+    // Verify that keys are in case-insensitive alphabetical order when serialized
+    const serialized = JSON.stringify(translationFile!.newTranslations, null, 2)
+    expect(serialized).toEqual(`{
+  "account": {
+    "list": {
+      "item": {
+        "Delete": "Delete",
+        "Edit": "Edit",
+        "confirmDelete": "Are you sure you wish to delete {{fullName}}?"
+      }
+    }
+  },
+  "security": {
+    "emailUpdate": {
+      "cancel": "Cancel",
+      "confirmNewEmail": "Confirm new email address",
+      "emailUpdatedOn": "You last updated your email on {{date}}.",
+      "emailsMustMatch": "Email addresses must match",
+      "emailsUpdateLimit": "Emails can only be updated once every 30 days.",
+      "enterNewEmail": "Enter a new email address",
+      "enterPassword": "Enter a password",
+      "header": "Email address"
+    }
+  }
+}`)
   })
 })

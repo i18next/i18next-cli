@@ -83,7 +83,7 @@ function isContextVariantOfAcceptingKey (
 /**
  * Recursively sorts the keys of an object.
  */
-function sortObject (obj: any, config?: I18nextToolkitConfig): any {
+function sortObject (obj: any, config?: I18nextToolkitConfig, customSort?: (a: string, b: string) => number): any {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
     return obj
   }
@@ -120,8 +120,10 @@ function sortObject (obj: any, config?: I18nextToolkitConfig): any {
 
     // If both are plural forms
     if (aInfo.isPlural && bInfo.isPlural) {
-      // First compare by base key (alphabetically)
-      const baseComparison = aInfo.base.localeCompare(bInfo.base, undefined, { sensitivity: 'base' })
+      // First compare by base key
+      const baseComparison = customSort
+        ? customSort(aInfo.base, bInfo.base)
+        : aInfo.base.localeCompare(bInfo.base, undefined, { sensitivity: 'base' })
       if (baseComparison !== 0) {
         return baseComparison
       }
@@ -145,8 +147,12 @@ function sortObject (obj: any, config?: I18nextToolkitConfig): any {
       return aInfo.form.localeCompare(bInfo.form)
     }
 
-    // If one is plural and one is not, or both are non-plural
-    // Regular alphabetical sorting (case-insensitive, then by case)
+    // Use custom sort if provided, otherwise default sorting
+    if (customSort) {
+      return customSort(a, b)
+    }
+
+    // Default: case-insensitive, then by case
     const caseInsensitiveComparison = a.localeCompare(b, undefined, { sensitivity: 'base' })
     if (caseInsensitiveComparison === 0) {
       return a.localeCompare(b, undefined, { sensitivity: 'case' })
@@ -155,7 +161,7 @@ function sortObject (obj: any, config?: I18nextToolkitConfig): any {
   })
 
   for (const key of keys) {
-    sortedObj[key] = sortObject(obj[key], config)
+    sortedObj[key] = sortObject(obj[key], config, customSort)
   }
 
   return sortedObj
@@ -548,32 +554,46 @@ function buildNewTranslationsForNs (
     const sortedObject: Record<string, any> = {}
     const topLevelKeys = Object.keys(newTranslations)
 
-    // Create a map of top-level keys to a representative ExtractedKey object.
-    // This is needed for the custom sort function.
+    // Create a map from key string to ExtractedKey for lookup
     const keyMap = new Map<string, ExtractedKey>()
-    for (const ek of filteredKeys) {
-      const topLevelKey = keySeparator === false ? ek.key : ek.key.split(keySeparator as string)[0]
-      if (!keyMap.has(topLevelKey)) {
-        keyMap.set(topLevelKey, ek)
+    for (const extractedKey of nsKeys) {
+      // Store the full key path
+      keyMap.set(String(extractedKey.key), extractedKey)
+
+      // For nested keys, also store the top-level part
+      if (keySeparator) {
+        const topLevelKey = String(extractedKey.key).split(keySeparator)[0]
+        if (!keyMap.has(topLevelKey)) {
+          keyMap.set(topLevelKey, extractedKey)
+        }
       }
     }
 
-    topLevelKeys.sort((a, b) => {
-      if (typeof sort === 'function') {
-        const keyA = keyMap.get(a)
-        const keyB = keyMap.get(b)
-        // If we can find both original keys, use the custom comparator.
-        if (keyA && keyB) {
-          return sort(keyA, keyB)
-        }
-      }
-      // Fallback to a case-insensitive alphabetical sort.
-      return a.localeCompare(b, undefined, { sensitivity: 'base' })
-    })
+    // Create a string comparator that applies the same logic as the custom sort function
+    // by extracting the actual comparison behavior
+    const stringSort = (a: string, b: string) => {
+      // Try to find ExtractedKey objects to use the custom comparator
+      const keyA = keyMap.get(a)
+      const keyB = keyMap.get(b)
 
-    // 3. Rebuild the object in the final sorted order.
+      if (keyA && keyB) {
+        return sort(keyA, keyB)
+      }
+
+      // If we don't have ExtractedKey objects, we need to apply the same sorting logic
+      // Create mock ExtractedKey objects with just the key property
+      const mockKeyA = { key: a } as ExtractedKey
+      const mockKeyB = { key: b } as ExtractedKey
+
+      return sort(mockKeyA, mockKeyB)
+    }
+
+    // Sort top-level keys
+    topLevelKeys.sort(stringSort)
+
+    // Pass the same string comparator to sortObject for nested keys
     for (const key of topLevelKeys) {
-      sortedObject[key] = sortObject(newTranslations[key], config)
+      sortedObject[key] = sortObject(newTranslations[key], config, stringSort)
     }
     newTranslations = sortedObject
   }
