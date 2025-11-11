@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.4](https://github.com/i18next/i18next-cli/compare/v1.23.3...v1.23.4) - 2025-11-11
+
+- Fix preservingContextVariants when using shorthand property for context in options. [#105](https://github.com/i18next/i18next-cli/pull/105)
+
 ## [1.23.3](https://github.com/i18next/i18next-cli/compare/v1.23.2...v1.23.3) - 2025-11-10
 
 - Fix preservingContextVariants with fully dynamic context in Trans. [#104](https://github.com/i18next/i18next-cli/pull/104)
