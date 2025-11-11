@@ -1,4 +1,4 @@
-import type { ObjectExpression, TemplateLiteral } from '@swc/core'
+import type { Expression, Identifier, ObjectExpression, TemplateLiteral } from '@swc/core'
 
 /**
  * Finds and returns the full property node (KeyValueProperty) for the given
@@ -25,6 +25,27 @@ export function getObjectProperty (object: ObjectExpression, propName: string) {
           (p.key?.type === 'StringLiteral' && p.key.value === propName)
         )
     )
+}
+
+/**
+ * Finds and returns the value node for the given property name from an ObjectExpression.
+ *
+ * Matches both identifier keys (e.g., { ns: 'value' }), string literal keys
+ * (e.g., { 'ns': 'value' }) and shorthand properties (e.g., { ns }).
+ *
+ * This helper returns the full value node rather than just its primitive
+ * value so callers can inspect expression types (ConditionalExpression, etc.).
+ *
+ * @private
+ * @param object - The SWC ObjectExpression to search
+ * @param propName - The property name to locate
+ * @returns The matching value node if found, otherwise undefined.
+ */
+export function getObjectPropValueExpression (object: ObjectExpression, propName: string): Expression | undefined {
+  return getObjectProperty(object, propName)?.value ?? (object.properties).find(
+    // For shorthand properties like { ns }.
+    (p): p is Identifier => p.type === 'Identifier' && p.value === propName
+  )
 }
 
 /**

@@ -1,6 +1,6 @@
-import type { Expression, JSXAttribute, JSXElement, JSXExpression, ObjectExpression, Property } from '@swc/core'
+import type { Expression, JSXAttribute, JSXElement, JSXExpression, ObjectExpression } from '@swc/core'
 import type { I18nextToolkitConfig } from '../../types'
-import { getObjectProperty, getObjectPropValue, isSimpleTemplateLiteral } from './ast-utils'
+import { getObjectPropValue, getObjectPropValueExpression, isSimpleTemplateLiteral } from './ast-utils'
 
 export interface ExtractedJSXAttributes {
   /** holds the raw key expression from the AST */
@@ -116,14 +116,14 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
   )
 
   // Find the 'count' property in the 'values' object if count={...} is not defined
-  let valuesCountProperty: Property | undefined
+  let valuesCountProperty: Expression | undefined
   if (
     !countAttr &&
     valuesAttr?.type === 'JSXAttribute' &&
     valuesAttr.value?.type === 'JSXExpressionContainer' &&
     valuesAttr.value.expression.type === 'ObjectExpression'
   ) {
-    valuesCountProperty = getObjectProperty(valuesAttr.value.expression, 'count')
+    valuesCountProperty = getObjectPropValueExpression(valuesAttr.value.expression, 'count')
   }
 
   const hasCount = !!countAttr || !!valuesCountProperty
@@ -174,10 +174,7 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
       ns = getObjectPropValue(optionsNode, 'ns') as string | undefined
     }
     if (contextExpression === undefined) {
-      const contextPropFromOptions = getObjectProperty(optionsNode, 'context')
-      if (contextPropFromOptions?.value) {
-        contextExpression = contextPropFromOptions.value
-      }
+      contextExpression = getObjectPropValueExpression(optionsNode, 'context')
     }
   }
 
