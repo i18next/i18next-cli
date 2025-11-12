@@ -551,7 +551,6 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
   function visitNodes (nodes: any[], localIndexMap?: Map<any, number>): string {
     if (!nodes || nodes.length === 0) return ''
     let out = ''
-    let lastWasSelfClosing = false
 
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i]
@@ -559,12 +558,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
 
       if (node.type === 'JSXText') {
         if (isFormattingWhitespace(node)) continue
-        if (lastWasSelfClosing) {
-          out += node.value.replace(/^\s+/, '')
-          lastWasSelfClosing = false
-        } else {
-          out += node.value
-        }
+        out += node.value
         continue
       }
 
@@ -593,7 +587,6 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
         } else {
           out += '{{value}}'
         }
-        lastWasSelfClosing = false
         continue
       }
 
@@ -608,6 +601,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           // consider element self-closing for rendering when AST marks it so or it has no meaningful children
           const isAstSelfClosing = !!(node.opening && (node.opening as any).selfClosing)
           const hasMeaningfulChildren = String(inner).trim() !== ''
+
           if (isAstSelfClosing || !hasMeaningfulChildren) {
             // If the previous original sibling is a JSXText that ends with a
             // newline (the tag was placed on its own indented line), trim any
@@ -618,10 +612,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
               out = out.replace(/\s+$/, '')
             }
             out += `<${tag} />`
-            lastWasSelfClosing = true
           } else {
             out += `<${tag}>${inner}</${tag}>`
-            lastWasSelfClosing = false
           }
         } else {
           // Decide whether to use local (restarted) indexes for this element's
@@ -641,7 +633,6 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             const idx = globalSlots.indexOf(node)
             const inner = visitNodes(children, undefined)
             out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
-            lastWasSelfClosing = false
           } else {
             const childrenLocalMap = new Map<any, number>()
             let localIdxCounter = 0
@@ -665,7 +656,6 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             const idx = localIndexMap && localIndexMap.has(node) ? localIndexMap.get(node) : globalSlots.indexOf(node)
             const inner = visitNodes(children, childrenLocalMap.size ? childrenLocalMap : undefined)
             out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
-            lastWasSelfClosing = false
           }
         }
         continue
@@ -673,7 +663,6 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
 
       if (node.type === 'JSXFragment') {
         out += visitNodes(node.children || [])
-        lastWasSelfClosing = false
         continue
       }
 
@@ -684,5 +673,16 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
   }
 
   const result = visitNodes(children)
-  return String(result).replace(/\s+/g, ' ').trim()
+
+  // Final cleanup in correct order:
+  // 1. First, handle <br /> followed by whitespace+newline (boundary formatting)
+  const afterBrCleanup = String(result).replace(/<br \/>\s*\n\s*/g, '<br />')
+
+  // 2. Then normalize remaining whitespace sequences to single space
+  const normalized = afterBrCleanup.replace(/\s+/g, ' ')
+
+  // 3. Remove space before period at end
+  const finalResult = normalized.replace(/\s+\./g, '.')
+
+  return finalResult.trim()
 }

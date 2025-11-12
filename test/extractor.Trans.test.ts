@@ -475,6 +475,95 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should handle TextLink with explicit spacing and correct index', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey='SomeKey'>
+            Some text{' '}
+            <TextLink
+              to='someUrl'
+              target='_blank'
+              rel='noreferrer'
+              external
+            >
+              link
+            </TextLink>
+            .
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      SomeKey: 'Some text <2>link</2>.',
+    })
+  })
+
+  it('should handle br tag with surrounding text', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey='SomeKey'>
+            Some text <br /> other text.
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      SomeKey: 'Some text <br /> other text.',
+    })
+  })
+
+  it('should handle nested paragraphs with inline elements and correct indexes', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans i18nKey="testme">
+            <p>
+              If you&apos;re having a problem or question about LosslessCut, please first check the links in the <b>Help</b> menu. If you cannot find any resolution, you may ask a question in <span className="link-button" role="button" onClick={() => electron.shell.openExternal('https://github.com/vaultrice/sdk/discussions')}>GitHub discussions</span> or on <span className="link-button" role="button" onClick={() => electron.shell.openExternal('https://github.com/vaultrice/sdk')}>Discord.</span>
+            </p>
+            <p>
+              If you believe that you found a bug in LosslessCut, you may <span className="link-button" role="button" onClick={() => electron.shell.openExternal('https://github.com/vaultrice/sdk/issues')}>report a bug</span>.
+            </p>
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      testme: "<0>If you're having a problem or question about LosslessCut, please first check the links in the <1>Help</1> menu. If you cannot find any resolution, you may ask a question in <3>GitHub discussions</3> or on <5>Discord.</5></0><1>If you believe that you found a bug in LosslessCut, you may <1>report a bug</1>.</1>",
+    })
+  })
+
   it('should calculate correct index for children', async () => {
     const sampleCode = `
       <Trans i18nKey="children_receive_wrong_index">
