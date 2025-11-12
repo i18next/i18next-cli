@@ -158,12 +158,14 @@ export async function processFile (
     const fileExt = extname(file).toLowerCase()
     const isTypeScriptFile = fileExt === '.ts' || fileExt === '.tsx' || fileExt === '.mts' || fileExt === '.cts'
     const isTSX = fileExt === '.tsx'
+    const isJSX = fileExt === '.jsx'
 
     let ast: any
     try {
       ast = await parse(code, {
         syntax: isTypeScriptFile ? 'typescript' : 'ecmascript',
         tsx: isTSX,
+        jsx: isJSX,
         decorators: true,
         dynamicImport: true,
         comments: true,
