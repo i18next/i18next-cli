@@ -2008,5 +2008,109 @@ describe('extractor: runExtractor', () => {
         newKey: 'New: Value',
       })
     })
+
+    it('should correctly extract fallback strings containing colons with nsSeparator enabled', async () => {
+      const sampleCode = `
+        const i18next = require('i18next');
+
+        i18next.init({
+          lng: 'en'
+        }, (err, t) => {
+          if (err) return console.error(err);
+          // Fallback string should be extracted (second parameter as string)
+          console.log(t('translation:SomeKey', 'fallback:'));
+          
+          // Or using defaultValue in options object
+          console.log(t('translation:AnotherKey','default fallback'));
+        });
+      `
+
+      const existingTranslations = {
+        SomeKey: 'fallback:',
+        AnotherKey: 'default fallback',
+      }
+
+      vol.fromJSON({
+        '/src/app.js': sampleCode,
+        '/locales/en/translation.json': JSON.stringify(existingTranslations, null, 2),
+      })
+
+      const configWithNs = {
+        ...mockConfig,
+        extract: {
+          ...mockConfig.extract,
+          nsSeparator: ':',
+          input: ['src/**/*.js'],
+        },
+      }
+
+      // ✅ Use syncPrimaryWithDefaults option to match your reproduction
+      await runExtractor(configWithNs, { syncPrimaryWithDefaults: true })
+
+      const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+      const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+      const translationJson = JSON.parse(translationFileContent as string)
+
+      // This test will fail before the fix because 'SomeKey' will have an empty string value
+      // The bug is that when nsSeparator is enabled and syncPrimaryWithDefaults is true,
+      // the fallback 'fallback:' is being incorrectly identified as a "derived default"
+      // because it contains a colon, resulting in an empty value
+      expect(translationJson).toEqual({
+        SomeKey: 'fallback:',  // Should be 'fallback:', NOT ''
+        AnotherKey: 'default fallback',
+      })
+    })
+
+    it('should handle colons in fallback values correctly regardless of nsSeparator position', async () => {
+      const sampleCode = `
+        // Colon at the end
+        t('translation:key1', 'fallback:');
+        
+        // Colon in the middle  
+        t('translation:key2', 'fall:back');
+        
+        // Multiple colons
+        t('translation:key3', 'a:b:c');
+        
+        // URL as fallback
+        t('translation:key4', 'https://example.com');
+      `
+
+      const existingTranslations = {
+        key1: 'fallback:',
+        key2: 'fall:back',
+        key3: 'a:b:c',
+        key4: 'https://example.com',
+      }
+
+      vol.fromJSON({
+        '/src/app.js': sampleCode,
+        '/locales/en/translation.json': JSON.stringify(existingTranslations, null, 2),
+      })
+
+      const configWithNs = {
+        ...mockConfig,
+        extract: {
+          ...mockConfig.extract,
+          nsSeparator: ':',
+          input: ['src/**/*.js'],
+        },
+      }
+
+      // ✅ Use syncPrimaryWithDefaults option to match the bug scenario
+      await runExtractor(configWithNs, { syncPrimaryWithDefaults: true })
+
+      const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+      const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+      const translationJson = JSON.parse(translationFileContent as string)
+
+      // All fallback values should be preserved exactly as written, not parsed for namespace separators
+      expect(translationJson).toEqual({
+        key1: 'fallback:',
+        key2: 'fall:back',
+        key3: 'a:b:c',
+        key4: 'https://example.com',
+      })
+    })
   })
 })

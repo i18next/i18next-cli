@@ -490,9 +490,9 @@ function buildNewTranslationsForNs (
           // - Use defaultValue if it exists and is meaningful (not derived from key pattern)
           // - Otherwise use empty string for new keys
           const isDerivedDefault = defaultValue && (
-            defaultValue === key || // Exact match
-            // Check if defaultValue includes namespace prefix (e.g., "translation:app.key")
-            defaultValue.includes(nsSep) ||
+            defaultValue === key || // Exact match with the key itself
+            // Check if defaultValue matches the namespaced key format (namespace:key)
+            (nsSep && namespace && defaultValue === `${namespace}${nsSep}${key}`) ||
             // For variant keys (plural/context), check if defaultValue is the base
             (key !== defaultValue &&
             (key.startsWith(defaultValue + pluralSeparator) ||
@@ -513,13 +513,13 @@ function buildNewTranslationsForNs (
       if (locale === primaryLanguage && syncPrimaryWithDefaults) {
         // Only update when we have a meaningful defaultValue that's not derived from the key pattern.
         const isDerivedDefault = defaultValue && (
-          defaultValue === key || // Exact match
-          // Check if defaultValue includes namespace prefix (e.g., "translation:app.key")
-          defaultValue.includes(nsSep) ||
-          // For variant keys (plural/context), check if defaultValue is the base
-          (key !== defaultValue &&
-          (key.startsWith(defaultValue + pluralSeparator) ||
-            key.startsWith(defaultValue + contextSeparator)))
+          defaultValue === key || // Exact match with the key itself
+            // Check if defaultValue matches the namespaced key format (namespace:key)
+            (nsSep && namespace && defaultValue === `${namespace}${nsSep}${key}`) ||
+            // For variant keys (plural/context), check if defaultValue is the base
+            (key !== defaultValue &&
+            (key.startsWith(defaultValue + pluralSeparator) ||
+              key.startsWith(defaultValue + contextSeparator)))
         )
 
         // If this key looks like a plural/context variant and the default
