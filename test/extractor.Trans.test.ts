@@ -966,4 +966,109 @@ describe('extractor: advanced Trans features', () => {
       SomeKey: 'SomeText<br /><br />Some other Text',
     })
   })
+
+  it('should NOT add space after <br /> with indented newline formatting', async () => {
+    const sampleCode = `
+      import { Trans } from 'react-i18next';
+      
+      function Component() {
+        return (
+          <Trans i18nKey="message">
+            First line.<br />
+            Second line starts on new line.
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      message: 'First line.<br />Second line starts on new line.',
+    })
+  })
+
+  it('should NOT add space after <br /> when text continues on same indentation level', async () => {
+    const sampleCode = `
+      <Trans i18nKey="multiline">
+        Line one
+        <br />
+        Line two
+        <br />
+        Line three
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      multiline: 'Line one<br />Line two<br />Line three',
+    })
+  })
+
+  it('should handle <br /> with varying indentation correctly', async () => {
+    const sampleCode = `
+      <Trans i18nKey="address">
+        John Doe
+        <br />
+        123 Main Street
+        <br />
+        City, State 12345
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      address: 'John Doe<br />123 Main Street<br />City, State 12345',
+    })
+  })
+
+  it('should distinguish between <br /> with newline vs explicit space in complex case', async () => {
+    const sampleCode = `
+      <Trans i18nKey="mixed">
+        Text before<br />
+        Newline after br
+        <br /> Space after this br
+        Final text
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    // First br has newline (no space), second br has explicit space before next text
+    expect(translationFile!.newTranslations).toEqual({
+      mixed: 'Text before<br />Newline after br<br /> Space after this br Final text',
+    })
+  })
+
+  it('should NOT add space after self-closing <br/> (no space before slash)', async () => {
+    const sampleCode = `
+      <Trans i18nKey="compact">
+        First<br/>
+        Second
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      compact: 'First<br />Second',
+    })
+  })
 })

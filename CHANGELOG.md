@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.3](https://github.com/i18next/i18next-cli/compare/v1.24.2...v1.24.3) - 2025-11-12
+
+- improved Trans component parsing further [#102](https://github.com/i18next/i18next-cli/issues/102)
+
 ## [1.24.2](https://github.com/i18next/i18next-cli/compare/v1.24.1...v1.24.2) - 2025-11-12
 
 - **Extractor (`--sync-primary`):** Fixed a bug where default values containing colons (like `"fallback:"`) were incorrectly identified as namespace-prefixed keys, resulting in empty strings in translation files when using the `--sync-primary` flag. [#110](https://github.com/i18next/i18next-cli/issues/110)
@@ -15,17 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.24.0](https://github.com/i18next/i18next-cli/compare/v1.23.6...v1.24.0) - 2025-11-12
 
-- **CLI:** Introduced the `rename-key` command for safely refactoring translation keys across your entire codebase. This new command updates both source files and translation JSON files atomically, automatically handling namespaces, plurals, and multiple locales. [109](https://github.com/i18next/i18next-cli/issues/109)
-- improved Trans component parsing further [102](https://github.com/i18next/i18next-cli/issues/102)
+- **CLI:** Introduced the `rename-key` command for safely refactoring translation keys across your entire codebase. This new command updates both source files and translation JSON files atomically, automatically handling namespaces, plurals, and multiple locales. [#109](https://github.com/i18next/i18next-cli/issues/109)
+- improved Trans component parsing further [#102](https://github.com/i18next/i18next-cli/issues/102)
 
 ## [1.23.7](https://github.com/i18next/i18next-cli/compare/v1.23.6...v1.23.7) - 2025-11-12
 
-- improved Trans component parsing further [102](https://github.com/i18next/i18next-cli/issues/102)
+- improved Trans component parsing further [#102](https://github.com/i18next/i18next-cli/issues/102)
 
 ## [1.23.6](https://github.com/i18next/i18next-cli/compare/v1.23.5...v1.23.6) - 2025-11-12
 
 - fix jsx extraction [#108](https://github.com/i18next/i18next-cli/issues/108)
-- improved Trans component parsing for spaces [102](https://github.com/i18next/i18next-cli/issues/102)
+- improved Trans component parsing for spaces [#102](https://github.com/i18next/i18next-cli/issues/102)
 
 ## [1.23.5](https://github.com/i18next/i18next-cli/compare/v1.23.4...v1.23.5) - 2025-11-11
 

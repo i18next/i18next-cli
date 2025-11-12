@@ -602,17 +602,50 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
         if (isFormattingWhitespace(node)) continue
 
         const nextNode = nodes[i + 1]
+        const prevNode = nodes[i - 1]
+
+        // If this text follows a preserved tag and starts with newline+whitespace, trim it
+        if (prevNode && prevNode.type === 'JSXElement') {
+          const prevTag = prevNode.opening?.name?.type === 'Identifier' ? prevNode.opening.name.value : undefined
+          const prevIsPreservedTag = prevTag && allowedTags.has(prevTag)
+
+          // Only trim leading whitespace after SELF-CLOSING preserved tags (like <br />)
+          // Block tags like <p> or inline tags like <strong> need surrounding spaces
+          const prevChildren = prevNode.children || []
+          const prevIsSelfClosing = prevChildren.length === 0
+
+          if (prevIsPreservedTag && prevIsSelfClosing && /^\s*\n\s*/.test(node.value)) {
+            // Text starts with newline after a self-closing preserved tag - trim leading formatting
+            const trimmedValue = node.value.replace(/^\s*\n\s*/, '')
+            if (trimmedValue) {
+              out += trimmedValue
+              continue
+            }
+            // If nothing left after trimming, skip this node
+            continue
+          }
+        }
 
         // If this text node ends with newline+whitespace and is followed by an element,
         if (/\n\s*$/.test(node.value) && nextNode && nextNode.type === 'JSXElement') {
           const textWithoutTrailingNewline = node.value.replace(/\n\s*$/, '')
           if (textWithoutTrailingNewline.trim()) {
-            // Check if there's text content AFTER the next element (not counting punctuation-only or formatting)
+            // Check if the next element is a preserved tag
+            const nextTag = nextNode.opening?.name?.type === 'Identifier' ? nextNode.opening.name.value : undefined
+            const isPreservedTag = nextTag && allowedTags.has(nextTag)
+
+            // Check if the preserved tag has children (not self-closing)
+            const nextChildren = nextNode.children || []
+            const nextHasChildren = nextChildren.length > 0
+
+            // Check if there was a space BEFORE the newline in the source
+            const hasSpaceBeforeNewline = /\s\n/.test(node.value)
+
+            // Check if there's text content AFTER the next element
             const nodeAfterNext = nodes[i + 2]
             const hasTextAfter = nodeAfterNext &&
               nodeAfterNext.type === 'JSXText' &&
               !isFormattingWhitespace(nodeAfterNext) &&
-              // Check if it's not just punctuation (period, comma, etc.)
               /[a-zA-Z0-9]/.test(nodeAfterNext.value)
 
             // Preserve leading whitespace
@@ -621,10 +654,10 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             const withLeading = hasLeadingSpace ? ' ' + trimmed : trimmed
 
             // Add trailing space only if:
-            // 1. There was a space before the newline, OR
-            // 2. There's meaningful text (not just punctuation) after the next element
-            const hasSpaceBeforeNewline = /\s\n/.test(node.value)
-            if (hasSpaceBeforeNewline || hasTextAfter) {
+            // 1. There was an explicit space before the newline, OR
+            // 2. The next element is NOT a preserved tag AND has text after (word boundary)
+            //    Preserved tags like <br />, <p>, etc. provide their own separation
+            if (hasSpaceBeforeNewline || (isPreservedTag && nextHasChildren) || (!isPreservedTag && hasTextAfter)) {
               out += withLeading + ' '
             } else {
               out += withLeading
