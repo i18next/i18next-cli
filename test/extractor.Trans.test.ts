@@ -509,6 +509,76 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should NOT extract space between text and component when separated by newline (formatting)', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey='SomeKey'>
+            Some text
+            <TextLink
+              to='someUrl'
+              target='_blank'
+              rel='noreferrer'
+              external
+            >
+              link
+            </TextLink>
+            .
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    // Should NOT have space before <2> because the newline is formatting whitespace
+    expect(translationFile!.newTranslations).toEqual({
+      SomeKey: 'Some text<1>link</1>.',
+    })
+  })
+
+  it('should handle word split across component with newline formatting', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey='SomeKey'>
+            I want to highlight part of this wo
+            <SomeCustomHighlighting
+              a
+              lot
+              of
+              args
+            >
+              rd
+            </SomeCustomHighlighting>
+            .
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    // Should NOT have space before <2> - the word "word" should be continuous
+    expect(translationFile!.newTranslations).toEqual({
+      SomeKey: 'I want to highlight part of this wo<1>rd</1>.',
+    })
+  })
+
   it('should handle br tag with surrounding text', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';

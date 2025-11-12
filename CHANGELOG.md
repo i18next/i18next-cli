@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.24.0](https://github.com/i18next/i18next-cli/compare/v1.23.6...v1.24.0) - 2025-11-12
 
 - **CLI:** Introduced the `rename-key` command for safely refactoring translation keys across your entire codebase. This new command updates both source files and translation JSON files atomically, automatically handling namespaces, plurals, and multiple locales. [109](https://github.com/i18next/i18next-cli/issues/109)
+- improved Trans component parsing further [102](https://github.com/i18next/i18next-cli/issues/102)
 
 ## [1.23.7](https://github.com/i18next/i18next-cli/compare/v1.23.6...v1.23.7) - 2025-11-12
 

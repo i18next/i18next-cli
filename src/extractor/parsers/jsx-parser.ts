@@ -600,6 +600,39 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
 
       if (node.type === 'JSXText') {
         if (isFormattingWhitespace(node)) continue
+
+        const nextNode = nodes[i + 1]
+
+        // If this text node ends with newline+whitespace and is followed by an element,
+        if (/\n\s*$/.test(node.value) && nextNode && nextNode.type === 'JSXElement') {
+          const textWithoutTrailingNewline = node.value.replace(/\n\s*$/, '')
+          if (textWithoutTrailingNewline.trim()) {
+            // Check if there's text content AFTER the next element (not counting punctuation-only or formatting)
+            const nodeAfterNext = nodes[i + 2]
+            const hasTextAfter = nodeAfterNext &&
+              nodeAfterNext.type === 'JSXText' &&
+              !isFormattingWhitespace(nodeAfterNext) &&
+              // Check if it's not just punctuation (period, comma, etc.)
+              /[a-zA-Z0-9]/.test(nodeAfterNext.value)
+
+            // Preserve leading whitespace
+            const hasLeadingSpace = /^\s/.test(textWithoutTrailingNewline)
+            const trimmed = textWithoutTrailingNewline.trim()
+            const withLeading = hasLeadingSpace ? ' ' + trimmed : trimmed
+
+            // Add trailing space only if:
+            // 1. There was a space before the newline, OR
+            // 2. There's meaningful text (not just punctuation) after the next element
+            const hasSpaceBeforeNewline = /\s\n/.test(node.value)
+            if (hasSpaceBeforeNewline || hasTextAfter) {
+              out += withLeading + ' '
+            } else {
+              out += withLeading
+            }
+            continue
+          }
+        }
+
         out += node.value
         continue
       }
