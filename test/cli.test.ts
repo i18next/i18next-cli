@@ -9,6 +9,7 @@ const mockRunLinter = vi.fn()
 const mockRunInit = vi.fn()
 const mockRunMigrator = vi.fn()
 const mockRunLocizeSync = vi.fn()
+const mockRunRenameKey = vi.fn()
 
 // Mock the modules that contain the service functions
 vi.mock('../src/status', () => ({ runStatus: mockRunStatus }))
@@ -19,6 +20,7 @@ vi.mock('../src/linter', () => ({ runLinterCli: mockRunLinter }))
 vi.mock('../src/init', () => ({ runInit: mockRunInit }))
 vi.mock('../src/migrator', () => ({ runMigrator: mockRunMigrator }))
 vi.mock('../src/locize', () => ({ runLocizeSync: mockRunLocizeSync }))
+vi.mock('../src/rename-key', () => ({ runRenameKey: mockRunRenameKey }))
 
 // Mock config loaders as they are a common dependency
 const mockEnsureConfig = vi.fn()
@@ -285,5 +287,21 @@ describe('CLI command parsing and dispatching', () => {
     expect(mockRunStatus).toHaveBeenCalledTimes(1)
     expect(mockLoadConfig).toHaveBeenCalledWith('./custom/i18next.config.ts')
     expect(mockRunStatus).toHaveBeenCalledWith(config, { detail: 'de', namespace: undefined })
+  })
+
+  it('should parse the "rename-key" command', async () => {
+    vi.resetModules()
+    process.argv = ['node', 'cli.ts', 'rename-key', 'old.key', 'new.key']
+    mockEnsureConfig.mockResolvedValue(validMockConfig)
+    mockRunRenameKey.mockResolvedValue({ success: true, sourceFiles: [], translationFiles: [] })
+
+    await import('../src/cli')
+
+    expect(mockRunRenameKey).toHaveBeenCalledWith(
+      validMockConfig,
+      'old.key',
+      'new.key',
+      expect.objectContaining({})
+    )
   })
 })

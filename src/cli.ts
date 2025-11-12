@@ -15,6 +15,7 @@ import { runInit } from './init'
 import { runLinterCli } from './linter'
 import { runStatus } from './status'
 import { runLocizeSync, runLocizeDownload, runLocizeMigrate } from './locize'
+import { runRenameKey } from './rename-key'
 import type { I18nextToolkitConfig } from './types'
 
 const program = new Command()
@@ -233,6 +234,38 @@ program
     const cfgPath = program.opts().config
     const config = await ensureConfig(cfgPath)
     await runLocizeMigrate(config, options)
+  })
+
+program
+  .command('rename-key <oldKey> <newKey>')
+  .description('Rename a translation key across all source files and translation files.')
+  .option('--dry-run', 'Preview changes without modifying files')
+  .action(async (oldKey, newKey, options) => {
+    try {
+      const cfgPath = program.opts().config
+      const config = await ensureConfig(cfgPath)
+
+      const result = await runRenameKey(config, oldKey, newKey, options)
+
+      if (!result.success) {
+        if (result.conflicts) {
+          console.error(chalk.red('\n❌ Conflicts detected:'))
+          result.conflicts.forEach(c => console.error(`   - ${c}`))
+        }
+        if (result.error) {
+          console.error(chalk.red(`\n❌ ${result.error}`))
+        }
+        process.exit(1)
+      }
+
+      const totalChanges = result.sourceFiles.reduce((sum, f) => sum + f.changes, 0)
+      if (totalChanges === 0) {
+        console.log(chalk.yellow(`\n⚠️  No usages found for "${oldKey}"`))
+      }
+    } catch (error) {
+      console.error(chalk.red('Error renaming key:'), error)
+      process.exit(1)
+    }
   })
 
 program.parse(process.argv)

@@ -4,7 +4,8 @@ export type {
   PluginContext,
   ExtractedKey,
   TranslationResult,
-  ExtractedKeysMap
+  ExtractedKeysMap,
+  RenameKeyResult
 } from './types'
 export { defineConfig } from './config'
 export {
@@ -18,3 +19,4 @@ export { runLinter } from './linter'
 export { runSyncer } from './syncer'
 export { runStatus } from './status'
 export { runTypesGenerator } from './types-generator'
+export { runRenameKey } from './rename-key'

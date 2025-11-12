@@ -561,3 +561,11 @@ export interface ASTVisitorHooks {
  * ```
  */
 export type ExtractedKeysMap = Map<string, ExtractedKey>
+
+export interface RenameKeyResult {
+  success: boolean
+  sourceFiles: Array<{ path: string; changes: number }>
+  translationFiles: Array<{ path: string; updated: boolean }>
+  conflicts?: string[]
+  error?: string
+}
