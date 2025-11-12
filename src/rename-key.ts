@@ -196,7 +196,16 @@ async function updateSourceFiles (
     ? config.extract.ignore
     : config.extract.ignore ? [config.extract.ignore] : []
 
-  const sourceFiles = await glob(config.extract.input, {
+  // Normalize input patterns for cross-platform compatibility
+  const inputPatterns = Array.isArray(config.extract.input)
+    ? config.extract.input
+    : [config.extract.input]
+
+  const normalizedPatterns = inputPatterns.map(pattern =>
+    pattern.replace(/\\/g, '/')
+  )
+
+  const sourceFiles = await glob(normalizedPatterns, {
     ignore: [...defaultIgnore, ...userIgnore],
     cwd: process.cwd()
   })
