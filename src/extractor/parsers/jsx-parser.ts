@@ -295,8 +295,13 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
     n.value.includes('\n')
 
   // Build deterministic global slot list (pre-order)
-  function collectSlots (nodes: any[], slots: any[], parentIsNonPreserved = false) {
+  function collectSlots (nodes: any[], slots: any[], parentIsNonPreserved = false, isRootLevel = false) {
     if (!nodes || !nodes.length) return
+
+    // Check if there are multiple <p> elements at root level
+    const multiplePAtRoot = isRootLevel && nodes.filter((n: any) =>
+      n && n.type === 'JSXElement' && n.opening?.name?.value === 'p'
+    ).length > 1
 
     // First, identify boundary whitespace nodes (start and end of sibling list)
     // We trim ONLY pure-whitespace JSXText nodes from the boundaries
@@ -504,16 +509,65 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           ? n.opening.name.value
           : undefined
         if (tagName && allowedTags.has(tagName)) {
-          // Count preserved HTML element as a global slot only when the AST
-          // marks it self-closing (e.g. <br />). Self-closing preserved tags
-          // should influence placeholder indexes (they appear inline without
-          // children), while non-self-closing preserved tags (e.g. <strong>)
-          // should not.
-          const isAstSelfClosing = !!(n.opening && (n.opening as any).selfClosing)
-          if (isAstSelfClosing) {
-            slots.push(n)
+          // Check if this preserved tag will actually be preserved as literal HTML
+          // or if it will be indexed (has complex children or attributes)
+          const hasAttrs =
+            n.opening &&
+            Array.isArray((n.opening as any).attributes) &&
+            (n.opening as any).attributes.length > 0
+          const children = n.children || []
+          // Check for single PURE text child (JSXText OR simple string expression)
+          const isSinglePureTextChild =
+            children.length === 1 && (
+              children[0]?.type === 'JSXText' ||
+              (children[0]?.type === 'JSXExpressionContainer' &&
+                getStringLiteralFromExpression(children[0].expression) !== undefined)
+            )
+
+          if (tagName === 'br') {
+            console.log('DEBUG collectSlots - br tag:', {
+              tagName,
+              hasAttrs,
+              childrenLength: children.length,
+              isSinglePureTextChild,
+            })
           }
-          collectSlots(n.children || [], slots, false)
+
+          // Self-closing tags (no children) should be added to slots but rendered as literal HTML
+          // Tags with single pure text child should NOT be added to slots and rendered as literal HTML
+          const isSelfClosing = !children.length
+          const hasTextContent = isSinglePureTextChild
+
+          if (hasAttrs && !isSinglePureTextChild) {
+            // Has attributes AND complex children -> will be indexed, add to slots
+            slots.push(n)
+            if (tagName === 'br') {
+              console.log('DEBUG collectSlots - br ADDED to slots')
+            }
+            collectSlots(n.children || [], slots, true)
+          } else if (isSelfClosing) {
+            // Self-closing tag with no attributes: add to slots (affects indexes) but will render as literal
+            slots.push(n)
+          } else if (!hasTextContent) {
+            // Has complex children but no attributes
+            // For <p> tags at root level with multiple <p> siblings, index them
+            // For other preserved tags, preserve as literal (don't add to slots)
+            if (tagName === 'p' && multiplePAtRoot) {
+              slots.push(n)
+              collectSlots(n.children || [], slots, true, false)
+            } else {
+              // Other preserved tags: preserve as literal, don't add to slots
+              // But DO process children to add them to slots
+              collectSlots(n.children || [], slots, false, false)
+            }
+          } else {
+            if (tagName === 'br') {
+              console.log('DEBUG collectSlots - br NOT added (preserved), but should it be for self-closing?')
+            }
+            // Has single pure text child and no attributes: preserve as literal, don't add to slots
+            // Don't process children either - they're part of the preserved tag
+          }
+          continue
         } else {
           // non-preserved element: the element itself is a single slot.
           // Pre-order: allocate the parent's slot first, then descend into its
@@ -537,7 +591,14 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
 
   // prepare the global slot list for the whole subtree
   const globalSlots: any[] = []
-  collectSlots(children, globalSlots, false)
+  collectSlots(children, globalSlots, false, true)
+
+  console.log('DEBUG globalSlots:', globalSlots.map((slot: any, idx: number) => ({
+    index: idx,
+    type: slot.type,
+    value: slot.type === 'JSXText' ? slot.value.substring(0, 20) : undefined,
+    tag: slot.opening?.name?.value
+  })))
 
   // Trim only newline-only indentation at the edges of serialized inner text.
   // This preserves single leading/trailing spaces which are meaningful between inline placeholders.
@@ -548,9 +609,12 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
       // remove trailing newline-only indentation
       .replace(/\s*\n\s*$/g, '')
 
-  function visitNodes (nodes: any[], localIndexMap?: Map<any, number>): string {
+  function visitNodes (nodes: any[], localIndexMap?: Map<any, number>, isRootLevel = false): string {
     if (!nodes || nodes.length === 0) return ''
     let out = ''
+
+    // At root level, build index based on element position among siblings
+    let rootElementIndex = 0
 
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i]
@@ -596,24 +660,273 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           tag = node.opening.name.value
         }
 
-        if (tag && allowedTags.has(tag)) {
-          const inner = visitNodes(node.children || [], localIndexMap)
-          // consider element self-closing for rendering when AST marks it so or it has no meaningful children
-          const isAstSelfClosing = !!(node.opening && (node.opening as any).selfClosing)
-          const hasMeaningfulChildren = String(inner).trim() !== ''
+        // Track root element index for root-level elements
+        const myRootIndex = isRootLevel ? rootElementIndex : undefined
+        if (isRootLevel && node.type === 'JSXElement') {
+          rootElementIndex++
+        }
 
-          if (isAstSelfClosing || !hasMeaningfulChildren) {
-            // If the previous original sibling is a JSXText that ends with a
-            // newline (the tag was placed on its own indented line), trim any
-            // trailing space we've accumulated so we don't leave " ... . <br/>".
-            // This targeted trimming avoids breaking other spacing-sensitive cases.
-            const prevOriginal = nodes[i - 1]
-            if (prevOriginal && prevOriginal.type === 'JSXText' && /\n\s*$/.test(prevOriginal.value)) {
-              out = out.replace(/\s+$/, '')
+        if (tag && allowedTags.has(tag)) {
+          // Match react-i18next behavior: only preserve as literal HTML when:
+          // 1. No children (!childChildren) AND no attributes (!childPropsCount)
+          // 2. OR: Has children but only the children prop (childPropsCount === 1) AND children is a simple string (isString(childChildren))
+
+          const hasAttrs =
+            node.opening &&
+            Array.isArray((node.opening as any).attributes) &&
+            (node.opening as any).attributes.length > 0
+
+          const children = node.children || []
+          const hasChildren = children.length > 0
+
+          // Check if children is a single PURE text node (JSXText OR simple string expression)
+          const isSinglePureTextChild =
+            children.length === 1 && (
+              children[0]?.type === 'JSXText' ||
+              (children[0]?.type === 'JSXExpressionContainer' &&
+                getStringLiteralFromExpression(children[0].expression) !== undefined)
+            )
+
+          if (tag === 'strong') {
+            console.log('DEBUG visitNodes - strong tag:', {
+              tag,
+              hasAttrs,
+              hasChildren,
+              childrenLength: children.length,
+              childrenTypes: children.map((c: any) => c?.type),
+              isSinglePureTextChild,
+            })
+          }
+
+          if (tag === 'p') {
+            console.log('DEBUG visitNodes - p tag:', {
+              tag,
+              hasAttrs,
+              hasChildren,
+              childrenLength: children.length,
+              childrenTypes: children.map((c: any) => c?.type),
+              isSinglePureTextChild,
+            })
+          }
+
+          // Preserve as literal HTML in two cases:
+          // 1. No children and no attributes: <br />
+          // 2. Single pure text child (with or without attributes): <strong>text</strong> or <strong title="...">text</strong>
+          if ((!hasChildren || isSinglePureTextChild)) {
+            if (tag === 'strong') {
+              console.log('DEBUG visitNodes - strong entering PRESERVE branch')
             }
-            out += `<${tag} />`
+            const inner = isSinglePureTextChild ? visitNodes(children, undefined) : ''
+            const hasMeaningfulChildren = String(inner).trim() !== ''
+
+            if (!hasMeaningfulChildren) {
+              // Self-closing
+              const prevOriginal = nodes[i - 1]
+              if (prevOriginal && prevOriginal.type === 'JSXText' && /\n\s*$/.test(prevOriginal.value)) {
+                out = out.replace(/\s+$/, '')
+              }
+              out += `<${tag} />`
+              if (tag === 'strong') {
+                console.log('DEBUG visitNodes - strong output: self-closing')
+              }
+            } else {
+              // Preserve with content: <strong>text</strong>
+              out += `<${tag}>${inner}</${tag}>`
+              if (tag === 'strong') {
+                console.log('DEBUG visitNodes - strong output:', `<${tag}>${inner}</${tag}>`)
+              }
+            }
+          } else if (hasAttrs && !isSinglePureTextChild) {
+            // Has attributes -> treat as indexed element with numeric placeholder
+
+            if (tag === 'strong') {
+              console.log('DEBUG visitNodes - strong entering INDEX branch')
+              console.log('DEBUG visitNodes - strong globalSlots.indexOf(node):', globalSlots.indexOf(node))
+            }
+
+            if (tag === 'strong') {
+              console.log('DEBUG visitNodes - strong tag:', {
+                tag,
+                hasAttrs,
+                attributes: node.opening?.attributes?.map((attr: any) => ({
+                  type: attr.type,
+                  name: attr.name?.value,
+                  value: attr.value
+                })),
+                hasChildren,
+                childrenLength: children.length,
+                childrenTypes: children.map((c: any) => c?.type),
+                isSinglePureTextChild,
+              })
+            }
+
+            const childrenLocal = children
+            const hasNonElementGlobalSlots = childrenLocal.some((ch: any) =>
+              ch && (ch.type === 'JSXText' || ch.type === 'JSXExpressionContainer') && globalSlots.indexOf(ch) !== -1
+            )
+
+            if (hasNonElementGlobalSlots) {
+              const idx = globalSlots.indexOf(node)
+              const inner = visitNodes(childrenLocal, undefined)
+              out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
+            } else {
+              const childrenLocalMap = new Map<any, number>()
+              let localIdxCounter = 0
+              for (const ch of childrenLocal) {
+                if (!ch) continue
+                if (ch.type === 'JSXElement') {
+                  const chTag = ch.opening && ch.opening.name && ch.opening.name.type === 'Identifier'
+                    ? ch.opening.name.value
+                    : undefined
+                  if (chTag && allowedTags.has(chTag)) {
+                    const chHasAttrs =
+                      ch.opening &&
+                      Array.isArray((ch.opening as any).attributes) &&
+                      (ch.opening as any).attributes.length > 0
+                    const chChildren = ch.children || []
+                    const chIsSingleText = chChildren.length === 1 && chChildren[0]?.type === 'JSXText'
+                    // Only skip indexing if it would be preserved as literal
+                    if (!chHasAttrs && (!chChildren.length || chIsSingleText)) {
+                      // Will be preserved, don't index
+                    } else {
+                      childrenLocalMap.set(ch, localIdxCounter++)
+                    }
+                  } else {
+                    childrenLocalMap.set(ch, localIdxCounter++)
+                  }
+                }
+              }
+
+              const idx = localIndexMap && localIndexMap.has(node) ? localIndexMap.get(node) : globalSlots.indexOf(node)
+              const inner = visitNodes(childrenLocal, childrenLocalMap.size ? childrenLocalMap : undefined)
+              out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
+            }
           } else {
-            out += `<${tag}>${inner}</${tag}>`
+            // Has complex children but no attributes -> preserve tag as literal but index children
+            if (tag === 'p') {
+              console.log('DEBUG visitNodes - p entering PRESERVE TAG, INDEX CHILDREN branch')
+            }
+            // Check if this tag is in globalSlots - if so, index it
+            const idx = globalSlots.indexOf(node)
+            if (idx !== -1) {
+              // This tag is in globalSlots, so index it
+              // At root level, use the element's position among root elements
+              const indexToUse = myRootIndex !== undefined ? myRootIndex : idx
+
+              if (tag === 'p') {
+                console.log('DEBUG p hasNonElementGlobalSlots check:')
+                console.log('  children:', children.map((ch: any) => ({
+                  type: ch?.type,
+                  value: ch?.type === 'JSXText' ? ch.value.substring(0, 30) : undefined,
+                  inGlobalSlots: ch ? globalSlots.indexOf(ch) : -1
+                })))
+              }
+
+              // Check if children have text/expression nodes in globalSlots
+              // that appear BEFORE or BETWEEN element children (not just trailing)
+              // Exclude formatting whitespace (newline-only text) from this check
+              const hasNonElementGlobalSlots = (() => {
+                let foundElement = false
+
+                for (const ch of children) {
+                  if (!ch) continue
+
+                  if (ch.type === 'JSXElement') {
+                    foundElement = true
+                    continue
+                  }
+
+                  if (ch.type === 'JSXExpressionContainer' && globalSlots.indexOf(ch) !== -1) {
+                    // Only count if before/between elements, not trailing
+                    return foundElement  // false if before first element, true if after
+                  }
+
+                  if (ch.type === 'JSXText' && globalSlots.indexOf(ch) !== -1) {
+                    // Exclude formatting whitespace
+                    if (isFormattingWhitespace(ch)) continue
+
+                    // Only count text that appears BEFORE the first element
+                    // Trailing text after all elements should not force global indexing
+                    if (!foundElement) {
+                      // Text before first element - counts
+                      return true
+                    }
+                    // Text after an element - check if there are more elements after this text
+                    const remainingNodes = children.slice(children.indexOf(ch) + 1)
+                    const hasMoreElements = remainingNodes.some((n: any) => n && n.type === 'JSXElement')
+                    if (hasMoreElements) {
+                      // Text between elements - counts
+                      return true
+                    }
+                    // Trailing text after last element - doesn't count
+                  }
+                }
+
+                return false
+              })()
+
+              if (tag === 'p') {
+                console.log('  hasNonElementGlobalSlots:', hasNonElementGlobalSlots)
+              }
+
+              // If children have non-element global slots, use global indexes
+              // Otherwise use local indexes starting from parent's index + 1
+              if (hasNonElementGlobalSlots) {
+                const inner = visitNodes(children, undefined, false)
+                out += `<${indexToUse}>${trimFormattingEdges(inner)}</${indexToUse}>`
+                continue
+              }
+
+              // Build local index map for children of this indexed element
+              const childrenLocalMap = new Map<any, number>()
+              let localIdxCounter = indexToUse  // Start from parent index (reuse parent's index for first child)
+              console.log('DEBUG building childrenLocalMap, starting localIdxCounter:', localIdxCounter, 'for parent tag:', tag)
+              for (const ch of children) {
+                if (!ch) continue
+                if (ch.type === 'JSXElement') {
+                  const chTag = ch.opening && ch.opening.name && ch.opening.name.type === 'Identifier'
+                    ? ch.opening.name.value
+                    : undefined
+                  console.log('DEBUG checking child element, chTag:', chTag)
+
+                  if (chTag && allowedTags.has(chTag)) {
+                    // Check if this child will be preserved as literal HTML
+                    const chHasAttrs =
+                      ch.opening &&
+                      Array.isArray((ch.opening as any).attributes) &&
+                      (ch.opening as any).attributes.length > 0
+                    const chChildren = ch.children || []
+                    const chIsSinglePureText =
+                      chChildren.length === 1 && (
+                        chChildren[0]?.type === 'JSXText' ||
+                        (chChildren[0]?.type === 'JSXExpressionContainer' &&
+                          getStringLiteralFromExpression(chChildren[0].expression) !== undefined)
+                      )
+                    const chWillBePreserved = !chHasAttrs && (!chChildren.length || chIsSinglePureText)
+                    console.log('DEBUG chWillBePreserved:', chWillBePreserved, 'for chTag:', chTag)
+                    if (!chWillBePreserved) {
+                      // Will be indexed, add to local map
+                      console.log('DEBUG adding to childrenLocalMap:', chTag, 'at index:', localIdxCounter)
+
+                      childrenLocalMap.set(ch, localIdxCounter++)
+                    }
+                  } else {
+                    // Non-preserved tag, always indexed
+                    console.log('DEBUG adding non-preserved to childrenLocalMap:', chTag, 'at index:', localIdxCounter)
+
+                    childrenLocalMap.set(ch, localIdxCounter++)
+                  }
+                }
+              }
+              console.log('DEBUG childrenLocalMap size:', childrenLocalMap.size)
+
+              const inner = visitNodes(children, childrenLocalMap.size > 0 ? childrenLocalMap : undefined, false)
+              out += `<${indexToUse}>${trimFormattingEdges(inner)}</${indexToUse}>`
+            } else {
+              // Not in globalSlots, preserve as literal HTML
+              const inner = visitNodes(children, undefined, false)
+              out += `<${tag}>${trimFormattingEdges(inner)}</${tag}>`
+            }
           }
         } else {
           // Decide whether to use local (restarted) indexes for this element's
@@ -643,8 +956,16 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
                   ? ch.opening.name.value
                   : undefined
                 if (chTag && allowedTags.has(chTag)) {
-                  const isChSelfClosing = !!(ch.opening && (ch.opening as any).selfClosing)
-                  if (isChSelfClosing) {
+                  // Check if this child will be preserved as literal HTML
+                  const chHasAttrs =
+                    ch.opening &&
+                    Array.isArray((ch.opening as any).attributes) &&
+                    (ch.opening as any).attributes.length > 0
+                  const chChildren = ch.children || []
+                  const chIsSinglePureText = chChildren.length === 1 && chChildren[0]?.type === 'JSXText'
+                  const chWillBePreserved = !chHasAttrs && (!chChildren.length || chIsSinglePureText)
+                  if (!chWillBePreserved) {
+                    // Will be indexed, add to local map
                     childrenLocalMap.set(ch, localIdxCounter++)
                   }
                 } else {
@@ -672,7 +993,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
     return out
   }
 
-  const result = visitNodes(children)
+  const result = visitNodes(children, undefined, true)
 
   // Final cleanup in correct order:
   // 1. First, handle <br /> followed by whitespace+newline (boundary formatting)
