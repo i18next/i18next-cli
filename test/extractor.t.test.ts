@@ -1711,4 +1711,78 @@ describe('extractor: advanced t features', () => {
   }
 }`)
   })
+
+  describe('colons in value', () => {
+    it('should correctly extract fallback values containing colons', async () => {
+      const sampleCode = `
+        t('ExampleKeyOne', 'Example: Value');
+        t('ExampleKeyTwo', 'Example:');
+        t('ExampleKeyThree', 'No colon here');
+        t('url', 'https://example.com');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        ExampleKeyOne: 'Example: Value',
+        ExampleKeyTwo: 'Example:',
+        ExampleKeyThree: 'No colon here',
+        url: 'https://example.com',
+      })
+    })
+
+    it('should correctly extract fallback values with colons when nsSeparator is enabled', async () => {
+      const sampleCode = `
+        t('key1', 'Value: with colon');
+        t('key2', 'Value:');
+        t('common:key3', 'Another: value');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const configWithNs = {
+        ...mockConfig,
+        extract: {
+          ...mockConfig.extract,
+          nsSeparator: ':',
+        },
+      }
+
+      const results = await extract(configWithNs)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+      const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        key1: 'Value: with colon',
+        key2: 'Value:',
+      })
+
+      expect(commonFile).toBeDefined()
+      expect(commonFile!.newTranslations).toEqual({
+        key3: 'Another: value',
+      })
+    })
+
+    it('should extract fallback values with multiple colons', async () => {
+      const sampleCode = `
+        t('time', '12:30:45');
+        t('ratio', '16:9:4');
+        t('label', 'Note: This is important: really');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        time: '12:30:45',
+        ratio: '16:9:4',
+        label: 'Note: This is important: really',
+      })
+    })
+  })
 })

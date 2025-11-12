@@ -1899,4 +1899,114 @@ describe('extractor: runExtractor', () => {
     expect(enJson).not.toHaveProperty('assets:image.logo')
     expect(enJson).not.toHaveProperty('assets:icon.home')
   })
+
+  describe('colons in value', () => {
+    it('should correctly write fallback values containing colons to file', async () => {
+      const sampleCode = `
+        t('ExampleKeyOne', 'Example: Value');
+        t('ExampleKeyTwo', 'Example:');
+        t('ExampleKeyThree', 'No colon here');
+        t('url', 'https://example.com');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      await runExtractor(mockConfig)
+
+      const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+      const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+      const enJson = JSON.parse(enFileContent as string)
+
+      expect(enJson).toEqual({
+        ExampleKeyOne: 'Example: Value',
+        ExampleKeyTwo: 'Example:',
+        ExampleKeyThree: 'No colon here',
+        url: 'https://example.com',
+      })
+    })
+
+    it('should correctly write fallback values with colons when nsSeparator is enabled', async () => {
+      const sampleCode = `
+        t('key1', 'Value: with colon');
+        t('key2', 'Value:');
+        t('common:key3', 'Another: value');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const configWithNs = {
+        ...mockConfig,
+        extract: {
+          ...mockConfig.extract,
+          nsSeparator: ':',
+        },
+      }
+
+      await runExtractor(configWithNs)
+
+      const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+      const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+      const translationJson = JSON.parse(translationFileContent as string)
+
+      expect(translationJson).toEqual({
+        key1: 'Value: with colon',
+        key2: 'Value:',
+      })
+
+      const commonPath = resolve(process.cwd(), 'locales/en/common.json')
+      const commonFileContent = await vol.promises.readFile(commonPath, 'utf-8')
+      const commonJson = JSON.parse(commonFileContent as string)
+
+      expect(commonJson).toEqual({
+        key3: 'Another: value',
+      })
+    })
+
+    it('should write fallback values with multiple colons to file', async () => {
+      const sampleCode = `
+        t('time', '12:30:45');
+        t('ratio', '16:9:4');
+        t('label', 'Note: This is important: really');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      await runExtractor(mockConfig)
+
+      const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+      const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+      const enJson = JSON.parse(enFileContent as string)
+
+      expect(enJson).toEqual({
+        time: '12:30:45',
+        ratio: '16:9:4',
+        label: 'Note: This is important: really',
+      })
+    })
+
+    it('should preserve existing values with colons when merging', async () => {
+      const sampleCode = `
+        t('ExampleKeyTwo', 'Example:');
+        t('newKey', 'New: Value');
+      `
+
+      const existingTranslations = {
+        ExampleKeyOne: 'Existing: Value',
+        ExampleKeyTwo: 'Old: Value',
+      }
+
+      vol.fromJSON({
+        '/src/App.tsx': sampleCode,
+        '/locales/en/translation.json': JSON.stringify(existingTranslations, null, 2),
+      })
+
+      await runExtractor(mockConfig)
+
+      const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+      const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+      const enJson = JSON.parse(enFileContent as string)
+
+      expect(enJson).toEqual({
+        ExampleKeyTwo: 'Old: Value', // Should preserve existing value
+        newKey: 'New: Value',
+      })
+    })
+  })
 })
