@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.6](https://github.com/i18next/i18next-cli/compare/v1.23.5...v1.23.6) - 2025-11-12
+
+- fix jsx extraction [#108](https://github.com/i18next/i18next-cli/issues/108)
+- improved Trans component parsing for spaces [102](https://github.com/i18next/i18next-cli/issues/102)
+
 ## [1.23.5](https://github.com/i18next/i18next-cli/compare/v1.23.4...v1.23.5) - 2025-11-11
 
 - **Extractor:** Fixed custom sort function not being applied to nested keys. When providing a custom `sort` function (e.g., for case-insensitive sorting to match locize's behavior), the sorting logic is now correctly applied throughout the entire object hierarchy, not just at the top level. This ensures consistent key ordering at all nesting levels in translation files. [#106](https://github.com/i18next/i18next-cli/issues/106)
