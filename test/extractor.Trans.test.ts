@@ -1071,4 +1071,399 @@ describe('extractor: advanced Trans features', () => {
       compact: 'First<br />Second',
     })
   })
+
+  it('should handle inline component in middle of word (no newlines)', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.inlineMiddle">
+            wo<b>r</b>d
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        inlineMiddle: 'wo<1>r</1>d',
+      },
+    })
+  })
+
+  it.skip('should handle inline component in middle of word (with newlines)', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.inlineMiddleMultiline">
+            wo
+            <b>r</b>d
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        inlineMiddleMultiline: 'wo<1>r</1>d',
+      },
+    })
+  })
+
+  it('should handle component at start of text', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.componentStart">
+            <b>start</b>text
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        componentStart: '<0>start</0>text',
+      },
+    })
+  })
+
+  it('should handle component at end of text', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.componentEnd">
+            text<b>end</b>
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        componentEnd: 'text<1>end</1>',
+      },
+    })
+  })
+
+  it.skip('should handle TextLink between words with newlines (no spaces)', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.noSpaces">
+            word
+            <TextLink to="/path">link</TextLink>
+            word
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        noSpaces: 'word<1>link</1>word',
+      },
+    })
+  })
+
+  it('should handle TextLink between words with explicit spaces', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.withSpaces">
+            word <TextLink to="/path">link</TextLink> word
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        withSpaces: 'word <1>link</1> word',
+      },
+    })
+  })
+
+  it('should handle multiple inline components without spaces', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.multipleInline">
+            first<b>middle</b>last
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        multipleInline: 'first<1>middle</1>last',
+      },
+    })
+  })
+
+  it.skip('should handle multiline with TextLink and no spaces', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.multilineNoSpaces">
+            line one
+            <TextLink to="/path">link</TextLink>
+            line two
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        multilineNoSpaces: 'line one<1>link</1>line two',
+      },
+    })
+  })
+
+  it('should handle multiline with TextLink and explicit JSX spaces', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.multilineWithSpaces">
+            line one{" "}
+            <TextLink to="/path">
+              linkthatisveryverylong
+            </TextLink>{" "}
+            longword that is very long
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        multilineWithSpaces: 'line one <2>linkthatisveryverylong</2> longword that is very long',
+      },
+    })
+  })
+
+  it.skip('should handle nested components with newlines', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.nested">
+            before
+            <b>
+              nested
+              <TextLink to="/path">inner</TextLink>
+            </b>
+            after
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        nested: 'before<1>nested<1>inner</1></1>after',
+      },
+    })
+  })
+
+  it('should handle single line with tight component', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.singleLine">
+            prefix<b>suffix</b>
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        singleLine: 'prefix<1>suffix</1>',
+      },
+    })
+  })
+
+  it('should handle tight spacing with multiple components', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.tightSpacing">
+            start<b>middle</b>end
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        tightSpacing: 'start<1>middle</1>end',
+      },
+    })
+  })
+
+  it.skip('should handle component with text content and newlines', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.componentWithText">
+            text
+            <TextLink to="/path">link text</TextLink>
+            more text
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        componentWithText: 'text<1>link text</1>more text',
+      },
+    })
+  })
+
+  it.skip('should handle multiple different components with mixed spacing', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      
+      function Component() {
+        const { t } = useTranslation();
+        
+        return (
+          <Trans t={t} i18nKey="example.multipleComponents">
+            word<b>r</b>d<TextLink to="/path">link</TextLink>
+            word
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        multipleComponents: 'word<1>r</1>d<3>link</3>word',
+      },
+    })
+  })
 })
