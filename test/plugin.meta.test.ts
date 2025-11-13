@@ -101,6 +101,8 @@ const mockConfig: I18nextToolkitConfig = {
 describe('plugin system: location metadata', () => {
   beforeEach(async () => {
     vol.reset()
+    vol.fromJSON({}) // Ensure clean slate
+    ;(vol as any).releasedFds = []
     vi.clearAllMocks()
   })
 
@@ -389,5 +391,71 @@ describe('plugin system: location metadata', () => {
     // Only the key with locations should be in metadata
     expect(metadata).toHaveProperty('translation:normal.key')
     expect(metadata).not.toHaveProperty('manual:key')
+  })
+
+  it('should track correct line and column numbers for each key occurrence', async () => {
+    const { glob } = await import('glob')
+    ;(glob as any).mockResolvedValueOnce(['src/App.tsx'])
+
+    const code = `import { useTranslation } from 'react-i18next'
+
+function Component() {
+  const { t } = useTranslation()
+  
+  return (
+    <div>
+      <h1>{t('key.one', 'First')}</h1>
+      <p>{t('key.two', 'Second')}</p>
+      <span>{t('key.three', 'Third')}</span>
+      <footer>{t('key.one', 'First again')}</footer>
+    </div>
+  )
+}
+`
+
+    vol.fromJSON({
+      'src/App.tsx': code,
+    })
+
+    const { allKeys: keys } = await findKeys(mockConfig)
+
+    // Verify key.one appears twice with DIFFERENT line numbers
+    const keyOne = keys.get('translation:key.one')
+    expect(keyOne?.locations).toBeDefined()
+    expect(keyOne?.locations).toHaveLength(2)
+
+    const [firstOccurrence, secondOccurrence] = keyOne!.locations!
+
+    // First occurrence should be on line 8 (the h1 tag)
+    expect(firstOccurrence.line).toBe(8)
+    expect(firstOccurrence.column).toBeGreaterThan(0)
+
+    // Second occurrence should be on line 11 (the footer tag)
+    expect(secondOccurrence.line).toBe(11)
+    expect(secondOccurrence.column).toBeGreaterThan(0)
+
+    // They should NOT be the same line
+    expect(firstOccurrence.line).not.toBe(secondOccurrence.line)
+
+    // Verify other keys have correct line numbers
+    const keyTwo = keys.get('translation:key.two')
+    expect(keyTwo?.locations?.[0]?.line).toBe(9)
+
+    const keyThree = keys.get('translation:key.three')
+    expect(keyThree?.locations?.[0]?.line).toBe(10)
+
+    // Verify metadata file has correct positions
+    const metadataContent = await readFile('locales/metadata.json', 'utf-8')
+    const metadata = JSON.parse(metadataContent)
+
+    const keyOneLocations = metadata['translation:key.one']
+    expect(keyOneLocations).toHaveLength(2)
+    expect(keyOneLocations[0]).toMatch(/src\/App\.tsx:8:\d+/)
+    expect(keyOneLocations[1]).toMatch(/src\/App\.tsx:11:\d+/)
+
+    // Ensure they're not all pointing to the last line
+    const lastLine = code.split('\n').length
+    expect(keyOneLocations[0]).not.toMatch(new RegExp(`src/App\\.tsx:${lastLine}:`))
+    expect(keyOneLocations[1]).not.toMatch(new RegExp(`src/App\\.tsx:${lastLine}:`))
   })
 })

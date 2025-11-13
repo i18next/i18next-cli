@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.4](https://github.com/i18next/i18next-cli/compare/v1.24.3...v1.24.4) - 2025-11-13
+
+- **Location Metadata:** Fixed critical bug in location tracking where line and column numbers were consistently pointing to the end of file instead of actual usage positions. The extractor now uses text-based search instead of relying on SWC span offsets, which were accumulating across multiple files in the same process. This ensures accurate source location metadata for plugins that track where translation keys are used in the codebase. [#111](https://github.com/i18next/i18next-cli/issues/111)
+
 ## [1.24.3](https://github.com/i18next/i18next-cli/compare/v1.24.2...v1.24.3) - 2025-11-12
 
 - improved Trans component parsing further [#102](https://github.com/i18next/i18next-cli/issues/102)

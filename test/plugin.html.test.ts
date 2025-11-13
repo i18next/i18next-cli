@@ -149,7 +149,7 @@ describe('plugin system: html', () => {
         nsIsImplicit: false,
         locations: [
           {
-            column: 7,
+            column: 8,
             file: 'src/App.tsx',
             line: 3,
           },

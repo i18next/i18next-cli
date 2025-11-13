@@ -9,33 +9,56 @@ export class JSXHandler {
   private pluginContext: PluginContext
   private expressionResolver: ExpressionResolver
   private getCurrentFile: () => string
-  private getCurrentCode: () => string // ✅ Add this
+  private getCurrentCode: () => string
+  private lastSearchIndex: number = 0
 
   constructor (
     config: Omit<I18nextToolkitConfig, 'plugins'>,
     pluginContext: PluginContext,
     expressionResolver: ExpressionResolver,
     getCurrentFile: () => string,
-    getCurrentCode: () => string // ✅ Add parameter
+    getCurrentCode: () => string
   ) {
     this.config = config
     this.pluginContext = pluginContext
     this.expressionResolver = expressionResolver
     this.getCurrentFile = getCurrentFile
-    this.getCurrentCode = getCurrentCode // ✅ Store it
+    this.getCurrentCode = getCurrentCode
   }
 
   /**
-   * Helper method to calculate line and column from byte offset.
+   * Reset the search index when starting to process a new file.
    */
-  private getLocationFromSpan (span: any): { line: number, column: number } | undefined {
-    if (!span || typeof span.start !== 'number') return undefined
+  public resetSearchIndex (): void {
+    this.lastSearchIndex = 0
+  }
 
+  /**
+   * Helper method to calculate line and column by searching for the JSX element in the code.
+   */
+  private getLocationFromNode (node: any): { line: number, column: number } | undefined {
     const code = this.getCurrentCode()
-    const offset = span.start
 
-    const upToOffset = code.substring(0, offset)
-    const lines = upToOffset.split('\n')
+    // For JSXElement, search for the opening tag
+    let searchText: string | undefined
+
+    if (node.type === 'JSXElement' && node.opening) {
+      const tagName = node.opening.name?.value
+      if (tagName) {
+        searchText = `<${tagName}`
+      }
+    }
+
+    if (!searchText) return undefined
+
+    const position = code.indexOf(searchText, this.lastSearchIndex)
+
+    if (position === -1) return undefined
+
+    this.lastSearchIndex = position + searchText.length
+
+    const upToPosition = code.substring(0, position)
+    const lines = upToPosition.split('\n')
 
     return {
       line: lines.length,
@@ -72,8 +95,8 @@ export class JSXHandler {
 
         const { contextExpression, optionsNode, defaultValue, hasCount, isOrdinal, serializedChildren } = extractedAttributes
 
-        // ✅ Extract location information using the helper method
-        const location = node.span ? this.getLocationFromSpan(node.span) : undefined
+        // Extract location information using the helper method
+        const location = this.getLocationFromNode(node)
         const locations = location
           ? [{
               file: this.getCurrentFile(),

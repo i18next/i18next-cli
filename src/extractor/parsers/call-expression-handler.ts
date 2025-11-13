@@ -11,6 +11,7 @@ export class CallExpressionHandler {
   public objectKeys = new Set<string>()
   private getCurrentFile: () => string
   private getCurrentCode: () => string
+  private lastSearchIndex: number = 0
 
   constructor (
     config: Omit<I18nextToolkitConfig, 'plugins'>,
@@ -29,18 +30,52 @@ export class CallExpressionHandler {
   }
 
   /**
-   * Helper method to calculate line and column from byte offset.
-   * SWC provides byte offsets in span.start, not line/column directly.
+   * Reset the search index when starting to process a new file.
+   * This should be called before processing each file.
    */
-  private getLocationFromSpan (span: any): { line: number, column: number } | undefined {
-    if (!span || typeof span.start !== 'number') return undefined
+  public resetSearchIndex (): void {
+    this.lastSearchIndex = 0
+  }
 
+  /**
+   * Helper method to calculate line and column from a position in the code.
+   * Uses string searching instead of SWC span offsets to avoid accumulation bugs.
+   */
+  private getLocationFromNode (node: any): { line: number, column: number } | undefined {
     const code = this.getCurrentCode()
-    const offset = span.start
 
-    // Calculate line and column from byte offset
-    const upToOffset = code.substring(0, offset)
-    const lines = upToOffset.split('\n')
+    // Extract searchable text from the node
+    // For CallExpression, we can search for the key argument
+    let searchText: string | undefined
+
+    if (node.type === 'CallExpression' && node.arguments.length > 0) {
+      const firstArg = node.arguments[0].expression
+
+      if (firstArg.type === 'StringLiteral') {
+        // Search for the string literal including quotes
+        searchText = firstArg.raw ?? `'${firstArg.value}'`
+      } else if (firstArg.type === 'TemplateLiteral') {
+        // For template literals, search for the backtick
+        searchText = '`'
+      }
+    }
+
+    if (!searchText) return undefined
+
+    // Search for the text starting from last known position
+    const position = code.indexOf(searchText, this.lastSearchIndex)
+
+    if (position === -1) {
+      // Not found - might be a parsing issue, skip location tracking
+      return undefined
+    }
+
+    // Update last search position for next search
+    this.lastSearchIndex = position + searchText.length
+
+    // Calculate line and column from the position
+    const upToPosition = code.substring(0, position)
+    const lines = upToPosition.split('\n')
 
     return {
       line: lines.length,
@@ -396,8 +431,8 @@ export class CallExpressionHandler {
 
       // 5. Default case: Add the simple key
       {
-        // ✅ Use the helper method to calculate proper line/column
-        const location = node.span ? this.getLocationFromSpan(node.span) : undefined
+        // ✅ Use the helper method to find location by searching the code
+        const location = this.getLocationFromNode(node)
 
         this.pluginContext.addKey({
           key: finalKey,
