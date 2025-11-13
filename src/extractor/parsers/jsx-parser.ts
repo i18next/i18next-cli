@@ -578,6 +578,10 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
   const globalSlots: any[] = []
   collectSlots(children, globalSlots, false, true)
 
+  // Track ELEMENT NODES that MUST be tight (no spaces) because the element splits a word across a newline.
+  // We'll map these node refs to numeric global indices later before string cleanup.
+  const tightNoSpaceNodes = new Set<any>()
+
   // Trim only newline-only indentation at the edges of serialized inner text.
   // This preserves single leading/trailing spaces which are meaningful between inline placeholders.
   const trimFormattingEdges = (s: string) =>
@@ -624,6 +628,34 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             // If nothing left after trimming, skip this node
             continue
           }
+
+          // If previous node is a non-preserved element (an indexed placeholder)
+          // and the current text starts with a formatting newline, detect
+          // the "word-split" scenario: previous meaningful text (before the element)
+          // ends with an alnum char and this trimmed text starts with alnum.
+          // In that case do NOT insert any separating space — the inline element
+          // split a single word across lines.
+          if (!prevIsPreservedTag && /^\s*\n\s*/.test(node.value)) {
+            const trimmedValue = node.value.replace(/^\s*\n\s*/, '')
+            if (trimmedValue) {
+              const prevPrev = nodes[i - 2]
+              if (prevPrev && prevPrev.type === 'JSXText') {
+                const prevPrevTrimmed = prevPrev.value.replace(/\n\s*$/, '')
+                const prevEndsAlnum = /[A-Za-z0-9]$/.test(prevPrevTrimmed)
+                const nextStartsAlnum = /^[A-Za-z0-9]/.test(trimmedValue)
+                const nextStartsLowercase = /^[a-z]/.test(trimmedValue)
+                if (prevEndsAlnum && nextStartsAlnum && nextStartsLowercase) {
+                  // word-split: do NOT insert a space
+                  out += trimmedValue
+                  continue
+                }
+              }
+              // non-word-split: insert a separating space before the trimmed text
+              out += ' ' + trimmedValue
+              continue
+            }
+            continue
+          }
         }
 
         // If this text node ends with newline+whitespace and is followed by an element,
@@ -648,8 +680,13 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
               !isFormattingWhitespace(nodeAfterNext) &&
               /[a-zA-Z0-9]/.test(nodeAfterNext.value)
 
+            // Does the next element have attributes? (helps decide spacing for tags like <a href="...">)
+            const nextHasAttrs = !!(nextNode.opening && Array.isArray((nextNode.opening as any).attributes) && (nextNode.opening as any).attributes.length > 0)
+
             // Preserve leading whitespace
-            const hasLeadingSpace = /^\s/.test(textWithoutTrailingNewline)
+            // Only treat a real leading space (not a leading newline + indentation) as "leading space"
+            const hasLeadingSpace = /^\s/.test(textWithoutTrailingNewline) && !/^\n/.test(textWithoutTrailingNewline)
+
             const trimmed = textWithoutTrailingNewline.trim()
             const withLeading = hasLeadingSpace ? ' ' + trimmed : trimmed
 
@@ -657,7 +694,46 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             // 1. There was an explicit space before the newline, OR
             // 2. The next element is NOT a preserved tag AND has text after (word boundary)
             //    Preserved tags like <br />, <p>, etc. provide their own separation
-            if (hasSpaceBeforeNewline || (isPreservedTag && nextHasChildren) || (!isPreservedTag && hasTextAfter)) {
+            // Require an explicit leading space for the "non-preserved + hasTextAfter" case
+            // Detect "word-split" case more strictly:
+            // - previous trimmed ends with alnum
+            // - the text after the element starts with alnum
+            // - there was no explicit space before the newline and no explicit leading space,
+            // - AND the text-after does NOT itself start with an explicit space.
+            const prevEndsWithAlnum = /[A-Za-z0-9]$/.test(trimmed)
+            const nextStartsWithAlnum = nodeAfterNext && typeof nodeAfterNext.value === 'string' && /^[A-Za-z0-9]/.test(nodeAfterNext.value.trim())
+            const nextStartsWithLowercase = nodeAfterNext && typeof nodeAfterNext.value === 'string' && /^[a-z]/.test(nodeAfterNext.value.trim())
+            const nextHasLeadingSpace = nodeAfterNext && typeof nodeAfterNext.value === 'string' && /^\s/.test(nodeAfterNext.value)
+
+            // Only treat as a word-split (no space) when the following word begins
+            // with a lowercase letter — this avoids removing spaces between separate
+            // capitalized / distinct words like "First <1>Second".
+            const shouldInsertForNextWithAttrs = nextHasAttrs && nextHasChildren && hasTextAfter && !(
+              prevEndsWithAlnum &&
+              nextStartsWithAlnum &&
+              nextStartsWithLowercase &&
+              !hasSpaceBeforeNewline &&
+              !hasLeadingSpace &&
+              !nextHasLeadingSpace
+            )
+
+            // Persist a "tight" decision so post-normalization can remove any artificial
+            // spaces that were introduced by whitespace collapsing/newline handling.
+            // This ensures cases like "word\n  <1>link</1>\n  word" become "word<1>link</1>word".
+            const isWordSplitStrict = prevEndsWithAlnum && nextStartsWithAlnum && nextStartsWithLowercase && !hasSpaceBeforeNewline && !hasLeadingSpace && !nextHasLeadingSpace
+            if (isWordSplitStrict) {
+              // mark the actual element node; map to numeric index later
+              tightNoSpaceNodes.add(nextNode)
+            }
+
+            if (
+              hasSpaceBeforeNewline ||
+              (isPreservedTag && nextHasChildren) ||
+              // non-preserved with text after must have an explicit leading space
+              (!isPreservedTag && hasTextAfter && hasLeadingSpace) ||
+              // next element with attrs: only when not a word-split (see above)
+              shouldInsertForNextWithAttrs
+            ) {
               out += withLeading + ' '
             } else {
               out += withLeading
@@ -761,25 +837,35 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
               const inner = visitNodes(childrenLocal, undefined)
               out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
             } else {
+              // Determine the starting index for local child indexes:
+              // reuse the parent's global index so nested placeholders get
+              // indices consistent with parent indexing (avoid starting at 0).
+              const idx = localIndexMap && localIndexMap.has(node) ? localIndexMap.get(node) : globalSlots.indexOf(node)
               const childrenLocalMap = new Map<any, number>()
-              let localIdxCounter = 0
-              for (const ch of childrenLocal) {
+              let localIdxCounter = typeof idx === 'number' && idx >= 0 ? idx : 0
+
+              for (const ch of children) {
                 if (!ch) continue
                 if (ch.type === 'JSXElement') {
                   const chTag = ch.opening && ch.opening.name && ch.opening.name.type === 'Identifier'
                     ? ch.opening.name.value
                     : undefined
                   if (chTag && allowedTags.has(chTag)) {
+                    // Check if this child will be preserved as literal HTML
                     const chHasAttrs =
                       ch.opening &&
                       Array.isArray((ch.opening as any).attributes) &&
                       (ch.opening as any).attributes.length > 0
                     const chChildren = ch.children || []
-                    const chIsSingleText = chChildren.length === 1 && chChildren[0]?.type === 'JSXText'
-                    // Only skip indexing if it would be preserved as literal
-                    if (!chHasAttrs && (!chChildren.length || chIsSingleText)) {
-                      // Will be preserved, don't index
-                    } else {
+                    const chIsSinglePureText =
+                      chChildren.length === 1 && (
+                        chChildren[0]?.type === 'JSXText' ||
+                        (chChildren[0]?.type === 'JSXExpressionContainer' &&
+                          getStringLiteralFromExpression(chChildren[0].expression) !== undefined)
+                      )
+                    const chWillBePreserved = !chHasAttrs && (!chChildren.length || chIsSinglePureText)
+                    if (!chWillBePreserved) {
+                      // Will be indexed, add to local map
                       childrenLocalMap.set(ch, localIdxCounter++)
                     }
                   } else {
@@ -788,8 +874,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
                 }
               }
 
-              const idx = localIndexMap && localIndexMap.has(node) ? localIndexMap.get(node) : globalSlots.indexOf(node)
-              const inner = visitNodes(childrenLocal, childrenLocalMap.size ? childrenLocalMap : undefined)
+              const inner = visitNodes(children, childrenLocalMap.size ? childrenLocalMap : undefined)
               out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
             }
           } else {
@@ -914,7 +999,9 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
           } else {
             const childrenLocalMap = new Map<any, number>()
-            let localIdxCounter = 0
+            const idx = localIndexMap && localIndexMap.has(node) ? localIndexMap.get(node) : globalSlots.indexOf(node)
+            let localIdxCounter = typeof idx === 'number' && idx >= 0 ? idx : 0
+
             for (const ch of children) {
               if (!ch) continue
               if (ch.type === 'JSXElement') {
@@ -940,7 +1027,6 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
               }
             }
 
-            const idx = localIndexMap && localIndexMap.has(node) ? localIndexMap.get(node) : globalSlots.indexOf(node)
             const inner = visitNodes(children, childrenLocalMap.size ? childrenLocalMap : undefined)
             out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
           }
@@ -965,11 +1051,94 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
   // 1. First, handle <br /> followed by whitespace+newline (boundary formatting)
   const afterBrCleanup = String(result).replace(/<br \/>\s*\n\s*/g, '<br />')
 
-  // 2. Then normalize remaining whitespace sequences to single space
-  const normalized = afterBrCleanup.replace(/\s+/g, ' ')
+  const raw = String(afterBrCleanup)
 
-  // 3. Remove space before period at end
-  const finalResult = normalized.replace(/\s+\./g, '.')
+  const tightNoSpaceIndices = new Set<number>()
 
-  return finalResult.trim()
+  // Map node-based tight markers into numeric global-slot indices (used by later regex passes).
+  if (tightNoSpaceNodes && tightNoSpaceNodes.size > 0) {
+    for (let i = 0; i < globalSlots.length; i++) {
+      if (tightNoSpaceNodes.has(globalSlots[i])) tightNoSpaceIndices.add(i)
+    }
+  }
+
+  // 1) Remove spaces around explicitly-marked tight indices (word-splits)
+  let tmp = String(raw)
+  if (tightNoSpaceIndices && tightNoSpaceIndices.size > 0) {
+    for (const id of tightNoSpaceIndices) {
+      try {
+        tmp = tmp.replace(new RegExp('\\s+<' + id + '>', 'g'), '<' + id + '>')
+        tmp = tmp.replace(new RegExp('<\\/' + id + '>\\s+', 'g'), '</' + id + '>')
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  // 2) For non-tight placeholders, if there was a newline boundary between
+  //    a closing tag and following text OR between preceding text and an
+  //    opening tag, ensure a single separating space. This recovers spaces
+  //    that are semantically meaningful when the source had newline
+  //    boundaries but not a word-split.
+  tmp = tmp.replace(/<\/(\d+)>\s*\n\s*(\S)/g, (m, idx, after) => {
+    const id = Number(idx)
+    return tightNoSpaceIndices.has(id) ? `</${idx}>${after}` : `</${idx}> ${after}`
+  })
+  tmp = tmp.replace(/(\S)\s*\n\s*<(\d+)/g, (m, before, idx) => {
+    const id = Number(idx)
+    return tightNoSpaceIndices.has(id) ? `${before}<${idx}` : `${before} <${idx}`
+  })
+
+  // 3) Collapse remaining newlines/indentation and whitespace to single spaces,
+  //    remove space before period and trim.
+  tmp = tmp.replace(/\s*\n\s*/g, ' ')
+  tmp = tmp.replace(/\s+/g, ' ')
+  tmp = tmp.replace(/\s+\./g, '.')
+  const finalResult = tmp.trim()
+
+  // Final guaranteed cleanup for tight (word-split) placeholders:
+  // remove any spaces (including NBSP) left before opening or after closing numeric placeholders
+  // to ensure "word <1>link</1>word" -> "word<1>link</1>word" when marked tight.
+  let postFinal = String(finalResult)
+  if (tightNoSpaceIndices && tightNoSpaceIndices.size > 0) {
+    for (const id of tightNoSpaceIndices) {
+      try {
+        // remove ordinary whitespace and non-breaking space variants
+        postFinal = postFinal.replace(new RegExp('[\\s\\u00A0]+<' + id + '>', 'g'), '<' + id + '>')
+        postFinal = postFinal.replace(new RegExp('<\\/' + id + '>[\\s\\u00A0]+', 'g'), '</' + id + '>')
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  // Additional deterministic pass:
+  // If globalSlots show an element whose previous slot is JSXText ending with alnum
+  // and next slot is JSXText starting with alnum, and the original previous text did
+  // not have an explicit space-before-newline nor the next text a leading space,
+  // remove any single space left before the opening placeholder in the final string.
+  try {
+    for (let idx = 0; idx < globalSlots.length; idx++) {
+      const s = globalSlots[idx]
+      if (!s || s.type !== 'JSXElement') continue
+      const prev = globalSlots[idx - 1]
+      const next = globalSlots[idx + 1]
+      if (!prev || !next) continue
+      if (prev.type !== 'JSXText' || next.type !== 'JSXText') continue
+
+      const prevRaw = String(prev.value)
+      const nextRaw = String(next.value)
+      const prevTrimmed = prevRaw.replace(/\n\s*$/, '')
+      const prevEndsAlnum = /[A-Za-z0-9]$/.test(prevTrimmed)
+      const nextStartsAlnum = /^[A-Za-z0-9]/.test(nextRaw.trim())
+      const nextStartsLowercase = /^[a-z]/.test(nextRaw.trim())
+      const hasSpaceBeforeNewline = /\s\n/.test(prevRaw)
+      // Treat newline-leading indentation as NOT an explicit leading space.
+      const nextHasLeadingSpace = nextRaw && /^\s/.test(nextRaw) && !/^\n/.test(nextRaw)
+
+      // Only collapse the space for true word-splits where the next token starts lowercase.
+      if (prevEndsAlnum && nextStartsAlnum && nextStartsLowercase && !hasSpaceBeforeNewline && !nextHasLeadingSpace) {
+        const id = idx
+        postFinal = postFinal.replace(new RegExp('\\s+<' + id + '>', 'g'), '<' + id + '>')
+      }
+    }
+  } catch (e) { /* ignore */ }
+
+  return postFinal.trim()
 }

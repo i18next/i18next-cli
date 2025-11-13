@@ -1099,7 +1099,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.skip('should handle inline component in middle of word (with newlines)', async () => {
+  it('should handle inline component in middle of word (with newlines)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
       
@@ -1181,7 +1181,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.skip('should handle TextLink between words with newlines (no spaces)', async () => {
+  it('should handle TextLink between words with newlines (no spaces)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
       
@@ -1264,7 +1264,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.skip('should handle multiline with TextLink and no spaces', async () => {
+  it('should handle multiline with TextLink and no spaces', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
       
@@ -1324,7 +1324,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.skip('should handle nested components with newlines', async () => {
+  it('should handle nested components with newlines', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
       
@@ -1410,7 +1410,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.skip('should handle component with text content and newlines', async () => {
+  it('should handle component with text content and newlines', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
       
@@ -1439,7 +1439,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.skip('should handle multiple different components with mixed spacing', async () => {
+  it('should handle multiple different components with mixed spacing', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
       
