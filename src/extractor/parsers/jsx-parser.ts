@@ -689,6 +689,14 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           if (!prevIsPreservedTag && /^\s*\n\s*/.test(node.value)) {
             const trimmedValue = node.value.replace(/^\s*\n\s*/, '')
             if (trimmedValue) {
+              // If the previous element is a self-closing non-preserved element,
+              // do not insert an extra separating space — common for inline
+              // components like <NumberInput/>days
+              if (prevNode && prevNode.type === 'JSXElement' && Array.isArray(prevNode.children) && prevNode.children.length === 0) {
+                out += trimmedValue
+                continue
+              }
+
               const prevPrev = nodes[i - 2]
               if (prevPrev && prevPrev.type === 'JSXText') {
                 const prevPrevTrimmed = prevPrev.value.replace(/\n\s*$/, '')
@@ -878,7 +886,9 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
               out += `<${tag} />`
             } else {
               // Preserve with content: <strong>text</strong>
-              out += `<${tag}>${inner}</${tag}>`
+              // trim formatting-only edges inside preserved tags so surrounding
+              // newline/indentation doesn't leak into the preserved-inner text
+              out += `<${tag}>${trimFormattingEdges(inner)}</${tag}>`
             }
           } else if (hasAttrs && !isSinglePureTextChild) {
             // Has attributes -> treat as indexed element with numeric placeholder

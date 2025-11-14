@@ -1815,4 +1815,130 @@ describe('extractor: advanced Trans features', () => {
       },
     })
   })
+
+  it('should handle duration value with NumberInput and trailing text', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="example.durationValue">
+            <NumberInput
+              className="text-right"
+              value={1.5}
+              locale="en"
+              format={{
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1,
+              }}
+              onChange={(value) => {
+                if (value === null) return;
+              }}
+            />
+            days
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        durationValue: '<0></0>days',
+      },
+    })
+  })
+
+  it('should handle welcome message with bold name placeholder', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        const name = "John";
+        return (
+          <Trans i18nKey="example.welcomeMessage" values={{ name: "John" }} t={t}>
+            Welcome to the app, <b>{name}</b>!
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        welcomeMessage: 'Welcome to the app, <1>{{name}}</1>!',
+      },
+    })
+  })
+
+  it('should handle action description with strong and explicit spaces', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans i18nKey="example.actionDescription">
+            This{" "}
+            <strong>
+              can affect the absences already recorded by your
+              employees
+            </strong>{" "}
+            to whom the model is assigned. Alternatively, you
+            can create a new working time model and assign your
+            employees to it.
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        actionDescription:
+          'This <strong>can affect the absences already recorded by your employees</strong> to whom the model is assigned. Alternatively, you can create a new working time model and assign your employees to it.',
+      },
+    })
+  })
+
+  it('should handle phone confirmation with bold app and phone placeholders', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        const phoneNumber = "1234567890";
+        return (
+          <Trans
+            t={t}
+            i18nKey="example.phoneConfirmation"
+            values={{
+              phoneNumber: "1234567890",
+            }}
+          >
+            Your user can now log into the <b>app</b> using the
+            mobile number <b>{phoneNumber}</b>.
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        phoneConfirmation:
+          'Your user can now log into the <1>app</1> using the mobile number <3>{{phoneNumber}}</3>.',
+      },
+    })
+  })
 })
