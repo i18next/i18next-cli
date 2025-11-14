@@ -1466,4 +1466,213 @@ describe('extractor: advanced Trans features', () => {
       },
     })
   })
+
+  it('should handle long single-line props without adding spaces', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="example.longPropsSingleLine">
+            text
+            <TextLink to="/very/long/path/that/spans/multiple/lines/and/keeps/going/and/going/and/going">link</TextLink>
+            more
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        longPropsSingleLine: 'text<1>link</1>more',
+      },
+    })
+  })
+
+  it('should handle long props with explicit spaces preserved', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="example.longPropsWithSpaces">
+            text{" "}
+            <TextLink to="/very/long/path/that/spans/multiple/lines/and/keeps/going/and/going/and/going">
+              link
+            </TextLink>{" "}
+            more
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        longPropsWithSpaces: 'text <2>link</2> more',
+      },
+    })
+  })
+
+  it('should handle long inline props on a tag spanning multiple lines', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="example.longPropsInline">
+            before
+            <b
+              className="very-long-class-name-that-spans-across-multiple-lines-and-contains-many-words"
+              data-testid="another-very-long-attribute-value-that-goes-on-and-on"
+            >
+              middle
+            </b>
+            after
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        longPropsInline: 'before<1>middle</1>after',
+      },
+    })
+  })
+
+  it('should handle nested long props with inner link', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="example.longPropsNested">
+            start
+            <b className="very-long-class-name-that-spans-across-multiple-lines-and-contains-many-words">
+              nested
+              <TextLink
+                to="/very/long/path/that/spans/multiple/lines/and/keeps/going/and/going/and/going"
+                className="another-very-long-class-name"
+              >
+                inner
+              </TextLink>
+            </b>
+            end
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        longPropsNested: 'start<1>nested<1>inner</1></1>end',
+      },
+    })
+  })
+
+  it('should handle multiple long-prop components in sequence', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="example.multipleLongProps">
+            first
+            <TextLink to="/very/long/path/that/spans/multiple/lines/and/keeps/going/and/going/and/going">
+              second
+            </TextLink>
+            third
+            <b
+              className="very-long-class-name-that-spans-across-multiple-lines-and-contains-many-words"
+              data-testid="another-very-long-attribute-value-that-goes-on-and-on"
+            >
+              fourth
+            </b>
+            fifth
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        multipleLongProps: 'first<1>second</1>third<3>fourth</3>fifth',
+      },
+    })
+  })
+
+  it('should handle self-closing component with long props', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="example.selfClosingLongProps">
+            text
+            <Custom
+              name="somethingverylongthatspansacrossmultiplelinesandkeepsgoingandgoingandgoing"
+              className="another-very-long-class-name-that-spans-across-multiple-lines"
+            />
+            more
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        selfClosingLongProps: 'text<1></1>more',
+      },
+    })
+  })
+
+  it('should preserve explicit space before punctuation after link', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="example.spaceBeforePunctuation">
+            In our{" "}
+            <TextLink to="/help/article">help article</TextLink>
+            , you will find the most important tips.
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        spaceBeforePunctuation: 'In our <2>help article</2>, you will find the most important tips.',
+      },
+    })
+  })
 })

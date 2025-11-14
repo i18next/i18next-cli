@@ -703,7 +703,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             const prevEndsWithAlnum = /[A-Za-z0-9]$/.test(trimmed)
             const nextStartsWithAlnum = nodeAfterNext && typeof nodeAfterNext.value === 'string' && /^[A-Za-z0-9]/.test(nodeAfterNext.value.trim())
             const nextStartsWithLowercase = nodeAfterNext && typeof nodeAfterNext.value === 'string' && /^[a-z]/.test(nodeAfterNext.value.trim())
-            const nextHasLeadingSpace = nodeAfterNext && typeof nodeAfterNext.value === 'string' && /^\s/.test(nodeAfterNext.value)
+            // Treat newline-leading indentation as NOT an explicit leading space.
+            const nextHasLeadingSpace = nodeAfterNext && typeof nodeAfterNext.value === 'string' && /^\s/.test(nodeAfterNext.value) && !/^\n/.test(nodeAfterNext.value)
 
             // Only treat as a word-split (no space) when the following word begins
             // with a lowercase letter — this avoids removing spaces between separate
@@ -1091,7 +1092,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
   //    remove space before period and trim.
   tmp = tmp.replace(/\s*\n\s*/g, ' ')
   tmp = tmp.replace(/\s+/g, ' ')
-  tmp = tmp.replace(/\s+\./g, '.')
+  // remove spaces before common punctuation (comma, semicolon, colon, question, exclamation, period)
+  tmp = tmp.replace(/\s+([,;:!?.])/g, '$1')
   const finalResult = tmp.trim()
 
   // Final guaranteed cleanup for tight (word-split) placeholders:
