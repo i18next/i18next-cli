@@ -1675,4 +1675,144 @@ describe('extractor: advanced Trans features', () => {
       },
     })
   })
+
+  it('should handle feedback description with br and nested button/text', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="example.feedbackDescription">
+            <br />
+            Your feedback will be incorporated into the further
+            development of this application and will be
+            discussed, evaluated, and prioritized by us in the
+            next step. Due to the large amount of feedback we
+            receive, we are unfortunately unable to respond to
+            each piece of feedback individually.
+            <br />
+            <br />
+            <b>
+              If you have any questions or problems, please
+              contact our{" "}
+              <Text
+                fontSize="inherit"
+                type="button"
+                as="button"
+                onClick={() => {
+                  // Example handler
+                }}
+              >
+                free support
+              </Text>
+              .
+            </b>
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+
+    const expectedDefaultValue =
+      '<br />Your feedback will be incorporated into the further development of this application and will be discussed, evaluated, and prioritized by us in the next step. Due to the large amount of feedback we receive, we are unfortunately unable to respond to each piece of feedback individually.<br /><br /><4>If you have any questions or problems, please contact our <2>free support</2>.</4>'
+
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        feedbackDescription: expectedDefaultValue,
+      },
+    })
+  })
+
+  it('should handle action warning with strong and explicit space', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="example.actionWarning">
+            This <strong>can affect existing records</strong>{" "}
+            associated with this item. Alternatively, you can
+            create a new item and assign it to your records.
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        actionWarning:
+          'This <strong>can affect existing records</strong> associated with this item. Alternatively, you can create a new item and assign it to your records.',
+      },
+    })
+  })
+
+  it('should handle permission info with explicit JSX space before TextLink', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="example.permissionInfo">
+            You can easily change the role, and thus the access
+            rights, of your users. To do this, navigate to the{" "}
+            <TextLink target="_blank" to="/settings/team">
+              team settings
+            </TextLink>
+            . There you can define a role for each user in their
+            individual settings.
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        permissionInfo:
+          'You can easily change the role, and thus the access rights, of your users. To do this, navigate to the <2>team settings</2>. There you can define a role for each user in their individual settings.',
+      },
+    })
+  })
+
+  it('should handle permission info with newline (no explicit space) before TextLink', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="example.permissionInfoNoSpace">
+            You can easily change the role, and thus the access
+            rights, of your users. To do this, navigate to the
+            <TextLink target="_blank" to="/settings/team">
+              team settings
+            </TextLink>
+            . There you can define a role for each user in their
+            individual settings.
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        permissionInfoNoSpace:
+          'You can easily change the role, and thus the access rights, of your users. To do this, navigate to the<1>team settings</1>. There you can define a role for each user in their individual settings.',
+      },
+    })
+  })
 })
