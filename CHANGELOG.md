@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.24.9](https://github.com/i18next/i18next-cli/compare/v1.24.8...v1.24.9) - 2025-11-16
 
-- Fix regression from v1.16.0 where a namespace prefix passed as an argument (e.g. to useTranslation or custom hooks) could be treated as part of the translation key, producing unexpected nested namespace objects in generated JSON files. [#112](https://github.com/i18next/i18next-cli/issues/112)
+- fix: a namespace prefix passed as an argument (e.g. to useTranslation or custom hooks) could be treated as part of the translation key, producing unexpected nested namespace objects in generated JSON files. [#112](https://github.com/i18next/i18next-cli/issues/112)
 
 ## [1.24.8](https://github.com/i18next/i18next-cli/compare/v1.24.7...v1.24.8) - 2025-11-14
 
