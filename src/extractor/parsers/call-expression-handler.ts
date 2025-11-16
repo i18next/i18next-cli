@@ -185,6 +185,7 @@ export class CallExpressionHandler {
 
     // Loop through each key found (could be one or more) and process it
     for (let i = 0; i < keysToProcess.length; i++) {
+      const originalKey = keysToProcess[i] // preserve original (possibly namespaced) form
       let key = keysToProcess[i]
       let ns: string | false | undefined
 
@@ -241,7 +242,13 @@ export class CallExpressionHandler {
       }
 
       const isLastKey = i === keysToProcess.length - 1
-      const dv = isLastKey ? (finalDefaultValue || key) : key
+      // Use the original (possibly namespaced) key as the default when no explicit
+      // default was provided and the source key contained a namespace prefix.
+      const dv = isLastKey
+        ? (typeof finalDefaultValue === 'string'
+            ? finalDefaultValue
+            : (nsSeparator && originalKey.includes(nsSeparator || ':') ? originalKey : key))
+        : key
 
       // Handle plurals, context, and returnObjects
       if (options) {

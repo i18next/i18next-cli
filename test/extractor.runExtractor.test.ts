@@ -1036,6 +1036,110 @@ describe('extractor: runExtractor', () => {
     }
   })
 
+  it('does not treat domain/namespace prefix as nested key when useTranslation receives a string namespace', async () => {
+    const sampleCode = `
+      import { Trans, useTranslation } from 'react-i18next';
+
+      export default function MyComponent() {
+        const { t } = useTranslation('en', 'myDomain');
+
+        return (
+          <>
+            <Trans i18nKey='myDomain:foo1.bar1' t={t} />
+            {t('myDomain:foo2.bar2')}
+          </>
+        );
+      }
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    await runExtractor(mockConfig)
+
+    const domainPath = resolve(process.cwd(), 'locales/en/myDomain.json')
+    const domainFileContent = await vol.promises.readFile(domainPath, 'utf-8')
+    const domainJson = JSON.parse(domainFileContent as string)
+
+    expect(domainJson).toEqual({
+      foo1: {
+        bar1: 'myDomain:foo1.bar1'
+      },
+      foo2: {
+        bar2: 'myDomain:foo2.bar2'
+      }
+    })
+
+    // Ensure the default translation file does not contain namespaced keys
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    try {
+      const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+      const translationJson = JSON.parse(translationFileContent as string)
+      expect(translationJson).not.toHaveProperty('myDomain:foo2.bar2')
+      expect(translationJson).not.toHaveProperty('myDomain:foo1.bar1')
+    } catch (error) {
+      // It's acceptable if translation.json does not exist
+      if ((error as any)?.code === 'ENOENT') {
+        expect(true).toBe(true)
+      } else {
+        throw error
+      }
+    }
+  })
+
+  it('handles custom async useTranslation hook (lng, ns) that returns t and is awaited', async () => {
+    const sampleCode = `
+      import { Trans } from 'react-i18next';
+
+      // custom async hook that initializes i18next and returns { t, i18n }
+      export const useTranslation = async (lng, ns) => {
+        // fake init - extractor only needs the call shape, not runtime behavior
+        return {
+          t: (k, v) => k,
+          i18n: {}
+        }
+      }
+
+      export default async function MyComponent() {
+        const { t } = await useTranslation('en', 'myDomain');
+
+        return (
+          <>
+            <Trans i18nKey='myDomain:foo1.bar1' t={t} />
+            {t('myDomain:foo2.bar2')}
+          </>
+        );
+      }
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    const config = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        // register the custom hook signature: first arg is lng, second is namespace
+        useTranslationNames: [{ name: 'useTranslation', nsArg: 1 }],
+      },
+    }
+
+    await runExtractor(config)
+
+    const domainPath = resolve(process.cwd(), 'locales/en/myDomain.json')
+    const domainFileContent = await vol.promises.readFile(domainPath, 'utf-8')
+    const domainJson = JSON.parse(domainFileContent as string)
+
+    expect(domainJson).toEqual({
+      foo1: {
+        bar1: 'myDomain:foo1.bar1'
+      },
+      foo2: {
+        bar2: 'myDomain:foo2.bar2'
+      }
+    })
+  })
+
   it('should extract commented t() calls with namespace from useTranslation scope', async () => {
     const sampleCode = `
       export const TranslatedAccessType = ({
