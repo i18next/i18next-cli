@@ -222,49 +222,48 @@ export class ScopeManager {
     // If we couldn't find a `t` function being declared, exit
     if (!variableName) return
 
-    // Extract namespace from useTranslation arguments.
-    // Respect explicit hookConfig positions (nsArg === -1 means "no namespace arg").
-    const firstArg = callExpr.arguments?.[0]?.expression
-    const secondArg = callExpr.arguments?.[1]?.expression
-    const thirdArg = callExpr.arguments?.[2]?.expression
+    // Position-driven extraction: respect hookConfig positions (nsArg/keyPrefixArg).
+    // nsArg === -1 means "no namespace arg"; keyPrefixArg === -1 means "no keyPrefix arg".
+    const nsArgIndex = hookConfig.nsArg ?? 0
+    const kpArgIndex = hookConfig.keyPrefixArg ?? 1
 
     let defaultNs: string | undefined
     let keyPrefix: string | undefined
 
-    // Helper: quick heuristic to detect language-like strings (e.g. "en", "en-US", "pt-BR")
+    // Early detection of react-i18next common form: useTranslation(lng, ns)
+    // Only apply for the built-in hook name to avoid interfering with custom hooks.
+    const first = callExpr.arguments?.[0]?.expression
+    const second = callExpr.arguments?.[1]?.expression
+    const third = callExpr.arguments?.[2]?.expression
     const looksLikeLanguage = (s: string) => /^[a-z]{2,3}([-_][A-Za-z0-9-]+)?$/i.test(s)
+    const isBuiltInLngNsForm = hookConfig.name === 'useTranslation' &&
+      first?.type === 'StringLiteral' &&
+      second?.type === 'StringLiteral' &&
+      looksLikeLanguage(first.value)
 
-    // If the hook config explicitly disables ns arg, do NOT treat first/second args as namespace.
-    const isLngNs = (hookConfig.nsArg === undefined || hookConfig.nsArg !== -1) &&
-      firstArg?.type === 'StringLiteral' &&
-      secondArg?.type === 'StringLiteral' &&
-      looksLikeLanguage(firstArg.value)
-
-    if (isLngNs) {
-      // useTranslation(lng, ns)
-      defaultNs = secondArg.value
-    } else if (hookConfig.nsArg !== -1 && firstArg?.type === 'StringLiteral') {
-      // useTranslation(ns)
-      defaultNs = firstArg.value
-    } else if (hookConfig.nsArg !== -1 && firstArg?.type === 'ArrayExpression' && firstArg.elements[0]?.expression.type === 'StringLiteral') {
-      defaultNs = firstArg.elements[0].expression.value
+    let kpArg
+    if (isBuiltInLngNsForm) {
+      // treat as useTranslation(lng, ns, [options])
+      defaultNs = second.value
+      // prefer third arg as keyPrefix (may be undefined)
+      kpArg = third
+    } else {
+      // Position-driven extraction: respect hookConfig positions (nsArg/keyPrefixArg).
+      if (nsArgIndex !== -1) {
+        const nsNode = callExpr.arguments?.[nsArgIndex]?.expression
+        if (nsNode?.type === 'StringLiteral') {
+          defaultNs = nsNode.value
+        } else if (nsNode?.type === 'ArrayExpression' && nsNode.elements[0]?.expression?.type === 'StringLiteral') {
+          defaultNs = nsNode.elements[0].expression.value
+        }
+      }
+      kpArg = kpArgIndex === -1 ? undefined : callExpr.arguments?.[kpArgIndex]?.expression
     }
 
-    // Parse keyPrefix: accept either { keyPrefix: 'x' } or a plain string arg or simple identifier/template literal
-    // When the call is useTranslation(lng, ns) prefer the 3rd arg for keyPrefix; otherwise use configured keyPrefixArg.
-    const possibleKeyPrefixArg = isLngNs ? thirdArg : callExpr.arguments?.[hookConfig.keyPrefixArg ?? 1]?.expression
-    const kpArg = possibleKeyPrefixArg
     if (kpArg?.type === 'ObjectExpression') {
-      const keyPrefixProp = kpArg.properties.find(
-        prop => prop.type === 'KeyValueProperty' &&
-                prop.key.type === 'Identifier' &&
-                prop.key.value === 'keyPrefix'
-      )
-      if (keyPrefixProp?.type === 'KeyValueProperty' && keyPrefixProp.value.type === 'StringLiteral') {
-        keyPrefix = keyPrefixProp.value.value
-      }
+      const kp = getObjectPropValue(kpArg, 'keyPrefix')
+      keyPrefix = typeof kp === 'string' ? kp : undefined
     } else if (kpArg?.type === 'StringLiteral') {
-      // allow keyPrefix as direct string argument
       keyPrefix = kpArg.value
     } else if (kpArg?.type === 'Identifier') {
       keyPrefix = this.resolveSimpleStringIdentifier(kpArg.value)
@@ -329,35 +328,38 @@ export class ScopeManager {
     // If we couldn't find a `t` function being declared, exit
     if (!variableName) return
 
-    const firstArg = callExpr.arguments?.[0]?.expression
-    const secondArg = callExpr.arguments?.[1]?.expression
-    const thirdArg = callExpr.arguments?.[2]?.expression
+    // Position-driven extraction: respect hookConfig positions (nsArg/keyPrefixArg).
+    const nsArgIndex = hookConfig.nsArg ?? 0
+    const kpArgIndex = hookConfig.keyPrefixArg ?? 1
 
     let defaultNs: string | undefined
     let keyPrefix: string | undefined
-    // Heuristic to detect language-like strings (e.g. "en", "pt-BR")
+
+    // Early detect useTranslation(lng, ns) for built-in hook name only
+    const first = callExpr.arguments?.[0]?.expression
+    const second = callExpr.arguments?.[1]?.expression
+    const third = callExpr.arguments?.[2]?.expression
     const looksLikeLanguage = (s: string) => /^[a-z]{2,3}([-_][A-Za-z0-9-]+)?$/i.test(s)
+    const isBuiltInLngNsForm = hookConfig.name === 'useTranslation' &&
+      first?.type === 'StringLiteral' &&
+      second?.type === 'StringLiteral' &&
+      looksLikeLanguage(first.value)
 
-    // Respect explicit hook configuration. If nsArg === -1, do not treat first/second arg as namespace.
-    const isLngNs = (hookConfig.nsArg === undefined || hookConfig.nsArg !== -1) &&
-      firstArg?.type === 'StringLiteral' &&
-      secondArg?.type === 'StringLiteral' &&
-      looksLikeLanguage(firstArg.value)
-
-    if (isLngNs) {
-      // useTranslation(lng, ns)
-      defaultNs = secondArg.value
-    } else if (hookConfig.nsArg !== -1 && firstArg?.type === 'StringLiteral') {
-      // useTranslation(ns)
-      defaultNs = firstArg.value
-    } else if (hookConfig.nsArg !== -1 && firstArg?.type === 'ArrayExpression' && firstArg.elements[0]?.expression.type === 'StringLiteral') {
-      defaultNs = firstArg.elements[0].expression.value
+    let kpArg
+    if (isBuiltInLngNsForm) {
+      defaultNs = second.value
+      kpArg = third
+    } else {
+      if (nsArgIndex !== -1) {
+        const nsNode = callExpr.arguments?.[nsArgIndex]?.expression
+        if (nsNode?.type === 'StringLiteral') defaultNs = nsNode.value
+        else if (nsNode?.type === 'ArrayExpression' && nsNode.elements[0]?.expression?.type === 'StringLiteral') {
+          defaultNs = nsNode.elements[0].expression.value
+        }
+      }
+      kpArg = kpArgIndex === -1 ? undefined : callExpr.arguments?.[kpArgIndex]?.expression
     }
 
-    // Determine keyPrefix: when using useTranslation(lng, ns) prefer the 3rd arg
-    // otherwise use the configured keyPrefixArg position.
-    const optionsArg = isLngNs ? thirdArg : callExpr.arguments?.[hookConfig.keyPrefixArg ?? 1]?.expression
-    const kpArg = optionsArg
     if (kpArg?.type === 'ObjectExpression') {
       const kp = getObjectPropValue(kpArg, 'keyPrefix')
       keyPrefix = typeof kp === 'string' ? kp : undefined
