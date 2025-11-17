@@ -281,3 +281,5 @@ const expandGlobs = async (patterns: string | string[] = []) => {
   const sets = await Promise.all(arr.map(p => glob(p || '', { nodir: true })))
   return Array.from(new Set(sets.flat()))
 }
+
+export { program }
