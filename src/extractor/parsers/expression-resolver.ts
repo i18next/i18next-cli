@@ -149,6 +149,44 @@ export class ExpressionResolver {
    * @returns An array of possible string values that the expression may produce.
    */
   private resolvePossibleStringValuesFromExpression (expression: Expression, returnEmptyStrings = false): string[] {
+    // Support selector-style arrow functions used by the selector API:
+    // e.g. ($) => $.path.to.key  ->  'path.to.key'
+    if (expression.type === 'ArrowFunctionExpression') {
+      try {
+        let body: any = expression.body
+        // Handle block body with return statement
+        if (body.type === 'BlockStatement') {
+          const returnStmt = body.stmts.find((s: any) => s.type === 'ReturnStatement')
+          if (returnStmt?.type === 'ReturnStatement' && returnStmt.argument) {
+            body = returnStmt.argument
+          } else {
+            return []
+          }
+        }
+
+        let current: any = body
+        const parts: string[] = []
+
+        while (current && current.type === 'MemberExpression') {
+          const prop = current.property
+          if (prop.type === 'Identifier') {
+            parts.unshift(prop.value)
+          } else if (prop.type === 'Computed' && prop.expression && prop.expression.type === 'StringLiteral') {
+            parts.unshift(prop.expression.value)
+          } else {
+            return []
+          }
+          current = current.object
+        }
+
+        if (parts.length > 0) {
+          return [parts.join('.')]
+        }
+      } catch {
+        return []
+      }
+    }
+
     if (expression.type === 'StringLiteral') {
       // Filter out empty strings as they should be treated as "no context" like i18next does
       return expression.value || returnEmptyStrings ? [expression.value] : []

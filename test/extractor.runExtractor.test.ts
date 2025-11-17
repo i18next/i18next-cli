@@ -953,6 +953,26 @@ describe('extractor: runExtractor', () => {
     })
   })
 
+  it('should extract i18nKey from arrow function returning property access', async () => {
+    const sampleCode = `
+      <Trans i18nKey={($) => $.welcome.agreeText}>
+        Agree
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    console.log(results)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      welcome: {
+        agreeText: 'Agree',
+      },
+    })
+  })
+
   it('should remove namespace prefix from i18nKey when ns prop is specified on Trans component', async () => {
     const sampleCode = `
       import { Trans } from 'react-i18next';
