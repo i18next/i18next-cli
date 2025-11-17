@@ -1,5 +1,5 @@
 import { vol } from 'memfs'
-import { vi, describe, it, expect, beforeEach } from 'vitest'
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { runExtractor, extract } from '../src/index'
 import type { I18nextToolkitConfig } from '../src/index'
 import { resolve } from 'path'
@@ -2269,6 +2269,100 @@ describe('extractor: runExtractor', () => {
         key3: 'a:b:c',
         key4: 'https://example.com',
       })
+    })
+  })
+
+  describe('extractor: indentation with and without mergeNamespaces', () => {
+    beforeEach(() => {
+      vol.reset()
+      vi.clearAllMocks()
+      vi.spyOn(process, 'cwd').mockReturnValue('/')
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('writes JSON with configured 6-space indentation for merged and non-merged outputs', async () => {
+      // Ensure glob returns our source file so the extractor actually processes it
+      const { glob } = await import('glob')
+      vi.mocked(glob).mockResolvedValue(['/src/App.tsx'])
+
+      // Case A: mergeNamespaces = true -> generator should write a per-language merged file
+      const sampleA = `
+        function App() {
+          t('translation:key', 'Value');
+          // also a plain defaultNS key
+          t('plain.key', 'Plain');
+        }
+      `
+      vol.fromJSON({
+        '/src/App.tsx': sampleA,
+      })
+
+      const configA: any = {
+        locales: ['en'],
+        extract: {
+          input: ['src/**/*.ts'],
+          // functional output: per-language file
+          output: (lng: string) => `locales/${lng}.json`,
+          outputFormat: 'json',
+          indentation: 6,
+          mergeNamespaces: true,
+          defaultNS: 'translation',
+          functions: ['t'],
+        },
+        plugins: [],
+      }
+
+      const updatedA = await runExtractor(configA, { isDryRun: false })
+      expect(updatedA).toBe(true)
+
+      const contentA = await vol.promises.readFile(resolve('/', 'locales/en.json'), 'utf8')
+
+      // Expect 6-space indentation for the namespace level and 12 for the nested key
+      expect(contentA).toContain('\n' + ' '.repeat(6) + '"translation": {')
+      expect(contentA).toContain('\n' + ' '.repeat(12) + '"key": "Value"')
+      // plain.key should be present under its nested structure with correct indentation
+      expect(contentA).toContain('\n' + ' '.repeat(12) + '"plain": {')
+      expect(contentA).toContain('\n' + ' '.repeat(18) + '"key": "Plain"')
+
+      // Case B: mergeNamespaces = false -> namespace file should still be written with 6-space indentation
+      // Start a fresh in-memory FS state for Case B to avoid colliding with the merged file
+      vol.reset()
+      // Ensure glob now returns the new source file for Case B
+      const { glob: glob2 } = await import('glob')
+      vi.mocked(glob2).mockResolvedValue(['/src/AppB.tsx'])
+      const sampleB = `
+        function App() {
+          t('key', 'Value');
+        }
+      `
+      vol.fromJSON({
+        '/src/AppB.tsx': sampleB,
+      })
+
+      const configB: any = {
+        locales: ['en'],
+        extract: {
+          input: ['src/**/*.ts'],
+          output: (lng: string, ns?: string) => `locales/${lng}.json`,
+          outputFormat: 'json',
+          indentation: 6,
+          mergeNamespaces: false,
+          defaultNS: 'translation',
+          functions: ['t'],
+        },
+        plugins: [],
+      }
+
+      const updatedB = await runExtractor(configB, { isDryRun: false })
+      expect(updatedB).toBe(true)
+
+      const contentB = await vol.promises.readFile(resolve('/', 'locales/en.json'), 'utf8')
+
+      // Expect 6-space indentation for the key when not merged
+      expect(contentB).toContain('\n' + ' '.repeat(6) + '"key": "Value"')
     })
   })
 })
