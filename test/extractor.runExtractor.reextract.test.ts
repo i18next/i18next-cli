@@ -183,4 +183,70 @@ describe('reproducer: plural re-extract corruption', () => {
     expect(en2).toEqual(en1)
     expect(ar2).toEqual(ar1)
   })
+
+  it('re-running extract with mergeNamespaces and indentation updates merged per-language file correctly', async () => {
+    const component = `
+      import { useTranslation } from 'react-i18next';
+
+      export const ReactComponent = () => {
+        const { t } = useTranslation();
+        return (
+          <div>
+            <p>{t('key', 'First')}</p>
+          </div>
+        );
+      };
+    `
+    await fs.writeFile(join(tempDir, 'components', 'ReactComponent.tsx'), component)
+
+    const outTemplate = normalizePath(join(tempDir, 'locales/{{language}}.json'))
+
+    const config1: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        mergeNamespaces: true,
+        input: normalizePath(join(tempDir, 'components/*.{ts,tsx,cts,mts}')),
+        output: outTemplate,
+        indentation: 6,
+      },
+    }
+
+    // First run -> produces merged per-language file with 2-space indentation
+    const updated1 = await runExtractor(config1, { isDryRun: false })
+    expect(updated1).toBe(true)
+
+    const enPath = join(tempDir, 'locales', 'en.json')
+    const content1 = await fs.readFile(enPath, 'utf-8')
+
+    // Sanity: initial file uses 2-space indentation
+    expect(content1).toContain('\n' + ' '.repeat(6) + '"translation": {')
+    expect(content1).toContain('\n' + ' '.repeat(12) + '"key": "First"')
+
+    // Modify source so extractor will update the file and change indentation to 6
+    const componentUpdated = `
+      import { useTranslation } from 'react-i18next';
+
+      export const ReactComponent = () => {
+        const { t } = useTranslation();
+        return (
+          <div>
+            <p>{t('key', 'First')}</p>
+            <p>{t('keyAnother', 'Second')}</p>
+          </div>
+        );
+      };
+    `
+    await fs.writeFile(join(tempDir, 'components', 'ReactComponent.tsx'), componentUpdated)
+
+    // Second run -> should rewrite the file with 6-space indentation
+    const updated2 = await runExtractor(config1, { isDryRun: false })
+    expect(updated2).toBe(true)
+
+    const content2 = await fs.readFile(enPath, 'utf-8')
+
+    // Expect the rewritten file to reflect 6-space indentation and updated value "Second".
+    expect(content2).toContain('\n' + ' '.repeat(6) + '"translation": {')
+    expect(content2).toContain('\n' + ' '.repeat(12) + '"key": "First"')
+    expect(content2).toContain('\n' + ' '.repeat(12) + '"keyAnother": "Second"')
+  })
 })
