@@ -55,32 +55,32 @@
   "devDependencies": {
     "@rollup/plugin-terser": "0.4.4",
     "@types/inquirer": "9.0.9",
-    "@types/node": "24.9.2",
-    "@types/react": "19.2.2",
-    "@vitest/coverage-v8": "4.0.4",
-    "eslint": "9.38.0",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.5",
+    "@vitest/coverage-v8": "4.0.10",
+    "eslint": "9.39.1",
     "eslint-plugin-import": "2.32.0",
-    "memfs": "4.50.0",
+    "memfs": "4.51.0",
     "neostandard": "0.12.2",
     "rollup-plugin-typescript2": "0.36.0",
     "ts-node": "10.9.2",
     "typescript": "5.9.3",
     "unplugin-swc": "1.5.8",
-    "vitest": "4.0.4"
+    "vitest": "4.0.10"
   },
   "dependencies": {
-    "@swc/core": "1.13.19",
+    "@swc/core": "1.15.2",
     "chalk": "5.6.2",
     "chokidar": "4.0.3",
     "commander": "14.0.2",
     "execa": "9.6.0",
     "glob": "11.0.3",
-    "i18next-resources-for-ts": "1.7.4",
+    "i18next-resources-for-ts": "1.8.0",
     "inquirer": "12.10.0",
     "jiti": "2.6.1",
     "jsonc-parser": "3.3.1",
     "minimatch": "10.1.1",
     "ora": "9.0.0",
-    "swc-walk": "1.0.0"
+    "swc-walk": "1.0.1"
   }
 }

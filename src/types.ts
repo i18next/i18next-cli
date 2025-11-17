@@ -148,6 +148,12 @@ export interface I18nextToolkitConfig {
 
     /** Path for the separate resources interface file */
     resourcesFile?: string;
+
+    /**
+     * Number of spaces or string to use for indentation when generating
+     * TypeScript definitions. Falls back to `extract.indentation` when unset.
+     */
+    indentation?: number | string;
   };
 
   /** Array of plugins to extend functionality */
