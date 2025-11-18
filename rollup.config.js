@@ -1,3 +1,4 @@
+import replace from '@rollup/plugin-replace'
 import terser from '@rollup/plugin-terser'
 import typescript from 'rollup-plugin-typescript2'
 import { readFile } from 'node:fs/promises'
@@ -32,6 +33,7 @@ export default {
     ...Object.keys(pkg.dependencies || {})
   ],
   plugins: [
+    replace({ __packageVersion__: pkg.version }),
     typescript(),
     terser() // minifies generated bundles
   ]
