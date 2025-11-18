@@ -29,12 +29,11 @@
     }
   },
   "scripts": {
-    "build": "npm run update-cli-meta && rm -rf dist && rollup -c && chmod +x dist/esm/cli.js && chmod +x dist/cjs/cli.js && echo '{\"type\":\"commonjs\"}' > dist/cjs/package.json && rm -rf types && tsc -d --declarationDir types --declarationMap --emitDeclarationOnly",
+    "build": "rm -rf dist && rollup -c && chmod +x dist/esm/cli.js && chmod +x dist/cjs/cli.js && echo '{\"type\":\"commonjs\"}' > dist/cjs/package.json && rm -rf types && tsc -d --declarationDir types --declarationMap --emitDeclarationOnly",
     "lint": "eslint .",
     "test": "npm run lint && vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "update-cli-meta": "node ./scripts/updateCliMeta.js",
     "preversion": "npm run test && npm run build",
     "postversion": "npm run build && git add . && git commit -m 'build' && git push && git push --tags"
   },
@@ -53,6 +52,7 @@
     "url": "https://github.com/i18next/i18next-cli/issues"
   },
   "devDependencies": {
+    "@rollup/plugin-replace": "6.0.3",
     "@rollup/plugin-terser": "0.4.4",
     "@types/inquirer": "9.0.9",
     "@types/node": "24.10.1",

@@ -23,7 +23,7 @@ const program = new Command()
 program
   .name('i18next-cli')
   .description('A unified, high-performance i18next CLI.')
-  .version('1.24.13')
+  .version('__packageVersion__') // This string is replaced with the actual version at build time by rollup
 
 // new: global config override option
 program.option('-c, --config <path>', 'Path to i18next-cli config file (overrides detection)')
@@ -281,3 +281,5 @@ const expandGlobs = async (patterns: string | string[] = []) => {
   const sets = await Promise.all(arr.map(p => glob(p || '', { nodir: true })))
   return Array.from(new Set(sets.flat()))
 }
+
+export { program }
