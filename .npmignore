@@ -1,22 +1,10 @@
-.DS_Store
-.eslintrc
-.gitignore
-.npmignore
-.editorconfig
-.vscode
-README.md
-.eslintignore
-test
-scripts
-docs
-typedoc.json
-.github
-.env
-.env.*
-.node-version
-.nvmrc
-eslint.config.js
-rollup.config.js
-vitest.config.js
-vitest.config.ts
-coverage
+# Ignore all files and directories
+**/*
+
+# Except these:
+!dist/**/*
+!types/**/*
+!LICENSE
+!package.json
+!README.md
+!tsconfig.json
