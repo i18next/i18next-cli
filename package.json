@@ -35,7 +35,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "preversion": "npm run test && npm run build",
-    "postversion": "npm run build && git add . && git commit -m 'build' && git push && git push --tags"
+    "postversion": "npm run build && git push && git push --tags"
   },
   "keywords": [
     "i18next",
