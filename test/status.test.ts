@@ -73,6 +73,50 @@ describe('status (summary view)', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- fr: [■■■■■■■■■■■■■■■□□□□□] 75% (3/4 keys)'))
   })
 
+  it('should handle flat translation files when defaultNS=false and mergeNamespaces=true', async () => {
+    // reproduce issue: flat keys (no namespace) + defaultNS=false + mergeNamespaces=true
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de', 'fr'],
+      extract: {
+        input: ['src/**/*.{ts,tsx}'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        defaultNS: false,
+        mergeNamespaces: true,
+      },
+    }
+
+    // source uses flat keys (no namespace prefixes)
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/file-flat.ts')]: `
+        import { t } from 'i18next'
+        t('a')
+        t('d')
+        t('c')
+        t('b')
+      `,
+      // flat translation files (no nested namespace objects)
+      [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({
+        a: 'Wert A',
+        b: 'Wert B',
+      }),
+      [resolve(process.cwd(), 'locales/fr/translation.json')]: JSON.stringify({
+        a: 'Valeur A',
+        b: 'Valeur B',
+        c: 'Valeur C',
+      }),
+    })
+
+    await runStatus(config)
+
+    // expect same sensible counts as namespaced case: 4 keys total, de=2/4, fr=3/4
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('🔑 Keys Found:         4'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('📚 Namespaces Found:   1'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de:'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('50% (2/4'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- fr:'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('75% (3/4'))
+  })
+
   it('should correctly calculate progress with multiple namespaces', async () => {
     vol.fromJSON({
       [resolve(process.cwd(), 'src/app.ts')]: `

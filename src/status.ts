@@ -111,12 +111,26 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
     const namespaces = new Map<string, any>()
 
     const mergedTranslations = mergeNamespaces
-      ? await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, locale))) || {}
+      // When merging namespaces we need to load the combined translation file.
+      // The combined file lives under the regular output pattern and must include a namespace.
+      // If defaultNS is explicitly false, fall back to the conventional "translation" file name.
+      ? await loadTranslationFile(
+        resolve(
+          process.cwd(),
+          getOutputPath(
+            config.extract.output,
+            locale,
+            (defaultNS === false ? 'translation' : (defaultNS || 'translation'))
+          )
+        )
+      ) || {}
       : null
 
     for (const [ns, keysInNs] of keysByNs.entries()) {
       const translationsForNs = mergeNamespaces
-        ? mergedTranslations?.[ns] || {}
+        // If mergedTranslations is a flat object (no nested namespace) prefer the root object
+        // when mergedTranslations[ns] is missing.
+        ? (mergedTranslations?.[ns] ?? mergedTranslations ?? {})
         : await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, locale, ns))) || {}
 
       let translatedInNs = 0
