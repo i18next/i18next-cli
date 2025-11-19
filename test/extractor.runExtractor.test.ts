@@ -1214,6 +1214,44 @@ describe('extractor: runExtractor', () => {
     })
   })
 
+  it('should apply keyPrefix from useTranslation to Trans component', async () => {
+    const sampleCode = `
+      import { Trans, useTranslation } from 'react-i18next';
+
+      function SurveyLinkFeatures() {
+        const { t } = useTranslation("home", { keyPrefix: "prefix" });
+
+        return (
+          <>
+            Direct {t("key.sub1", "Direct is working")}
+            <Trans t={t} i18nKey="key.sub2">
+              Trans misses prefix
+            </Trans>
+          </>
+        );
+      }
+    `
+
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    await runExtractor(mockConfig)
+
+    const homePath = resolve(process.cwd(), 'locales/en/home.json')
+    const homeFileContent = await vol.promises.readFile(homePath, 'utf-8')
+    const homeJson = JSON.parse(homeFileContent as string)
+
+    expect(homeJson).toEqual({
+      prefix: {
+        key: {
+          sub1: 'Direct is working',
+          sub2: 'Trans misses prefix',
+        },
+      },
+    })
+  })
+
   it('should extract commented t() calls with namespace from useTranslation scope', async () => {
     const sampleCode = `
       export const TranslatedAccessType = ({

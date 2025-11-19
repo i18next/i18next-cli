@@ -154,6 +154,35 @@ export class JSXHandler {
                 }
               })
             }
+
+            // APPLY keyPrefix from useTranslation to Trans component keys
+            if (scopeInfo?.keyPrefix) {
+              const keySeparator = this.config.extract.keySeparator ?? '.'
+              for (const ek of extractedKeys) {
+                // only apply prefix to keys that don't already contain a namespace (ek.key is already namespace-stripped)
+                let finalKey = ek.key
+                if (keySeparator !== false) {
+                  if (String(scopeInfo.keyPrefix).endsWith(String(keySeparator))) {
+                    finalKey = `${scopeInfo.keyPrefix}${finalKey}`
+                  } else {
+                    finalKey = `${scopeInfo.keyPrefix}${keySeparator}${finalKey}`
+                  }
+                } else {
+                  finalKey = `${scopeInfo.keyPrefix}${finalKey}`
+                }
+
+                // validate result does not create empty segments (robustness)
+                if (keySeparator !== false) {
+                  const segments = String(finalKey).split(String(keySeparator))
+                  if (segments.some(segment => segment.trim() === '')) {
+                    // this.logger?.warn?.(`Skipping applying keyPrefix due to empty segment: keyPrefix='${scopeInfo.keyPrefix}', key='${ek.key}'`)
+                    continue
+                  }
+                }
+
+                ek.key = finalKey
+              }
+            }
           }
         } else {
           const { ns } = extractedAttributes

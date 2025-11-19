@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.19](https://github.com/i18next/i18next-cli/compare/v1.24.18...v1.24.19) - 2025-11-19
+
+- fix(extractor): ensure `<Trans>` inherits `keyPrefix` from `useTranslation` when `t` is passed as a prop [#121](https://github.com/i18next/i18next-cli/issues/121)
+
 ## [1.24.18](https://github.com/i18next/i18next-cli/compare/v1.24.17...v1.24.18) - 2025-11-19
 
 - fix(status): correctly handle flat (no-namespace) translation files when extract.defaultNS = false and extract.mergeNamespaces = true [#120](https://github.com/i18next/i18next-cli/issues/120)
