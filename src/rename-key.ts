@@ -306,7 +306,40 @@ function replaceKeyWithRegex (
     }
   }
 
-  // Pattern 2: JSX i18nKey attribute - respect configured transComponents
+  // Pattern 2: Selector API arrow functions (e.g. t(($) => $.old.key) or i18n.t($ => $.old.key))
+  // Respect configured function names (including wildcard patterns)
+  for (const fnPattern of configuredFunctions) {
+    // Build a regex prefix for the function invocation (handles wildcard '*.t' -> '\w+\.t')
+    let patternPrefix: string
+    if (fnPattern.startsWith('*.')) {
+      const suffix = fnPattern.substring(1) // '.t'
+      patternPrefix = `\\w+${escapeRegex(suffix)}`
+    } else {
+      patternPrefix = escapeRegex(fnPattern)
+    }
+
+    // Try matching both the plain key and the ns-prefixed fullKey used in selector access
+    for (const original of [oldParts.fullKey, oldParts.key]) {
+      // Match forms like:
+      // t(($) => $.old.key)
+      // i18n.t($ => $.old.key.nested)
+      const selectorRegex = new RegExp(
+        `(\\b${patternPrefix}\\(\\s*\\(?\\s*([a-zA-Z_$][\\w$]*)\\s*\\)?\\s*=>\\s*)\\2\\.${escapeRegex(original)}(\\s*\\))`,
+        'g'
+      )
+
+      if (selectorRegex.test(newCode)) {
+        const replacementKey = getReplacementKey(original)
+        newCode = newCode.replace(selectorRegex, (match, prefix, param, suffix) => {
+          changes++
+          // Rebuild the arrow function while replacing only the property chain
+          return `${prefix}${param}.${replacementKey}${suffix}`
+        })
+      }
+    }
+  }
+
+  // Pattern 3: JSX i18nKey attribute - respect configured transComponents
   // const transComponents = config.extract.transComponents || ['Trans']
 
   // Create a pattern that matches i18nKey on any of the configured components

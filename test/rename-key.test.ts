@@ -528,4 +528,36 @@ const d = t(\`old.key\`)`
       expect(translation.flatkey).toBeUndefined()
     })
   })
+
+  describe('selector api', () => {
+    it('should rename keys used with the selector API', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json')
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), 't(($) => $.old.key)')
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/translation.json'),
+        JSON.stringify({ old: { key: 'Selector Value' } })
+      )
+
+      const result = await runRenameKey(config, 'old.key', 'new.key')
+
+      expect(result.success).toBe(true)
+
+      const updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      expect(updatedCode).toContain('t(($) => $.new.key)')
+
+      const updatedTranslation = JSON.parse(
+        await readFile(join(testDir, 'locales/en/translation.json'), 'utf-8')
+      )
+      expect(updatedTranslation.new.key).toBe('Selector Value')
+      expect(updatedTranslation.old?.key).toBeUndefined()
+    })
+  })
 })

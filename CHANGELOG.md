@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.15](https://github.com/i18next/i18next-cli/compare/v1.24.14...v1.24.15) - 2025-11-19
+
+- fix: rename-key fails when Selector API is used [#119](https://github.com/i18next/i18next-cli/issues/119)
+
 ## [1.24.14](https://github.com/i18next/i18next-cli/compare/v1.24.13...v1.24.14) - 2025-11-18
 
 - fix: patch glob sec vuln [#117](https://github.com/i18next/i18next-cli/pull/117)
