@@ -559,5 +559,35 @@ const d = t(\`old.key\`)`
       expect(updatedTranslation.new.key).toBe('Selector Value')
       expect(updatedTranslation.old?.key).toBeUndefined()
     })
+
+    it('should rename keys used with the selector API using bracket notation', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json')
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), 't(($) => $["Old Key"])')
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/translation.json'),
+        JSON.stringify({ 'Old Key': 'Selector Value' })
+      )
+
+      const result = await runRenameKey(config, 'Old Key', 'newKey')
+
+      expect(result.success).toBe(true)
+
+      const updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      expect(updatedCode).toContain('t(($) => $.newKey)')
+
+      const updatedTranslation = JSON.parse(
+        await readFile(join(testDir, 'locales/en/translation.json'), 'utf-8')
+      )
+      expect(updatedTranslation.newKey).toBe('Selector Value')
+      expect(updatedTranslation['Old Key']).toBeUndefined()
+    })
   })
 })

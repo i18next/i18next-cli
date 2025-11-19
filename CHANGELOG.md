@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.17](https://github.com/i18next/i18next-cli/compare/v1.24.16...v1.24.17) - 2025-11-19
+
+- improve rename-key when Selector API is used with bracket notation [#119](https://github.com/i18next/i18next-cli/issues/119)
+
 ## [1.24.16](https://github.com/i18next/i18next-cli/compare/v1.24.15...v1.24.16) - 2025-11-19
 
 - fix: note in generated i18next.d.ts [#119](https://github.com/i18next/i18next-cli/issues/119)

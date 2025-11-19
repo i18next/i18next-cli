@@ -320,20 +320,40 @@ function replaceKeyWithRegex (
 
     // Try matching both the plain key and the ns-prefixed fullKey used in selector access
     for (const original of [oldParts.fullKey, oldParts.key]) {
-      // Match forms like:
+      // Match dot-notation selector forms like:
       // t(($) => $.old.key)
       // i18n.t($ => $.old.key.nested)
-      const selectorRegex = new RegExp(
+      const selectorDotRegex = new RegExp(
         `(\\b${patternPrefix}\\(\\s*\\(?\\s*([a-zA-Z_$][\\w$]*)\\s*\\)?\\s*=>\\s*)\\2\\.${escapeRegex(original)}(\\s*\\))`,
         'g'
       )
 
-      if (selectorRegex.test(newCode)) {
+      if (selectorDotRegex.test(newCode)) {
         const replacementKey = getReplacementKey(original)
-        newCode = newCode.replace(selectorRegex, (match, prefix, param, suffix) => {
+        newCode = newCode.replace(selectorDotRegex, (match, prefix, param, suffix) => {
           changes++
-          // Rebuild the arrow function while replacing only the property chain
+          // Replace property chain with dot-notation replacement
           return `${prefix}${param}.${replacementKey}${suffix}`
+        })
+      }
+
+      // Match bracket-notation selector forms like:
+      // t(($) => $["Old Key"])
+      const selectorBracketRegex = new RegExp(
+        `(\\b${patternPrefix}\\(\\s*\\(?\\s*([a-zA-Z_$][\\w$]*)\\s*\\)?\\s*=>\\s*)\\2\\[\\s*(['"\`])${escapeRegex(original)}\\3\\s*\\](\\s*\\))`,
+        'g'
+      )
+
+      if (selectorBracketRegex.test(newCode)) {
+        const replacementKey = getReplacementKey(original)
+        const isIdentifier = (s: string) => /^[A-Za-z_$][\w$]*$/.test(s)
+        newCode = newCode.replace(selectorBracketRegex, (match, prefix, param, quote, suffix) => {
+          changes++
+          // If the replacement is a valid identifier, convert to dot-notation, otherwise keep bracket-notation
+          if (isIdentifier(replacementKey)) {
+            return `${prefix}${param}.${replacementKey}${suffix}`
+          }
+          return `${prefix}${param}[${quote}${replacementKey}${quote}]${suffix}`
         })
       }
     }
