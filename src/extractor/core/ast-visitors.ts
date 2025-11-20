@@ -125,6 +125,96 @@ export class ASTVisitors {
     if (node.type === 'Function' || node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression') {
       this.scopeManager.enterScope()
       isNewScope = true
+
+      const params = (node.params && Array.isArray(node.params)) ? node.params : (node.params || [])
+      for (const p of params) {
+        // handle common param shapes: Identifier, AssignmentPattern (default), RestElement ignored
+        let ident: any
+        if (!p) continue
+        if (p.type === 'Identifier') ident = p
+        else if (p.type === 'AssignmentPattern' && p.left && p.left.type === 'Identifier') ident = p.left
+        else if (p.type === 'RestElement' && p.argument && p.argument.type === 'Identifier') ident = p.argument
+
+        if (!ident || !ident.value) continue
+
+        // Try to locate TypeScript type node carried on the identifier.
+        const rawTypeAnn: any = (ident.typeAnnotation ?? p.typeAnnotation ?? (p.left && p.left.typeAnnotation)) as any
+        let typeAnn: any | undefined
+        if (rawTypeAnn) {
+          // SWC may wrap the actual TS type in a wrapper like TsTypeAnn / TsTypeAnnotation
+          if (rawTypeAnn.type === 'TsTypeAnn' || rawTypeAnn.type === 'TsTypeAnnotation') {
+            typeAnn = rawTypeAnn.typeAnnotation ?? rawTypeAnn
+          } else {
+            typeAnn = rawTypeAnn
+          }
+        } else {
+          typeAnn = undefined
+        }
+
+        // Small helpers to robustly extract the referenced type name and literal string
+        const extractTypeName = (ta: any): string | undefined => {
+          if (!ta) return undefined
+          // Identifier style: { type: 'Identifier', value: 'TFunction' } OR { name: 'TFunction' }
+          if (ta.typeName && (ta.typeName.type === 'Identifier')) return ta.typeName.value ?? ta.typeName.name
+          if (ta.typeName && ta.typeName.type === 'TsQualifiedName') {
+            // Qualified like Foo.TFunction -> try right side
+            const right = (ta.typeName.right ?? ta.typeName)
+            return right?.value ?? right?.name
+          }
+          if (ta.typeName && typeof ta.typeName === 'string') return ta.typeName
+          if (ta.type === 'Identifier') return ta.value ?? ta.name
+          if (ta.id) return ta.id?.value ?? ta.id?.name ?? ta.id
+          return undefined
+        }
+
+        const extractStringLiteralValue = (node: any): string | undefined => {
+          if (!node) return undefined
+          // shapes: TsLiteralType -> { literal: { type: 'StringLiteral', value: 'x' } }
+          if (node.type === 'TsLiteralType' && node.literal) return node.literal.value ?? node.literal.raw
+          if (node.type === 'StringLiteral' || node.type === 'Str' || node.type === 'Literal') return node.value ?? node.raw ?? node.value
+          if (node.literal && (node.literal.type === 'StringLiteral' || node.literal.type === 'Str')) return node.literal.value
+          // some SWC builds put the string directly on .value
+          if (typeof node.value === 'string') return node.value
+          // handle wrapped parameter like { params: [ ... ] } where a literal might be one level deeper
+          if (node.params && Array.isArray(node.params) && node.params[0]) return extractStringLiteralValue(node.params[0])
+          if (node.typeArguments && Array.isArray(node.typeArguments) && node.typeArguments[0]) return extractStringLiteralValue(node.typeArguments[0])
+          if (node.typeParameters && Array.isArray(node.typeParameters) && node.typeParameters[0]) return extractStringLiteralValue(node.typeParameters[0])
+          if (node.typeParams && Array.isArray(node.typeParams) && node.typeParams[0]) return extractStringLiteralValue(node.typeParams[0])
+          return undefined
+        }
+
+        // Detect TsTypeReference like: TFunction<"my-custom-namespace">
+        if (typeAnn && (typeAnn.type === 'TsTypeReference' || typeAnn.type === 'TsTypeRef' || typeAnn.type === 'TsTypeReference')) {
+          const finalTypeName = extractTypeName(typeAnn)
+          if (finalTypeName === 'TFunction') {
+            // support multiple AST shapes for type parameters:
+            // - typeAnn.typeParameters?.params?.[0]
+            // - typeAnn.typeArguments?.params?.[0]
+            // - typeAnn.typeParams?.[0] / typeAnn.params?.[0]
+            const candidates = [
+              typeAnn.typeParameters?.params?.[0],
+              typeAnn.typeParameters?.[0],
+              typeAnn.typeArguments?.params?.[0],
+              typeAnn.typeArguments?.[0],
+              typeAnn.typeParams?.params?.[0],
+              typeAnn.typeParams?.[0],
+              typeAnn.params?.[0],
+              typeAnn.args?.[0],
+              typeAnn.typeParameters, // fallback if it's directly the literal
+              typeAnn.typeArguments,
+              typeAnn.typeParams,
+            ]
+            let tp: any | undefined
+            for (const c of candidates) {
+              if (c) { tp = c; break }
+            }
+            const ns = extractStringLiteralValue(tp)
+            if (ns) {
+              this.scopeManager.setVarInScope(ident.value, { defaultNs: ns })
+            }
+          }
+        }
+      }
     }
 
     this.hooks.onBeforeVisitNode?.(node)

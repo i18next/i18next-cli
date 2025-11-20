@@ -2423,4 +2423,95 @@ describe('extractor: runExtractor', () => {
       expect(contentB).toContain('\n' + ' '.repeat(6) + '"key": "Value"')
     })
   })
+
+  it('should extract keys when using TFunction<"my-custom-namespace"> and create namespace file', async () => {
+    const sampleCode = `
+      import { z } from "zod";
+      import { TFunction } from "@/i18n";
+
+      export const createRegisterSchema = (
+        t: TFunction<"my-custom-namespace">,
+      ) => {
+        return z
+        .object({
+          email: z
+          .string({
+            required_error: t("Email is required"),
+          })
+          .email(t("Email is invalid")),
+
+          firstname: z
+          .string({
+            required_error: t("Firstname is required"),
+          })
+          .min(1, { message: t("Firstname is required") }),
+          lastname: z
+          .string({
+            required_error: t("Lastname is required"),
+          })
+          .min(1, { message: t("Lastname is required") }),
+          password: z
+          .string()
+          .min(
+            8,
+            t("Password must be at least {{symbols}} symbols", {
+              symbols: 8,
+            }),
+          )
+          .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).+$/, t("Password is weak")),
+
+          confirm: z.string(),
+          agree: z.literal(true, {
+            errorMap: () => ({ message: t("You must agree with the terms") }),
+          }),
+        })
+        .refine((data) => data.password === data.confirm, {
+          message: t("Password and Confirm mismatch"),
+          path: ["confirm"],
+        });
+      };
+
+      export const createLoginSchema = (
+        t: TFunction<"my-custom-namespace">,
+      ) => {
+        return z.object({
+          email: z
+          .string({
+            required_error: t("Email is required"),
+          })
+          .email(t("Email is invalid")),
+          password: z.string().min(
+            5,
+            t("Password must be at least {{symbols}} symbols", {
+              symbols: 5,
+            }),
+          ),
+        });
+      };
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    await runExtractor(mockConfig)
+
+    const nsPath = resolve(process.cwd(), 'locales/en/my-custom-namespace.json')
+    const nsContent = await vol.promises.readFile(nsPath, 'utf-8')
+    const nsJson = JSON.parse(nsContent as string)
+
+    // Expect that at least some keys from the file were extracted into the namespace file
+    expect(nsJson).toHaveProperty('Email is required')
+    expect(nsJson['Email is required']).toBe('Email is required')
+
+    // Ensure keys did not accidentally go to the default translation.json
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    try {
+      const translationContent = await vol.promises.readFile(translationPath, 'utf-8')
+      const translationJson = JSON.parse(translationContent as string)
+      expect(translationJson).not.toHaveProperty('Email is required')
+    } catch (err) {
+      // translation.json may not exist — that's fine
+      if ((err as any)?.code !== 'ENOENT') throw err
+    }
+  })
 })
