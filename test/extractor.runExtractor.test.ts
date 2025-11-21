@@ -2514,4 +2514,128 @@ describe('extractor: runExtractor', () => {
       if ((err as any)?.code !== 'ENOENT') throw err
     }
   })
+
+  it('should extract dotted TFunction namespaces (user repro) and create separate namespace files', async () => {
+    const apiSrc = `
+      // Centralized error extraction
+      import { TFunction, TNamespaceTranslationKeys } from "@/i18n";
+      import axios from "axios";
+      import { IErrorResponse } from "@/shared/types/api";
+
+      export async function extractErrorMessage(
+        error: unknown,
+        t: TFunction<"shared.services.api">
+      ): Promise<string> {
+        if (!axios.isAxiosError(error)) {
+          return t("Unknown Error");
+        }
+
+        const { response, code, message } = error;
+
+        if (!response) {
+          const translated = t(
+            code as TNamespaceTranslationKeys["shared.services.api"],
+            {},
+          );
+          return translated !== code ? translated : t("Unknown Error");
+        }
+
+        const {
+          code: resCode,
+          message: resMessage,
+          detail,
+        } = (response.data as IErrorResponse) || {};
+        let detailMessage = "";
+        if (detail) {
+          if (typeof detail === "string") {
+            detailMessage = detail;
+          } else if (typeof detail === "object") {
+            try {
+              detailMessage = JSON.stringify(detail, null, 2);
+            } catch {
+              detailMessage = String(detail);
+            }
+          }
+        }
+
+        const translated = resCode
+          ? t(resCode as TNamespaceTranslationKeys["shared.services.api"])
+          : "";
+
+        const baseMessage =
+          translated !== resCode ? translated : resMessage || t("Unknown Error");
+
+        return detailMessage ? \`\${baseMessage}\\n\\n\${detailMessage}\` : baseMessage;
+      }
+
+      export async function dummyTranslationsForScanner(
+        t: TFunction<"shared.services.api">
+      ) {
+        return [
+          t("ERR_NETWORK"),
+          t("ERR_BAD_RESPONSE"),
+        ];
+      }
+    `
+
+    const zodSrc = `
+      import { z } from "zod";
+      import { TFunction } from "@/i18n";
+
+      export const createRegisterSchema = (
+        t: TFunction<"features.feature2.lib.zod">,
+      ) => {
+        return z.object({
+          email: z.string({ required_error: t("Email is required") }).email(t("Email is invalid")),
+        });
+      };
+    `
+
+    // Ensure glob returns these specific files for the extractor run
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['/src/shared/services/api.ts', '/src/features/feature2/lib/zod.ts'])
+
+    vol.fromJSON({
+      '/src/shared/services/api.ts': apiSrc,
+      '/src/features/feature2/lib/zod.ts': zodSrc,
+    })
+
+    const cfg: any = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        nsSeparator: false,
+        keySeparator: false,
+        output: 'locales/{{language}}/{{namespace}}.json',
+      },
+    }
+
+    await runExtractor(cfg)
+
+    const apiPath = resolve(process.cwd(), 'locales/en/shared.services.api.json')
+    const zodPath = resolve(process.cwd(), 'locales/en/features.feature2.lib.zod.json')
+
+    const apiContent = await vol.promises.readFile(apiPath, 'utf-8')
+    const zodContent = await vol.promises.readFile(zodPath, 'utf-8')
+
+    const apiJson = JSON.parse(apiContent as string)
+    const zodJson = JSON.parse(zodContent as string)
+
+    expect(apiJson).toHaveProperty('Unknown Error')
+    expect(apiJson).toHaveProperty('ERR_NETWORK')
+
+    expect(zodJson).toHaveProperty('Email is required')
+    expect(zodJson).toHaveProperty('Email is invalid')
+
+    // Ensure default translation.json does not contain these namespaced keys
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    try {
+      const translationContent = await vol.promises.readFile(translationPath, 'utf-8')
+      const translationJson = JSON.parse(translationContent as string)
+      expect(translationJson).not.toHaveProperty('Unknown Error')
+      expect(translationJson).not.toHaveProperty('Email is required')
+    } catch (err) {
+      if ((err as any)?.code !== 'ENOENT') throw err
+    }
+  })
 })

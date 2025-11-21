@@ -122,7 +122,18 @@ export class ASTVisitors {
 
     let isNewScope = false
     // ENTER SCOPE for functions
-    if (node.type === 'Function' || node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression') {
+    // Accept many SWC/TS AST variants for function-like nodes (declarations, expressions, arrow functions)
+    if (
+      node.type === 'Function' ||
+      node.type === 'FunctionDeclaration' ||
+      node.type === 'FunctionDecl' ||
+      node.type === 'FnDecl' ||
+      node.type === 'ArrowFunctionExpression' ||
+      node.type === 'FunctionExpression' ||
+      node.type === 'MethodDefinition' ||
+      node.type === 'ClassMethod' ||
+      node.type === 'ObjectMethod'
+    ) {
       this.scopeManager.enterScope()
       isNewScope = true
 
@@ -131,11 +142,24 @@ export class ASTVisitors {
         // handle common param shapes: Identifier, AssignmentPattern (default), RestElement ignored
         let ident: any
         if (!p) continue
+        // direct identifier (arrow fn params etc)
         if (p.type === 'Identifier') ident = p
+        // default params: (x = ...) -> AssignmentPattern.left
         else if (p.type === 'AssignmentPattern' && p.left && p.left.type === 'Identifier') ident = p.left
+        // rest: (...args)
         else if (p.type === 'RestElement' && p.argument && p.argument.type === 'Identifier') ident = p.argument
+        // SWC/TS often wrap params: { pat: Identifier } or { pattern: Identifier } or FnParam/Param
+        else if ((p.type === 'Param' || p.type === 'FnParam' || p.type === 'Arg') && p.pat && p.pat.type === 'Identifier') ident = p.pat
+        else if ((p.type === 'Param' || p.type === 'FnParam' || p.type === 'Arg') && p.pattern && p.pattern.type === 'Identifier') ident = p.pattern
+        else if (p.pat && p.pat.type === 'Identifier') ident = p.pat
+        else if (p.pattern && p.pattern.type === 'Identifier') ident = p.pattern
+        // some parsers expose .param or .left.param shapes
+        else if ((p.left && p.left.param && p.left.param.type === 'Identifier')) ident = p.left.param
+        else if ((p.param && p.param.type === 'Identifier')) ident = p.param
 
-        if (!ident || !ident.value) continue
+        if (!ident) continue
+        const paramKey = (ident.value ?? ident.name) as string | undefined
+        if (!paramKey) continue
 
         // Try to locate TypeScript type node carried on the identifier.
         const rawTypeAnn: any = (ident.typeAnnotation ?? p.typeAnnotation ?? (p.left && p.left.typeAnnotation)) as any
@@ -210,7 +234,7 @@ export class ASTVisitors {
             }
             const ns = extractStringLiteralValue(tp)
             if (ns) {
-              this.scopeManager.setVarInScope(ident.value, { defaultNs: ns })
+              this.scopeManager.setVarInScope(paramKey, { defaultNs: ns })
             }
           }
         }

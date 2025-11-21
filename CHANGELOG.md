@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.21](https://github.com/i18next/i18next-cli/compare/v1.24.20...v1.24.21) - 2025-11-21
+
+- extractor: make TypeScript TFunction generic namespace detection robust across AST variants [#122](https://github.com/i18next/i18next-cli/issues/122)
+
 ## [1.24.20](https://github.com/i18next/i18next-cli/compare/v1.24.19...v1.24.20) - 2025-11-20
 
 - extractor: detect namespace from TypeScript TFunction generic (e.g. `TFunction<"my-custom-namespace">`) [#122](https://github.com/i18next/i18next-cli/issues/122)
