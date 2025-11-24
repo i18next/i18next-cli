@@ -9,7 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix(extractor): correctly compute numeric placeholders for nested JSX children in `<Trans>` (off-by-one caused by explicit {" "} expression and formatting whitespace), so extracted keys match react-i18next runtime behavior [#124](https://github.com/i18next/i18next-cli/issues/124)
 
-
 ## [1.24.21](https://github.com/i18next/i18next-cli/compare/v1.24.20...v1.24.21) - 2025-11-21
 
 - extractor: make TypeScript TFunction generic namespace detection robust across AST variants [#122](https://github.com/i18next/i18next-cli/issues/122)
