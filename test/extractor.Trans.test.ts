@@ -1941,4 +1941,37 @@ describe('extractor: advanced Trans features', () => {
       },
     })
   })
+
+  it('should handle Text children with explicit JSX space and correct indexes for reloadStep', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="example.reloadStep">
+            <Text
+              fontSize="20px"
+              style={{ marginRight: "6px" }}
+            >
+              1.{" "}
+            </Text>
+            <Text fontSize="20px" onClick={() => {}}>
+              Reload the page
+            </Text>
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      example: {
+        reloadStep: '<0>1. </0><1>Reload the page</1>',
+      },
+    })
+  })
 })

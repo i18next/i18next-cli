@@ -408,16 +408,13 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             }
           }
 
-          // For common simple content expressions, don't allocate a separate slot.
-          // However, if it's a pure-space StringLiteral ({" "}) we want to keep the
-          // special-space handling below, so only skip non-whitespace string literals.
+          // For any simple string expression inside a non-preserved parent with NO
+          // element children treat it as part of the parent (including {" "}),
+          // do NOT allocate a separate global slot. This avoids creating an
+          // extra placeholder for internal formatting-only expressions.
           const textVal = getStringLiteralFromExpression(n.expression)
           if (textVal !== undefined) {
-            const isPureSpaceNoNewline = /^\s*$/.test(textVal) && !textVal.includes('\n')
-            if (!isPureSpaceNoNewline) {
-              continue
-            }
-            // otherwise fall through to the pure-space handling below
+            continue
           } else if (exprType === 'Identifier' || exprType === 'MemberExpression' || exprType === 'CallExpression') {
             continue
           }
