@@ -78,10 +78,20 @@ export interface I18nextToolkitConfig {
     /** A list of JSX tag names whose content should be ignored when linting (e.g., 'code', 'pre'). */
     ignoredTags?: string[];
 
-    /** for linting: Optional accept-list of JSX attribute names to exclusively lint (takes precedence over ignoredAttributes). */
+    /** for linting: Optional accept-list of JSX attribute names to exclusively lint (takes precedence over ignoredAttributes).
+     *
+     * If not provided (and no `extract.acceptedAttributes` is set), the linter will fall back to a recommended
+     * built-in accepted-list of common translatable attributes (e.g. `alt`, `title`, `placeholder`, `aria-label`, ...).
+     * See README for the exact recommended list.
+     */
     acceptedAttributes?: string[];
 
-    /** for linting: Optional accept-list of JSX tag names to exclusively lint (takes precedence over ignoredTags). */
+    /** for linting: Optional accept-list of JSX tag names to exclusively lint (takes precedence over ignoredTags).
+     *
+     * If not provided (and no `extract.acceptedTags` is set), the linter will fall back to a recommended
+     * built-in accepted-list of common content-bearing tags (e.g. `p`, `span`, `div`, `button`, `label`, ...).
+     * See README for the exact recommended list.
+     */
     acceptedTags?: string[];
 
     /** HTML tags to preserve in Trans component serialization (default: ['br', 'strong', 'i']) */
@@ -149,10 +159,20 @@ export interface I18nextToolkitConfig {
     /** A list of JSX tag names whose content should be ignored when linting (e.g., 'code', 'pre'). */
     ignoredTags?: string[];
 
-    /** Optional accept-list of JSX attribute names to exclusively lint (takes precedence over ignoredAttributes). */
+    /** for linting: Optional accept-list of JSX attribute names to exclusively lint (takes precedence over ignoredAttributes).
+     *
+     * If not provided (and no `extract.acceptedAttributes` is set), the linter will fall back to a recommended
+     * built-in accepted-list of common translatable attributes (e.g. `alt`, `title`, `placeholder`, `aria-label`, ...).
+     * See README for the exact recommended list.
+     */
     acceptedAttributes?: string[];
 
-    /** Optional accept-list of JSX tag names to exclusively lint (takes precedence over ignoredTags). */
+    /** for linting: Optional accept-list of JSX tag names to exclusively lint (takes precedence over ignoredTags).
+     *
+     * If not provided (and no `extract.acceptedTags` is set), the linter will fall back to a recommended
+     * built-in accepted-list of common content-bearing tags (e.g. `p`, `span`, `div`, `button`, `label`, ...).
+     * See README for the exact recommended list.
+     */
     acceptedTags?: string[];
   };
 

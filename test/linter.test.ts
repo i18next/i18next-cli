@@ -120,6 +120,8 @@ describe('Linter (core logic)', () => {
         ...mockConfig.extract,
       },
       lint: {
+        acceptedTags: [],
+        acceptedAttributes: [],
         ignoredAttributes: ['data-testid'], // Add custom rule for this test
       },
     }
@@ -531,6 +533,7 @@ describe('Linter (core logic)', () => {
         ...mockConfig.extract,
       },
       lint: {
+        acceptedTags: [],
         // Only these attributes should be linted; everything else ignored.
         acceptedAttributes: ['alt', 'title'],
       },
@@ -591,6 +594,7 @@ describe('Linter (core logic)', () => {
       ...mockConfig,
       extract: { ...mockConfig.extract },
       lint: {
+        acceptedTags: [],
         acceptedAttributes: ['alt'],
         ignoredAttributes: ['alt', 'data-testid'],
       },
@@ -735,5 +739,98 @@ describe('Linter (core logic)', () => {
     expect(result.success).toBe(false)
     expect(result.files['/src/App.tsx']).toHaveLength(1)
     expect(result.files['/src/App.tsx'][0].text).toBe('This inner paragraph should be flagged despite outer wrappers')
+  })
+
+  it('defaults: recommendedAcceptedAttributes are applied when no acceptedAttributes provided', async () => {
+    const sampleCode = `
+      <div>
+        <img alt="Alt default text" title="Default title text" />
+      </div>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(mockConfig)
+
+    expect(result.success).toBe(false)
+    // Both alt and title are in the recommended attribute whitelist and should be reported
+    expect(result.files['/src/App.tsx']).toHaveLength(2)
+    const texts = result.files['/src/App.tsx'].map(i => i.text)
+    expect(texts).toContain('Alt default text')
+    expect(texts).toContain('Default title text')
+  })
+
+  it('defaults: recommendedAcceptedTags are respected but default ignoredTags still win (code is ignored)', async () => {
+    const sampleCode = `
+      <div>
+        <p>Flagged by default list</p>
+        <code>Should NOT be flagged even if in recommended list</code>
+      </div>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(mockConfig)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('Flagged by default list')
+    // Ensure code content was not reported
+    expect(result.files['/src/App.tsx'].some(issue => issue.text.includes('Should NOT be flagged'))).toBe(false)
+  })
+
+  it('complex scenario: recommended defaults flag correct texts and attributes, while ignored tags/components are skipped', async () => {
+    const sampleCode = `
+      import { Trans } from 'react-i18next';
+
+      export default function App () {
+        return (
+          <>
+            <main>Welcome to My App</main>
+
+            <img alt="Site logo" title="Logo" data-testid="img1" />
+
+            <p>
+              <span>Nested text</span> and more
+            </p>
+
+            <code>
+              <p>Code snippet</p>
+              Some internal code comment
+            </code>
+
+            <button aria-label="Submit form">Sbm</button>
+
+            <div className="container" title="Div title">
+              Inner div
+            </div>
+
+            <Trans>
+              Don't flag this <strong>either</strong>
+            </Trans>
+          </>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(mockConfig)
+    // Expect findings from recommended tag/attribute defaults; Trans and code should be ignored.
+    expect(result.success).toBe(false)
+    const issues = result.files['/src/App.tsx']
+    expect(issues).toHaveLength(9)
+
+    const texts = issues.map(i => i.text)
+    expect(texts).toContain('Welcome to My App')
+    expect(texts).toContain('Site logo')       // img@alt
+    expect(texts).toContain('Logo')            // img@title
+    expect(texts).toContain('Nested text')     // span text
+    expect(texts).toContain('and more')        // tail text in p
+    expect(texts).toContain('Submit form')     // button@aria-label
+    expect(texts).toContain('Sbm')             // button inner text
+    expect(texts).toContain('Div title')       // div@title
+    expect(texts).toContain('Inner div')       // div inner text
+
+    // Ensure ignored content is not reported
+    expect(texts.some(t => t.includes('Code snippet'))).toBe(false)
+    expect(texts.some(t => t.includes("Don't flag this"))).toBe(false)
   })
 })

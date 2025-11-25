@@ -19,6 +19,13 @@ type LinterEventMap = {
   error: [error: Error];
 }
 
+const recommendedAcceptedTags = [
+  'a', 'abbr', 'address', 'article', 'aside', 'bdi', 'bdo', 'blockquote', 'button', 'caption', 'cite', 'code', 'data', 'dd', 'del', 'details', 'dfn', 'dialog', 'div', 'dt', 'em', 'figcaption', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'img', 'ins', 'kbd', 'label', 'legend', 'li', 'main', 'mark', 'nav', 'option', 'output', 'p', 'pre', 'q', 's', 'samp', 'section', 'small', 'span', 'strong', 'sub', 'summary', 'sup', 'td', 'textarea', 'th', 'time', 'title', 'var'
+].map(s => s.toLowerCase())
+const recommendedAcceptedAttributes = ['abbr', 'accesskey', 'alt', 'aria-description', 'aria-label', 'aria-placeholder', 'aria-roledescription', 'aria-valuetext', 'content', 'label', 'placeholder', 'summary', 'title'].map(s => s.toLowerCase())
+const defaultIgnoredAttributes = ['className', 'key', 'id', 'style', 'href', 'i18nKey', 'defaults', 'type', 'target'].map(s => s.toLowerCase())
+const defaultIgnoredTags = ['script', 'style', 'code']
+
 export class Linter extends EventEmitter<LinterEventMap> {
   private config: I18nextToolkitConfig
 
@@ -232,17 +239,18 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
   }
 
   const transComponents = (config.extract.transComponents || ['Trans']).map((s: string) => s.toLowerCase())
-
-  const defaultIgnoredAttributes = ['className', 'key', 'id', 'style', 'href', 'i18nKey', 'defaults', 'type', 'target'].map(s => s.toLowerCase())
-  const defaultIgnoredTags = ['script', 'style', 'code']
   const customIgnoredTags = (config?.lint?.ignoredTags || config.extract.ignoredTags || []).map((s: string) => s.toLowerCase())
   const allIgnoredTags = new Set([...transComponents, ...defaultIgnoredTags.map(s => s.toLowerCase()), ...customIgnoredTags])
   const customIgnoredAttributes = (config?.lint?.ignoredAttributes || config.extract.ignoredAttributes || []).map((s: string) => s.toLowerCase())
   const ignoredAttributes = new Set([...defaultIgnoredAttributes, ...customIgnoredAttributes])
-  const acceptedTagsList = (config?.lint?.acceptedTags && config.lint.acceptedTags.length > 0 ? config.lint.acceptedTags : config?.extract?.acceptedTags && config.extract.acceptedTags.length > 0 ? config.extract.acceptedTags : null)?.map((s: string) => s.toLowerCase()) ?? null
-  const acceptedAttributesList = (config?.lint?.acceptedAttributes && config.lint.acceptedAttributes.length > 0 ? config.lint.acceptedAttributes : config?.extract?.acceptedAttributes && config.extract.acceptedAttributes.length > 0 ? config.extract.acceptedAttributes : null)?.map((s: string) => s.toLowerCase()) ?? null
-  const acceptedTagsSet = acceptedTagsList ? new Set(acceptedTagsList) : null
-  const acceptedAttributesSet = acceptedAttributesList ? new Set(acceptedAttributesList) : null
+  const lintAcceptedTags = config?.lint?.acceptedTags ? config.lint.acceptedTags : null
+  const extractAcceptedTags = config?.extract?.acceptedTags ? config.extract.acceptedTags : null
+  const acceptedTagsList = (lintAcceptedTags ?? extractAcceptedTags ?? recommendedAcceptedTags)?.map((s: string) => s.toLowerCase()) ?? null
+  const lintAcceptedAttrs = config?.lint?.acceptedAttributes ? config.lint.acceptedAttributes : null
+  const extractAcceptedAttrs = config?.extract?.acceptedAttributes ? config.extract.acceptedAttributes : null
+  const acceptedAttributesList = (lintAcceptedAttrs ?? extractAcceptedAttrs ?? recommendedAcceptedAttributes)?.map((s: string) => s.toLowerCase()) ?? null
+  const acceptedTagsSet = acceptedTagsList && acceptedTagsList.length > 0 ? new Set(acceptedTagsList) : null
+  const acceptedAttributesSet = acceptedAttributesList && acceptedAttributesList.length > 0 ? new Set(acceptedAttributesList) : null
 
   // Helper: robustly extract a JSX element name from different node shapes
   const extractJSXName = (node: any): string | null => {
