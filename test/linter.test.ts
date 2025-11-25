@@ -89,6 +89,8 @@ describe('Linter (core logic)', () => {
       ...mockConfig,
       extract: {
         ...mockConfig.extract,
+      },
+      lint: {
         ignoredAttributes: ['data-testid'],
       },
     }
@@ -116,6 +118,8 @@ describe('Linter (core logic)', () => {
       ...mockConfig,
       extract: {
         ...mockConfig.extract,
+      },
+      lint: {
         ignoredAttributes: ['data-testid'], // Add custom rule for this test
       },
     }
@@ -192,8 +196,10 @@ describe('Linter (core logic)', () => {
       ...mockConfig,
       extract: {
         ...mockConfig.extract,
-        ignoredTags: ['blockquote'], // Tell the linter to ignore content inside <blockquote>
       },
+      lint: {
+        ignoredTags: ['blockquote'], // Tell the linter to ignore content inside <blockquote>
+      }
     }
 
     const sampleCode = `
@@ -333,6 +339,8 @@ describe('Linter (core logic)', () => {
       ...mockConfig,
       extract: {
         ...mockConfig.extract,
+      },
+      lint: {
         ignoredTags: ['svg', 'path'],
       },
     }
@@ -514,5 +522,218 @@ describe('Linter (core logic)', () => {
     expect(result).toBeDefined()
     // If it flags the hardcoded string the run is considered a successful run with findings (success=false).
     expect(typeof result.success).toBe('boolean')
+  })
+
+  it('should respect acceptedAttributes from config (opt-in attribute linting)', async () => {
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+      },
+      lint: {
+        // Only these attributes should be linted; everything else ignored.
+        acceptedAttributes: ['alt', 'title'],
+      },
+    }
+
+    const sampleCode = `
+      <div>
+        <img alt="An accepted alt text" title="Should also be accepted" data-testid="x" />
+      </div>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(customConfig)
+
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Linter found 2 potential issues')
+    expect(result.files['/src/App.tsx']).toHaveLength(2)
+
+    const texts = result.files['/src/App.tsx'].map(i => i.text)
+    expect(texts).toContain('An accepted alt text')
+    expect(texts).toContain('Should also be accepted')
+    // data-testid should NOT be flagged (assert exact value absence)
+    expect(texts.some(t => t === 'x')).toBe(false)
+  })
+
+  it('should respect acceptedTags from config (opt-in tag linting)', async () => {
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+      },
+      lint: {
+        // Only content inside <p> should be linted; other tags ignored.
+        acceptedTags: ['p'],
+      },
+    }
+
+    const sampleCode = `
+      <div>
+        <p>This should be flagged.</p>
+        <span>This should NOT be flagged.</span>
+      </div>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(customConfig)
+
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Linter found 1 potential issues')
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('This should be flagged.')
+    // Ensure span text was not reported
+    expect(result.files['/src/App.tsx'].some(issue => issue.text.includes('NOT be flagged'))).toBe(false)
+  })
+
+  it('acceptedAttributes should override ignoredAttributes (opt-in wins over ignore for attrs)', async () => {
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract },
+      lint: {
+        acceptedAttributes: ['alt'],
+        ignoredAttributes: ['alt', 'data-testid'],
+      },
+    }
+
+    const sampleCode = '<img alt="Explicitly accepted even though ignored" data-testid="should-not-flag" />'
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(customConfig)
+
+    // alt should be reported because acceptedAttributes takes precedence for attributes
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('Explicitly accepted even though ignored')
+  })
+
+  it('ignoredTags should override acceptedTags (explicit ignore wins for tags)', async () => {
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract },
+      lint: {
+        acceptedTags: ['p'],
+        ignoredTags: ['p'],
+      },
+    }
+
+    const sampleCode = `
+      <div>
+        <p>This should NOT be flagged because it is explicitly ignored</p>
+      </div>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(customConfig)
+
+    // p was both accepted and ignored; ignoredTags should cause it to be skipped
+    expect(result.success).toBe(true)
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
+  it('acceptedTags + ignoredTags: accept a set of tags but ignore nested technical tags (ignored wins)', async () => {
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract },
+      lint: {
+        acceptedTags: ['div', 'p'],
+        ignoredTags: ['code'], // content inside <code> must always be ignored
+      },
+    }
+
+    const sampleCode = `
+      <div>
+        <p>Should be flagged</p>
+        <code>
+          <p>Should NOT be flagged (inside ignored tag)</p>
+          Should also not be flagged.
+        </code>
+      </div>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(customConfig)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('Should be flagged')
+  })
+
+  it('acceptedTags + acceptedAttributes: only lint attributes on accepted tags and only the accepted attributes', async () => {
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract },
+      lint: {
+        acceptedTags: ['p'],
+        acceptedAttributes: ['title'],
+      },
+    }
+
+    const sampleCode = `
+      <div>
+        <p title="Flagged title">Text</p>
+        <span title="Also flagged title">Span</span>
+      </div>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(customConfig)
+
+    expect(result.success).toBe(false)
+    // Only the p@title and the p text should be reported; span title is outside acceptedTags
+    expect(result.files['/src/App.tsx']).toHaveLength(2)
+    expect(result.files['/src/App.tsx'][0].text).toBe('Flagged title')
+    expect(result.files['/src/App.tsx'][1].text).toBe('Text')
+  })
+
+  it('ignoredTags should override acceptedAttributes (being inside an ignored tag prevents reporting even for accepted attrs)', async () => {
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract },
+      lint: {
+        acceptedAttributes: ['title'],
+        ignoredTags: ['button'],
+      },
+    }
+
+    const sampleCode = `
+      <div>
+        <button title="Ignored because parent tag is ignored">
+          <div title="Also ignored because ancestor is an ignored tag"></div>
+        </button>
+      </div>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(customConfig)
+
+    // Nothing should be reported because the attributes are inside an ignored tag
+    expect(result.success).toBe(true)
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
+  it('acceptedTags should allow inner accepted tags to be linted even when outer wrappers are not accepted (nearest ancestor rule)', async () => {
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract },
+      lint: {
+        acceptedTags: ['p'],
+      },
+    }
+
+    const sampleCode = `
+      <section>
+        <div>
+          <p>This inner paragraph should be flagged despite outer wrappers</p>
+        </div>
+      </section>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(customConfig)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('This inner paragraph should be flagged despite outer wrappers')
   })
 })

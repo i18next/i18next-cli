@@ -207,17 +207,19 @@ const isUrlOrPath = (text: string) => /^(https|http|\/\/|^\/)/.test(text)
  * - Filters out ellipsis/spread operator notation `...`
  * - Only reports non-empty, trimmed strings
  *
- * @param ast - The parsed AST to analyze
- * @param code - Original source code for line number calculation
- * @param config - Configuration containing Trans component names
- * @returns Array of found hardcoded strings with location info
+ * @param config - The toolkit configuration with input patterns and component names
  *
  * @example
  * ```typescript
- * const issues = findHardcodedStrings(ast, sourceCode, config)
- * issues.forEach(issue => {
- *   console.log(`Line ${issue.line}: "${issue.text}"`)
- * })
+ * const config = {
+ *   extract: {
+ *     input: ['src/**\/*.{ts,tsx}'],
+ *     transComponents: ['Trans', 'Translation']
+ *   }
+ * }
+ *
+ * await runLinter(config)
+ * // Outputs issues found or success message
  * ```
  */
 function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitConfig): HardcodedString[] {
@@ -229,13 +231,18 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
     return code.substring(0, pos).split('\n').length
   }
 
-  const transComponents = config.extract.transComponents || ['Trans']
-  const defaultIgnoredAttributes = ['className', 'key', 'id', 'style', 'href', 'i18nKey', 'defaults', 'type', 'target']
+  const transComponents = (config.extract.transComponents || ['Trans']).map((s: string) => s.toLowerCase())
+
+  const defaultIgnoredAttributes = ['className', 'key', 'id', 'style', 'href', 'i18nKey', 'defaults', 'type', 'target'].map(s => s.toLowerCase())
   const defaultIgnoredTags = ['script', 'style', 'code']
-  const customIgnoredTags = config.extract.ignoredTags || []
-  const allIgnoredTags = new Set([...transComponents, ...defaultIgnoredTags, ...customIgnoredTags])
-  const customIgnoredAttributes = config.extract.ignoredAttributes || []
+  const customIgnoredTags = (config?.lint?.ignoredTags || config.extract.ignoredTags || []).map((s: string) => s.toLowerCase())
+  const allIgnoredTags = new Set([...transComponents, ...defaultIgnoredTags.map(s => s.toLowerCase()), ...customIgnoredTags])
+  const customIgnoredAttributes = (config?.lint?.ignoredAttributes || config.extract.ignoredAttributes || []).map((s: string) => s.toLowerCase())
   const ignoredAttributes = new Set([...defaultIgnoredAttributes, ...customIgnoredAttributes])
+  const acceptedTagsList = (config?.lint?.acceptedTags && config.lint.acceptedTags.length > 0 ? config.lint.acceptedTags : config?.extract?.acceptedTags && config.extract.acceptedTags.length > 0 ? config.extract.acceptedTags : null)?.map((s: string) => s.toLowerCase()) ?? null
+  const acceptedAttributesList = (config?.lint?.acceptedAttributes && config.lint.acceptedAttributes.length > 0 ? config.lint.acceptedAttributes : config?.extract?.acceptedAttributes && config.extract.acceptedAttributes.length > 0 ? config.extract.acceptedAttributes : null)?.map((s: string) => s.toLowerCase()) ?? null
+  const acceptedTagsSet = acceptedTagsList ? new Set(acceptedTagsList) : null
+  const acceptedAttributesSet = acceptedAttributesList ? new Set(acceptedAttributesList) : null
 
   // Helper: robustly extract a JSX element name from different node shapes
   const extractJSXName = (node: any): string | null => {
@@ -261,19 +268,82 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
       return n.name ?? n.value ?? n.property?.name ?? n.property?.value ?? null
     }
 
-    return fromIdentifier(nameNode)
+    const rawName = fromIdentifier(nameNode)
+    return rawName ? String(rawName) : null
+  }
+
+  // Helper: extract attribute name from a JSXAttribute.name node
+  const extractAttrName = (nameNode: any): string | null => {
+    if (!nameNode) return null
+
+    // Direct string (unlikely, but be defensive)
+    if (typeof nameNode === 'string') return nameNode
+
+    // Common SWC shapes:
+    // JSXIdentifier: { type: 'JSXIdentifier', value: 'alt' } or { name: 'alt' }
+    if (nameNode.type === 'JSXIdentifier' || nameNode.type === 'Identifier') {
+      const n = (nameNode.name ?? nameNode.value ?? nameNode.raw ?? null)
+      return n ? String(n) : null
+    }
+
+    // JSXNamespacedName: { type: 'JSXNamespacedName', namespace: {...}, name: {...} }
+    if (nameNode.type === 'JSXNamespacedName') {
+      // prefer the local name (after the colon)
+      return extractAttrName(nameNode.name) ?? extractAttrName(nameNode.namespace)
+    }
+
+    // Member-like expressions (defensive)
+    if (nameNode.type === 'JSXMemberExpression') {
+      const left = extractAttrName(nameNode.object)
+      const right = extractAttrName(nameNode.property)
+      if (left && right) return `${left}.${right}`
+      return right ?? left
+    }
+
+    // Some AST variants put the identifier under `.name` or `.value`
+    if (nameNode.name || nameNode.value || nameNode.property) {
+      return (nameNode.name ?? nameNode.value ?? nameNode.property?.name ?? nameNode.property?.value ?? null)
+    }
+
+    // Last-resort: try to stringify and extract an identifier-looking token
+    try {
+      const s = JSON.stringify(nameNode)
+      const m = /"?(?:name|value)"?\s*:\s*"?([a-zA-Z0-9_\-:.$]+)"?/.exec(s)
+      return m ? m[1] : null
+    } catch {
+      return null
+    }
   }
 
   // Helper: return true if any JSX ancestor is in the ignored tags set
   const isWithinIgnoredElement = (ancestors: any[]): boolean => {
+    // First: if ANY ancestor is in the ignored set -> ignore (ignored always wins)
     for (let i = ancestors.length - 1; i >= 0; i--) {
       const an = ancestors[i]
       if (!an || typeof an !== 'object') continue
       if (an.type === 'JSXElement' || an.type === 'JSXOpeningElement' || an.type === 'JSXSelfClosingElement') {
         const name = extractJSXName(an)
-        if (name && allIgnoredTags.has(name)) return true
+        if (!name) continue
+        if (allIgnoredTags.has(String(name).toLowerCase())) return true
       }
     }
+
+    // If acceptedTags is set: use nearest enclosing JSX element to decide acceptance
+    if (acceptedTagsSet) {
+      for (let i = ancestors.length - 1; i >= 0; i--) {
+        const an = ancestors[i]
+        if (!an || typeof an !== 'object') continue
+        if (an.type === 'JSXElement' || an.type === 'JSXOpeningElement' || an.type === 'JSXSelfClosingElement') {
+          const name = extractJSXName(an)
+          if (!name) continue
+          return !acceptedTagsSet.has(String(name).toLowerCase())
+        }
+      }
+      // no enclosing element found -> treat as ignored
+      return true
+    }
+
+    // Default: not inside an ignored element
     return false
   }
 
@@ -284,13 +354,17 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
     const currentAncestors = [...ancestors, node]
 
     if (node.type === 'JSXText') {
-      const isIgnored = isWithinIgnoredElement(currentAncestors)
-
-      if (!isIgnored) {
-        const text = node.value.trim()
-        // Filter out: empty strings, single chars, URLs, numbers, interpolations, and ellipsis
-        if (text && text.length > 1 && text !== '...' && !isUrlOrPath(text) && isNaN(Number(text)) && !text.startsWith('{{')) {
-          nodesToLint.push(node) // Collect the node
+      // If acceptedAttributesSet exists but acceptedTagsSet does not, we're in attribute-only mode:
+      // do not collect JSXText nodes when attribute-only mode is active.
+      if (acceptedAttributesSet && !acceptedTagsSet) {
+        // attribute-only mode: skip JSXText
+      } else {
+        const isIgnored = isWithinIgnoredElement(currentAncestors)
+        if (!isIgnored) {
+          const text = node.value.trim()
+          if (text && text.length > 1 && text !== '...' && !isUrlOrPath(text) && isNaN(Number(text)) && !text.startsWith('{{')) {
+            nodesToLint.push(node)
+          }
         }
       }
     }
@@ -300,11 +374,33 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
       // Determine whether this attribute is inside any ignored element (handles nested Trans etc.)
       const insideIgnored = isWithinIgnoredElement(currentAncestors)
 
-      if (parent?.type === 'JSXAttribute' && !ignoredAttributes.has(parent.name.value) && !insideIgnored) {
-        const text = node.value.trim()
-        // Filter out: empty strings, URLs, numbers, and ellipsis
-        if (text && text !== '...' && !isUrlOrPath(text) && isNaN(Number(text))) {
-          nodesToLint.push(node) // Collect the node
+      if (parent?.type === 'JSXAttribute' && !insideIgnored) {
+        const rawAttrName = extractAttrName(parent.name)
+        const attrNameLower = rawAttrName ? String(rawAttrName).toLowerCase() : null
+        // Check tag-level acceptance if acceptedTagsSet provided: attributes should only be considered
+        // when the nearest enclosing element is accepted.
+        const parentElement = currentAncestors.slice(0, -2).reverse().find(a => a && typeof a === 'object' && (a.type === 'JSXElement' || a.type === 'JSXOpeningElement' || a.type === 'JSXSelfClosingElement'))
+        if (acceptedTagsSet && parentElement) {
+          const parentName = extractJSXName(parentElement)
+          if (!parentName || !acceptedTagsSet.has(String(parentName).toLowerCase())) {
+            // attribute is inside a non-accepted tag -> skip
+            return
+          }
+        } else if (acceptedTagsSet && !parentElement) {
+          // no enclosing element -> skip
+          return
+        }
+
+        // If acceptedAttributesSet exists, only lint attributes explicitly accepted.
+        const shouldLintAttribute = acceptedAttributesSet
+          ? (attrNameLower != null && acceptedAttributesSet.has(attrNameLower))
+          : (attrNameLower != null ? !ignoredAttributes.has(attrNameLower) : false)
+        if (shouldLintAttribute) {
+          const text = node.value.trim()
+          // Filter out: empty strings, URLs, numbers, and ellipsis
+          if (text && text !== '...' && !isUrlOrPath(text) && isNaN(Number(text))) {
+            nodesToLint.push(node) // Collect the node
+          }
         }
       }
     }

@@ -370,12 +370,6 @@ export default defineConfig({
         keyPrefixArg: 2 // Options with keyPrefix is the 3rd (index 2)
       }
     ],
-
-    // Add custom JSX attributes to ignore during linting
-    ignoredAttributes: ['data-testid', 'aria-label'],
-
-    // JSX tag names whose content should be ignored when linting
-    ignoredTags: ['pre'],
     
     // Namespace and key configuration
     defaultNS: 'translation', // If set to false it will not generate any namespace, useful if i.e. the output is a single language json with 1 namespace (and no nesting).
@@ -436,6 +430,21 @@ export default defineConfig({
     // When true, t('key', { count: 1 }) will only generate 'key' (no _one, _other suffixes)
     // The count option can still be used for {{count}} interpolation in the translation value
     disablePlurals: false, // Default: false
+  },
+
+  // options for linter
+  lint: {
+    /** Optional accept-list of JSX attribute names to exclusively lint (takes precedence over ignoredAttributes). */
+    acceptedAttributes: ['title'];
+
+    /** Optional accept-list of JSX tag names to exclusively lint (takes precedence over ignoredTags). */
+    acceptedTags: ['p'];
+
+    // Optional custom JSX attributes to ignore during linting
+    ignoredAttributes: ['data-testid', 'aria-label'],
+
+    // Optional JSX tag names whose content should be ignored when linting
+    ignoredTags: ['pre'],
   },
   
   // TypeScript type generation

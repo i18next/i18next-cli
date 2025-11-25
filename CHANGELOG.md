@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.0](https://github.com/i18next/i18next-cli/compare/v1.24.22...v1.25.0) - 2025-11-25
+
+- feat(linter): add accept-lists for tags & attributes (`lint.acceptedTags` / `lint.acceptedAttributes`) [#125](https://github.com/i18next/i18next-cli/issues/125)
+
 ## [1.24.22](https://github.com/i18next/i18next-cli/compare/v1.24.21...v1.24.22) - 2025-11-24
 
 - fix(extractor): correctly compute numeric placeholders for nested JSX children in `<Trans>` (off-by-one caused by explicit {" "} expression and formatting whitespace), so extracted keys match react-i18next runtime behavior [#124](https://github.com/i18next/i18next-cli/issues/124)
