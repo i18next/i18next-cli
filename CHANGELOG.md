@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.26.0](https://github.com/i18next/i18next-cli/compare/v1.25.1...v1.26.0) - 2025-11-26
 
 - feat(extractor): add --sync-all flag to extract command — sync primary defaults and clear synced keys in all other locales [#127](https://github.com/i18next/i18next-cli/issues/127)
-- try to fix some Trans extraction use cases [#128](https://github.com/i18next/i18next-cli/issues/128) and [#129](https://github.com/i18next/i18next-cli/issues/129)
+- prepare some skipped test for some Trans extraction use cases [#128](https://github.com/i18next/i18next-cli/issues/128) and [#129](https://github.com/i18next/i18next-cli/issues/129)
 
 ## [1.25.1](https://github.com/i18next/i18next-cli/compare/v1.25.0...v1.25.1) - 2025-11-25
 
