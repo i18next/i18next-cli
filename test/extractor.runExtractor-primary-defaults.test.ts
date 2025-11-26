@@ -889,4 +889,264 @@ describe('extractor: runExtractor (sync primary language defaults)', () => {
       }
     })
   })
+
+  it('should preserve existing translations when extracting new keys without defaults', async () => {
+    // This test ensures that when new keys are found in code but existing keys are not touched
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        
+        // New key without defaultValue
+        const newKey = t('new.feature')
+        
+        // Existing plural without defaultValue
+        const existingPlural = t('existing.count', { count: 2 })
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        existing: {
+          count_one: 'One item',
+          count_other: '{{count}} items'
+        },
+        old: {
+          unused: 'This should be removed if removeUnusedKeys was true'
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true) // Changes are made because new key is added
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      new: {
+        feature: ''  // New key gets empty default since no defaultValue provided
+      },
+      existing: {
+        count_one: 'One item',
+        count_other: '{{count}} items'
+      },
+      old: {
+        unused: 'This should be removed if removeUnusedKeys was true'
+      }
+    })
+  })
+
+  it('should handle partial plural forms when some exist and some don\'t', async () => {
+    vol.fromJSON({
+      'src/app.ts': `
+        import { t } from 'i18next'
+        
+        // Plural key that only has some forms in existing translations
+        const partial = t('messages.unread', { count: 5 })
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        messages: {
+          unread_one: 'One unread message',
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['src/app.ts'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      messages: { unread_one: 'One unread message', unread_other: '' }
+    })
+  })
+
+  it('should sync primary language defaults for Trans components when syncPrimaryWithDefaults is true', async () => {
+    vol.fromJSON({
+      'src/App.tsx': `
+        import { Trans } from 'react-i18next'
+        export default function App() {
+          return <Trans i18nKey="app.greeting">Hello from Trans</Trans>
+        }
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+    // Existing translations differ from the defaults in code
+    vol.fromJSON({
+      [enPath]: JSON.stringify({
+        app: {
+          greeting: 'Old greeting'
+        }
+      }, null, 2),
+      [dePath]: JSON.stringify({
+        app: {
+          greeting: 'Alte Begrüssung'
+        }
+      }, null, 2)
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['/src/App.tsx'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      app: {
+        greeting: 'Hello from Trans'
+      }
+    })
+
+    const deContent = JSON.parse(vol.readFileSync(dePath, 'utf8') as string)
+    // Secondary locale should preserve its existing translation
+    expect(deContent).toEqual({
+      app: {
+        greeting: 'Alte Begrüssung'
+      }
+    })
+  })
+
+  it('should sync primary defaults for <Trans i18nKey={CONST}> when CONST is a simple string constant', async () => {
+    vol.fromJSON({
+      '/src/App.tsx': `
+        import { Trans } from 'react-i18next'
+        const KEY = 'app.greeting'
+        export default function App() {
+          return <Trans i18nKey={KEY}>Hello from Trans</Trans>
+        }
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+    vol.fromJSON({
+      [enPath]: JSON.stringify({ app: { greeting: 'Old greeting' } }, null, 2),
+      [dePath]: JSON.stringify({ app: { greeting: 'Alte Begrüssung' } }, null, 2),
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['/src/App.tsx'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({ app: { greeting: 'Hello from Trans' } })
+
+    const deContent = JSON.parse(vol.readFileSync(dePath, 'utf8') as string)
+    expect(deContent).toEqual({ app: { greeting: 'Alte Begrüssung' } })
+  })
+
+  it('should document behavior for <Trans> without i18nKey (fallback/default text only)', async () => {
+    vol.fromJSON({
+      '/src/App.tsx': `
+        import { Trans } from 'react-i18next'
+        export default function App() {
+          return <Trans>Inline default text</Trans>
+        }
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({ app: { greeting: 'Old greeting' } }, null, 2),
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['/src/App.tsx'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({ 'Inline default text': '', app: { greeting: 'Old greeting' } })
+  })
+
+  it('should sync primary defaults for <Trans i18nKey="..."> with nested JSX children', async () => {
+    vol.fromJSON({
+      '/src/App.tsx': `
+        import React from 'react'
+        import { Trans } from 'react-i18next'
+        export default function App() {
+          return <Trans i18nKey="app.rich">Hello <strong>world</strong></Trans>
+        }
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+    vol.fromJSON({
+      [enPath]: JSON.stringify({ app: { rich: 'Old rich' } }, null, 2),
+      [dePath]: JSON.stringify({ app: { rich: 'Alte Rich' } }, null, 2),
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['/src/App.tsx'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    // Default may be serialized with placeholders; at minimum it must contain the visible text parts
+    expect(enContent.app.rich).toEqual(expect.stringContaining('Hello'))
+    expect(enContent.app.rich).toEqual(expect.stringContaining('world'))
+
+    const deContent = JSON.parse(vol.readFileSync(dePath, 'utf8') as string)
+    expect(deContent).toEqual({ app: { rich: 'Alte Rich' } })
+  })
+
+  it('demonstrates Trans without i18nKey creates keys from inline text and cannot "replace" old text when inline default changes', async () => {
+    const srcPath = '/src/App.tsx'
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+
+    // First version: initial extraction
+    vol.fromJSON({
+      [srcPath]: `
+        import { Trans } from 'react-i18next'
+        export default function App() {
+          return <Trans>Old default</Trans>
+        }
+      `,
+    })
+
+    vi.mocked((await import('glob')).glob).mockResolvedValue([srcPath])
+    // initial extraction (no syncPrimary flag)
+    await runExtractor(mockConfig)
+
+    let enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    // extractor currently creates a key from the inline text
+    expect(Object.keys(enContent)).toContain('Old default')
+
+    // Change inline default text in source
+    vol.fromJSON({
+      [srcPath]: `
+        import { Trans } from 'react-i18next'
+        export default function App() {
+          return <Trans>New default</Trans>
+        }
+      `,
+    })
+
+    // Run extractor with syncPrimaryWithDefaults (attempt to sync primary)
+    await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+
+    enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    // Current behavior: both old and new keys exist (no replacement) because keys are derived from the text
+    expect(Object.keys(enContent)).toContain('Old default')
+    expect(Object.keys(enContent)).toContain('New default')
+  })
 })
