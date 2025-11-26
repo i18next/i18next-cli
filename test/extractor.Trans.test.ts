@@ -1975,7 +1975,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.skip('should handle embedded paragraphs with anchor and correct indexes', async () => {
+  it('should handle embedded paragraphs with anchor and correct indexes', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
       function Component() {
@@ -1999,7 +1999,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.skip('should handle embedded paragraphs with anchor and correct indexes (disabled transKeepBasicHtmlNodesFor)', async () => {
+  it('should handle embedded paragraphs with anchor and correct indexes (disabled transKeepBasicHtmlNodesFor)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
       function Component() {

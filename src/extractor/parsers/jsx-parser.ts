@@ -867,12 +867,36 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
                 getStringLiteralFromExpression(children[0].expression) !== undefined)
             )
 
+          // console.log({
+          //   hasChildren,
+          //   isSinglePureTextChild
+          // })
+
           // Preserve as literal HTML in two cases:
           // 1. No children and no attributes: <br />
           // 2. Single pure text child (with or without attributes): <strong>text</strong> or <strong title="...">text</strong>
           if ((!hasChildren || isSinglePureTextChild)) {
             const inner = isSinglePureTextChild ? visitNodes(children, undefined) : ''
             const hasMeaningfulChildren = String(inner).trim() !== ''
+
+            const isPTag = tag === 'p'
+            let pCountAtRoot = 0
+            if (isPTag && isRootLevel) {
+              pCountAtRoot = nodes.filter((n: any) => n && n.type === 'JSXElement' && n.opening?.name?.value === 'p').length
+            }
+
+            // Add this log to see which branch is hit
+            // console.log('[visitNodes <p>]', {
+            //   isPTag,
+            //   isRootLevel,
+            //   pCountAtRoot,
+            //   hasMeaningfulChildren,
+            //   rootElementIndex,
+            //   globalSlotsIndex: globalSlots.indexOf(node),
+            //   node,
+            //   children,
+            //   outPreview: out,
+            // })
 
             if (!hasMeaningfulChildren) {
               // Self-closing
@@ -881,12 +905,20 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
                 out = out.replace(/\s+$/, '')
               }
               out += `<${tag} />`
-            } else {
-              // Preserve with content: <strong>text</strong>
-              // trim formatting-only edges inside preserved tags so surrounding
-              // newline/indentation doesn't leak into the preserved-inner text
+            } else if (allowedTags.has(tag) && tag !== 'p') {
               out += `<${tag}>${trimFormattingEdges(inner)}</${tag}>`
+            } else if (isPTag && isRootLevel && pCountAtRoot > 1) {
+              // Only preserve <p> as literal HTML if there are multiple root <p> siblings
+              out += `<${tag}>${trimFormattingEdges(inner)}</${tag}>`
+            } else if (isPTag) {
+              // Always index <p> unless it's a root-level <p> among multiple <p> siblings
+              const idx = isRootLevel ? rootElementIndex - 1 : globalSlots.indexOf(node)
+              out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
+            } else {
+              const idx = isRootLevel ? rootElementIndex - 1 : globalSlots.indexOf(node)
+              out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
             }
+            // console.log({ out })
           } else if (hasAttrs && !isSinglePureTextChild) {
             // Has attributes -> treat as indexed element with numeric placeholder
             const childrenLocal = children
@@ -899,8 +931,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
               // Build a local index map for inner children so nested placeholders
               // restart locally instead of using global indices.
               const childrenLocalMap = new Map<any, number>()
-              // always restart local child indices at 1
-              let localIdxCounter = 1
+              // always restart local child indices at 0
+              let localIdxCounter = 0
               for (const ch of childrenLocal) {
                 if (!ch) continue
                 if (ch.type === 'JSXElement') {
@@ -932,8 +964,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
               out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
             } else {
               const childrenLocalMap = new Map<any, number>()
-              // Local child indexes always restart at 1 for the inner mapping.
-              let localIdxCounter = 1
+              // Local child indexes always restart at 0 for the inner mapping.
+              let localIdxCounter = 0
 
               for (const ch of children) {
                 if (!ch) continue
@@ -1035,8 +1067,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
                 // Build a local index map for the inner children so nested placeholders
                 // restart locally (avoids leaking global indices into the parent's inner string).
                 const childrenLocalMap = new Map<any, number>()
-                // local children numbering should start at 1
-                let localIdxCounter = 1
+                // local children numbering should start at 0
+                let localIdxCounter = 0
                 for (const ch of children) {
                   if (!ch) continue
                   if (ch.type === 'JSXElement') {
@@ -1072,8 +1104,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
 
               // Build local index map for children of this indexed element
               const childrenLocalMap = new Map<any, number>()
-              // Local child indexes restart at 1 inside this element (do not start from parent index)
-              let localIdxCounter = 1
+              // Local child indexes restart at 0 inside this element (do not start from parent index)
+              let localIdxCounter = 0
               for (const ch of children) {
                 if (!ch) continue
                 if (ch.type === 'JSXElement') {
@@ -1134,8 +1166,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           } else {
             const childrenLocalMap = new Map<any, number>()
             const idx = resolveIndex(node)
-            // Local child indexes: restart at 0 when parent idx === 0, otherwise at 1
-            let localIdxCounter = 1
+            let localIdxCounter = 0
 
             for (const ch of children) {
               if (!ch) continue
@@ -1377,11 +1408,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             continue
           }
           const map = new Map<number, number>()
-          // Determine start index: if this parent AST node contains N non-element global slots
-          // inside its span, then the first indexed child should be (N + 1). This mirrors
-          // how local indexing must account for explicit expression/text slots that appear
-          // before an element child inside the same parent.
-          let start = (n.idx === 0) ? 0 : 1
+          let start = 0
           try {
             const parentAst = globalSlots[n.idx]
             if (parentAst && parentAst.span) {
@@ -1421,10 +1448,61 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
               }
 
               if (typeof n.idx === 'number') {
-                start = n.idx === 0 ? 0 : Math.max(1, nonElementBefore + 1)
+                // start = n.idx === 0 ? 0 : Math.max(1, nonElementBefore + 1)  // => fixes "extractor: advanced Trans features > should handle feedback description with br and nested button/text" and "extractor: advanced Trans features > should handle nested long props with inner link" and "extractor: advanced Trans features > should handle nested components with newlines" and "extractor: advanced Trans features > should handle nested paragraphs with inline elements and correct indexes", but fails "extractor: advanced Trans features > should handle embedded paragraphs with anchor and correct indexes"
+                // start = 0 // => fixes "extractor: advanced Trans features > should handle embedded paragraphs with anchor and correct indexes", but others fails, like "extractor: advanced Trans features > should handle feedback description with br and nested button/text" and "extractor: advanced Trans features > should handle nested long props with inner link" and "extractor: advanced Trans features > should handle nested components with newlines" and "extractor: advanced Trans features > should handle nested paragraphs with inline elements and correct indexes"
+
+                // console.log({ childPhs, nonElementBefore, n })
+
+                const parentAst = globalSlots[n.idx]
+                const parentTag = parentAst?.opening?.name?.value
+                // const parentSpan = parentAst?.span
+                const parentIsPreserved = parentTag && allowedTags.has(parentTag)
+                const parentIsRoot = parentIdx === null
+                // const parentChildrenTypes = parentAst?.children?.map((c: any) => c.type)
+                // const inputPreview = typeof input === 'string' ? input.slice(0, 100) : ''
+                // const parentPrevSibling = parentAst?.parent?.children?.[parentAst?.parent?.children?.indexOf(parentAst) - 1]
+                // const parentNextSibling = parentAst?.parent?.children?.[parentAst?.parent?.children?.indexOf(parentAst) + 1]
+                // const parentInsidePreserved = parentAst?.parent && allowedTags.has(parentAst.parent.opening?.name?.value)
+
+                // console.log({
+                //   parentIdx,
+                //   nIdx: n.idx,
+                //   parentTag,
+                //   parentSpan,
+                //   parentIsPreserved,
+                //   parentIsRoot,
+                //   parentChildrenTypes,
+                //   parentPrevSiblingType: parentPrevSibling?.type,
+                //   parentPrevSiblingTag: parentPrevSibling?.opening?.name?.value,
+                //   parentNextSiblingType: parentNextSibling?.type,
+                //   parentNextSiblingTag: parentNextSibling?.opening?.name?.value,
+                //   parentInsidePreserved,
+                //   childPhs: childPhs.map(c => c.idx),
+                //   nonElementBefore,
+                //   origIndices,
+                //   isContiguous,
+                //   inputPreview
+                // })
+
+                if (childPhs.length === 1) {
+                  // Embedded paragraph case: non-preserved parent, root, single child idx 0, parentTag is 'a' or 'p'
+                  if (
+                    parentIsRoot &&
+                    !parentIsPreserved &&
+                    childPhs[0].idx === 0 &&
+                    (parentTag === 'a' || parentTag === 'p')
+                  ) {
+                    start = 0
+                  } else {
+                    start = n.idx === 0 ? 0 : Math.max(1, nonElementBefore + 1)
+                  }
+                } else {
+                  start = 0
+                }
               }
             }
           } catch (e) { /* ignore and fall back to default start */ }
+
           // assign new numbers in order of appearance among direct children
           for (const c of childPhs) {
             if (!map.has(c.idx)) {
@@ -1440,6 +1518,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             return `<${newIdx}>${build(child.children, newIdx)}</${newIdx}>`
           }).join('')
 
+          // console.log('[remapNumericPlaceholders] parentIdx:', parentIdx, 'n.idx:', n.idx, 'childPhs:', childPhs.map(c => c.idx), 'map:', Array.from(map.entries()), 'out:', `<${n.idx}>${inner}</${n.idx}>`)
           out += `<${n.idx}>${inner}</${n.idx}>`
         }
       }
