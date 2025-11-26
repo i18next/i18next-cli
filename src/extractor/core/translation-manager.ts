@@ -179,7 +179,8 @@ function buildNewTranslationsForNs (
   namespace?: string,
   preservePatterns: RegExp[] = [],
   objectKeys: Set<string> = new Set(),
-  syncPrimaryWithDefaults: boolean = false
+  syncPrimaryWithDefaults: boolean = false,
+  syncAll: boolean = false
 ): Record<string, any> {
   const {
     keySeparator = '.',
@@ -509,7 +510,7 @@ function buildNewTranslationsForNs (
         valueToSet = resolveDefaultValue(emptyDefaultValue, key, namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
       }
     } else {
-      // Existing value exists - decide whether to preserve or sync
+      // Existing value exists - decide whether to preserve, sync primary, or clear other locales when requested
       if (locale === primaryLanguage && syncPrimaryWithDefaults) {
         // Only update when we have a meaningful defaultValue that's not derived from the key pattern.
         const isDerivedDefault = defaultValue && (
@@ -528,15 +529,21 @@ function buildNewTranslationsForNs (
         if (isVariantKey && !explicitDefault) {
           valueToSet = existingValue
         } else if (defaultValue && !isDerivedDefault) {
-          // Otherwise, if we have a meaningful (non-derived) default, apply it.
-          valueToSet = defaultValue
+          valueToSet = resolveDefaultValue(defaultValue, key, namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
         } else {
-          // Fallback: preserve existing translation.
           valueToSet = existingValue
         }
       } else {
-        // Not primary language or not syncing - always preserve existing
-        valueToSet = existingValue
+        // Non-primary locale behavior
+        if (syncAll && locale !== primaryLanguage && explicitDefault) {
+          // When syncAll is requested, clear (reset) any existing translations for keys
+          // that had explicit defaults in code so the primary default can be propagated
+          // while secondary locales get a blank/placeholder value.
+          valueToSet = resolveDefaultValue(emptyDefaultValue, key, namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
+        } else {
+          // Preserve existing translation by default
+          valueToSet = existingValue
+        }
       }
     }
 
@@ -634,7 +641,13 @@ export async function getTranslations (
   keys: Map<string, ExtractedKey>,
   objectKeys: Set<string>,
   config: I18nextToolkitConfig,
-  { syncPrimaryWithDefaults = false }: { syncPrimaryWithDefaults?: boolean } = {}
+  {
+    syncPrimaryWithDefaults = false,
+    syncAll = false
+  }: {
+    syncPrimaryWithDefaults?: boolean,
+    syncAll?: boolean
+  } = {}
 ): Promise<TranslationResult[]> {
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
@@ -736,7 +749,7 @@ export async function getTranslations (
         const outputPath = getOutputPath(config.extract.output, locale, ns)
         const fullPath = resolve(process.cwd(), outputPath)
         const existingTranslations = await loadTranslationFile(fullPath) || {}
-        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, ns, preservePatterns, objectKeys, syncPrimaryWithDefaults)
+        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, ns, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll)
 
         const oldContent = JSON.stringify(existingTranslations, null, indentation)
         const newContent = JSON.stringify(newTranslations, null, indentation)

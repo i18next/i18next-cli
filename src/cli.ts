@@ -35,16 +35,20 @@ program
   .option('--ci', 'Exit with a non-zero status code if any files are updated.')
   .option('--dry-run', 'Run the extractor without writing any files to disk.')
   .option('--sync-primary', 'Sync primary language values with default values from code.')
+  .option('--sync-all', 'Sync primary language values with default values from code AND clear synced keys in all other locales.')
   .action(async (options) => {
     try {
       const cfgPath = program.opts().config
       const config = await ensureConfig(cfgPath)
 
       const runExtract = async () => {
+        // --sync-all implies sync-primary behavior
+        const syncPrimary = !!options.syncPrimary || !!options.syncAll
         const success = await runExtractor(config, {
           isWatchMode: !!options.watch,
           isDryRun: !!options.dryRun,
-          syncPrimaryWithDefaults: !!options.syncPrimary
+          syncPrimaryWithDefaults: syncPrimary,
+          syncAll: !!options.syncAll
         })
 
         if (options.ci && !success) {

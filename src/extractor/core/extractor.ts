@@ -44,11 +44,13 @@ export async function runExtractor (
   {
     isWatchMode = false,
     isDryRun = false,
-    syncPrimaryWithDefaults = false
+    syncPrimaryWithDefaults = false,
+    syncAll = false
   }: {
     isWatchMode?: boolean,
     isDryRun?: boolean,
     syncPrimaryWithDefaults?: boolean,
+    syncAll?: boolean,
   } = {},
   logger: Logger = new ConsoleLogger()
 ): Promise<boolean> {
@@ -69,7 +71,7 @@ export async function runExtractor (
     const { allKeys, objectKeys } = await findKeys(config, logger)
     spinner.text = `Found ${allKeys.size} unique keys. Updating translation files...`
 
-    const results = await getTranslations(allKeys, objectKeys, config, { syncPrimaryWithDefaults })
+    const results = await getTranslations(allKeys, objectKeys, config, { syncPrimaryWithDefaults, syncAll })
 
     let anyFileUpdated = false
     for (const result of results) {

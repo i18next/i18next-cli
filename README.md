@@ -113,6 +113,7 @@ npx i18next-cli extract [options]
 - `--ci`: Exit with non-zero status if any files are updated (for CI/CD)
 - `--dry-run`: Does not change any files - useful in combination with `--ci` (for CI/CD)
 - `--sync-primary`: Sync primary language values with default values from code
+- `--sync-all`: Sync primary language values with default values from code AND clear synced keys in all other locales (implies `--sync-primary`)
 
 **Examples:**
 ```bash
@@ -127,6 +128,9 @@ npx i18next-cli extract --ci
 
 # Sync primary language with code defaults
 npx i18next-cli extract --sync-primary
+
+# Sync primary and clear synced keys in all other locales
+npx i18next-cli extract --sync-all
 
 # Combine options for optimal development workflow
 npx i18next-cli extract --sync-primary --watch
