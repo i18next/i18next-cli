@@ -1974,4 +1974,52 @@ describe('extractor: advanced Trans features', () => {
       },
     })
   })
+
+  it.only('should handle embedded paragraphs with anchor and correct indexes', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="embed_answer">
+            <p>text</p>
+            <p><a href="/">ink</a></p>
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      embed_answer: '<p>text</p><1><0>ink</0></1>',
+    })
+  })
+
+  it('should handle embedded paragraphs with anchor and correct indexes (disabled transKeepBasicHtmlNodesFor)', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans t={t} i18nKey="embed_answer">
+            <p>text</p>
+            <p><a href="/">ink</a></p>
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract({ ...mockConfig, extract: { ...mockConfig.extract, transKeepBasicHtmlNodesFor: [] } })
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      embed_answer: '<0>text</0><1><0>ink</0></1>',
+    })
+  })
 })
