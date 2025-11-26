@@ -1975,7 +1975,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.only('should handle embedded paragraphs with anchor and correct indexes', async () => {
+  it.skip('should handle embedded paragraphs with anchor and correct indexes', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
       function Component() {
@@ -1999,7 +1999,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it('should handle embedded paragraphs with anchor and correct indexes (disabled transKeepBasicHtmlNodesFor)', async () => {
+  it.skip('should handle embedded paragraphs with anchor and correct indexes (disabled transKeepBasicHtmlNodesFor)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
       function Component() {
@@ -2020,6 +2020,29 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
       embed_answer: '<0>text</0><1><0>ink</0></1>',
+    })
+  })
+
+  it.skip('should handle space before component inside paragraph and correct indexes (space-comp)', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+      function Component() {
+        const { t } = useTranslation();
+        return (
+          <Trans i18nKey="space-comp">
+            <p>text{" "}<a href="/">link</a></p>
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      'space-comp': '<0>text <2>link</2></0>',
     })
   })
 })

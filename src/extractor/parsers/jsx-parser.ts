@@ -1182,24 +1182,24 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
 
   const result = visitNodes(children, undefined, true)
 
-  console.log('[serializeJSXChildren] result before cleanup:', JSON.stringify(result))
-  console.log('[serializeJSXChildren] tightNoSpaceNodes:', Array.from(tightNoSpaceNodes || []))
-  console.log('[serializeJSXChildren] globalSlots:', JSON.stringify(globalSlots, null, 2))
-  const slotContexts = globalSlots.map((s, idx) => {
-    const prev = globalSlots[idx - 1]
-    const next = globalSlots[idx + 1]
-    return {
-      idx,
-      type: s ? s.type : null,
-      tag: s && s.type === 'JSXElement' ? s.opening?.name?.value : undefined,
-      preview: s && s.type === 'JSXText' ? String(s.value).slice(0, 40) : undefined,
-      prevType: prev ? prev.type : null,
-      prevPreview: prev && prev.type === 'JSXText' ? String(prev.value).slice(0, 40) : undefined,
-      nextType: next ? next.type : null,
-      nextPreview: next && next.type === 'JSXText' ? String(next.value).slice(0, 40) : undefined
-    }
-  })
-  console.log('[serializeJSXChildren] slotContexts:', JSON.stringify(slotContexts, null, 2))
+  // console.log('[serializeJSXChildren] result before cleanup:', JSON.stringify(result))
+  // console.log('[serializeJSXChildren] tightNoSpaceNodes:', Array.from(tightNoSpaceNodes || []))
+  // console.log('[serializeJSXChildren] globalSlots:', JSON.stringify(globalSlots, null, 2))
+  // const slotContexts = globalSlots.map((s, idx) => {
+  //   const prev = globalSlots[idx - 1]
+  //   const next = globalSlots[idx + 1]
+  //   return {
+  //     idx,
+  //     type: s ? s.type : null,
+  //     tag: s && s.type === 'JSXElement' ? s.opening?.name?.value : undefined,
+  //     preview: s && s.type === 'JSXText' ? String(s.value).slice(0, 40) : undefined,
+  //     prevType: prev ? prev.type : null,
+  //     prevPreview: prev && prev.type === 'JSXText' ? String(prev.value).slice(0, 40) : undefined,
+  //     nextType: next ? next.type : null,
+  //     nextPreview: next && next.type === 'JSXText' ? String(next.value).slice(0, 40) : undefined
+  //   }
+  // })
+  // console.log('[serializeJSXChildren] slotContexts:', JSON.stringify(slotContexts, null, 2))
 
   // Final cleanup in correct order:
   // 1. First, handle <br /> followed by whitespace+newline (boundary formatting)
@@ -1304,25 +1304,6 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
 
     type Node = { type: 'text'; text: string } | { type: 'ph'; idx: number; children: Node[] }
 
-    // Build root-slot index map: map small root-level numeric indices (0,1,2..)
-    // used in the serializer to the actual globalSlots indices. A slot is treated
-    // as "root-level" when no earlier slot fully encloses it.
-    const rootSlotIndices: number[] = []
-    for (let i = 0; i < globalSlots.length; i++) {
-      const s = globalSlots[i]
-      if (!s || s.type !== 'JSXElement' || !s.span) continue
-      // If no earlier slot encloses this one, it's a root-level element
-      let enclosed = false
-      for (let j = 0; j < i; j++) {
-        const p = globalSlots[j]
-        if (p && p.span && p.span.start <= s.span.start && p.span.end >= s.span.end) {
-          enclosed = true
-          break
-        }
-      }
-      if (!enclosed) rootSlotIndices.push(i)
-    }
-
     // Parse into a simple tree of numeric-placeholder nodes and text nodes.
     function parse (s: string): Node[] {
       const nodes: Node[] = []
@@ -1395,59 +1376,20 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             out += `<${n.idx}>${innerNoRemap}</${n.idx}>`
             continue
           }
-
-          // Special-case: a single child placeholder that references the same
-          // numeric index as the parent. This occurs when a preserved parent
-          // produced literal HTML but its child was still emitted as a numeric
-          // slot using the same global index. In that situation we want the
-          // inner child to be compacted to index 0 (local restart).
-          if (childPhs.length === 1 && childPhs[0].idx === n.idx) {
-            const inner = (n as any).children.map((child: any) => {
-              if (child.type === 'text') return child.text
-              // force local 0 index for the single inner placeholder
-              return `<0>${build(child.children, 0)}</0>`
-            }).join('')
-            out += `<${n.idx}>${inner}</${n.idx}>`
-            continue
-          }
-
           const map = new Map<number, number>()
-          // Determine which globalSlots entry actually represents this parent.
-          // n.idx in the serialized string may be either:
-          // - a true globalSlots index, or
-          // - a small root-level index (0,1,2..) used when the parent was emitted
-          //   using myRootIndex. Map root-level indices to actual globalSlots
-          //   indices via rootSlotIndices computed above.
-          let actualGlobalIdx: number | undefined
-          if (n.idx >= 0 && n.idx < globalSlots.length && globalSlots[n.idx]) {
-            actualGlobalIdx = n.idx
-          } else if (n.idx >= 0 && n.idx < rootSlotIndices.length) {
-            actualGlobalIdx = rootSlotIndices[n.idx]
-          } else {
-            // Fallback: try to find a global slot that encloses the first..last child
-            if (childPhs.length) {
-              const firstChildSlot = globalSlots[childPhs[0].idx]
-              const lastChildSlot = globalSlots[childPhs[childPhs.length - 1].idx]
-              if (firstChildSlot && firstChildSlot.span && lastChildSlot && lastChildSlot.span) {
-                for (let cand = 0; cand < globalSlots.length; cand++) {
-                  const s = globalSlots[cand]
-                  if (s && s.span && s.span.start <= firstChildSlot.span.start && s.span.end >= lastChildSlot.span.end) {
-                    actualGlobalIdx = cand
-                    break
-                  }
-                }
-              }
-            }
-          }
-
-          if (typeof actualGlobalIdx === 'number') {
-            const parentAst = globalSlots[actualGlobalIdx]
+          // Determine start index: if this parent AST node contains N non-element global slots
+          // inside its span, then the first indexed child should be (N + 1). This mirrors
+          // how local indexing must account for explicit expression/text slots that appear
+          // before an element child inside the same parent.
+          let start = (n.idx === 0) ? 0 : 1
+          try {
+            const parentAst = globalSlots[n.idx]
             if (parentAst && parentAst.span) {
               const parentStart = parentAst.span.start
               const parentEnd = parentAst.span.end
               // Find the first element child (by globalSlots index) that lies inside this parent.
               let firstElementGIdx = -1
-              for (let gIdx = actualGlobalIdx + 1; gIdx < globalSlots.length; gIdx++) {
+              for (let gIdx = n.idx + 1; gIdx < globalSlots.length; gIdx++) {
                 const s = globalSlots[gIdx]
                 if (!s || !s.span) continue
                 if (s.span.start >= parentStart && s.span.end <= parentEnd && s.type === 'JSXElement') {
@@ -1460,7 +1402,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
               // (these shift the local numbering of element children).
               let nonElementBefore = 0
               if (firstElementGIdx !== -1) {
-                for (let gIdx = actualGlobalIdx + 1; gIdx < firstElementGIdx; gIdx++) {
+                for (let gIdx = n.idx + 1; gIdx < firstElementGIdx; gIdx++) {
                   const s = globalSlots[gIdx]
                   if (!s || !s.span) continue
                   if (s.span.start >= parentStart && s.span.end <= parentEnd) {
@@ -1469,7 +1411,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
                 }
               } else {
                 // No element child found: count non-element slots inside parent (fallback)
-                for (let gIdx = actualGlobalIdx + 1; gIdx < globalSlots.length; gIdx++) {
+                for (let gIdx = n.idx + 1; gIdx < globalSlots.length; gIdx++) {
                   const s = globalSlots[gIdx]
                   if (!s || !s.span) continue
                   if (s.span.start >= parentStart && s.span.end <= parentEnd) {
@@ -1478,55 +1420,27 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
                 }
               }
 
-              // Determine start index: restart at 0 if this parent was a root-level
-              // emitted with myRootIndex===0, otherwise default to 1 (compact local).
-              // Compute whether this parent was emitted as a "root-level" slot.
-              // rootSlotIndices maps serialized small indices (0,1,2..) -> actual globalSlots indices.
-              const rootRank = rootSlotIndices.indexOf(actualGlobalIdx)
-              // Start with a sensible default
-              let start: number = (n.idx === 0) ? 0 : 1
-              // If the parent's serialized index matches its root-level rank it was emitted
-              // using a small root index (myRootIndex). In that case child numbering should restart at 0.
-              if (rootRank !== -1 && n.idx === rootRank) {
-                start = 0
-              } else {
-                // Otherwise, special-case preserved HTML parents (like <p>, <strong>, ...)
-                // that have no non-element slots before their first element child: restart at 0.
-                const parentTag =
-                  parentAst && parentAst.opening && parentAst.opening.name && parentAst.opening.name.type === 'Identifier'
-                    ? parentAst.opening.name.value
-                    : undefined
-                if (parentTag && allowedTags.has(parentTag) && nonElementBefore === 0) {
-                  start = 0
-                } else {
-                  start = Math.max(1, nonElementBefore + 1)
-                }
+              if (typeof n.idx === 'number') {
+                start = n.idx === 0 ? 0 : Math.max(1, nonElementBefore + 1)
               }
-
-              // assign new numbers in order of appearance among direct children
-              for (const c of childPhs) {
-                if (!map.has(c.idx)) {
-                  map.set(c.idx, start++)
-                }
-              }
-              // recursively build children, but when emitting child ph tags replace indices
-              const inner = (n as any).children.map((child: any) => {
-                if (child.type === 'text') return child.text
-                const orig = child.idx
-                const newIdx = map.has(orig) ? map.get(orig)! : orig
-                return `<${newIdx}>${build(child.children, newIdx)}</${newIdx}>`
-              }).join('')
-              out += `<${n.idx}>${inner}</${n.idx}>`
-              continue
+            }
+          } catch (e) { /* ignore and fall back to default start */ }
+          // assign new numbers in order of appearance among direct children
+          for (const c of childPhs) {
+            if (!map.has(c.idx)) {
+              map.set(c.idx, start++)
             }
           }
-          // assign new numbers in order of appearance among direct children
-          // Fallback: if we couldn't properly resolve parent -> emit without remapping
-          const innerNoRemap = (n as any).children.map((child: any) => {
+
+          // recursively build children, but when emitting child ph tags replace indices
+          const inner = (n as any).children.map((child: any) => {
             if (child.type === 'text') return child.text
-            return `<${child.idx}>${build(child.children, child.idx)}</${child.idx}>`
+            const orig = child.idx
+            const newIdx = map.has(orig) ? map.get(orig)! : orig
+            return `<${newIdx}>${build(child.children, newIdx)}</${newIdx}>`
           }).join('')
-          out += `<${n.idx}>${innerNoRemap}</${n.idx}>`
+
+          out += `<${n.idx}>${inner}</${n.idx}>`
         }
       }
       return out
