@@ -2043,6 +2043,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
       'space-comp': '<0>text <2>link</2></0>',
+      // 'space-comp': '<p>text <2>link</2></p>', // currently generates this
     })
   })
 })
