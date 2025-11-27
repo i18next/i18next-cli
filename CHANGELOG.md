@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.27.0](https://github.com/i18next/i18next-cli/compare/v1.26.1...v1.27.0) - 2025-11-27
 
 - Add JSON5 support: translation files with `.json5` extension now try to preserve comments and formatting [#130](https://github.com/i18next/i18next-cli/issues/130)
+- fix(extractor): address skipped Trans extraction test by restoring correct JSX `<Trans>` child placeholder indexing and spacing handling [#129](https://github.com/i18next/i18next-cli/issues/129)
 
 ## [1.26.1](https://github.com/i18next/i18next-cli/compare/v1.26.0...v1.26.1) - 2025-11-26
 

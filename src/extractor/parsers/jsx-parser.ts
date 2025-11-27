@@ -537,9 +537,41 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             // Has complex children but no attributes
             // For <p> tags at root level with multiple <p> siblings, index them
             // For other preserved tags, preserve as literal (don't add to slots)
-            if (tagName === 'p' && multiplePAtRoot) {
-              slots.push(n)
-              collectSlots(n.children || [], slots, true, false)
+            if (tagName === 'p') {
+              // If this root-level <p> contains children that themselves will be
+              // indexed (non-preserved elements / elements with attrs / complex children),
+              // we must index the <p> so inner numeric placeholders keep stable numbering.
+              const childWillBeIndexed = (children || []).some((ch: any) => {
+                if (!ch || ch.type !== 'JSXElement') return false
+                const chTag = ch.opening && ch.opening.name && ch.opening.name.type === 'Identifier'
+                  ? ch.opening.name.value
+                  : undefined
+                const chHasAttrs = ch.opening && Array.isArray((ch.opening as any).attributes) && (ch.opening as any).attributes.length > 0
+                const chChildren = ch.children || []
+                const chIsSinglePureText =
+                  chChildren.length === 1 && (
+                    chChildren[0]?.type === 'JSXText' ||
+                    (chChildren[0]?.type === 'JSXExpressionContainer' &&
+                      getStringLiteralFromExpression(chChildren[0].expression) !== undefined)
+                  )
+                const chWillBePreserved = chTag && allowedTags.has(chTag) && !chHasAttrs && (chChildren.length === 0 || chIsSinglePureText)
+                return !chWillBePreserved
+              })
+
+              // Detect if there are other meaningful root-level text nodes (not just formatting/newlines).
+              // If so, prefer preserving the <p> as literal HTML to avoid turning the whole root
+              // into a numeric placeholder (which would shift expected child indices).
+              const hasOtherMeaningfulRootText =
+                isRootLevel &&
+                meaningfulNodes.some((mn: any) => mn && mn !== n && mn.type === 'JSXText' && !isFormattingWhitespace(mn))
+
+              if (multiplePAtRoot || (isRootLevel && childWillBeIndexed && !hasOtherMeaningfulRootText)) {
+                slots.push(n)
+                collectSlots(n.children || [], slots, true, false)
+              } else {
+                // preserve as literal and collect children normally
+                collectSlots(n.children || [], slots, false, false)
+              }
             } else {
               // Other preserved tags: preserve as literal, don't add to slots
               // But DO process children to add them to slots
@@ -1436,6 +1468,12 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
 
                 if (childPhs.length === 1) {
                   // Embedded paragraph case: non-preserved parent, root, single child idx 0, parentTag is 'a' or 'p'
+                  // Default: start child numbering at >= 1 to avoid nested <0><0> collisions
+                  // Use nonElementBefore to adjust when needed.
+                  start = Math.max(1, nonElementBefore + 1)
+
+                  // Narrow exception for embedded paragraph-like cases where tests expect
+                  // the single child to remain index 0 (non-preserved root parent with a single child 0).
                   if (
                     parentIsRoot &&
                     !parentIsPreserved &&
@@ -1443,8 +1481,6 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
                     (parentTag === 'a' || parentTag === 'p')
                   ) {
                     start = 0
-                  } else {
-                    start = n.idx === 0 ? 0 : Math.max(1, nonElementBefore + 1)
                   }
                 } else {
                   start = 0

@@ -2023,7 +2023,7 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it.skip('should handle space before component inside paragraph and correct indexes (space-comp)', async () => {
+  it('should handle space before component inside paragraph and correct indexes (space-comp)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
       function Component() {
