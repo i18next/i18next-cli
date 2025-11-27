@@ -19,6 +19,13 @@ const HEURISTIC_PATTERNS = [
   'app/i18n/locales/en/*.json',
   'src/i18n/locales/en/*.json',
 
+  'public/locales/en/*.json5',
+  'locales/en/*.json5',
+  'src/locales/en/*.json5',
+  'src/assets/locales/en/*.json5',
+  'app/i18n/locales/en/*.json5',
+  'src/i18n/locales/en/*.json5',
+
   'public/locales/en-*/*.json',
   'locales/en-*/*.json',
   'src/locales/en-*/*.json',
@@ -39,7 +46,9 @@ export async function detectConfig (): Promise<Partial<I18nextToolkitConfig> | n
     const files = await glob(pattern, { ignore: 'node_modules/**' })
 
     if (files.length > 0) {
-      const firstFile = files[0]
+      // Prefer .json5 if present
+      const json5File = files.find(f => extname(f) === '.json5')
+      const firstFile = json5File || files[0]
       const basePath = dirname(dirname(firstFile))
       const extension = extname(firstFile)
 
@@ -51,6 +60,8 @@ export async function detectConfig (): Promise<Partial<I18nextToolkitConfig> | n
         // We can't know if it's ESM or CJS, so we default to a safe choice.
         // The tool's file loaders can handle both.
         outputFormat = 'js'
+      } else if (extension === '.json5') {
+        outputFormat = 'json5'
       }
 
       try {

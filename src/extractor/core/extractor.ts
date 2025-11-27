@@ -10,7 +10,7 @@ import { validateExtractorConfig, ExtractorError } from '../../utils/validation'
 import { extractKeysFromComments } from '../parsers/comment-parser'
 import { ASTVisitors } from './ast-visitors'
 import { ConsoleLogger } from '../../utils/logger'
-import { serializeTranslationFile } from '../../utils/file-utils'
+import { serializeTranslationFile, loadRawJson5Content } from '../../utils/file-utils'
 import { shouldShowFunnel, recordFunnelShown } from '../../utils/funnel-msg-tracker'
 
 /**
@@ -77,12 +77,16 @@ export async function runExtractor (
     for (const result of results) {
       if (result.updated) {
         anyFileUpdated = true
-        // Only write files if it's not a dry run.
         if (!isDryRun) {
+          let rawContent: string | undefined
+          if (config.extract.outputFormat === 'json5' || result.path.endsWith('.json5')) {
+            rawContent = (await loadRawJson5Content(result.path)) ?? undefined
+          }
           const fileContent = serializeTranslationFile(
             result.newTranslations,
             config.extract.outputFormat,
-            config.extract.indentation
+            config.extract.indentation,
+            rawContent // Pass raw content for JSON5
           )
           await mkdir(dirname(result.path), { recursive: true })
           await writeFile(result.path, fileContent)

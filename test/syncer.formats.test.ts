@@ -158,4 +158,117 @@ describe('syncer: file formats and namespace merging', () => {
       common: { keyA: 'Wert A' },
     })
   })
+
+  it('should correctly sync JSON5 files and preserve comments', async () => {
+    const enPath = resolve(TEMP_DIR, 'locales/en/translation.json5')
+    const dePath = resolve(TEMP_DIR, 'locales/de/translation.json5')
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue([enPath])
+
+    await mkdir(dirname(enPath), { recursive: true })
+    await mkdir(dirname(dePath), { recursive: true })
+
+    const enContent = `{
+      // English comment
+      "key1": "Value 1",
+      "key2": "Value 2"
+    }`
+    const deContent = `{
+      // German comment
+      "key1": "Wert 1"
+    }`
+    await writeFile(enPath, enContent)
+    await writeFile(dePath, deContent)
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: `${TEMP_DIR}/locales/{{language}}/{{namespace}}.json5`,
+        outputFormat: 'json5',
+      },
+    }
+
+    await runSyncer(config)
+
+    const updatedDeContent = await readFile(dePath, 'utf-8')
+    expect(updatedDeContent).toContain('// German comment')
+    expect(updatedDeContent).toContain('"key2": ""')
+    expect(updatedDeContent.trim().startsWith('{')).toBe(true)
+    expect(updatedDeContent.trim().endsWith('}')).toBe(true)
+  })
+
+  it('should sync JSON5 when outputFormat is omitted but file extension is .json5', async () => {
+    const enPath = resolve(TEMP_DIR, 'locales/en/translation.json5')
+    const dePath = resolve(TEMP_DIR, 'locales/de/translation.json5')
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue([enPath])
+
+    await mkdir(dirname(enPath), { recursive: true })
+    await mkdir(dirname(dePath), { recursive: true })
+
+    const enContent = `{
+      "key1": "Value 1"
+    }`
+    const deContent = `{
+      "key1": "Wert 1"
+    }`
+    await writeFile(enPath, enContent)
+    await writeFile(dePath, deContent)
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: `${TEMP_DIR}/locales/{{language}}/{{namespace}}.json5`,
+        // outputFormat omitted
+      },
+    }
+
+    await runSyncer(config)
+
+    const updatedDeContent = await readFile(dePath, 'utf-8')
+    expect(updatedDeContent).toContain('"key1": "Wert 1"')
+    expect(updatedDeContent.trim().startsWith('{')).toBe(true)
+    expect(updatedDeContent.trim().endsWith('}')).toBe(true)
+  })
+
+  it('should sync as JSON (not JSON5) when outputFormat is json5 but file extension is .json', async () => {
+    const enPath = resolve(TEMP_DIR, 'locales/en/translation.json')
+    const dePath = resolve(TEMP_DIR, 'locales/de/translation.json')
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue([enPath])
+
+    await mkdir(dirname(enPath), { recursive: true })
+    await mkdir(dirname(dePath), { recursive: true })
+
+    const enContent = `{
+      "key1": "Value 1"
+    }`
+    const deContent = `{
+      "key1": "Wert 1"
+    }`
+    await writeFile(enPath, enContent)
+    await writeFile(dePath, deContent)
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: `${TEMP_DIR}/locales/{{language}}/{{namespace}}.json`,
+        outputFormat: 'json5',
+      },
+    }
+
+    await runSyncer(config)
+
+    const updatedDeContent = await readFile(dePath, 'utf-8')
+    expect(updatedDeContent).toContain('"key1": "Wert 1"')
+    expect(updatedDeContent.trim().startsWith('{')).toBe(true)
+    expect(updatedDeContent.trim().endsWith('}')).toBe(true)
+    expect(updatedDeContent).not.toContain('//')
+  })
 })

@@ -95,4 +95,44 @@ describe('heuristic-config', () => {
     // The primary language should default to the first in the alphabetical list
     expect(config?.extract?.primaryLanguage).toBe('de')
   })
+
+  it('should detect JSON5 project structure and infer outputFormat as json5', async () => {
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['locales/en/translation.json5'])
+
+    vol.fromJSON({
+      'locales/en/translation.json5': '{}',
+      'locales/de/translation.json5': '{}',
+      'locales/fr/translation.json5': '{}',
+    })
+
+    const config = await detectConfig()
+
+    expect(config).not.toBeNull()
+    expect(config?.locales).toEqual(['en', 'de', 'fr'])
+    expect(config?.extract?.outputFormat).toBe('json5')
+    if (typeof config?.extract?.output === 'string') {
+      expect(normalizePath(config.extract.output)).toBe('locales/{{language}}/{{namespace}}.json5')
+    }
+  })
+
+  it('should detect mixed .json and .json5 files and prioritize .json5', async () => {
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['locales/en/translation.json5', 'locales/en/translation.json'])
+
+    vol.fromJSON({
+      'locales/en/translation.json5': '{}',
+      'locales/en/translation.json': '{}',
+      'locales/de/translation.json5': '{}',
+      'locales/de/translation.json': '{}',
+    })
+
+    const config = await detectConfig()
+
+    expect(config).not.toBeNull()
+    expect(config?.extract?.outputFormat).toBe('json5')
+    if (typeof config?.extract?.output === 'string') {
+      expect(normalizePath(config.extract.output)).toBe('locales/{{language}}/{{namespace}}.json5')
+    }
+  })
 })

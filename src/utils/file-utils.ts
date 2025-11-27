@@ -3,6 +3,7 @@ import { dirname, extname, resolve, normalize } from 'node:path'
 import { createJiti } from 'jiti'
 import type { I18nextToolkitConfig } from '../types'
 import { getTsConfigAliases } from '../config'
+import { JsonParser, JsonObjectNode } from '@croct/json5-parser'
 
 /**
  * Ensures that the directory for a given file path exists.
@@ -114,7 +115,12 @@ export async function loadTranslationFile (filePath: string): Promise<Record<str
   try {
     const ext = extname(fullPath).toLowerCase()
 
-    if (ext === '.json') {
+    if (ext === '.json5') {
+      const content = await readFile(fullPath, 'utf-8')
+      // Parse as a JSON5 object node
+      const node = JsonParser.parse(content, JsonObjectNode)
+      return node.toJSON()
+    } else if (ext === '.json') {
       const content = await readFile(fullPath, 'utf-8')
       return JSON.parse(content)
     } else if (ext === '.ts' || ext === '.js') {
@@ -137,21 +143,41 @@ export async function loadTranslationFile (filePath: string): Promise<Record<str
   }
 }
 
+// Helper to load raw JSON5 content for preservation
+export async function loadRawJson5Content (filePath: string): Promise<string | null> {
+  const fullPath = resolve(process.cwd(), filePath)
+  try {
+    await access(fullPath)
+    return await readFile(fullPath, 'utf-8')
+  } catch {
+    return null
+  }
+}
+
 /**
  * Serializes a translation object into a string based on the desired format.
- * @param data - The translation data object.
- * @param format - The desired output format ('json', 'js-esm', etc.).
- * @param indentation - The number of spaces for indentation.
- * @returns The serialized file content as a string.
+ * For JSON5, preserves comments and formatting using JsonObjectNode.update().
  */
 export function serializeTranslationFile (
   data: Record<string, any>,
   format: I18nextToolkitConfig['extract']['outputFormat'] = 'json',
-  indentation: number | string = 2
+  indentation: number | string = 2,
+  rawContent?: string // Pass raw content for JSON5 preservation
 ): string {
   const jsonString = JSON.stringify(data, null, indentation)
 
   switch (format) {
+    case 'json5': {
+      if (rawContent) {
+        // Parse the original JSON5 file, update it, and output as string
+        const node = JsonParser.parse(rawContent, JsonObjectNode)
+        node.update(data)
+        return node.toString({ object: { indentationSize: Number(indentation) ?? 2 } })
+      }
+      // Fallback: create a new node by parsing the generated JSON string and output as string
+      const node = JsonParser.parse(jsonString, JsonObjectNode)
+      return node.toString({ object: { indentationSize: Number(indentation) ?? 2 } })
+    }
     case 'js':
     case 'js-esm':
       return `export default ${jsonString};\n`

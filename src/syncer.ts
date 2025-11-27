@@ -5,7 +5,7 @@ import { basename, dirname, resolve } from 'node:path'
 import ora from 'ora'
 import type { I18nextToolkitConfig } from './types'
 import { resolveDefaultValue } from './utils/default-value'
-import { getOutputPath, loadTranslationFile, serializeTranslationFile } from './utils/file-utils'
+import { getOutputPath, loadTranslationFile, serializeTranslationFile, loadRawJson5Content } from './utils/file-utils'
 import { recordFunnelShown, shouldShowFunnel } from './utils/funnel-msg-tracker'
 import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-object'
 
@@ -98,7 +98,14 @@ export async function runSyncer (config: I18nextToolkitConfig) {
 
         if (newContent !== oldContent) {
           wasAnythingSynced = true
-          const serializedContent = serializeTranslationFile(newSecondaryTranslations, outputFormat, indentation)
+          const serializedContent = serializeTranslationFile(
+            newSecondaryTranslations,
+            outputFormat,
+            indentation,
+            (outputFormat === 'json5' || fullSecondaryPath.endsWith('.json5'))
+              ? (await loadRawJson5Content(fullSecondaryPath)) ?? undefined
+              : undefined
+          )
           await mkdir(dirname(fullSecondaryPath), { recursive: true })
           await writeFile(fullSecondaryPath, serializedContent)
           logMessages.push(`  ${chalk.green('✓')} Synchronized: ${secondaryPath}`)

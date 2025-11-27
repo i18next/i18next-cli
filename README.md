@@ -346,6 +346,8 @@ export default defineConfig({
     ignore: ['node_modules/**'],
 
     // Use '.ts' files with `export default` instead of '.json'
+    // Or use 'json5' to enable JSON5 features (comments, trailing commas, formatting are tried to be preserved)
+    // if the file ending is .json5 it automatically uses json5 format
     outputFormat: 'ts',
 
     // Combine all namespaces into a single file per language (e.g., locales/en.ts)
