@@ -98,14 +98,9 @@ export async function runSyncer (config: I18nextToolkitConfig) {
 
         if (newContent !== oldContent) {
           wasAnythingSynced = true
-          const serializedContent = serializeTranslationFile(
-            newSecondaryTranslations,
-            outputFormat,
-            indentation,
-            (outputFormat === 'json5' || fullSecondaryPath.endsWith('.json5'))
-              ? (await loadRawJson5Content(fullSecondaryPath)) ?? undefined
-              : undefined
-          )
+          const perFileFormat = config.extract.outputFormat ?? (fullSecondaryPath.endsWith('.json5') ? 'json5' : outputFormat)
+          const raw = perFileFormat === 'json5' ? (await loadRawJson5Content(fullSecondaryPath)) ?? undefined : undefined
+          const serializedContent = serializeTranslationFile(newSecondaryTranslations, perFileFormat, indentation, raw)
           await mkdir(dirname(fullSecondaryPath), { recursive: true })
           await writeFile(fullSecondaryPath, serializedContent)
           logMessages.push(`  ${chalk.green('✓')} Synchronized: ${secondaryPath}`)

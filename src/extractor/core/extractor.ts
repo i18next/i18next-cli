@@ -78,15 +78,16 @@ export async function runExtractor (
       if (result.updated) {
         anyFileUpdated = true
         if (!isDryRun) {
-          let rawContent: string | undefined
-          if (config.extract.outputFormat === 'json5' || result.path.endsWith('.json5')) {
-            rawContent = (await loadRawJson5Content(result.path)) ?? undefined
-          }
+          // prefer explicit outputFormat; otherwise infer from file extension per-file
+          const effectiveFormat = config.extract.outputFormat ?? (result.path.endsWith('.json5') ? 'json5' : 'json')
+          const rawContent = effectiveFormat === 'json5'
+            ? (await loadRawJson5Content(result.path)) ?? undefined
+            : undefined
           const fileContent = serializeTranslationFile(
             result.newTranslations,
-            config.extract.outputFormat,
+            effectiveFormat,
             config.extract.indentation,
-            rawContent // Pass raw content for JSON5
+            rawContent
           )
           await mkdir(dirname(result.path), { recursive: true })
           await writeFile(result.path, fileContent)

@@ -271,4 +271,42 @@ describe('syncer: file formats and namespace merging', () => {
     expect(updatedDeContent.trim().endsWith('}')).toBe(true)
     expect(updatedDeContent).not.toContain('//')
   })
+
+  it('omitted outputFormat + .json5 extension preserves comments during sync', async () => {
+    const enPath = resolve(TEMP_DIR, 'locales/en/translation.json5')
+    const dePath = resolve(TEMP_DIR, 'locales/de/translation.json5')
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue([enPath])
+
+    await mkdir(dirname(enPath), { recursive: true })
+    await mkdir(dirname(dePath), { recursive: true })
+
+    const enContent = `{
+      // primary-comment
+      "greet": "Hello"
+    }`
+    const deContent = `{
+      // secondary-comment
+      "greet": "Hallo"
+    }`
+    await writeFile(enPath, enContent)
+    await writeFile(dePath, deContent)
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: `${TEMP_DIR}/locales/{{language}}/{{namespace}}.json5`,
+        // outputFormat omitted intentionally
+      },
+    }
+
+    await runSyncer(config)
+
+    const updatedDeContent = await readFile(dePath, 'utf-8')
+    expect(updatedDeContent).toContain('// secondary-comment') // preserved
+    expect(updatedDeContent).toContain('"greet": "Hallo"')
+    expect(updatedDeContent).not.toContain('"greet": ""') // sanity: value kept
+  })
 })

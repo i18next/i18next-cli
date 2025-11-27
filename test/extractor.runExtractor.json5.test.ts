@@ -265,4 +265,35 @@ describe('extractor - runExtractor: JSON5 support', () => {
     // Should not contain any comments
     expect(fileContent).not.toContain('//')
   })
+
+  it('omitted outputFormat + .json5 extension preserves comments when updating', async () => {
+    const existingJson5 = `{
+      // keep-this-comment
+      "keep": "old",
+    }`
+    vol.fromJSON({
+      '/src/App.tsx': `
+        t('keep', 'new')
+        t('thisIsNew', 'this is really new')
+      `,
+      '/locales/en/translation.json5': existingJson5,
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: ['src/App.tsx'],
+        output: 'locales/{{language}}/{{namespace}}.json5',
+        // outputFormat omitted on purpose
+      },
+    }
+
+    await runExtractor(config)
+    const filePath = resolve(process.cwd(), 'locales/en/translation.json5')
+    const fileContent = (await vol.promises.readFile(filePath)).toString('utf-8')
+
+    expect(fileContent).toContain('// keep-this-comment')
+    expect(fileContent).toContain('"keep": "old"')
+    expect(fileContent).toContain('"thisIsNew": "this is really new"')
+  })
 })

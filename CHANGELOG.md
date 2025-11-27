@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.27.1](https://github.com/i18next/i18next-cli/compare/v1.27.0...v1.27.1) - 2025-11-27
+
+- ensure `.json5` files are inferred from filename when `extract.outputFormat` is omitted [#130](https://github.com/i18next/i18next-cli/issues/130)
+
 ## [1.27.0](https://github.com/i18next/i18next-cli/compare/v1.26.1...v1.27.0) - 2025-11-27
 
 - Add JSON5 support: translation files with `.json5` extension now try to preserve comments and formatting [#130](https://github.com/i18next/i18next-cli/issues/130)
