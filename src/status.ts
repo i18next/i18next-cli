@@ -65,6 +65,17 @@ export async function runStatus (config: I18nextToolkitConfig, options: StatusOp
     const report = await generateStatusReport(config)
     spinner.succeed('Analysis complete.')
     await displayStatusReport(report, config, options)
+    let hasMissing = false
+    for (const [, localeData] of report.locales.entries()) {
+      if (localeData.totalTranslated < report.totalBaseKeys) {
+        hasMissing = true
+        break
+      }
+    }
+    if (hasMissing) {
+      spinner.fail('Error: Missing translations detected.')
+      process.exit(1)
+    }
   } catch (error) {
     spinner.fail('Failed to generate status report.')
     console.error(error)

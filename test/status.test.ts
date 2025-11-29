@@ -29,6 +29,7 @@ const mockConfig: I18nextToolkitConfig = {
 
 describe('status (summary view)', () => {
   let consoleLogSpy: any
+  let processExitSpy: any
 
   beforeEach(async () => {
     vol.reset()
@@ -40,13 +41,17 @@ describe('status (summary view)', () => {
       return Object.keys(vol.toJSON()).filter(p => p.includes('/src/'))
     })
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('Process exit called')
+    })
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('should generate a correct status report for partially translated languages', async () => {
+  it('should generate a correct status report for partially translated languages and exit with code 1', async () => {
     // Create source files that the real extractor will scan
     vol.fromJSON({
       [resolve(process.cwd(), 'src/file1.ts')]: `
@@ -65,15 +70,20 @@ describe('status (summary view)', () => {
       }),
     })
 
-    await runStatus(mockConfig)
+    try {
+      await runStatus(mockConfig)
+    } catch (e) {
+      // Expected to throw when process.exit is called
+    }
 
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('🔑 Keys Found:         4'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('📚 Namespaces Found:   1'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de: [■■■■■■■■■■□□□□□□□□□□] 50% (2/4 keys)'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- fr: [■■■■■■■■■■■■■■■□□□□□] 75% (3/4 keys)'))
+    expect(processExitSpy).toHaveBeenCalledWith(1)
   })
 
-  it('should handle flat translation files when defaultNS=false and mergeNamespaces=true', async () => {
+  it('should handle flat translation files when defaultNS=false and mergeNamespaces=true and exit on incomplete', async () => {
     // reproduce issue: flat keys (no namespace) + defaultNS=false + mergeNamespaces=true
     const config: I18nextToolkitConfig = {
       locales: ['en', 'de', 'fr'],
@@ -106,7 +116,11 @@ describe('status (summary view)', () => {
       }),
     })
 
-    await runStatus(config)
+    try {
+      await runStatus(config)
+    } catch (e) {
+      // Expected to throw when process.exit is called
+    }
 
     // expect same sensible counts as namespaced case: 4 keys total, de=2/4, fr=3/4
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('🔑 Keys Found:         4'))
@@ -115,9 +129,10 @@ describe('status (summary view)', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('50% (2/4'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- fr:'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('75% (3/4'))
+    expect(processExitSpy).toHaveBeenCalledWith(1)
   })
 
-  it('should correctly calculate progress with multiple namespaces', async () => {
+  it('should correctly calculate progress with multiple namespaces and exit on incomplete', async () => {
     vol.fromJSON({
       [resolve(process.cwd(), 'src/app.ts')]: `
         import { t } from 'i18next'
@@ -140,7 +155,11 @@ describe('status (summary view)', () => {
       }),
     })
 
-    await runStatus(mockConfig)
+    try {
+      await runStatus(mockConfig)
+    } catch (e) {
+      // Expected to throw when process.exit is called
+    }
 
     // Total keys = 6. Translated (in the single namespace the extractor detected) = 3.
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('🔑 Keys Found:         6'))
@@ -148,9 +167,10 @@ describe('status (summary view)', () => {
     // be resilient: check progress numbers rather than exact progress-bar glyphs
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de:'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('50% (3/6'))
+    expect(processExitSpy).toHaveBeenCalledWith(1)
   })
 
-  it('should correctly calculate status for ordinal plurals', async () => {
+  it('should not exit with error code when ordinal plural translations are complete', async () => {
     // Create source that uses an ordinal plural invocation.
     vol.fromJSON({
       [resolve(process.cwd(), 'src/ordinal.ts')]: `
@@ -159,9 +179,16 @@ describe('status (summary view)', () => {
         // extractor should detect hasCount and ordinal=true from this call shape
         t('place', { count, ordinal: true })
       `,
-      // English has 4 ordinal forms; provide 2 translations
+      // German primary language has complete ordinal forms (2 forms: one, other)
+      [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({
+        place_ordinal_one: '1. Platz',
+        place_ordinal_other: 'n-ter Platz',
+      }),
+      // English ordinals have 4 forms (one, two, few, other) - all provided
       [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify({
         place_ordinal_one: '1st place',
+        place_ordinal_two: '2nd place',
+        place_ordinal_few: '3rd place',
         place_ordinal_other: 'nth place',
       }),
     })
@@ -177,7 +204,9 @@ describe('status (summary view)', () => {
 
     await runStatus(config)
 
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- en: [■■■■■■■■■■□□□□□□□□□□] 50% (2/4 keys)'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- en:'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (4/4 keys)'))
+    expect(processExitSpy).not.toHaveBeenCalled()
   })
 })
 
@@ -225,6 +254,7 @@ describe('status (detailed view)', () => {
 
 describe('status (namespace filtering)', () => {
   let consoleLogSpy: any
+  let processExitSpy: any
 
   beforeEach(async () => {
     vol.reset()
@@ -235,6 +265,10 @@ describe('status (namespace filtering)', () => {
       return Object.keys(vol.toJSON()).filter(p => p.includes('/src/'))
     })
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('Process exit called')
+    })
   })
 
   afterEach(() => {
@@ -284,7 +318,7 @@ describe('status (namespace filtering)', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (2/2'))
   })
 
-  it('should correctly report status for Arabic when primary language is English', async () => {
+  it('should correctly report status for Arabic when primary language is English and exit on incomplete', async () => {
     vol.fromJSON({
       [resolve(process.cwd(), 'src/item.ts')]: `
         import { t } from 'i18next'
@@ -304,9 +338,14 @@ describe('status (namespace filtering)', () => {
       },
     }
 
-    await runStatus(config)
+    try {
+      await runStatus(config)
+    } catch (e) {
+      // Expected to throw when process.exit is called
+    }
 
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- ar: [■■■□□□□□□□□□□□□□□□□□] 17% (1/6 keys)'))
+    expect(processExitSpy).toHaveBeenCalledWith(1)
   })
 
   it('should correctly report status for English when primary language is Arabic', async () => {

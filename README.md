@@ -138,7 +138,7 @@ npx i18next-cli extract --sync-primary --watch
 
 ### `status [locale]`
 
-Displays a health check of your project's translation status. Can run without a config file.
+Displays a health check of your project's translation status. Can run without a config file. Exits with a non-zero status code when translations are missing.
 
 **Options:**
 - `--namespace <ns>, -n <ns>`: Filter the report by a specific namespace.
