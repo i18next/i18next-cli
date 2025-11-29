@@ -562,4 +562,73 @@ describe('status (CI mode)', () => {
     // Should exit because at least one locale (fr) has missing translations
     expect(processExitSpy).toHaveBeenCalledWith(1)
   })
+
+  it('should handle Arabic plural forms (6 forms) and exit when incomplete in CI mode', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/items.ts')]: `
+        import { t } from 'i18next'
+        t('item', { count: 1 })
+      `,
+      // Arabic has 6 plural forms: zero, one, two, few, many, other
+      // Providing only 3 out of 6 required forms
+      [resolve(process.cwd(), 'locales/ar/translation.json')]: JSON.stringify({
+        item_zero: 'لا عناصر',
+        item_one: 'عنصر واحد',
+        item_two: 'عنصران',
+        // Missing: item_few, item_many, item_other
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'ar'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        primaryLanguage: 'en',
+      },
+    }
+
+    try {
+      await runStatus(config, { ci: true })
+    } catch (e) {
+      // Expected to throw when process.exit is called
+    }
+
+    // Should exit because Arabic is missing 3 of its 6 required plural forms
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('should pass CI check when all 6 Arabic plural forms are complete', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/items.ts')]: `
+        import { t } from 'i18next'
+        t('item', { count: 1 })
+      `,
+      // Arabic has 6 plural forms - all provided
+      [resolve(process.cwd(), 'locales/ar/translation.json')]: JSON.stringify({
+        item_zero: 'لا عناصر',
+        item_one: 'عنصر واحد',
+        item_two: 'عنصران',
+        item_few: '{{count}} عناصر',
+        item_many: '{{count}} عنصرا',
+        item_other: '{{count}} عنصر',
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'ar'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        primaryLanguage: 'en',
+      },
+    }
+
+    await runStatus(config, { ci: true })
+
+    // Should not exit because all 6 Arabic plural forms are present
+    expect(processExitSpy).not.toHaveBeenCalled()
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- ar:'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (6/6 keys)'))
+  })
 })

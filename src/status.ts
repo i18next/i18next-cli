@@ -76,7 +76,7 @@ export async function runStatus (config: I18nextToolkitConfig, options: StatusOp
         }
       }
       if (hasMissing) {
-        spinner.fail('Error: Missing translations detected. Failing due to CI mode.\n')
+        spinner.fail('Error: Missing translations detected. Failing due to CI mode.')
         process.exit(1)
       }
     }
