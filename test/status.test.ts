@@ -435,3 +435,131 @@ describe('status (plurals)', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (3/3 keys)'))
   })
 })
+
+describe('status (CI mode)', () => {
+  let consoleLogSpy: any
+  let processExitSpy: any
+
+  beforeEach(async () => {
+    vol.reset()
+    vi.clearAllMocks()
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async (pattern: any, options?: any) => {
+      // Return any memfs path that contains a /src/ segment (files are created with absolute cwd paths)
+      return Object.keys(vol.toJSON()).filter(p => p.includes('/src/'))
+    })
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('Process exit called')
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('should exit with code 1 when missing translations are detected in CI mode', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/app.ts')]: `
+        import { t } from 'i18next'
+        t('title')
+        t('welcome')
+        t('error')
+      `,
+      // French translation is incomplete (missing 'error')
+      [resolve(process.cwd(), 'locales/fr/translation.json')]: JSON.stringify({
+        title: 'Titre',
+        welcome: 'Bienvenue',
+      }),
+    })
+
+    try {
+      await runStatus(mockConfig, { ci: true })
+    } catch (e) {
+      // Expected to throw when process.exit is called
+    }
+
+    // CI mode should exit with error code 1 when missing translations are found
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('should not exit with non-zero status when all translations are complete in CI mode', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/app.ts')]: `
+        import { t } from 'i18next'
+        t('title')
+        t('welcome')
+      `,
+      // All translations are complete for all locales
+      [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({
+        title: 'Titel',
+        welcome: 'Willkommen',
+      }),
+      [resolve(process.cwd(), 'locales/fr/translation.json')]: JSON.stringify({
+        title: 'Titre',
+        welcome: 'Bienvenue',
+      }),
+    })
+
+    await runStatus(mockConfig, { ci: true })
+
+    // Should not call process.exit when translations are complete
+    expect(processExitSpy).not.toHaveBeenCalled()
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (2/2 keys)'))
+  })
+
+  it('should detect partial translations in multiple namespaces and exit in CI mode', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/app.ts')]: `
+        import { t } from 'i18next'
+        t('app.title')
+        t('app.welcome')
+      `,
+      [resolve(process.cwd(), 'src/common.ts')]: `
+        import { t } from 'i18next'
+        t('common:button.save')
+        t('common:button.cancel')
+      `,
+      // German translations incomplete
+      [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({
+        app: { title: 'Titel' },
+      }),
+      [resolve(process.cwd(), 'locales/de/common.json')]: JSON.stringify({
+        button: { save: 'Speichern' },
+      }),
+    })
+
+    try {
+      await runStatus(mockConfig, { ci: true })
+    } catch (e) {
+      // Expected to throw when process.exit is called
+    }
+
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('should detect missing translations across all secondary locales in CI mode', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/shared.ts')]: `
+        import { t } from 'i18next'
+        t('welcome')
+        t('goodbye')
+      `,
+      // De has one missing, fr has all missing
+      [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({
+        welcome: 'Willkommen',
+      }),
+      [resolve(process.cwd(), 'locales/fr/translation.json')]: JSON.stringify({}),
+    })
+
+    try {
+      await runStatus(mockConfig, { ci: true })
+    } catch (e) {
+      // Expected to throw when process.exit is called
+    }
+
+    // Should exit because at least one locale (fr) has missing translations
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+})

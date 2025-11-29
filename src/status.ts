@@ -15,6 +15,8 @@ interface StatusOptions {
   detail?: string;
   /** Namespace to filter the report by */
   namespace?: string;
+  /** Exit with a non-zero status code if there are missing translations */
+  ci?: boolean;
 }
 
 /**
@@ -65,6 +67,19 @@ export async function runStatus (config: I18nextToolkitConfig, options: StatusOp
     const report = await generateStatusReport(config)
     spinner.succeed('Analysis complete.')
     await displayStatusReport(report, config, options)
+    if (options.ci) {
+      let hasMissing = false
+      for (const [, localeData] of report.locales.entries()) {
+        if (localeData.totalTranslated < report.totalBaseKeys) {
+          hasMissing = true
+          break
+        }
+      }
+      if (hasMissing) {
+        spinner.fail('Error: Missing translations detected. Failing due to CI mode.\n')
+        process.exit(1)
+      }
+    }
   } catch (error) {
     spinner.fail('Failed to generate status report.')
     console.error(error)
