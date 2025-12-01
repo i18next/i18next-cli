@@ -148,7 +148,7 @@ export async function processFile (
   try {
     let code = await readFile(file, 'utf-8')
 
-    // the SWC parser does not support TypeScript type assertions inside JSX curly braces, e.g. {count as any} or { key: property } as any. This causes a syntax error and extraction fails.
+    // The SWC parser does not support TypeScript type assertions inside JSX curly braces, e.g. {count as any} or { key: property } as any. This causes a syntax error and extraction fails.
     // To fix this, we remove TypeScript type assertions inside JSX curly braces
     code = code.replace(/(\{\{[^}]+)\s+as\s+[^}]+\}\}/g, (match, before) => before + '}}')
 
