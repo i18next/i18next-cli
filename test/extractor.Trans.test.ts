@@ -2046,4 +2046,41 @@ describe('extractor: advanced Trans features', () => {
       // 'space-comp': '<p>text <2>link</2></p>', // currently generates this
     })
   })
+
+  it('should correctly extract placeholders from JSX with TypeScript type assertions', async () => {
+    const sampleCode = `
+      <Trans i18nKey="items">
+        <b>{{count as any}}</b> items
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    // Should extract {{count}} items, not {{value}} items
+    expect(translationFile!.newTranslations).toEqual({
+      items: '<0>{{count}}</0> items',
+    })
+  })
+
+  it('should correctly extract object placeholders from JSX with TypeScript type assertions', async () => {
+    const sampleCode = `
+      let property = 'my var';
+      <Trans i18nKey="objectTypeAssertion">
+        {{ key: property } as any}
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    // Should extract {{key}} not {{value}}
+    expect(translationFile!.newTranslations).toEqual({
+      objectTypeAssertion: '{{key}}',
+    })
+  })
 })

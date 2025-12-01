@@ -847,6 +847,21 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           out += textVal
         } else if (expr.type === 'Identifier') {
           out += `{{${expr.value}}}`
+        } else if (expr.type === 'TsAsExpression' && expr.expression?.type === 'ObjectExpression') {
+          const objExpr = expr.expression
+          const keys = objExpr.properties
+            .filter((prop: any) => prop.type === 'KeyValueProperty' && prop.key && prop.key.type === 'Identifier')
+            .map((prop: any) => prop.key.value)
+          if (keys.length > 0) {
+            out += keys.map((k: any) => `{{${k}}}`).join('')
+          } else {
+            const prop = objExpr.properties[0]
+            if (prop && prop.type === 'Identifier') {
+              out += `{{${prop.value}}}`
+            } else {
+              out += '{{value}}'
+            }
+          }
         } else if (expr.type === 'ObjectExpression') {
           const prop = expr.properties[0]
           if (prop && prop.type === 'KeyValueProperty' && prop.key && prop.key.type === 'Identifier') {
