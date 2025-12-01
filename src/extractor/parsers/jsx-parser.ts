@@ -859,7 +859,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             if (prop && prop.type === 'Identifier') {
               out += `{{${prop.value}}}`
             } else {
-              out += '{{value}}'
+              throw new Error('Unrecognized expression in JSX placeholder')
             }
           }
         } else if (expr.type === 'ObjectExpression') {
@@ -869,14 +869,14 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           } else if (prop && prop.type === 'Identifier') {
             out += `{{${prop.value}}}`
           } else {
-            out += '{{value}}'
+            throw new Error('Unrecognized expression in JSX placeholder')
           }
         } else if (expr.type === 'MemberExpression' && expr.property && expr.property.type === 'Identifier') {
           out += `{{${expr.property.value}}}`
         } else if (expr.type === 'CallExpression' && expr.callee?.type === 'Identifier') {
           out += `{{${expr.callee.value}}}`
         } else {
-          out += '{{value}}'
+          throw new Error('Unrecognized expression in JSX placeholder')
         }
         continue
       }

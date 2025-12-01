@@ -2050,7 +2050,7 @@ describe('extractor: advanced Trans features', () => {
   it('should correctly extract placeholders from JSX with TypeScript type assertions', async () => {
     const sampleCode = `
       <Trans i18nKey="items">
-        <b>{{count as any}}</b> items
+        <b>{{count: count as any}}</b> items
       </Trans>
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })

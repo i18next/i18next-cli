@@ -5,9 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.28.2](https://github.com/i18next/i18next-cli/compare/v1.28.1...v1.28.2) - 2025-12-01
+
+- **Extractor:** Improved robustness for JSX/TSX placeholder extraction. Replaced silent fallback (`out += '{{value}}'`) with explicit error in JSX placeholders now throw an error instead of silently producing incorrect output. [#133](https://github.com/i18next/i18next-cli/issues/133)
+- **Extractor:** Removed unnecessary regex workaround for TypeScript type assertions inside JSX curly braces. SWC now correctly parses `{ key: value as any }` and similar patterns, so extraction logic relies solely on AST analysis for reliability. [#133](https://github.com/i18next/i18next-cli/issues/133)
+- **Tests:** Fixed and clarified TypeScript test cases for JSX placeholder extraction, ensuring coverage for type assertions and object expressions in `<Trans>` components. [#133](https://github.com/i18next/i18next-cli/issues/133)
+
 ## [1.28.1](https://github.com/i18next/i18next-cli/compare/v1.28.0...v1.28.1) - 2025-12-01
 
-- **Extractor:** Fixed a bug where TypeScript type assertions inside JSX curly braces (e.g. `{count as any}` or `{ key: property } as any`) resulted in incorrect or silently bad extractions. The extractor now strips type assertions and correctly extracts placeholders such as `{{count}}` and `{{key}}` from TSX/JSX. [#133](https://github.com/i18next/i18next-cli/pull/133)
+- **Extractor:** Fixed a bug where TypeScript type assertions inside JSX curly braces (e.g. `{count as any}` or `{ key: property } as any`) resulted in incorrect or silently bad extractions. The extractor now strips type assertions and correctly extracts placeholders such as `{{count}}` and `{{key}}` from TSX/JSX. [#133](https://github.com/i18next/i18next-cli/issues/133)
 
 ## [1.28.0](https://github.com/i18next/i18next-cli/compare/v1.27.1...v1.28.0) - 2025-11-29
 
