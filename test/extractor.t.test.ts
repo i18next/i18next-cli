@@ -1771,6 +1771,9 @@ describe('extractor: advanced t features', () => {
         t('time', '12:30:45');
         t('ratio', '16:9:4');
         t('label', 'Note: This is important: really');
+        t('This is a wonderful day.');
+        t('I am I. And you are you.');
+        t('He said: Are you sure?');
       `
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
@@ -1782,6 +1785,9 @@ describe('extractor: advanced t features', () => {
         time: '12:30:45',
         ratio: '16:9:4',
         label: 'Note: This is important: really',
+        'This is a wonderful day.': 'This is a wonderful day.',
+        'I am I. And you are you.': 'I am I. And you are you.',
+        'He said: Are you sure?': 'He said: Are you sure?'
       })
     })
   })

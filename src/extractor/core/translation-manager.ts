@@ -5,6 +5,9 @@ import { getNestedValue, setNestedValue, getNestedKeys } from '../../utils/neste
 import { getOutputPath, loadTranslationFile } from '../../utils/file-utils'
 import { resolveDefaultValue } from '../../utils/default-value'
 
+// used for natural language check
+const chars = [' ', ',', '?', '!', ';']
+
 /**
  * Converts a glob pattern to a regular expression for matching keys
  * @param glob - The glob pattern to convert
@@ -78,6 +81,22 @@ function isContextVariantOfAcceptingKey (
   }
 
   return false
+}
+
+/**
+ * Checks if a key looks like an object path or natural language.
+ * (like in i18next)
+ */
+function looksLikeObjectPath (key: string, separator: string, regex: RegExp | null): boolean {
+  if (!regex) return true
+  let matched = !regex.test(key)
+  if (!matched) {
+    const ki = key.indexOf(separator)
+    if (ki > 0 && !regex.test(key.substring(0, ki))) {
+      matched = true
+    }
+  }
+  return matched
 }
 
 /**
@@ -193,6 +212,16 @@ function buildNewTranslationsForNs (
     preserveContextVariants = false,
   } = config.extract
 
+  const nsSep = typeof config.extract.nsSeparator === 'string' ? config.extract.nsSeparator : ':'
+
+  // Prepare regex for natural language detection
+  const possibleChars = chars.filter(
+    (c) => nsSep.indexOf(c) < 0 && (typeof keySeparator === 'string' ? keySeparator.indexOf(c) < 0 : true)
+  )
+  const naturalLanguageRegex = possibleChars.length > 0
+    ? new RegExp(`(${possibleChars.map((c) => (c === '?' ? '\\?' : c)).join('|')})`)
+    : null
+
   // Build a set of base keys that accept context (only if preserveContextVariants is enabled)
   // These are keys that were called with a context parameter in the source code
   const keysAcceptingContext = new Set<string>()
@@ -231,7 +260,6 @@ function buildNewTranslationsForNs (
 
   // Prepare namespace pattern checking helpers
   const rawPreserve = config.extract.preservePatterns || []
-  const nsSep = typeof config.extract.nsSeparator === 'string' ? config.extract.nsSeparator : ':'
 
   // Helper to check if a key should be filtered out during extraction
   const shouldFilterKey = (key: string): boolean => {
@@ -464,7 +492,13 @@ function buildNewTranslationsForNs (
     }
 
     // If the key looks like a serialized Trans component (starts with <), treat it as a flat key
-    const separator = key.startsWith('<') ? false : (keySeparator ?? '.')
+    let separator = key.startsWith('<') ? false : (keySeparator ?? '.')
+
+    if (separator && typeof separator === 'string') {
+      if (!looksLikeObjectPath(key, separator, naturalLanguageRegex)) {
+        separator = false
+      }
+    }
 
     const existingValue = getNestedValue(existingTranslations, key, separator)
     // When keySeparator === false we are working with flat keys (no nesting).
@@ -673,12 +707,32 @@ export async function getTranslations (
   // namespace (internally we keep implicit keys as 'translation').
   const NO_NS_TOKEN = '__no_namespace__'
   const keysByNS = new Map<string, ExtractedKey[]>()
+
+  const nsSep = typeof config.extract.nsSeparator === 'string' ? config.extract.nsSeparator : ':'
+  const nsNaturalLanguageRegex = new RegExp(`(${chars.map((c) => (c === '?' ? '\\?' : c)).join('|')})`)
+
   for (const k of keys.values()) {
+    let ns = k.ns
+    let key = k.key
+
+    // Fix for incorrect splitting of natural language keys containing nsSeparator
+    // If the namespace contains spaces or looks like natural language, assume it was split incorrectly
+    // and rejoin it with the key.
+    if (ns && nsNaturalLanguageRegex.test(ns)) {
+      key = `${ns}${nsSep}${key}`
+      ns = undefined
+    }
+
     const nsKey = (k.nsIsImplicit && config.extract.defaultNS === false)
       ? NO_NS_TOKEN
-      : String(k.ns ?? (config.extract.defaultNS ?? 'translation'))
+      : String(ns ?? (config.extract.defaultNS ?? 'translation'))
     if (!keysByNS.has(nsKey)) keysByNS.set(nsKey, [])
-    keysByNS.get(nsKey)!.push(k)
+
+    if (ns !== k.ns || key !== k.key) {
+      keysByNS.get(nsKey)!.push({ ...k, ns, key })
+    } else {
+      keysByNS.get(nsKey)!.push(k)
+    }
   }
 
   const results: TranslationResult[] = []
