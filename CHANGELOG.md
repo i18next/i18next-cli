@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.28.3](https://github.com/i18next/i18next-cli/compare/v1.28.2...v1.28.3) - 2025-12-02
 
-- **Extractor & Linter:** Fixed a critical bug where files with a `.js` extension containing JSX would fail to parse and process. The extractor and linter now correctly handle JSX syntax in `.js` files, ensuring reliable key extraction and hardcoded string detection for React codebases using `.js` files. [#134](https://github.com/i18next/i18next-cli/issues/134)
+- **Extractor & Linter:** Fixed a bug where files with a `.js` extension containing JSX would fail to parse and process. The extractor and linter now correctly handle JSX syntax in `.js` files, ensuring reliable key extraction and hardcoded string detection for React codebases using `.js` files. [#134](https://github.com/i18next/i18next-cli/issues/134)
 
 ## [1.28.2](https://github.com/i18next/i18next-cli/compare/v1.28.1...v1.28.2) - 2025-12-01
 
