@@ -745,7 +745,7 @@ describe('runExtractor: defaultValue option', () => {
     expect(enTranslations).toEqual({
       'Children as key and default': 'Children as key and default', // Uses children as default
       complex: {
-        jsx: 'Hello <strong>{{name}}</strong>, you have <3>{{count}} messages</3>!', // Serialized JSX (Link becomes <3>)
+        jsx: 'Hello <1>{{name}}</1>, you have <3>{{count}} messages</3>!', // Serialized JSX (Link becomes <3>)
       },
       explicit: {
         key: 'Explicit Default', // Uses explicit defaults prop

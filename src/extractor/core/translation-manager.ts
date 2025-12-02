@@ -435,8 +435,12 @@ function buildNewTranslationsForNs (
               ? `${base}${pluralSeparator}ordinal${pluralSeparator}${category}`
               : `${base}${pluralSeparator}${category}`
 
+            // If the key looks like a serialized Trans component (starts with <), treat it as a flat key
+            // to prevent splitting on dots that appear within the content.
+            const separator = finalKey.startsWith('<') ? false : (keySeparator ?? '.')
+
             // Preserve existing translation if present; otherwise set a sensible default
-            const existingVariantValue = getNestedValue(existingTranslations, finalKey, keySeparator ?? '.')
+            const existingVariantValue = getNestedValue(existingTranslations, finalKey, separator)
             if (existingVariantValue === undefined) {
               // Prefer explicit defaultValue extracted for this key; fall back to configured defaultValue
               // (resolved via resolveDefaultValue which handles functions or strings and accepts the full parameter set).
@@ -447,10 +451,10 @@ function buildNewTranslationsForNs (
                 // Use resolveDefaultValue to compute a sensible default, providing namespace and locale context.
                 resolvedValue = resolveDefaultValue(emptyDefaultValue, String(base), namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
               }
-              setNestedValue(newTranslations, finalKey, resolvedValue, keySeparator ?? '.')
+              setNestedValue(newTranslations, finalKey, resolvedValue, separator)
             } else {
               // Keep existing translation
-              setNestedValue(newTranslations, finalKey, existingVariantValue, keySeparator ?? '.')
+              setNestedValue(newTranslations, finalKey, existingVariantValue, separator)
             }
           }
         }
@@ -459,7 +463,10 @@ function buildNewTranslationsForNs (
       }
     }
 
-    const existingValue = getNestedValue(existingTranslations, key, keySeparator ?? '.')
+    // If the key looks like a serialized Trans component (starts with <), treat it as a flat key
+    const separator = key.startsWith('<') ? false : (keySeparator ?? '.')
+
+    const existingValue = getNestedValue(existingTranslations, key, separator)
     // When keySeparator === false we are working with flat keys (no nesting).
     // Avoid concatenating false into strings (``${key}${false}`` => "keyfalse") which breaks the startsWith check.
     // For flat keys there cannot be nested children, so treat them as leaves.
@@ -477,7 +484,7 @@ function buildNewTranslationsForNs (
 
     // Special handling for existing objects that should be preserved
     if (shouldPreserveObject) {
-      setNestedValue(newTranslations, key, existingValue, keySeparator ?? '.')
+      setNestedValue(newTranslations, key, existingValue, separator)
       continue
     }
 
@@ -547,7 +554,7 @@ function buildNewTranslationsForNs (
       }
     }
 
-    setNestedValue(newTranslations, key, valueToSet, keySeparator ?? '.')
+    setNestedValue(newTranslations, key, valueToSet, separator)
   }
 
   // 2. If sorting is enabled, recursively sort the entire object.

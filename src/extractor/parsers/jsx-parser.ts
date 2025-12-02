@@ -535,9 +535,17 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             slots.push(n)
           } else if (!hasTextContent) {
             // Has complex children but no attributes
-            // For <p> tags at root level with multiple <p> siblings, index them
-            // For other preserved tags, preserve as literal (don't add to slots)
-            if (tagName === 'p') {
+
+            // Check if children contain any expressions (interpolations)
+            const hasExpressions = (n.children || []).some((c: any) =>
+              c.type === 'JSXExpressionContainer' &&
+              getStringLiteralFromExpression(c.expression) === undefined
+            )
+
+            if (hasExpressions) {
+              slots.push(n)
+              collectSlots(n.children || [], slots, true)
+            } else if (tagName === 'p') {
               // If this root-level <p> contains children that themselves will be
               // indexed (non-preserved elements / elements with attrs / complex children),
               // we must index the <p> so inner numeric placeholders keep stable numbering.

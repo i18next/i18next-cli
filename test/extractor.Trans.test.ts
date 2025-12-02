@@ -111,7 +111,7 @@ describe('extractor: advanced Trans features', () => {
 
   it('should generate plural keys when Trans component has a count prop', async () => {
     const sampleCode = `
-      <Trans i18nKey="userMessagesUnread" count={count}>
+      <Trans i18nKey="userMessagesUnreadARA" count={count}>
         Hello <strong>{{name}}</strong>, you have {{count}} unread message.
       </Trans>
     `
@@ -122,11 +122,11 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
 
-    const expectedDefaultValue = 'Hello <strong>{{name}}</strong>, you have {{count}} unread message.'
+    const expectedDefaultValue = 'Hello <1>{{name}}</1>, you have {{count}} unread message.'
 
     expect(translationFile!.newTranslations).toEqual({
-      userMessagesUnread_one: expectedDefaultValue,
-      userMessagesUnread_other: expectedDefaultValue,
+      userMessagesUnreadARA_one: expectedDefaultValue,
+      userMessagesUnreadARA_other: expectedDefaultValue,
     })
   })
 
@@ -2081,6 +2081,57 @@ describe('extractor: advanced Trans features', () => {
     // Should extract {{key}} not {{value}}
     expect(translationFile!.newTranslations).toEqual({
       objectTypeAssertion: '{{key}}',
+    })
+  })
+
+  it('should serialize <div> and <strong> as indexed components with default transKeepBasicHtmlNodesFor', async () => {
+    const sampleCode = `
+      <Trans count={count}>
+        <div>
+          You have <strong>{{ count }} item</strong>.
+        </div>
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract({
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract
+      }
+    })
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      '<0>You have <1>{{count}} item</1>.</0>_one': '<0>You have <1>{{count}} item</1>.</0>',
+      '<0>You have <1>{{count}} item</1>.</0>_other': '<0>You have <1>{{count}} item</1>.</0>'
+    })
+  })
+
+  it('should serialize <div> and <strong> as indexed components when transKeepBasicHtmlNodesFor includes none', async () => {
+    const sampleCode = `
+      <Trans count={count}>
+        <div>
+          You have <strong>{{ count }} item</strong>.
+        </div>
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract({
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        transKeepBasicHtmlNodesFor: [] // disables keeping basic HTML nodes
+      }
+    })
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      '<0>You have <1>{{count}} item</1>.</0>_one': '<0>You have <1>{{count}} item</1>.</0>',
+      '<0>You have <1>{{count}} item</1>.</0>_other': '<0>You have <1>{{count}} item</1>.</0>'
     })
   })
 })
