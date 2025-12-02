@@ -451,6 +451,9 @@ export default defineConfig({
 
     // Optional JSX tag names whose content should be ignored when linting
     ignoredTags: ['pre'],
+
+    /** Glob pattern(s) for files to ignore during lint (in addition to those defined during extract) */
+    ignore: ['additional/stuff/**'],
   },
   
   // TypeScript type generation

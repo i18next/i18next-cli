@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.0](https://github.com/i18next/i18next-cli/compare/v1.28.3...v1.29.0) - 2025-12-02
+
+- **Linter:** Added support for `lint.ignore` configuration option, allowing users to specify glob patterns for files to be excluded from linting. This works in addition to `extract.ignore`, enabling more granular control over which files are checked for hardcoded strings. [#135](https://github.com/i18next/i18next-cli/issues/135)
+
 ## [1.28.3](https://github.com/i18next/i18next-cli/compare/v1.28.2...v1.28.3) - 2025-12-02
 
 - **Extractor & Linter:** Fixed a bug where files with a `.js` extension containing JSX would fail to parse and process. The extractor and linter now correctly handle JSX syntax in `.js` files, ensuring reliable key extraction and hardcoded string detection for React codebases using `.js` files. [#134](https://github.com/i18next/i18next-cli/issues/134)

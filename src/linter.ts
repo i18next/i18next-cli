@@ -52,12 +52,15 @@ export class Linter extends EventEmitter<LinterEventMap> {
     try {
       this.emit('progress', { message: 'Finding source files to analyze...' })
       const defaultIgnore = ['node_modules/**']
-      const userIgnore = Array.isArray(config.extract.ignore)
+      const extractIgnore = Array.isArray(config.extract.ignore)
         ? config.extract.ignore
         : config.extract.ignore ? [config.extract.ignore] : []
+      const lintIgnore = Array.isArray(config.lint?.ignore)
+        ? config.lint.ignore
+        : config.lint?.ignore ? [config.lint.ignore] : []
 
       const sourceFiles = await glob(config.extract.input, {
-        ignore: [...defaultIgnore, ...userIgnore]
+        ignore: [...defaultIgnore, ...extractIgnore, ...lintIgnore]
       })
       this.emit('progress', { message: `Analyzing ${sourceFiles.length} source files...` })
       let totalIssues = 0

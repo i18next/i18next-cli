@@ -870,4 +870,53 @@ describe('Linter (core logic)', () => {
     expect(texts).toContain('Hardcoded attribute')
     expect(texts).toContain('Some paragraph')
   })
+
+  it('should ignore files specified in lint.ignore (in addition to extract.ignore)', async () => {
+    // Setup: Create three files, two should be ignored by linter.
+    vol.fromJSON({
+      '/src/App.tsx': '<p>Should be flagged</p>',
+      '/src/admin/ignored.tsx': '<h1>Should NOT be flagged (admin)</h1>',
+      '/src/legacy/ignored.tsx': '<h2>Should NOT be flagged (legacy)</h2>',
+    })
+
+    // Mock glob to return all files, but simulate ignore filtering
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async (pattern, options) => {
+      const ignore = options?.ignore ?? []
+      // Normalize ignore to an array of strings for consistent processing
+      const ignoreList = Array.isArray(ignore) ? ignore : (typeof ignore === 'string' ? [ignore] : [])
+      // Simulate glob filtering by removing ignored files
+      const files = ['/src/App.tsx', '/src/admin/ignored.tsx', '/src/legacy/ignored.tsx']
+      return files.filter(f =>
+        !ignoreList.some((pattern: string) =>
+          (pattern === 'src/admin/**' && f.startsWith('/src/admin/')) ||
+          (pattern === 'src/legacy/**' && f.startsWith('/src/legacy/'))
+        )
+      )
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: ['src/**/*.{ts,tsx}'],
+        output: '',
+        ignore: ['src/legacy/**'],
+        transComponents: ['Trans'],
+      },
+      lint: {
+        ignore: ['src/admin/**'],
+      },
+    }
+
+    const result = await runLinter(config)
+
+    // Only /src/App.tsx should be linted
+    expect(result.success).toBe(false)
+    expect(Object.keys(result.files)).toEqual(['/src/App.tsx'])
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('Should be flagged')
+    // Ignored files should not appear in results
+    expect(result.files['/src/admin/ignored.tsx']).toBeUndefined()
+    expect(result.files['/src/legacy/ignored.tsx']).toBeUndefined()
+  })
 })

@@ -175,6 +175,9 @@ export interface I18nextToolkitConfig {
      * See README for the exact recommended list.
      */
     acceptedTags?: string[];
+
+    /** Glob pattern(s) for files to ignore during lint (in addition to those defined during extract) */
+    ignore?: string | string[];
   };
 
   /** Configuration options for TypeScript type generation */
