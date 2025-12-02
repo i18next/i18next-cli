@@ -402,10 +402,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           // ObjectExpression placeholders ({{ key: value }}) should be treated
           // as part of the parent.
           if (exprType === 'ObjectExpression') {
-            const prop = n.expression.properties && n.expression.properties[0]
-            if (prop && prop.type === 'KeyValueProperty') {
-              continue
-            }
+            continue
           }
 
           // For any simple string expression inside a non-preserved parent with NO
@@ -683,8 +680,32 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
       return globalSlots.indexOf(n)
     }
 
-    // At root level, build index based on element position among siblings
-    let rootElementIndex = 0
+    // Helper to determine the root index.
+    // If there are preserved elements (like <p>) that are NOT in globalSlots but are in nodes,
+    // we must account for them to ensure subsequent indexed elements get the correct index.
+    const getRootIndex = (n: any) => {
+      if (!isRootLevel) return globalSlots.indexOf(n)
+
+      // Find the index of n in the original nodes array
+      const nodeIndex = nodes.indexOf(n)
+      if (nodeIndex === -1) return -1
+
+      // Count how many meaningful siblings (elements or non-formatting text) appear before n
+      let meaningfulSiblingsBefore = 0
+      for (let i = 0; i < nodeIndex; i++) {
+        const sibling = nodes[i]
+        if (!sibling) continue
+        if (sibling.type === 'JSXText') {
+          if (!isFormattingWhitespace(sibling)) meaningfulSiblingsBefore++
+        } else if (sibling.type === 'JSXExpressionContainer') {
+          // Check if expression is meaningful (not empty/comment)
+          if (sibling.expression && sibling.expression.type !== 'JSXEmptyExpression') meaningfulSiblingsBefore++
+        } else if (sibling.type === 'JSXElement') {
+          meaningfulSiblingsBefore++
+        }
+      }
+      return meaningfulSiblingsBefore
+    }
 
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i]
@@ -890,15 +911,12 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
       }
 
       if (node.type === 'JSXElement') {
+        // Capture index before incrementing
+        const myRuntimeIndex = isRootLevel ? getRootIndex(node) : undefined
+
         let tag: string | undefined
         if (node.opening && node.opening.name && node.opening.name.type === 'Identifier') {
           tag = node.opening.name.value
-        }
-
-        // Track root element index for root-level elements
-        const myRootIndex = isRootLevel ? rootElementIndex : undefined
-        if (isRootLevel && node.type === 'JSXElement') {
-          rootElementIndex++
         }
 
         if (tag && allowedTags.has(tag)) {
@@ -949,17 +967,17 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
               out += `<${tag}>${trimFormattingEdges(inner)}</${tag}>`
             } else if (isPTag) {
               // Always index <p> unless it's a root-level <p> among multiple <p> siblings
-              const idx = isRootLevel ? rootElementIndex - 1 : globalSlots.indexOf(node)
+              const idx = isRootLevel && myRuntimeIndex !== undefined ? myRuntimeIndex : globalSlots.indexOf(node)
               out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
             } else {
-              const idx = isRootLevel ? rootElementIndex - 1 : globalSlots.indexOf(node)
+              const idx = isRootLevel && myRuntimeIndex !== undefined ? myRuntimeIndex : globalSlots.indexOf(node)
               out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
             }
           } else if (hasAttrs && !isSinglePureTextChild) {
             // Has attributes -> treat as indexed element with numeric placeholder
             const childrenLocal = children
             // determine this element's numeric index once for all branches
-            const idx = resolveIndex(node)
+            const idx = isRootLevel && myRuntimeIndex !== undefined ? myRuntimeIndex : resolveIndex(node)
             // Use precise detection so trailing text doesn't force global indexing
             const hasNonElementGlobalSlots = hasNonElementGlobalSlotsAmongChildren(childrenLocal)
 
@@ -1042,8 +1060,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             const idx = globalSlots.indexOf(node)
             if (idx !== -1) {
               // This tag is in globalSlots, so index it
-              // At root level, use the element's position among root elements
-              const indexToUse = myRootIndex !== undefined ? myRootIndex : idx
+              // At root level, use the element's position among root elements (runtimeIndex)
+              const indexToUse = myRuntimeIndex !== undefined ? myRuntimeIndex : idx
 
               // Check if children have text/expression nodes in globalSlots
               // that appear BEFORE or BETWEEN element children (not just trailing)
@@ -1125,6 +1143,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
                         )
                       const chWillBePreserved = !chHasAttrs && (!chChildren.length || chIsSinglePureText)
                       if (!chWillBePreserved) {
+                        // Will be indexed, add to local map
                         childrenLocalMap.set(ch, localIdxCounter++)
                       }
                     } else {

@@ -145,8 +145,8 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
 
     // The serializer now produces the correct indexed output based on the children's array positions
-    // <div> is at index 1, <Link> is at index 6
-    const expectedDefaultValue = 'Hello <1>{{name}}</1>, you have {{count}} unread message. <6>Go to messages</6>.'
+    // <div> is at index 1, <Link> is at index 5
+    const expectedDefaultValue = 'Hello <1>{{name}}</1>, you have {{count}} unread message. <5>Go to messages</5>.'
 
     // This also correctly extracts the key from the `title` prop inside the Trans component
     expect(translationFile!.newTranslations).toEqual({

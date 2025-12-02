@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.1](https://github.com/i18next/i18next-cli/compare/v1.29.0...v1.29.0) - 2025-12-02
+
+- **Extractor:** Fixed incorrect placeholder indexing in `<Trans>` components when mixing preserved HTML tags (like `<p>`) with indexed elements at the root level. Additionally, improved handling of object expressions inside indexed elements to prevent unnecessary index shifts. [#136](https://github.com/i18next/i18next-cli/issues/136)
+
 ## [1.29.0](https://github.com/i18next/i18next-cli/compare/v1.28.3...v1.29.0) - 2025-12-02
 
 - **Linter:** Added support for `lint.ignore` configuration option, allowing users to specify glob patterns for files to be excluded from linting. This works in addition to `extract.ignore`, enabling more granular control over which files are checked for hardcoded strings. [#135](https://github.com/i18next/i18next-cli/issues/135)
