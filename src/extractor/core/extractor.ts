@@ -178,9 +178,7 @@ export async function processFile (
         comments: true,
       })
     } catch (err) {
-      // Some projects embed JSX/TSX inside .ts files. Try a one-time fallback parse
-      // enabling TSX when the file extension is `.ts`. If fallback fails, surface
-      // the original error as an ExtractorError.
+      // Fallback for .ts files with JSX (already present)
       if (fileExt === '.ts' && !isTSX) {
         try {
           ast = await parse(code, {
@@ -191,6 +189,20 @@ export async function processFile (
             comments: true,
           })
           logger.info?.(`Parsed ${file} using TSX fallback`)
+        } catch (err2) {
+          throw new ExtractorError('Failed to process file', file, err2 as Error)
+        }
+      // Fallback for .js files with JSX
+      } else if (fileExt === '.js' && !isJSX) {
+        try {
+          ast = await parse(code, {
+            syntax: 'ecmascript',
+            jsx: true,
+            decorators: true,
+            dynamicImport: true,
+            comments: true,
+          })
+          logger.info?.(`Parsed ${file} using JSX fallback`)
         } catch (err2) {
           throw new ExtractorError('Failed to process file', file, err2 as Error)
         }

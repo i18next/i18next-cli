@@ -81,8 +81,7 @@ export class Linter extends EventEmitter<LinterEventMap> {
             decorators: true
           })
         } catch (err) {
-          // Some projects use JSX/TSX in .ts files. Try one fallback parse with tsx:true
-          // if the original file was a .ts (not .tsx). If that still fails, emit error and continue.
+          // Fallback for .ts files with JSX
           if (fileExt === '.ts' && !isTSX) {
             try {
               ast = await parse(code, {
@@ -90,8 +89,21 @@ export class Linter extends EventEmitter<LinterEventMap> {
                 tsx: true,
                 decorators: true
               })
-              // optional: emit a progress message so consumers know a fallback happened
               this.emit('progress', { message: `Parsed ${file} using TSX fallback` })
+            } catch (err2) {
+              const wrapped = this.wrapError(err2)
+              this.emit('error', wrapped)
+              continue
+            }
+          // Fallback for .js files with JSX
+          } else if (fileExt === '.js' && !isJSX) {
+            try {
+              ast = await parse(code, {
+                syntax: 'ecmascript',
+                jsx: true,
+                decorators: true
+              })
+              this.emit('progress', { message: `Parsed ${file} using JSX fallback` })
             } catch (err2) {
               const wrapped = this.wrapError(err2)
               this.emit('error', wrapped)

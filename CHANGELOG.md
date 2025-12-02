@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.28.3](https://github.com/i18next/i18next-cli/compare/v1.28.2...v1.28.3) - 2025-12-02
+
+- **Extractor & Linter:** Fixed a critical bug where files with a `.js` extension containing JSX would fail to parse and process. The extractor and linter now correctly handle JSX syntax in `.js` files, ensuring reliable key extraction and hardcoded string detection for React codebases using `.js` files. [#134](https://github.com/i18next/i18next-cli/issues/134)
+
 ## [1.28.2](https://github.com/i18next/i18next-cli/compare/v1.28.1...v1.28.2) - 2025-12-01
 
 - **Extractor:** Improved robustness for JSX/TSX placeholder extraction. Replaced silent fallback (`out += '{{value}}'`) with explicit error in JSX placeholders now throw an error instead of silently producing incorrect output. [#133](https://github.com/i18next/i18next-cli/issues/133)

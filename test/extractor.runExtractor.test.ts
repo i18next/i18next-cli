@@ -43,7 +43,13 @@ describe('extractor: runExtractor', () => {
       const hasIgnoredPattern = ignore.some(p => p.replace(/\\/g, '/').includes('**/*.ignored.ts'))
 
       // Base candidates the tests expect
-      const candidates = ['/src/App.tsx', '/src/App.ts', '/src/ignored-file.ts']
+      const candidates = [
+        '/src/App.tsx',
+        '/src/App.ts',
+        '/src/ignored-file.ts',
+        '/src/App.js',
+        '/src/App.jsx'
+      ]
       // Only return files that actually exist in the memfs volume to avoid ENOENT
       const existing = candidates.filter(p => vol.existsSync(p))
 
@@ -2637,5 +2643,43 @@ describe('extractor: runExtractor', () => {
     } catch (err) {
       if ((err as any)?.code !== 'ENOENT') throw err
     }
+  })
+
+  it('should extract keys from JSX in .js files', async () => {
+    const sampleCode = `
+      import React from 'react';
+      import { Trans, useTranslation } from 'react-i18next';
+
+      export default function App() {
+        const { t } = useTranslation();
+        return (
+          <div>
+            <Trans i18nKey="app.title">Welcome</Trans>
+            <p>{t('inline.key', 'Inline default')}</p>
+          </div>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.js': sampleCode })
+
+    const configWithJs = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.{ts,tsx,js,jsx}'],
+      },
+    }
+
+    await runExtractor(configWithJs)
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const enFileContent = await vol.promises.readFile(enPath, 'utf-8')
+    const enJson = JSON.parse(enFileContent as string)
+
+    expect(enJson).toBeDefined()
+    expect(enJson.app).toBeDefined()
+    expect(enJson.app.title).toBe('Welcome')
+    expect(enJson.inline).toBeDefined()
+    expect(enJson.inline.key).toBe('Inline default')
   })
 })
