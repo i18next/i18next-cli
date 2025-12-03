@@ -509,6 +509,32 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should handle comments', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+
+      function Component() {
+        const { t } = useTranslation();
+
+        return (
+          <Trans t={t} i18nKey='SomeKey'>
+            Some content
+            {/* Hidden comment */}
+          </Trans>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      SomeKey: 'Some content',
+    })
+  })
+
   it('should NOT extract space between text and component when separated by newline (formatting)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
