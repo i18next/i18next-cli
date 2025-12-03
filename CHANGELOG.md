@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.3](https://github.com/i18next/i18next-cli/compare/v1.29.2...v1.29.3) - 2025-12-03
+
+- **Status Command:** Fixed a bug where languages with fewer plural forms (e.g., German) were incorrectly reported as having missing translations when other languages with more plural forms (e.g., Arabic or French) were present. The status report now correctly calculates completeness based on each language's specific pluralization rules. [#138](https://github.com/i18next/i18next-cli/issues/138)
+
 ## [1.29.2](https://github.com/i18next/i18next-cli/compare/v1.29.1...v1.29.2) - 2025-12-02
 
 - **Extractor:** Improved natural language key detection to prevent incorrect nesting or namespace splitting. Keys containing spaces or punctuation are now treated as flat keys even when `keySeparator` is enabled, and sentences containing colons (e.g., "Error: Something went wrong") are no longer incorrectly split into namespaces.

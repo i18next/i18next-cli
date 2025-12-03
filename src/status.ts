@@ -67,7 +67,7 @@ export async function runStatus (config: I18nextToolkitConfig, options: StatusOp
     await displayStatusReport(report, config, options)
     let hasMissing = false
     for (const [, localeData] of report.locales.entries()) {
-      if (localeData.totalTranslated < report.totalBaseKeys) {
+      if (localeData.totalTranslated < localeData.totalKeys) {
         hasMissing = true
         break
       }
@@ -274,8 +274,8 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
 
   console.log(chalk.bold(`\nKey Status for "${chalk.cyan(locale)}":`))
 
-  const totalKeysForLocale = Array.from(report.keysByNs.values()).flat().length
-  printProgressBar('Overall', localeData.totalTranslated, localeData.totalKeys)
+  const totalKeysForLocale = localeData.totalKeys
+  printProgressBar('Overall', localeData.totalTranslated, totalKeysForLocale)
 
   const namespacesToDisplay = namespaceFilter ? [namespaceFilter] : Array.from(localeData.namespaces.keys()).sort()
 

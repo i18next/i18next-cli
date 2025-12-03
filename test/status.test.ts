@@ -473,4 +473,202 @@ describe('status (plurals)', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- fr:'))
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (3/3 keys)'))
   })
+
+  it('should correctly report status for German when Arabic has more plural forms', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/issue138.ts')]: `
+        import { t } from 'i18next'
+        t('key', { count: 1 })
+      `,
+      // English (primary)
+      [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify({
+        key_one: 'one',
+        key_other: 'other',
+      }),
+      // German (secondary) - 2 forms
+      [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({
+        key_one: 'eins',
+        key_other: 'andere',
+      }),
+      // Arabic (secondary) - 6 forms (zero, one, two, few, many, other)
+      [resolve(process.cwd(), 'locales/ar/translation.json')]: JSON.stringify({
+        key_zero: '0',
+        key_one: '1',
+        key_two: '2',
+        key_few: '3-10',
+        key_many: '11-99',
+        key_other: '100+',
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de', 'ar'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        primaryLanguage: 'en',
+      },
+    }
+
+    await runStatus(config, { detail: 'de' })
+
+    // German should be 100% (2/2 keys)
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Key Status for "de"'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (2/2)'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('🎉 All keys are translated for "de"'))
+  })
+
+  it('should correctly report overall status for German when Arabic has more plural forms', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/issue138.ts')]: `
+        import { t } from 'i18next'
+        t('key', { count: 1 })
+      `,
+      // English (primary)
+      [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify({
+        key_one: 'one',
+        key_other: 'other',
+      }),
+      // German (secondary) - 2 forms
+      [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({
+        key_one: 'eins',
+        key_other: 'andere',
+      }),
+      // Arabic (secondary) - 6 forms (zero, one, two, few, many, other)
+      [resolve(process.cwd(), 'locales/ar/translation.json')]: JSON.stringify({
+        key_zero: '0',
+        key_one: '1',
+        key_two: '2',
+        key_few: '3-10',
+        key_many: '11-99',
+        key_other: '100+',
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de', 'ar'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        primaryLanguage: 'en',
+      },
+    }
+
+    await runStatus(config)
+
+    // German should be 100% (2/2 keys)
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de:'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (2/2 keys)'))
+
+    // Arabic should be 100% (6/6 keys)
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- ar:'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (6/6 keys)'))
+  })
+
+  it('should correctly report status for German when primary language is Arabic', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/issue138_inverse.ts')]: `
+        import { t } from 'i18next'
+        t('key', { count: 1 })
+      `,
+      // Arabic (primary) - 6 forms
+      [resolve(process.cwd(), 'locales/ar/translation.json')]: JSON.stringify({
+        key_zero: '0',
+        key_one: '1',
+        key_two: '2',
+        key_few: '3-10',
+        key_many: '11-99',
+        key_other: '100+',
+      }),
+      // German (secondary) - 2 forms
+      [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({
+        key_one: 'eins',
+        key_other: 'andere',
+      }),
+      // English (secondary) - 2 forms
+      [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify({
+        key_one: 'one',
+        key_other: 'other',
+      }),
+      // French (secondary) - 3 forms (one, many, other)
+      [resolve(process.cwd(), 'locales/fr/translation.json')]: JSON.stringify({
+        key_one: 'un',
+        key_many: 'beaucoup',
+        key_other: 'autres',
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['ar', 'de', 'en', 'fr'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        primaryLanguage: 'ar',
+      },
+    }
+
+    await runStatus(config, { detail: 'de' })
+
+    // German should be 100% (2/2 keys)
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Key Status for "de"'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (2/2)'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('🎉 All keys are translated for "de"'))
+  })
+
+  it('should correctly report overall status when primary language is Arabic', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/issue138_inverse.ts')]: `
+        import { t } from 'i18next'
+        t('key', { count: 1 })
+      `,
+      // Arabic (primary) - 6 forms
+      [resolve(process.cwd(), 'locales/ar/translation.json')]: JSON.stringify({
+        key_zero: '0',
+        key_one: '1',
+        key_two: '2',
+        key_few: '3-10',
+        key_many: '11-99',
+        key_other: '100+',
+      }),
+      // German (secondary) - 2 forms
+      [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({
+        key_one: 'eins',
+        key_other: 'andere',
+      }),
+      // English (secondary) - 2 forms
+      [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify({
+        key_one: 'one',
+        key_other: 'other',
+      }),
+      // French (secondary) - 3 forms (one, many, other)
+      [resolve(process.cwd(), 'locales/fr/translation.json')]: JSON.stringify({
+        key_one: 'un',
+        key_many: 'beaucoup',
+        key_other: 'autres',
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['ar', 'de', 'en', 'fr'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        primaryLanguage: 'ar',
+      },
+    }
+
+    await runStatus(config)
+
+    // German should be 100% (2/2 keys)
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de:'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (2/2 keys)'))
+
+    // English should be 100% (2/2 keys)
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- en:'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (2/2 keys)'))
+
+    // French should be 100% (3/3 keys)
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- fr:'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (3/3 keys)'))
+  })
 })
