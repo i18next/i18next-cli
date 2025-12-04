@@ -904,8 +904,10 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           out += `{{${expr.property.value}}}`
         } else if (expr.type === 'CallExpression' && expr.callee?.type === 'Identifier') {
           out += `{{${expr.callee.value}}}`
+        } else if (expr.type === 'JSXEmptyExpression') {
+          // skip
         } else {
-          throw new Error('Unrecognized expression in JSX placeholder')
+          throw new Error(`Unrecognized expression in JSX placeholder: ${expr.type}`)
         }
         continue
       }
