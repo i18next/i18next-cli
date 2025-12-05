@@ -126,4 +126,34 @@ export default {
       },
     })
   })
+
+  it('should handle defaultNS: false correctly', async () => {
+    const { glob } = await import('glob')
+    const filename = '/locales/en.ts'
+    ;(glob as any).mockResolvedValue([filename])
+
+    vol.fromJSON({
+      [filename]: "export default { hello: 'world' };",
+    })
+
+    const config = {
+      locales: ['en'],
+      extract: {
+        defaultNS: false,
+      },
+      types: {
+        input: ['locales/*.ts'],
+        output: 'src/types/i18next.d.ts',
+        resourcesFile: 'src/types/resources.d.ts',
+      },
+    }
+
+    await runTypesGenerator(config as any)
+
+    const outputPath = resolve(process.cwd(), config.types.output)
+    const content = await vol.promises.readFile(outputPath, 'utf-8')
+
+    expect(content).toContain('defaultNS: false;')
+    expect(content).not.toContain("defaultNS: 'translation';")
+  })
 })
