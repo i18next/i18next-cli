@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.30.4](https://github.com/i18next/i18next-cli/compare/v1.30.3...v1.30.4) - 2025-12-05
 
-- export recommendedAcceptedTags and recommendedAcceptedAttributes [#142](https://github.com/i18next/i18next-cli/issues/142)
+- **Linter:** Exported `recommendedAcceptedTags` and `recommendedAcceptedAttributes` constants for easy extension of linting rules in user configs. You can now import and spread these lists to build on the default recommendations without copying them manually. [#142](https://github.com/i18next/i18next-cli/issues/142)
 
 ## [1.30.3](https://github.com/i18next/i18next-cli/compare/v1.30.2...v1.30.3) - 2025-12-05
 
