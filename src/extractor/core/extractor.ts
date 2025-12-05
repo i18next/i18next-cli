@@ -224,7 +224,8 @@ export async function processFile (
     // 4. THEN: Extract keys from comments with scope resolution (now scope info is available)
     extractKeysFromComments(code, pluginContext, config, astVisitors.getVarFromScope.bind(astVisitors))
   } catch (error) {
-    throw new ExtractorError('Failed to process file', file, error as Error)
+    logger.warn(`${chalk.yellow('Skipping file due to error:')} ${file}`)
+    logger.warn(`  ${(error as Error).message}`)
   }
 }
 

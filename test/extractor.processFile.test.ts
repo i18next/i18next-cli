@@ -178,7 +178,7 @@ describe('processFile', () => {
     )
   })
 
-  it('should throw ExtractorError when file processing fails', async () => {
+  it('should log warning and skip file when file processing fails', async () => {
     const invalidCode = `
       this is not valid javascript syntax !!!
     `
@@ -188,18 +188,32 @@ describe('processFile', () => {
     })
 
     const plugins: Plugin[] = []
-    const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
+    const mockLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      log: vi.fn(),
+    } as any
+    const pluginContext = createPluginContext(allKeys, plugins, mockConfig, mockLogger)
 
-    await expect(processFile('/src/invalid.ts', plugins, astVisitors, pluginContext, mockConfig))
-      .rejects.toThrow('Failed to process file')
+    await processFile('/src/invalid.ts', plugins, astVisitors, pluginContext, mockConfig, mockLogger)
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Skipping file due to error:'))
   })
 
-  it('should throw ExtractorError when file does not exist', async () => {
+  it('should log warning and skip file when file does not exist', async () => {
     const plugins: Plugin[] = []
-    const pluginContext = createPluginContext(allKeys, plugins, mockConfig, new ConsoleLogger())
+    const mockLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      log: vi.fn(),
+    } as any
+    const pluginContext = createPluginContext(allKeys, plugins, mockConfig, mockLogger)
 
-    await expect(processFile('/nonexistent/file.ts', plugins, astVisitors, pluginContext, mockConfig))
-      .rejects.toThrow('Failed to process file')
+    await processFile('/nonexistent/file.ts', plugins, astVisitors, pluginContext, mockConfig, mockLogger)
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Skipping file due to error:'))
   })
 
   it('should support custom plugin that extracts keys from TypeScript satisfies expressions', async () => {
