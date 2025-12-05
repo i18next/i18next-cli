@@ -37,9 +37,11 @@ async function loadFile (file: string) {
       }
     })
 
+    const exports = {}
+    const module = { exports }
     const context = vm.createContext({
-      exports: {},
-      module: { exports: {} },
+      exports,
+      module,
       require: (id: string) => require(id),
       console,
       process

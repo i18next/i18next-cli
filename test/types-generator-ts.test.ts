@@ -70,4 +70,60 @@ describe('types-generator with typescript input', () => {
       consoleErrorSpy.mockRestore()
     })
   })
+
+  it('should correctly handle typescript files with "as const" assertion', async () => {
+    const { glob } = await import('glob')
+    const { mergeResourcesAsInterface } = await import('i18next-resources-for-ts')
+    const filename = '/locales/en.ts'
+
+    // Mock glob to return the file
+    ;(glob as any).mockResolvedValue([filename])
+
+    // Create file content with "as const"
+    const content = `
+export default {
+  helloThere: '',
+  stacks: {
+    titles: {
+      home: '',
+      login: '',
+    },
+  },
+} as const;
+`
+    // Create file content
+    vol.fromJSON({
+      [filename]: content,
+    })
+
+    const config = {
+      locales: ['en'],
+      extract: {
+        defaultNS: 'translation',
+      },
+      types: {
+        input: ['locales/*.ts'],
+        output: 'src/types/i18next.d.ts',
+        resourcesFile: 'src/types/resources.d.ts',
+      },
+    }
+
+    await runTypesGenerator(config as any)
+
+    expect(mergeResourcesAsInterface).toHaveBeenCalled()
+    const calls = (mergeResourcesAsInterface as any).mock.calls
+    const resourcesArg = calls[calls.length - 1][0]
+
+    expect(resourcesArg).toHaveLength(1)
+    expect(resourcesArg[0].name).toBe('en')
+    expect(resourcesArg[0].resources).toEqual({
+      helloThere: '',
+      stacks: {
+        titles: {
+          home: '',
+          login: '',
+        },
+      },
+    })
+  })
 })
