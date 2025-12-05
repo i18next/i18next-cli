@@ -4,8 +4,10 @@ import ora from 'ora'
 import chalk from 'chalk'
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
 import { basename, extname, resolve, dirname, join, relative } from 'node:path'
+import { transform } from '@swc/core'
 import type { I18nextToolkitConfig } from './types'
 import { getOutputPath } from './utils/file-utils'
+import vm from 'node:vm'
 
 /**
  * Represents a translation resource with its namespace name and content
@@ -15,6 +17,44 @@ interface Resource {
   name: string;
   /** The parsed JSON resources object */
   resources: object;
+}
+
+async function loadFile (file: string) {
+  const ext = extname(file)
+  if (['.ts', '.mts', '.cts', '.js', '.mjs', '.cjs'].includes(ext)) {
+    const content = await readFile(file, 'utf-8')
+
+    const { code } = await transform(content, {
+      filename: file,
+      jsc: {
+        parser: {
+          syntax: 'typescript',
+        },
+        target: 'es2018'
+      },
+      module: {
+        type: 'commonjs'
+      }
+    })
+
+    const context = vm.createContext({
+      exports: {},
+      module: { exports: {} },
+      require: (id: string) => require(id),
+      console,
+      process
+    })
+
+    const script = new vm.Script(code, { filename: file })
+    script.runInContext(context)
+
+    // @ts-ignore
+    const exported = context.module.exports?.default || context.module.exports
+    return exported
+  }
+
+  const content = await readFile(file, 'utf-8')
+  return JSON.parse(content)
 }
 
 /**
@@ -69,8 +109,7 @@ export async function runTypesGenerator (config: I18nextToolkitConfig) {
 
     for (const file of resourceFiles) {
       const namespace = basename(file, extname(file))
-      const content = await readFile(file, 'utf-8')
-      const parsedContent = JSON.parse(content)
+      const parsedContent = await loadFile(file)
 
       // If mergeNamespaces is used, a single file can contain multiple namespaces
       // (e.g. { "translation": { ... }, "common": { ... } } in a per-language file).
