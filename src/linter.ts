@@ -19,10 +19,11 @@ type LinterEventMap = {
   error: [error: Error];
 }
 
-const recommendedAcceptedTags = [
+export const recommendedAcceptedTags = [
   'a', 'abbr', 'address', 'article', 'aside', 'bdi', 'bdo', 'blockquote', 'button', 'caption', 'cite', 'code', 'data', 'dd', 'del', 'details', 'dfn', 'dialog', 'div', 'dt', 'em', 'figcaption', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'img', 'ins', 'kbd', 'label', 'legend', 'li', 'main', 'mark', 'nav', 'option', 'output', 'p', 'pre', 'q', 's', 'samp', 'section', 'small', 'span', 'strong', 'sub', 'summary', 'sup', 'td', 'textarea', 'th', 'time', 'title', 'var'
 ].map(s => s.toLowerCase())
-const recommendedAcceptedAttributes = ['abbr', 'accesskey', 'alt', 'aria-description', 'aria-label', 'aria-placeholder', 'aria-roledescription', 'aria-valuetext', 'content', 'label', 'placeholder', 'summary', 'title'].map(s => s.toLowerCase())
+export const recommendedAcceptedAttributes = ['abbr', 'accesskey', 'alt', 'aria-description', 'aria-label', 'aria-placeholder', 'aria-roledescription', 'aria-valuetext', 'content', 'label', 'placeholder', 'summary', 'title'].map(s => s.toLowerCase())
+
 const defaultIgnoredAttributes = ['className', 'key', 'id', 'style', 'href', 'i18nKey', 'defaults', 'type', 'target'].map(s => s.toLowerCase())
 const defaultIgnoredTags = ['script', 'style', 'code']
 

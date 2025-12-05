@@ -478,6 +478,26 @@ export default defineConfig({
 });
 ```
 
+### Extending Recommended Lint Tags and Attributes
+
+You can extend the built-in recommended lists for linting by importing and spreading them in your config:
+
+```typescript
+import { defineConfig, recommendedAcceptedTags, recommendedAcceptedAttributes } from 'i18next-cli';
+
+export default defineConfig({
+  locales: ['en', 'de'],
+  extract: {
+    input: ['src/**/*.{js,jsx,ts,tsx}'],
+    output: 'public/locales/{{language}}/{{namespace}}.json',
+  },
+  lint: {
+    acceptedTags: ['my-web-component', ...recommendedAcceptedTags],
+    acceptedAttributes: ['data-label', ...recommendedAcceptedAttributes]
+  }
+});
+```
+
 ## Advanced Features
 
 ### Plugin System

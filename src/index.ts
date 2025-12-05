@@ -15,7 +15,7 @@ export {
   runExtractor
 } from './extractor'
 
-export { runLinter } from './linter'
+export { runLinter, recommendedAcceptedTags, recommendedAcceptedAttributes } from './linter'
 export { runSyncer } from './syncer'
 export { runStatus } from './status'
 export { runTypesGenerator } from './types-generator'
