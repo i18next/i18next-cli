@@ -119,10 +119,17 @@ export async function runTypesGenerator (config: I18nextToolkitConfig) {
       // generator will produce top-level namespace interfaces (not a language wrapper).
       if (config.extract?.mergeNamespaces && parsedContent && typeof parsedContent === 'object') {
         const keys = Object.keys(parsedContent)
-        const allObjects = keys.length > 0 && keys.every(k => parsedContent[k] && typeof parsedContent[k] === 'object')
-        if (allObjects) {
-          for (const nsName of keys) {
+        const objectKeys = keys.filter(k => parsedContent[k] && typeof parsedContent[k] === 'object')
+
+        // If we have at least one object and we are in mergeNamespaces mode, assume it's a merged file
+        if (objectKeys.length > 0) {
+          for (const nsName of objectKeys) {
             resources.push({ name: nsName, resources: parsedContent[nsName] })
+          }
+
+          const nonObjectKeys = keys.filter(k => !parsedContent[k] || typeof parsedContent[k] !== 'object')
+          if (nonObjectKeys.length > 0) {
+            console.warn(chalk.yellow(`Warning: The file ${file} contains top-level keys that are not objects (${nonObjectKeys.join(', ')}). When 'mergeNamespaces' is enabled, top-level keys are treated as namespaces. These keys will be ignored.`))
           }
           continue
         }

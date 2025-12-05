@@ -156,4 +156,79 @@ export default {
     expect(content).toContain('defaultNS: false;')
     expect(content).not.toContain("defaultNS: 'translation';")
   })
+
+  it('should treat top-level keys as namespaces when mergeNamespaces: true and file matches locale', async () => {
+    const { glob } = await import('glob')
+    const { mergeResourcesAsInterface } = await import('i18next-resources-for-ts')
+
+    // Use actual implementation to verify the generated output
+    const { mergeResourcesAsInterface: realMerge } = await vi.importActual<typeof import('i18next-resources-for-ts')>('i18next-resources-for-ts')
+    ;(mergeResourcesAsInterface as any).mockImplementation(realMerge)
+
+    const filename = '/locales/en.ts'
+    ;(glob as any).mockResolvedValue([filename])
+
+    const content = `
+export default {
+  hello: {
+    there: 'en#helloThere'
+  },
+  stacks: {
+    titles: {
+      home: 'en#stacks.titles.home',
+      login: 'en#stacks.titles.login',
+    },
+  },
+  flat: 'flat stuff',
+} as const;
+`
+    vol.fromJSON({
+      [filename]: content,
+    })
+
+    const config = {
+      locales: ['en'],
+      extract: {
+        mergeNamespaces: true,
+        defaultNS: false,
+      },
+      types: {
+        input: ['locales/*.ts'],
+        output: 'src/types/i18next.d.ts',
+        resourcesFile: 'src/types/resources.d.ts',
+      },
+    }
+
+    await runTypesGenerator(config as any)
+
+    expect(mergeResourcesAsInterface).toHaveBeenCalled()
+    const calls = (mergeResourcesAsInterface as any).mock.calls
+    const resourcesArg = calls[calls.length - 1][0]
+
+    // Expect resources to be split by top-level keys
+    const namespaces = resourcesArg.map((r: any) => r.name).sort()
+    expect(namespaces).toEqual(['hello', 'stacks'])
+
+    const helloNs = resourcesArg.find((r: any) => r.name === 'hello')
+    expect(helloNs.resources).toEqual({ there: 'en#helloThere' })
+
+    const stacksNs = resourcesArg.find((r: any) => r.name === 'stacks')
+    expect(stacksNs.resources).toEqual({
+      titles: {
+        home: 'en#stacks.titles.home',
+        login: 'en#stacks.titles.login',
+      },
+    })
+
+    const resourcesOutputPath = resolve(process.cwd(), config.types.resourcesFile)
+    const resourcesFileContent = await vol.promises.readFile(resourcesOutputPath, 'utf-8')
+
+    expect(resourcesFileContent).toContain('interface Resources {')
+    expect(resourcesFileContent).toContain('"hello": {')
+    expect(resourcesFileContent).toContain('"there": "en#helloThere"')
+    expect(resourcesFileContent).toContain('"stacks": {')
+    expect(resourcesFileContent).toContain('"titles": {')
+    expect(resourcesFileContent).toContain('"home": "en#stacks.titles.home"')
+    expect(resourcesFileContent).toContain('"login": "en#stacks.titles.login"')
+  })
 })
