@@ -23,6 +23,9 @@ describe('extractor: comment-parser', () => {
       // test("shows error state when prefs fail", async () => {
       //   server.use(http.get("/api/v1/user/prefs", () => {}));
       // });
+      // t("comment's key")
+      // t('comment"s key')
+      // t(\`comment's key TWO\`)
       const myKey = t('real.key');
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
@@ -39,7 +42,10 @@ describe('extractor: comment-parser', () => {
 
     // This will fail before the fix because "shows error state when prefs fail" will be extracted.
     // The correct behavior is to only find the key from the actual t() call.
-    expect(allKeys.size).toBe(1)
+    expect(allKeys.size).toBe(4)
     expect(allKeys.has('translation:real.key')).toBe(true)
+    expect(allKeys.has('translation:comment\'s key')).toBe(true)
+    expect(allKeys.has('translation:comment"s key')).toBe(true)
+    expect(allKeys.has('translation:comment\'s key TWO')).toBe(true)
   })
 })

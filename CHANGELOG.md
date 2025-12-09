@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.5](https://github.com/i18next/i18next-cli/compare/v1.30.4...v1.30.5) - 2025-12-09
+
+- fix: correctly extract translation keys from commented helper calls with any quote style (single, double, or backtick) [#143](https://github.com/i18next/i18next-cli/issues/143)
+
 ## [1.30.4](https://github.com/i18next/i18next-cli/compare/v1.30.3...v1.30.4) - 2025-12-05
 
 - **Linter:** Exported `recommendedAcceptedTags` and `recommendedAcceptedAttributes` constants for easy extension of linting rules in user configs. You can now import and spread these lists to build on the default recommendations without copying them manually. [#142](https://github.com/i18next/i18next-cli/issues/142)

@@ -31,7 +31,7 @@ export function extractKeysFromComments (
   const functionNameToFind = 't'
 
   // Use a reliable word boundary (\b) to match 't(...)' but not 'http.get(...)'.
-  const keyRegex = new RegExp(`\\b${functionNameToFind}\\s*\\(\\s*(['"])([^'"]+)\\1`, 'g')
+  const keyRegex = new RegExp(`\\b${functionNameToFind}\\s*\\(\\s*(['"\`])(.*?)\\1`, 'g')
 
   // Prepare preservePatterns for filtering
   const rawPreservePatterns = config.extract.preservePatterns || []
