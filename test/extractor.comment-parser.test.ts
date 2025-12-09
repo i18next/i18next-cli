@@ -37,9 +37,53 @@ describe('extractor: comment-parser', () => {
 
     const { allKeys } = await findKeys(config)
 
-    // This will fail before the fix because "shows error state when prefs fail" will be extracted.
-    // The correct behavior is to only find the key from the actual t() call.
     expect(allKeys.size).toBe(1)
     expect(allKeys.has('translation:real.key')).toBe(true)
+  })
+
+  it('should extract keys with opposite quote types inside strings', async () => {
+    const sampleCode = `
+      // t("comment's key")
+      const myKey = t('real.key');
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: ['src/App.tsx'],
+        output: 'locales/{{language}}/{{namespace}}.json'
+      },
+    }
+
+    const { allKeys } = await findKeys(config)
+
+    expect(allKeys.size).toBe(2)
+    expect(allKeys.has('translation:real.key')).toBe(true)
+    expect(allKeys.has('translation:comment\'s key')).toBe(true)
+  })
+
+  it('should handle escaped quotes in comment strings', async () => {
+    const sampleCode = `
+      // t('it\\'s a test')
+      // t("say \\"hello\\"")
+      const myKey = t('real.key');
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: ['src/App.tsx'],
+        output: 'locales/{{language}}/{{namespace}}.json'
+      },
+    }
+
+    const { allKeys } = await findKeys(config)
+
+    expect(allKeys.size).toBe(3)
+    expect(allKeys.has('translation:real.key')).toBe(true)
+    expect(allKeys.has('translation:it\'s a test')).toBe(true)
+    expect(allKeys.has('translation:say "hello"')).toBe(true)
   })
 })

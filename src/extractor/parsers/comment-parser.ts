@@ -31,7 +31,10 @@ export function extractKeysFromComments (
   const functionNameToFind = 't'
 
   // Use a reliable word boundary (\b) to match 't(...)' but not 'http.get(...)'.
-  const keyRegex = new RegExp(`\\b${functionNameToFind}\\s*\\(\\s*(['"])([^'"]+)\\1`, 'g')
+  // Pattern allows opposite quote type inside strings: 't("key")' or 't('key')'
+  // Also handles escaped quotes: 't("say \"hello\"")' or 't('it\'s a test')'
+  // Capture group 1: quote character, group 2: key content
+  const keyRegex = new RegExp(`\\b${functionNameToFind}\\s*\\(\\s*(['"])((?:[^\\\\]|\\\\.)*?)\\1\\s*`, 'g')
 
   // Prepare preservePatterns for filtering
   const rawPreservePatterns = config.extract.preservePatterns || []
@@ -60,7 +63,11 @@ export function extractKeysFromComments (
   for (const text of commentTexts) {
     let match: RegExpExecArray | null
     while ((match = keyRegex.exec(text)) !== null) {
+      // match[1] is the quote character, match[2] is the key content
       let key = match[2]
+
+      // Unescape the key to handle escape sequences like \', \"
+      key = unescapeString(key)
 
       // Validate that the key is not empty or whitespace-only
       if (!key || key.trim() === '') {
@@ -406,6 +413,22 @@ function parseOrdinalFromComment (remainder: string): boolean | undefined {
   if (ordinalObj) return ordinalObj[1] === 'true'
 
   return undefined
+}
+
+/**
+ * Unescapes quote characters in a string literal.
+ * Only handles escaped quotes: \' and \"
+ *
+ * @param str - The escaped string to unescape
+ * @returns The unescaped string
+ *
+ * @internal
+ */
+function unescapeString (str: string): string {
+  // Only handle escaped quotes
+  return str
+    .replace(/\\'/g, "'")      // \' -> '
+    .replace(/\\"/g, '"')       // \" -> "
 }
 
 /**
