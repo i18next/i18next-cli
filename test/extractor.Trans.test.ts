@@ -2160,4 +2160,68 @@ describe('extractor: advanced Trans features', () => {
       '<0>You have <1>{{count}} item</1>.</0>_other': '<0>You have <1>{{count}} item</1>.</0>'
     })
   })
+
+  it('should respect generateBasePluralForms: false when using Trans component with context and count', async () => {
+    const sampleCode = `
+      import { Trans } from 'react-i18next';
+
+      export function MyComponent({ invoicesCount, creditNotesCount }) {
+        return (
+          <>
+            <Trans i18nKey="disputeDrawer.explanations.ongoing" ns="translation" context="invoice" count={invoicesCount}>
+              La facture sera <strong >maintenue dans l’encours</strong>
+            </Trans>
+            <Trans
+              i18nKey="disputeDrawer.explanations.ongoing"
+              ns="translation"
+              context="creditNote"
+              count={creditNotesCount}
+            >
+              L’avoir sera <strong>maintenu dans l’encours</strong>
+            </Trans>
+            <Trans
+              i18nKey="disputeDrawer.explanations.ongoing"
+              ns="translation"
+              context="document"
+              count={invoicesCount + creditNotesCount}
+            >
+              Le document sera <strong>maintenu dans l’encours</strong>
+            </Trans>
+          </>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      locales: ['fr'],
+      extract: {
+        ...mockConfig.extract,
+        generateBasePluralForms: false,
+        primaryLanguage: 'fr',
+        keySeparator: false,
+      },
+    }
+
+    const results = await extract(config)
+    const file = results.find(r => pathEndsWith(r.path, '/locales/fr/translation.json'))
+
+    expect(file).toBeDefined()
+
+    const keys = Object.keys(file!.newTranslations)
+
+    // Check for presence of context keys (fr has one, other)
+    expect(keys).toContain('disputeDrawer.explanations.ongoing_invoice_one')
+    expect(keys).toContain('disputeDrawer.explanations.ongoing_invoice_other')
+    expect(keys).toContain('disputeDrawer.explanations.ongoing_creditNote_one')
+    expect(keys).toContain('disputeDrawer.explanations.ongoing_creditNote_other')
+    expect(keys).toContain('disputeDrawer.explanations.ongoing_document_one')
+    expect(keys).toContain('disputeDrawer.explanations.ongoing_document_other')
+
+    // Check for absence of base keys - this is what fails currently
+    console.log(keys)
+    expect(keys).not.toContain('disputeDrawer.explanations.ongoing_one')
+    expect(keys).not.toContain('disputeDrawer.explanations.ongoing_other')
+  })
 })

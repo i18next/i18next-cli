@@ -281,7 +281,9 @@ export class JSXHandler {
             // Generate all combinations of context and plural forms
             if (contextValues.length > 0) {
               // Generate base plural forms (no context) - these also accept context
-              extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, undefined, extractedKey.locations, extractedKey.key))
+              if (this.config.extract.generateBasePluralForms !== false) {
+                extractedKeys.forEach(extractedKey => this.generatePluralKeysForTrans(extractedKey.key, extractedKey.defaultValue, extractedKey.ns, isOrdinal, optionsNode, undefined, extractedKey.locations, extractedKey.key))
+              }
 
               // Generate context + plural combinations
               for (const context of contextValues) {

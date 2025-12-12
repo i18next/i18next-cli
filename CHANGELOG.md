@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.31.0](https://github.com/i18next/i18next-cli/compare/v1.30.5...v1.31.0) - 2025-12-09
+
+- fix(extractor): honor extract.generateBasePluralForms = false for <Trans> components — avoid emitting base plural forms (e.g. `key_one`/`key_other`) when only context-specific plural variants (`key_context_one`, `key_context_other`) are required [#145](https://github.com/i18next/i18next-cli/issues/145)
+
 ## [1.30.5](https://github.com/i18next/i18next-cli/compare/v1.30.4...v1.30.5) - 2025-12-09
 
 - fix: correctly extract translation keys from commented helper calls with any quote style (single, double, or backtick) [#143](https://github.com/i18next/i18next-cli/issues/143)
