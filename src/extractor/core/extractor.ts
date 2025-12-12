@@ -222,7 +222,9 @@ export async function processFile (
     astVisitors.visit(ast)
 
     // 4. THEN: Extract keys from comments with scope resolution (now scope info is available)
-    extractKeysFromComments(code, pluginContext, config, astVisitors.getVarFromScope.bind(astVisitors))
+    if (config.extract.extractFromComments !== false) {
+      extractKeysFromComments(code, pluginContext, config, astVisitors.getVarFromScope.bind(astVisitors))
+    }
   } catch (error) {
     logger.warn(`${chalk.yellow('Skipping file due to error:')} ${file}`)
     logger.warn(`  ${(error as Error).message}`)

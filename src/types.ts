@@ -145,10 +145,16 @@ export interface I18nextToolkitConfig {
     /** If true, keys that are not found in the source code will be removed from translation files. (default: true) */
     removeUnusedKeys?: boolean;
 
-    // New option to control whether base plural forms are generated when context is present
+    /**
+     * If false, translation keys will not be extracted from comments.
+     * (default: true)
+     */
+    extractFromComments?: boolean;
+
+    // control whether base plural forms are generated when context is present
     generateBasePluralForms?: boolean
 
-    // New option to completely disable plural generation
+    // completely disable plural generation
     disablePlurals?: boolean
   };
 

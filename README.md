@@ -427,6 +427,10 @@ export default defineConfig({
     /** If true, keys that are not found in the source code will be removed from translation files. (default: true) */
     removeUnusedKeys: true,
 
+    // When true (default), the extractor also scans code comments for t(...) / Trans examples and will extract keys found there.
+    // Set to false to ignore translation-like patterns in comments (useful to avoid extracting example/documentation strings).
+    extractFromComments: true,
+
     // Control whether base plural forms are generated when context is present
     // When false, t('key', { context: 'male', count: 1 }) will only generate 
     // key_male_one, key_male_other but NOT key_one, key_other

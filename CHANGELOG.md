@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.31.0](https://github.com/i18next/i18next-cli/compare/v1.30.5...v1.31.0) - 2025-12-09
 
 - fix(extractor): honor extract.generateBasePluralForms = false for <Trans> components — avoid emitting base plural forms (e.g. `key_one`/`key_other`) when only context-specific plural variants (`key_context_one`, `key_context_other`) are required [#145](https://github.com/i18next/i18next-cli/issues/145)
+- feat(extractor): add `extractFromComments` option to skip extracting translation-like patterns from code comments — set `extract.extractFromComments = false` to ignore example/documentation strings in comments (default: true) [#146](https://github.com/i18next/i18next-cli/issues/146)
 
 ## [1.30.5](https://github.com/i18next/i18next-cli/compare/v1.30.4...v1.30.5) - 2025-12-09
 
