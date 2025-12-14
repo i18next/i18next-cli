@@ -2091,6 +2091,44 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should handle nested type assertions inside elements', async () => {
+    const sampleCode = `
+      <Trans i18nKey="type-assertions">
+        <div>
+          <a>{{ one } as any}</a> to <b>{{ two } as any}</b>
+        </div>
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      'type-assertions': '<0><0>{{one}}</0> to <2>{{two}}</2></0>',
+    })
+  })
+
+  it('should handle nested type assertions inside elements (without assertions back-test)', async () => {
+    const sampleCode = `
+      <Trans i18nKey="type-assertionsTwo">
+        <div>
+          <a>{{ one }}</a> to <b>{{ two }}</b>
+        </div>
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      'type-assertionsTwo': '<0><0>{{one}}</0> to <2>{{two}}</2></0>',
+    })
+  })
+
   it('should correctly extract object placeholders from JSX with TypeScript type assertions', async () => {
     const sampleCode = `
       let property = 'my var';

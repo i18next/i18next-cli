@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.32.0](https://github.com/i18next/i18next-cli/compare/v1.31.0...v1.32.0) - 2025-12-14
 
 - feat(extractor): detect nested `$t(...)` calls inside translation/defaultValue strings, extract the referenced keys (including plural and context variants) [#147](https://github.com/i18next/i18next-cli/issues/147)
+- fix(extractor): normalize numeric placeholder indexing when TypeScript "as" type assertions appear inside JSX, preventing inconsistent placeholder numbers in <Trans> extraction [#148](https://github.com/i18next/i18next-cli/issues/148)
 
 ## [1.31.0](https://github.com/i18next/i18next-cli/compare/v1.30.5...v1.31.0) - 2025-12-09
 

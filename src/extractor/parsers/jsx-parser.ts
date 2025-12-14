@@ -982,7 +982,6 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             const idx = isRootLevel && myRuntimeIndex !== undefined ? myRuntimeIndex : resolveIndex(node)
             // Use precise detection so trailing text doesn't force global indexing
             const hasNonElementGlobalSlots = hasNonElementGlobalSlotsAmongChildren(childrenLocal)
-
             if (hasNonElementGlobalSlots) {
               // Build a local index map for inner children so nested placeholders
               // restart locally instead of using global indices.
@@ -1097,11 +1096,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
                     // Text after an element - check if there are more elements after this text
                     const remainingNodes = children.slice(children.indexOf(ch) + 1)
                     const hasMoreElements = remainingNodes.some((n: any) => n && n.type === 'JSXElement')
-                    if (hasMoreElements) {
-                      // Text between elements - counts
-                      return true
-                    }
-                    // Trailing text after last element - doesn't count
+                    if (hasMoreElements) return true
+                    // Trailing text after last element does not force global indexing
                   }
                 }
 
@@ -1124,7 +1120,6 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
                 // restart locally (avoids leaking global indices into the parent's inner string).
                 const childrenLocalMap = new Map<any, number>()
                 // local children numbering should start at 0
-                let localIdxCounter = 0
                 for (const ch of children) {
                   if (!ch) continue
                   if (ch.type === 'JSXElement') {
@@ -1145,11 +1140,12 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
                         )
                       const chWillBePreserved = !chHasAttrs && (!chChildren.length || chIsSinglePureText)
                       if (!chWillBePreserved) {
-                        // Will be indexed, add to local map
-                        childrenLocalMap.set(ch, localIdxCounter++)
+                        const inner = visitNodes(ch.children, undefined, false)
+                        out += `<${indexToUse}>${trimFormattingEdges(inner)}</${indexToUse}>`
                       }
                     } else {
-                      childrenLocalMap.set(ch, localIdxCounter++)
+                      const inner = visitNodes(ch.children, undefined, false)
+                      out += `<${indexToUse}>${trimFormattingEdges(inner)}</${indexToUse}>`
                     }
                   }
                 }
@@ -1450,93 +1446,120 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
         } else {
           // Map direct child placeholder indices to local sequence
           const childPhs = (n as any).children.filter((c: any) => c.type === 'ph') as { type: 'ph'; idx: number; children: Node[] }[]
-          // If the child's original global indices are NOT contiguous (i.e. gaps),
-          // do not remap — emit original numbers to preserve tests that expect
-          // global pre-order indices like 1,3,5.
-          const origIndices = childPhs.map(c => c.idx)
-          const isContiguous = origIndices.length <= 1 || origIndices.every((v, i) => i === 0 || v === origIndices[i - 1] + 1)
-          // Do not remap when original child indices are non-contiguous.
-          if (!isContiguous) {
-            const innerNoRemap = (n as any).children.map((child: any) => {
-              if (child.type === 'text') return child.text
-              return `<${child.idx}>${build(child.children, child.idx)}</${child.idx}>`
-            }).join('')
-            out += `<${n.idx}>${innerNoRemap}</${n.idx}>`
-            continue
-          }
-          const map = new Map<number, number>()
-          let start = 0
-          try {
+
+          let map: Map<number, number> | undefined
+
+          // Try to build map from AST to handle gaps (e.g. text nodes) correctly
+          if (typeof n.idx === 'number') {
             const parentAst = globalSlots[n.idx]
-            if (parentAst && parentAst.span) {
-              const parentStart = parentAst.span.start
-              const parentEnd = parentAst.span.end
-              // Find the first element child (by globalSlots index) that lies inside this parent.
-              let firstElementGIdx = -1
-              for (let gIdx = n.idx + 1; gIdx < globalSlots.length; gIdx++) {
-                const s = globalSlots[gIdx]
-                if (!s || !s.span) continue
-                if (s.span.start >= parentStart && s.span.end <= parentEnd && s.type === 'JSXElement') {
-                  firstElementGIdx = gIdx
-                  break
-                }
-              }
+            if (parentAst && Array.isArray(parentAst.children)) {
+              const potentialMap = new Map<number, number>()
+              let localCounter = 0
 
-              // Count only non-element global slots that appear before the first element child
-              // (these shift the local numbering of element children).
-              let nonElementBefore = 0
-              if (firstElementGIdx !== -1) {
-                for (let gIdx = n.idx + 1; gIdx < firstElementGIdx; gIdx++) {
-                  const s = globalSlots[gIdx]
-                  if (!s || !s.span) continue
-                  if (s.span.start >= parentStart && s.span.end <= parentEnd) {
-                    if (s.type === 'JSXText' || s.type === 'JSXExpressionContainer') nonElementBefore++
-                  }
-                }
-              } else {
-                // No element child found: count non-element slots inside parent (fallback)
-                for (let gIdx = n.idx + 1; gIdx < globalSlots.length; gIdx++) {
-                  const s = globalSlots[gIdx]
-                  if (!s || !s.span) continue
-                  if (s.span.start >= parentStart && s.span.end <= parentEnd) {
-                    if (s.type === 'JSXText' || s.type === 'JSXExpressionContainer') nonElementBefore++
+              // Iterate over actual AST children to determine local indices
+              for (const child of parentAst.children) {
+                const gIdx = globalSlots.indexOf(child)
+
+                if (child.type === 'JSXText') {
+                  if (isFormattingWhitespace(child)) continue
+                  // Meaningful text consumes a local index, even if skipped from global slots (e.g. i=0 rule)
+                  if (gIdx !== -1) potentialMap.set(gIdx, localCounter)
+                  localCounter++
+                } else if (child.type === 'JSXElement') {
+                  // Elements always consume a local index
+                  if (gIdx !== -1) potentialMap.set(gIdx, localCounter)
+                  localCounter++
+                } else if (child.type === 'JSXExpressionContainer') {
+                  // Expressions consume a local index if they are in global slots
+                  // If not in global slots, they are likely formatting/empty/skipped-simple-string
+                  if (gIdx !== -1) {
+                    potentialMap.set(gIdx, localCounter)
+                    localCounter++
                   }
                 }
               }
 
-              if (typeof n.idx === 'number') {
-                const parentAst = globalSlots[n.idx]
-                const parentTag = parentAst?.opening?.name?.value
-                const parentIsPreserved = parentTag && allowedTags.has(parentTag)
-                const parentIsRoot = parentIdx === null
-
-                if (childPhs.length === 1) {
-                  // Embedded paragraph case: non-preserved parent, root, single child idx 0, parentTag is 'a' or 'p'
-                  // Default: start child numbering at >= 1 to avoid nested <0><0> collisions
-                  // Use nonElementBefore to adjust when needed.
-                  start = Math.max(1, nonElementBefore + 1)
-
-                  // Narrow exception for embedded paragraph-like cases where tests expect
-                  // the single child to remain index 0 (non-preserved root parent with a single child 0).
-                  if (
-                    parentIsRoot &&
-                    !parentIsPreserved &&
-                    childPhs[0].idx === 0 &&
-                    (parentTag === 'a' || parentTag === 'p')
-                  ) {
-                    start = 0
-                  }
-                } else {
-                  start = 0
-                }
+              // Verify that all child placeholders found in the string are covered by the AST map
+              const allCovered = childPhs.every(c => potentialMap.has(c.idx))
+              if (allCovered) {
+                map = potentialMap
               }
             }
-          } catch (e) { /* ignore and fall back to default start */ }
+          }
 
-          // assign new numbers in order of appearance among direct children
-          for (const c of childPhs) {
-            if (!map.has(c.idx)) {
-              map.set(c.idx, start++)
+          // Fallback to original logic if AST mapping failed (e.g. parent not found)
+          if (!map) {
+            // If the child's original global indices are NOT contiguous (i.e. gaps),
+            // do not remap — emit original numbers to preserve tests that expect
+            // global pre-order indices like 1,3,5.
+            const origIndices = childPhs.map(c => c.idx)
+            const isContiguous = origIndices.length <= 1 || origIndices.every((v, i) => i === 0 || v === origIndices[i - 1] + 1)
+
+            if (isContiguous) {
+              map = new Map()
+              let start = 0
+
+              // Try to replicate the start offset logic from original code
+              // (though AST mapping should handle this naturally if it worked)
+              try {
+                const parentAst = globalSlots[n.idx]
+                if (parentAst && parentAst.span) {
+                  const parentStart = parentAst.span.start
+                  const parentEnd = parentAst.span.end
+
+                  // Count non-element global slots before first element child
+                  let nonElementBefore = 0
+                  let firstElementGIdx = -1
+                  for (let gIdx = n.idx + 1; gIdx < globalSlots.length; gIdx++) {
+                    const s = globalSlots[gIdx]
+                    if (!s || !s.span) continue
+                    if (s.span.start >= parentStart && s.span.end <= parentEnd && s.type === 'JSXElement') {
+                      firstElementGIdx = gIdx
+                      break
+                    }
+                  }
+
+                  if (firstElementGIdx !== -1) {
+                    for (let gIdx = n.idx + 1; gIdx < firstElementGIdx; gIdx++) {
+                      const s = globalSlots[gIdx]
+                      if (!s || !s.span) continue
+                      if (s.span.start >= parentStart && s.span.end <= parentEnd) {
+                        if (s.type === 'JSXText' || s.type === 'JSXExpressionContainer') nonElementBefore++
+                      }
+                    }
+                  } else {
+                    for (let gIdx = n.idx + 1; gIdx < globalSlots.length; gIdx++) {
+                      const s = globalSlots[gIdx]
+                      if (!s || !s.span) continue
+                      if (s.span.start >= parentStart && s.span.end <= parentEnd) {
+                        if (s.type === 'JSXText' || s.type === 'JSXExpressionContainer') nonElementBefore++
+                      }
+                    }
+                  }
+
+                  const parentTag = parentAst?.opening?.name?.value
+                  const parentIsPreserved = parentTag && allowedTags.has(parentTag)
+                  const parentIsRoot = parentIdx === null
+
+                  if (childPhs.length === 1) {
+                    start = Math.max(1, nonElementBefore + 1)
+                    if (
+                      parentIsRoot &&
+                      !parentIsPreserved &&
+                      childPhs[0].idx === 0 &&
+                      (parentTag === 'a' || parentTag === 'p')
+                    ) {
+                      start = 0
+                    }
+                  }
+                }
+              } catch (e) { /* ignore */ }
+
+              for (const c of childPhs) {
+                if (!map.has(c.idx)) {
+                  map.set(c.idx, start++)
+                }
+              }
             }
           }
 
@@ -1544,7 +1567,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           const inner = (n as any).children.map((child: any) => {
             if (child.type === 'text') return child.text
             const orig = child.idx
-            const newIdx = map.has(orig) ? map.get(orig)! : orig
+            const newIdx = map && map.has(orig) ? map.get(orig)! : orig
             return `<${newIdx}>${build(child.children, newIdx)}</${newIdx}>`
           }).join('')
 
@@ -1556,7 +1579,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
 
     try {
       const parsed = parse(input)
-      return build(parsed)
+      const built = build(parsed)
+      return built
     } catch (e) {
       return input
     }
