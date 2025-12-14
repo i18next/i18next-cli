@@ -77,7 +77,7 @@ export async function runInit () {
 
   const answers = await inquirer.prompt([
     {
-      type: 'list',
+      type: 'select',
       name: 'fileType',
       message: 'What kind of configuration file do you want?',
       choices: ['TypeScript (i18next.config.ts)', 'JavaScript (i18next.config.js)'],

@@ -156,6 +156,36 @@ export interface I18nextToolkitConfig {
 
     // completely disable plural generation
     disablePlurals?: boolean
+
+    /**
+     * Prefix for nested translations.
+     * (default: '$t(')
+     */
+    nestingPrefix?: string;
+
+    /**
+     * Suffix for nested translations.
+     * (default: ')')
+     */
+    nestingSuffix?: string;
+
+    /**
+     * Separator for nested translation options.
+     * (default: ',')
+     */
+    nestingOptionsSeparator?: string;
+
+    /**
+     * Interpolation prefix used in defaultValue templates and runtime interpolation.
+     * Example: '{{' (default)
+     */
+    interpolationPrefix?: string;
+
+    /**
+     * Interpolation suffix used in defaultValue templates and runtime interpolation.
+     * Example: '}}' (default)
+     */
+    interpolationSuffix?: string;
   };
 
   /** Configuration options for linter */

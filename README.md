@@ -440,6 +440,27 @@ export default defineConfig({
     // When true, t('key', { count: 1 }) will only generate 'key' (no _one, _other suffixes)
     // The count option can still be used for {{count}} interpolation in the translation value
     disablePlurals: false, // Default: false
+
+    // Prefix for nested translations.
+    // Controls how nested $t(...) calls inside strings are detected.
+    // Example: '$t('
+    nestingPrefix: '$t(', // Default: '$t('
+    
+    // Suffix for nested translations.
+    // Example: ')'
+    nestingSuffix: ')', // Default: ')'
+
+    // Separator for nested translation options.
+    // Used to split key vs options inside $t(key, {...}).
+    nestingOptionsSeparator: ',', // Default: ','
+
+    // Interpolation prefix used in defaultValue templates and runtime interpolation.
+    // Example: '{{'
+    interpolationPrefix: '{{', // Default: '{{'
+    
+    // Interpolation suffix used in defaultValue templates and runtime interpolation.
+    // Example: '}}'
+    interpolationSuffix: '}}', // Default: '}}'
   },
 
   // options for linter

@@ -3,6 +3,9 @@ import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey, ScopeIn
 import { ExpressionResolver } from './expression-resolver'
 import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral } from './ast-utils'
 
+// Helper to escape regex characters
+const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 export class CallExpressionHandler {
   private pluginContext: PluginContext
   private config: Omit<I18nextToolkitConfig, 'plugins'>
@@ -180,7 +183,13 @@ export class CallExpressionHandler {
     // If a base default string exists, consider it explicit for plural VARIANTS only when
     // it does NOT contain a count interpolation like '{{count}}' — templates with count
     // are often the runtime interpolation form and should NOT overwrite existing variant forms.
-    const containsCountPlaceholder = (s?: string) => typeof s === 'string' && /{{\s*count\s*}}/.test(s)
+    const containsCountPlaceholder = (s?: string) => {
+      if (typeof s !== 'string') return false
+      const ip = this.config.extract.interpolationPrefix ?? '{{'
+      const is = this.config.extract.interpolationSuffix ?? '}}'
+      const re = new RegExp(`${escapeRegex(ip)}\\s*count\\s*${escapeRegex(is)}`)
+      return re.test(s)
+    }
     const explicitPluralForVariants = Boolean(explicitPluralDefaultsInOptions || (typeof finalDefaultValue === 'string' && !containsCountPlaceholder(finalDefaultValue)))
 
     // Loop through each key found (could be one or more) and process it
@@ -454,7 +463,196 @@ export class CallExpressionHandler {
               }]
             : undefined
         })
+
+        // Check for nested translations in the key itself
+        this.extractNestedKeys(finalKey, ns)
       }
+
+      // Check for nested translations in the default value
+      if (typeof finalDefaultValue === 'string') {
+        this.extractNestedKeys(finalDefaultValue, ns)
+      }
+    }
+  }
+
+  /**
+   * Scans a string for nested translations like $t(key, options) and extracts them.
+   */
+  private extractNestedKeys (text: string, ns: string | false | undefined): void {
+    if (!text || typeof text !== 'string') return
+
+    const prefix = this.config.extract.nestingPrefix ?? '$t('
+    const suffix = this.config.extract.nestingSuffix ?? ')'
+
+    const escapedPrefix = escapeRegex(prefix)
+    const escapedSuffix = escapeRegex(suffix)
+
+    // Regex adapted from i18next Interpolator.js
+    // Matches nested calls like $t(key) or $t(key, { options })
+    // It handles balanced parentheses to some extent and quoted strings
+    const nestingRegexp = new RegExp(
+      `${escapedPrefix}((?:[^()"']+|"[^"]*"|'[^']*'|\\((?:[^()]|"[^"]*"|'[^']*')*\\))*?)${escapedSuffix}`,
+      'g'
+    )
+
+    let match
+    while ((match = nestingRegexp.exec(text)) !== null) {
+      if (match[1]) {
+        // Do NOT trust the outer `ns` blindly — compute namespace from the nested key itself
+        // inside processNestedContent. Pass `undefined` so processNestedContent resolves ns
+        // deterministically (either from key "ns:key" or from defaultNS).
+        this.processNestedContent(match[1], undefined)
+      }
+    }
+  }
+
+  private processNestedContent (content: string, ns: string | false | undefined) {
+    let key = content
+    let optionsString = ''
+
+    const separator = this.config.extract.nestingOptionsSeparator ?? ','
+
+    // Logic adapted from i18next Interpolator.js handleHasOptions
+    if (content.indexOf(separator) < 0) {
+      key = content.trim()
+    } else {
+      // Split by separator, but be careful about objects
+      // i18next does: const c = key.split(new RegExp(`${sep}[ ]*{`));
+      // This assumes options start with {
+
+      const sepRegex = new RegExp(`${escapeRegex(separator)}[ ]*{`)
+      const parts = content.split(sepRegex)
+
+      if (parts.length > 1) {
+        key = parts[0].trim()
+        // Reconstruct the options part: add back the '{' that was consumed by split
+        optionsString = `{${parts.slice(1).join(separator + ' {')}`
+      } else {
+        // Fallback for simple split if no object pattern found
+        const sepIdx = content.indexOf(separator)
+        key = content.substring(0, sepIdx).trim()
+        optionsString = content.substring(sepIdx + 1).trim()
+      }
+    }
+
+    // Remove quotes from key if present
+    if ((key.startsWith("'") && key.endsWith("'")) || (key.startsWith('"') && key.endsWith('"'))) {
+      key = key.slice(1, -1)
+    }
+
+    if (!key) return
+
+    // Resolve namespace for the nested key:
+    // If nested key contains nsSeparator (e.g. "ns:key"), extract namespace,
+    // otherwise use configured defaultNS.
+    let nestedNs: string | false | undefined
+    const nsSeparator = this.config.extract.nsSeparator ?? ':'
+    if (nsSeparator && key.includes(nsSeparator)) {
+      const parts = key.split(nsSeparator)
+      nestedNs = parts.shift()
+      key = parts.join(nsSeparator)
+      if (!key || key.trim() === '') return
+    } else {
+      nestedNs = this.config.extract.defaultNS
+    }
+
+    let hasCount = false
+    let context: string | undefined
+
+    if (optionsString) {
+      // Simple regex check for count and context in the options string
+      // This is an approximation since we don't have a full JSON parser here that handles JS objects perfectly
+      // but it should cover most static cases.
+
+      // Check for count: ...
+      if (/['"]?count['"]?\s*:/.test(optionsString)) {
+        hasCount = true
+      }
+
+      // Check for context: ...
+      const contextMatch = /['"]?context['"]?\s*:\s*(['"])(.*?)\1/.exec(optionsString)
+      if (contextMatch) {
+        context = contextMatch[2]
+      }
+    }
+
+    if (hasCount || context !== undefined) {
+      this.generateNestedPluralKeys(key, nestedNs, hasCount, context)
+    } else {
+      this.pluginContext.addKey({ key, ns: nestedNs })
+    }
+  }
+
+  private generateNestedPluralKeys (key: string, ns: string | false | undefined, hasCount: boolean, context: string | undefined) {
+    try {
+      const type = 'cardinal'
+
+      // If only context, no plural
+      if (!hasCount && context !== undefined) {
+        this.pluginContext.addKey({ key, ns })
+        this.pluginContext.addKey({ key: `${key}_${context}`, ns })
+        return
+      }
+
+      // If hasCount, generate plurals
+      const allPluralCategories = new Set<string>()
+      const locales = this.config.locales || ['en']
+      for (const locale of locales) {
+        try {
+          const pluralRules = new Intl.PluralRules(locale, { type })
+          const categories = pluralRules.resolvedOptions().pluralCategories
+          categories.forEach(cat => allPluralCategories.add(cat))
+        } catch (e) {
+          const englishRules = new Intl.PluralRules('en', { type })
+          const categories = englishRules.resolvedOptions().pluralCategories
+          categories.forEach(cat => allPluralCategories.add(cat))
+        }
+      }
+
+      const pluralCategories = Array.from(allPluralCategories).sort()
+      const pluralSeparator = this.config.extract.pluralSeparator ?? '_'
+      const contextSeparator = this.config.extract.contextSeparator ?? '_'
+
+      const primaryLang = this.config.extract?.primaryLanguage || (Array.isArray(this.config.locales) ? this.config.locales[0] : undefined) || 'en'
+      let primaryIsSingleOther = false
+      try {
+        const primaryCats = new Intl.PluralRules(primaryLang, { type }).resolvedOptions().pluralCategories
+        if (primaryCats.length === 1 && primaryCats[0] === 'other') primaryIsSingleOther = true
+      } catch {
+        primaryIsSingleOther = false
+      }
+
+      const isSingleOther = primaryIsSingleOther || (pluralCategories.length === 1 && pluralCategories[0] === 'other')
+
+      const keysToGenerate: Array<{ key: string, context?: string }> = []
+
+      if (context !== undefined) {
+        keysToGenerate.push({ key, context })
+      } else {
+        keysToGenerate.push({ key })
+      }
+
+      if (isSingleOther) {
+        for (const { key: baseKey, context } of keysToGenerate) {
+          const finalKey = context ? `${baseKey}${contextSeparator}${context}` : baseKey
+          this.pluginContext.addKey({ key: finalKey, ns, hasCount: true })
+        }
+        return
+      }
+
+      for (const { key: baseKey, context } of keysToGenerate) {
+        for (const category of pluralCategories) {
+          let finalKey: string
+          if (context) {
+            finalKey = `${baseKey}${contextSeparator}${context}${pluralSeparator}${category}`
+          } else {
+            finalKey = `${baseKey}${pluralSeparator}${category}`
+          }
+          this.pluginContext.addKey({ key: finalKey, ns, hasCount: true })
+        }
+      }
+    } catch (e) {
+      this.pluginContext.addKey({ key, ns })
     }
   }
 
