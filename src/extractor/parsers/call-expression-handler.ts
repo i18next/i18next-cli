@@ -60,6 +60,8 @@ export class CallExpressionHandler {
       } else if (firstArg.type === 'TemplateLiteral') {
         // For template literals, search for the backtick
         searchText = '`'
+      } else if (firstArg.type === 'ArrowFunctionExpression') {
+        searchText = '=>'
       }
     }
 

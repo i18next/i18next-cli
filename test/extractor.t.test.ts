@@ -716,6 +716,38 @@ describe('extractor: advanced t features', () => {
         },
       })
     })
+
+    it('should respect keyPrefix when using selector API', async () => {
+      const sampleCode = `
+        import { useTranslation } from 'react-i18next';
+
+        function MyComponent() {
+          const { t } = useTranslation(undefined, {
+            keyPrefix: 'my.nested.scope',
+          });
+
+          return (
+            <SomeComponent
+              title={t(($) => $.foo)}
+            />
+          )
+        }
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      const results = await extract(mockConfig)
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(file).toBeDefined()
+      expect(file!.newTranslations).toEqual({
+        my: {
+          nested: {
+            scope: {
+              foo: 'foo',
+            },
+          },
+        },
+      })
+    })
   })
 
   describe('key fallbacks', () => {
