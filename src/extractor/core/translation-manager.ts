@@ -214,6 +214,43 @@ function buildNewTranslationsForNs (
 
   const nsSep = typeof config.extract.nsSeparator === 'string' ? config.extract.nsSeparator : ':'
 
+  // Keep the raw configured defaultValue so we can distinguish:
+  // - "not provided" (undefined) vs
+  // - "provided as empty string" ('')
+  const configuredDefaultValue = config.extract.defaultValue
+
+  // Treat "defaultValue that equals the key (or a suffix of it)" as a derived fallback.
+  // This happens for:
+  // - plain calls without a code default: t('hello')
+  // - keyPrefix calls where the stored key is prefixed but defaultValue is the unprefixed part:
+  //   key="nested.another.key", defaultValue="another.key"
+  const isDerivedFromKey = (key: string, defaultValue: any, explicitDefault?: boolean): boolean => {
+    if (explicitDefault) return false
+    if (defaultValue === undefined || defaultValue === null) return true
+
+    const dv = String(defaultValue)
+
+    // Exact fallback
+    if (dv === key) return true
+
+    // Namespace:key fallback
+    if (nsSep && namespace && dv === `${namespace}${nsSep}${key}`) return true
+
+    // keyPrefix-style fallback: defaultValue is a suffix of the full key
+    // Example: key="nested.key", dv="key"  OR  key="nested.another.key", dv="another.key"
+    if (typeof keySeparator === 'string' && keySeparator.length > 0) {
+      if (key.endsWith(`${keySeparator}${dv}`)) return true
+    }
+
+    // Plural/context variants sometimes store base as default; keep existing logic parity
+    if (dv && key !== dv) {
+      if (key.startsWith(dv + pluralSeparator)) return true
+      if (key.startsWith(dv + contextSeparator)) return true
+    }
+
+    return false
+  }
+
   // Prepare regex for natural language detection
   const possibleChars = chars.filter(
     (c) => nsSep.indexOf(c) < 0 && (typeof keySeparator === 'string' ? keySeparator.indexOf(c) < 0 : true)
@@ -525,26 +562,30 @@ function buildNewTranslationsForNs (
     let valueToSet: string
 
     if (existingValue === undefined || isStaleObject) {
-      // New key or stale object - determine what value to use
       if (locale === primaryLanguage) {
         if (syncPrimaryWithDefaults) {
-          // When syncPrimaryWithDefaults is true:
-          // - Use defaultValue if it exists and is meaningful (not derived from key pattern)
-          // - Otherwise use empty string for new keys
-          const isDerivedDefault = defaultValue && (
-            defaultValue === key || // Exact match with the key itself
-            // Check if defaultValue matches the namespaced key format (namespace:key)
-            (nsSep && namespace && defaultValue === `${namespace}${nsSep}${key}`) ||
-            // For variant keys (plural/context), check if defaultValue is the base
-            (key !== defaultValue &&
-            (key.startsWith(defaultValue + pluralSeparator) ||
-              key.startsWith(defaultValue + contextSeparator)))
-          )
+          // use the unified "derived" detector (includes keyPrefix suffixes).
+          const isDerivedDefault = isDerivedFromKey(key, defaultValue, explicitDefault)
 
-          valueToSet = (defaultValue && !isDerivedDefault) ? defaultValue : resolveDefaultValue(emptyDefaultValue, key, namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
+          valueToSet =
+            (defaultValue && !isDerivedDefault)
+              ? (defaultValue as any)
+              : resolveDefaultValue(
+                emptyDefaultValue,
+                key,
+                namespace || config?.extract?.defaultNS || 'translation',
+                locale,
+                defaultValue as any
+              )
         } else {
-          // syncPrimaryWithDefaults is false - use original behavior
-          valueToSet = defaultValue || key
+          // If there's no real code-provided default (defaultValue is derived fallback),
+          // use the configured extract.defaultValue for PRIMARY language too.
+          const derived = isDerivedFromKey(key, defaultValue, explicitDefault)
+          if (derived && configuredDefaultValue !== undefined) {
+            valueToSet = resolveDefaultValue(configuredDefaultValue as any, key, namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
+          } else {
+            valueToSet = (defaultValue as any) || key
+          }
         }
       } else {
         // For secondary languages, always use empty string
@@ -570,7 +611,13 @@ function buildNewTranslationsForNs (
         if (isVariantKey && !explicitDefault) {
           valueToSet = existingValue
         } else if (defaultValue && !isDerivedDefault) {
-          valueToSet = resolveDefaultValue(defaultValue, key, namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
+          valueToSet = resolveDefaultValue(
+            defaultValue as any,
+            key,
+            namespace || config?.extract?.defaultNS || 'translation',
+            locale,
+            defaultValue as any
+          )
         } else {
           valueToSet = existingValue
         }

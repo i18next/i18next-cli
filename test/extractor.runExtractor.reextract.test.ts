@@ -20,7 +20,7 @@ describe('reproducer: plural re-extract corruption', () => {
     await rm(tempDir, { recursive: true, force: true })
   })
 
-  it('running extract twice should not turn string values into objects (regression repro)', async () => {
+  it('running extract twice should not turn string values into objects', async () => {
     const component = `
       import { useTranslation } from 'react-i18next';
 
@@ -43,7 +43,6 @@ describe('reproducer: plural re-extract corruption', () => {
       locales: ['en', 'ar'],
       extract: {
         removeUnusedKeys: true,
-        defaultValue: '',
         defaultNS: false,
         generateBasePluralForms: true,
         outputFormat: 'json',
@@ -100,7 +99,7 @@ describe('reproducer: plural re-extract corruption', () => {
     expect(ar2).toEqual(ar1)
   })
 
-  it('running extract twice should not turn string values into objects when keySeparator="." (regression repro)', async () => {
+  it('running extract twice should not turn string values into objects when keySeparator="."', async () => {
     const component = `
       import { useTranslation } from 'react-i18next';
 
@@ -123,7 +122,6 @@ describe('reproducer: plural re-extract corruption', () => {
       locales: ['en', 'ar'],
       extract: {
         removeUnusedKeys: true,
-        defaultValue: '',
         defaultNS: false,
         generateBasePluralForms: true,
         outputFormat: 'json',

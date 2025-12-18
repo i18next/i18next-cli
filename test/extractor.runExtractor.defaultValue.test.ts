@@ -743,7 +743,7 @@ describe('runExtractor: defaultValue option', () => {
     const enTranslations = JSON.parse(enContent)
 
     expect(enTranslations).toEqual({
-      'Children as key and default': 'Children as key and default', // Uses children as default
+      'Children as key and default': '[EN] translation/Children as key and default',
       complex: {
         jsx: 'Hello <1>{{name}}</1>, you have <3>{{count}} messages</3>!', // Serialized JSX (Link becomes <3>)
       },
@@ -1185,6 +1185,78 @@ describe('runExtractor: defaultValue option', () => {
       },
       welcome: {
         title: 'Welcome to our app', // Primary language uses actual default values from code
+      },
+    })
+  })
+
+  it('should apply configured defaultValue to primary language for keyPrefix-derived nested keys (regression #152)', async () => {
+    const appCode = `
+      import { useTranslation } from 'react-i18next';
+      import KeyPrefix from './KeyPrefix';
+
+      export default function App() {
+        const { t } = useTranslation();
+        return (
+          <div>
+            <h1>{t('hello')}</h1>
+            <KeyPrefix />
+          </div>
+        );
+      }
+    `
+
+    const keyPrefixCode = `
+      import { useTranslation } from 'react-i18next';
+
+      export default function KeyPrefix() {
+        const { t } = useTranslation('translation', { keyPrefix: 'nested' });
+        t('key');
+        t('another.key');
+        return null;
+      }
+    `
+
+    await fs.writeFile(join(tempDir, 'src', 'App.tsx'), appCode)
+    await fs.writeFile(join(tempDir, 'src', 'KeyPrefix.tsx'), keyPrefixCode)
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'nl'],
+      extract: {
+        input: [normalizePath(join(tempDir, 'src/**/*.{ts,tsx}'))],
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
+        functions: ['t'],
+        defaultNS: 'translation',
+        defaultValue: '$TODO',
+      },
+    }
+
+    const wasUpdated = await runExtractor(config, { isDryRun: false })
+    expect(wasUpdated).toBe(true)
+
+    const enContent = await fs.readFile(join(tempDir, 'locales', 'en', 'translation.json'), 'utf-8')
+    const enTranslations = JSON.parse(enContent)
+
+    expect(enTranslations).toEqual({
+      hello: '$TODO',
+      nested: {
+        another: {
+          key: '$TODO',
+        },
+        key: '$TODO',
+      },
+    })
+
+    // Secondary language should still receive the configured defaultValue
+    const nlContent = await fs.readFile(join(tempDir, 'locales', 'nl', 'translation.json'), 'utf-8')
+    const nlTranslations = JSON.parse(nlContent)
+
+    expect(nlTranslations).toEqual({
+      hello: '$TODO',
+      nested: {
+        another: {
+          key: '$TODO',
+        },
+        key: '$TODO',
       },
     })
   })

@@ -1149,4 +1149,77 @@ describe('extractor: runExtractor (sync primary language defaults)', () => {
     expect(Object.keys(enContent)).toContain('Old default')
     expect(Object.keys(enContent)).toContain('New default')
   })
+
+  it('should apply configured extract.defaultValue to primary language for keyPrefix-derived nested keys when syncPrimaryWithDefaults is true (regression #152)', async () => {
+    const configWithTodo: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        defaultValue: '$TODO',
+      },
+    }
+
+    const appPath = '/src/App.tsx'
+    const keyPrefixPath = '/src/KeyPrefix.tsx'
+
+    vol.fromJSON({
+      [appPath]: `
+        import { useTranslation } from 'react-i18next'
+        import KeyPrefix from './KeyPrefix'
+
+        export default function App() {
+          const { t } = useTranslation()
+          return (
+            <div>
+              <h1>{t('hello')}</h1>
+              <KeyPrefix />
+            </div>
+          )
+        }
+      `,
+      [keyPrefixPath]: `
+        import { useTranslation } from 'react-i18next'
+
+        export default function KeyPrefix() {
+          const { t } = useTranslation('translation', { keyPrefix: 'nested' })
+          t('key')
+          t('another.key')
+          return null
+        }
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+    // Ensure locale files exist (memfs) so extractor can read/merge/write.
+    vol.fromJSON({
+      [enPath]: JSON.stringify({}, null, 2),
+      [dePath]: JSON.stringify({}, null, 2),
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue([appPath, keyPrefixPath])
+
+    const result = await runExtractor(configWithTodo, { syncPrimaryWithDefaults: true })
+    expect(result).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      hello: '$TODO',
+      nested: {
+        another: { key: '$TODO' },
+        key: '$TODO',
+      },
+    })
+
+    const deContent = JSON.parse(vol.readFileSync(dePath, 'utf8') as string)
+    expect(deContent).toEqual({
+      hello: '$TODO',
+      nested: {
+        another: { key: '$TODO' },
+        key: '$TODO',
+      },
+    })
+  })
 })
