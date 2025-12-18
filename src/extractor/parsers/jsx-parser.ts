@@ -333,6 +333,27 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
     return undefined
   }
 
+  // Unwrap common TS/paren wrappers so slotting logic sees the real expression kind.
+  const unwrapExpression = (expr: any): any => {
+    let e = expr
+    while (e) {
+      if (e.type === 'ParenExpression' && e.expr) {
+        e = e.expr
+        continue
+      }
+      if (e.type === 'ParenthesizedExpression' && e.expression) {
+        e = e.expression
+        continue
+      }
+      if (e.type === 'TsAsExpression' && e.expression) {
+        e = e.expression
+        continue
+      }
+      break
+    }
+    return e
+  }
+
   // Build deterministic global slot list (pre-order)
   function collectSlots (nodes: any[], slots: any[], parentIsNonPreserved = false, isRootLevel = false) {
     if (!nodes || !nodes.length) return
@@ -437,10 +458,13 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
         // element children (e.g. <pre>{'foo'}</pre>), treat common simple expressions
         // as part of the parent and do NOT add them as separate sibling/global slots.
         if (parentIsNonPreserved && !parentHasElementChildren && n.expression) {
-          const exprType = n.expression.type
+          const innerExpr = unwrapExpression(n.expression)
+          const innerType = innerExpr?.type
+
           // ObjectExpression placeholders ({{ key: value }}) should be treated
-          // as part of the parent.
-          if (exprType === 'ObjectExpression') {
+          // as part of the parent. This must also include TS assertions:
+          // {{ one } as any} => TsAsExpression(ObjectExpression) in SWC.
+          if (innerType === 'ObjectExpression') {
             continue
           }
 
@@ -448,10 +472,14 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           // element children treat it as part of the parent (including {" "}),
           // do NOT allocate a separate global slot. This avoids creating an
           // extra placeholder for internal formatting-only expressions.
-          const textVal = getStringLiteralFromExpression(n.expression)
+          const textVal = getStaticStringFromExpression(innerExpr)
           if (textVal !== undefined) {
             continue
-          } else if (exprType === 'Identifier' || exprType === 'MemberExpression' || exprType === 'CallExpression') {
+          } else if (
+            innerType === 'Identifier' ||
+            innerType === 'MemberExpression' ||
+            innerType === 'CallExpression'
+          ) {
             continue
           }
         }

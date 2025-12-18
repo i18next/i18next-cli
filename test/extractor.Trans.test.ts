@@ -2110,6 +2110,23 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should extract placeholders from mixed text + elements with TypeScript type assertions', async () => {
+    const sampleCode = `
+      <Trans i18nKey="type-assert">
+        Migrate from <a>{{ one } as any}</a> to <b>{{ two } as any}</b>
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      'type-assert': 'Migrate from <1>{{one}}</1> to <3>{{two}}</3>',
+    })
+  })
+
   it('should handle nested type assertions inside elements (without assertions back-test)', async () => {
     const sampleCode = `
       <Trans i18nKey="type-assertionsTwo">
