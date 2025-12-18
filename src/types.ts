@@ -260,6 +260,9 @@ export interface I18nextToolkitConfig {
     /** Compare modification times when syncing */
     compareModificationTime?: boolean;
 
+    /** Specify the cdn endpoint that should be used (depends on which cdn type you've in your locize project) */
+    cdnType?: 'standard' | 'pro';
+
     /** Preview changes without making them */
     dryRun?: boolean;
   };

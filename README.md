@@ -494,6 +494,7 @@ export default defineConfig({
     projectId: 'your-project-id',
     apiKey: process.env.LOCIZE_API_KEY, // Recommended: use environment variables
     version: 'latest',
+    cdnType: 'standard' // or 'pro'
   },
   
   // Plugin system

@@ -139,6 +139,8 @@ function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: a
     if (srcLngOnly) commandArgs.push('--reference-language-only', 'true')
     const compareMtime = cliOptions.compareMtime ?? locizeConfig.compareModificationTime
     if (compareMtime) commandArgs.push('--compare-modification-time', 'true')
+    const cdnType = cliOptions.cdnType ?? locizeConfig.cdnType
+    if (cdnType) commandArgs.push('--cdn-type', cdnType)
     const dryRun = cliOptions.dryRun ?? locizeConfig.dryRun
     if (dryRun) commandArgs.push('--dry', 'true')
   }
