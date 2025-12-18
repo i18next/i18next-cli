@@ -321,6 +321,18 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
     /^\s*$/.test(n.value) &&
     n.value.includes('\n')
 
+  const isElementish = (n: any) => n && (n.type === 'JSXElement' || n.type === 'JSXFragment')
+
+  const findNextNonFormattingSibling = (nodes: any[], startIndex: number) => {
+    for (let j = startIndex; j < nodes.length; j++) {
+      const candidate = nodes[j]
+      if (!candidate) continue
+      if (candidate.type === 'JSXText' && isFormattingWhitespace(candidate)) continue
+      return candidate
+    }
+    return undefined
+  }
+
   // Build deterministic global slot list (pre-order)
   function collectSlots (nodes: any[], slots: any[], parentIsNonPreserved = false, isRootLevel = false) {
     if (!nodes || !nodes.length) return
@@ -362,7 +374,7 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
       if (!n) continue
 
       if (n.type === 'JSXText') {
-        // When inside a non-preserved parent that has no element children (e.g. <pre>),
+        // When inside a non-preserved parent that has NO element children (e.g. <pre>),
         // skip all inner text nodes — they're part of the parent and must not shift indexes.
         if (parentIsNonPreserved && !parentHasElementChildren) {
           continue
@@ -454,69 +466,77 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           const prevOriginal = meaningfulNodes[i - 1]
           const nextOriginal = meaningfulNodes[i + 1]
 
+          // If this is an explicit {" "} and it sits BETWEEN two elements/fragments,
+          // it MUST be counted as a child slot to match react-i18next <Trans> indexing,
+          // even if code formatting introduces newline-only JSXText nodes.
           if (isPureSpaceNoNewline) {
-            // If the explicit {" "} is followed by a newline-only JSXText which
-            // itself is followed by an element/fragment, treat the {" "}
-            // as layout-only and skip it. This covers cases where the space
-            // precedes a newline-only separator before an element (fixes index
-            // shifting in object-expression span tests).
-            const nextNextOriginal = meaningfulNodes[i + 2]
-            if (
-              nextOriginal &&
-              nextOriginal.type === 'JSXText' &&
-              isFormattingWhitespace(nextOriginal) &&
-              nextNextOriginal &&
-              (nextNextOriginal.type === 'JSXElement' || nextNextOriginal.type === 'JSXFragment')
-            ) {
-              const prevOriginalCandidate = meaningfulNodes[i - 1]
-              const prevPrevOriginal = meaningfulNodes[i - 2]
-              const shouldSkip =
-                !prevOriginalCandidate ||
-                (prevOriginalCandidate.type !== 'JSXText' && prevPrevOriginal && prevPrevOriginal.type === 'JSXExpressionContainer')
+            const nextMeaningful = findNextNonFormattingSibling(meaningfulNodes, i + 1)
+            if (isElementish(prevOriginal) && isElementish(nextMeaningful)) {
+              // keep it as a slot (do not skip)
+            } else {
+              // --- existing skip/merge heuristics (kept, but now only apply when NOT between elements) ---
 
-              if (shouldSkip) {
+              // If the explicit {" "} is followed by a newline-only JSXText which
+              // itself is followed by an element/fragment, treat the {" "}
+              // as layout-only and skip it. This covers cases where the space
+              // precedes a newline-only separator before an element (fixes index
+              // shifting in object-expression span tests).
+              const nextNextOriginal = meaningfulNodes[i + 2]
+              if (
+                nextOriginal &&
+                nextOriginal.type === 'JSXText' &&
+                isFormattingWhitespace(nextOriginal) &&
+                nextNextOriginal &&
+                (nextNextOriginal.type === 'JSXElement' || nextNextOriginal.type === 'JSXFragment')
+              ) {
+                const prevOriginalCandidate = meaningfulNodes[i - 1]
+                const prevPrevOriginal = meaningfulNodes[i - 2]
+                const shouldSkip =
+                  !prevOriginalCandidate ||
+                  (prevOriginalCandidate.type !== 'JSXText' && prevPrevOriginal && prevPrevOriginal.type === 'JSXExpressionContainer')
+
+                if (shouldSkip) {
+                  continue
+                }
+              }
+
+              // Only treat {" "} as pure formatting to skip when it sits between
+              // an element/fragment and a newline-only JSXText. In that specific
+              // boundary case the explicit space is merely layout and must be ignored.
+              if (
+                prevOriginal &&
+                (prevOriginal.type === 'JSXElement' || prevOriginal.type === 'JSXFragment') &&
+                nextOriginal &&
+                nextOriginal.type === 'JSXText' &&
+                isFormattingWhitespace(nextOriginal)
+              ) {
                 continue
               }
-            }
 
-            // Only treat {" "} as pure formatting to skip when it sits between
-            // an element/fragment and a newline-only JSXText. In that specific
-            // boundary case the explicit space is merely layout and must be ignored.
-            if (
-              prevOriginal &&
-              (prevOriginal.type === 'JSXElement' || prevOriginal.type === 'JSXFragment') &&
-              nextOriginal &&
-              nextOriginal.type === 'JSXText' &&
-              isFormattingWhitespace(nextOriginal)
-            ) {
-              continue
-            }
+              // 1) Merge into previous text when the previous original sibling is JSXText
+              //    and the next original sibling is either missing or a non-formatting JSXText.
+              const nextIsTextNonFormatting = !nextOriginal || (nextOriginal.type === 'JSXText' && !isFormattingWhitespace(nextOriginal))
+              if (prevOriginal && prevOriginal.type === 'JSXText' && nextIsTextNonFormatting) {
+                const prevSlot = slots[slots.length - 1]
+                if (prevSlot && prevSlot.type === 'JSXText') {
+                  prevSlot.value = String(prevSlot.value) + (n.expression as any).value
+                  continue
+                }
+              }
 
-            // 1) Merge into previous text when the previous original sibling is JSXText
-            //    and the next original sibling is either missing or a non-formatting JSXText.
-            //    This preserves "foo{' '}bar" as a single text node but avoids merging
-            //    when the {" "} is followed by newline-only formatting before an element.
-            const nextIsTextNonFormatting = !nextOriginal || (nextOriginal.type === 'JSXText' && !isFormattingWhitespace(nextOriginal))
-            if (prevOriginal && prevOriginal.type === 'JSXText' && nextIsTextNonFormatting) {
-              const prevSlot = slots[slots.length - 1]
-              if (prevSlot && prevSlot.type === 'JSXText') {
-                prevSlot.value = String(prevSlot.value) + n.expression.value
+              // 2) Skip when this explicit space sits between an element/fragment
+              //    and a newline-only formatting JSXText (boundary formatting).
+              if (
+                prevOriginal &&
+                (prevOriginal.type === 'JSXElement' || prevOriginal.type === 'JSXFragment') &&
+                nextOriginal &&
+                nextOriginal.type === 'JSXText' &&
+                isFormattingWhitespace(nextOriginal)
+              ) {
                 continue
               }
+              // 3) Otherwise fallthrough and count this expression as a slot.
             }
-
-            // 2) Skip when this explicit space sits between an element/fragment
-            //    and a newline-only formatting JSXText (boundary formatting).
-            if (
-              prevOriginal &&
-              (prevOriginal.type === 'JSXElement' || prevOriginal.type === 'JSXFragment') &&
-              nextOriginal &&
-              nextOriginal.type === 'JSXText' &&
-              isFormattingWhitespace(nextOriginal)
-            ) {
-              continue
-            }
-            // 3) Otherwise fallthrough and count this expression as a slot.
           }
         }
 

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.1](https://github.com/i18next/i18next-cli/compare/v1.33.0...v1.33.1) - 2025-12-18
+
+- fix(extractor): support `ConditionalExpression` inside `<Trans>` JSX placeholders (avoid per-file skip) [#141](https://github.com/i18next/i18next-cli/issues/141)
+- fix(extractor): normalize `<Trans>` child placeholder indexing for additional `{" "}` / formatting-whitespace edge cases [#150](https://github.com/i18next/i18next-cli/issues/150)
+
 ## [1.33.0](https://github.com/i18next/i18next-cli/compare/v1.32.0...v1.33.0) - 2025-12-18
 
 - feat(locize): introduce cdnType option
