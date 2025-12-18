@@ -79,7 +79,32 @@ export class JSXHandler {
     const elementName = this.getElementName(node)
 
     if (elementName && (this.config.extract.transComponents || ['Trans']).includes(elementName)) {
-      const extractedAttributes = extractFromTransComponent(node, this.config)
+      let extractedAttributes: ReturnType<typeof extractFromTransComponent> | null = null
+
+      try {
+        extractedAttributes = extractFromTransComponent(node, this.config as any)
+      } catch (err) {
+        const loc = this.getLocationFromNode(node)
+        const where = loc
+          ? `${this.getCurrentFile()}:${loc.line}:${loc.column}`
+          : this.getCurrentFile()
+
+        const message =
+          err instanceof Error
+            ? err.message
+            : (typeof err === 'string' ? err : '') || String(err)
+
+        // Prefer any logger that might exist on pluginContext, else fall back to console.
+        const warn =
+          (this.pluginContext as any)?.logger?.warn?.bind((this.pluginContext as any).logger) ??
+          console.warn.bind(console)
+
+        warn(`Failed to extract <${elementName}> at ${where}`)
+        warn(`  ${message}`)
+
+        // IMPORTANT: do not rethrow; keep visiting the rest of the file
+        return
+      }
 
       const keysToProcess: string[] = []
 

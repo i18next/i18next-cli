@@ -227,7 +227,19 @@ export async function processFile (
     }
   } catch (error) {
     logger.warn(`${chalk.yellow('Skipping file due to error:')} ${file}`)
-    logger.warn(`  ${(error as Error).message}`)
+
+    const err = error as any
+    const msg =
+      typeof err?.message === 'string' && err.message.trim().length > 0
+        ? err.message
+        : (typeof err === 'string' ? err : '') || err?.toString?.() || 'Unknown error'
+
+    logger.warn(`  ${msg}`)
+
+    // If message is missing, stack is often the only useful clue
+    if ((!err?.message || String(err.message).trim() === '') && err?.stack) {
+      logger.warn(`  ${String(err.stack)}`)
+    }
   }
 }
 

@@ -45,6 +45,33 @@ function getStringLiteralFromExpression (expression: JSXExpression | null): stri
   return undefined
 }
 
+/**
+ * Like getStringLiteralFromExpression(), but for SWC Expression nodes.
+ * Used for ConditionalExpression branches (consequent/alternate).
+ */
+function getStaticStringFromExpression (expression: Expression | null | undefined): string | undefined {
+  if (!expression) return undefined
+
+  if (expression.type === 'StringLiteral') return expression.value
+
+  if (expression.type === 'TemplateLiteral' && isSimpleTemplateLiteral(expression as any)) {
+    return (expression as any).quasis?.[0]?.cooked
+  }
+
+  // Be tolerant to parens / TS assertions depending on parser output
+  if ((expression as any).type === 'ParenExpression' && (expression as any).expr) {
+    return getStaticStringFromExpression((expression as any).expr)
+  }
+  if ((expression as any).type === 'ParenthesizedExpression' && (expression as any).expression) {
+    return getStaticStringFromExpression((expression as any).expression)
+  }
+  if ((expression as any).type === 'TsAsExpression' && (expression as any).expression) {
+    return getStaticStringFromExpression((expression as any).expression)
+  }
+
+  return undefined
+}
+
 function getStringLiteralFromAttribute (attr: JSXAttribute): string | undefined {
   if (attr.value?.type === 'StringLiteral') {
     return attr.value.value
@@ -904,6 +931,23 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           out += `{{${expr.property.value}}}`
         } else if (expr.type === 'CallExpression' && expr.callee?.type === 'Identifier') {
           out += `{{${expr.callee.value}}}`
+        } else if (expr.type === 'ConditionalExpression') {
+          // Support: {cond ? 'a' : 'b'} (static-string branches)
+          const a = getStaticStringFromExpression(expr.consequent)
+          const b = getStaticStringFromExpression(expr.alternate)
+
+          if (a !== undefined && b !== undefined) {
+            // Deterministic best-effort: choose the longer string (usually more complete text)
+            out += (a.length >= b.length) ? a : b
+          } else if (a !== undefined) {
+            out += a
+          } else if (b !== undefined) {
+            out += b
+          } else {
+            // If neither branch is statically serializable, omit it (do not throw).
+            // The caller can still extract other keys in this file / component.
+            out += ''
+          }
         } else if (expr.type === 'JSXEmptyExpression') {
           // skip
         } else {
