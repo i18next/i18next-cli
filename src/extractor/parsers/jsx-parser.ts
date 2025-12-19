@@ -54,10 +54,6 @@ function getStaticStringFromExpression (expression: Expression | null | undefine
 
   if (expression.type === 'StringLiteral') return expression.value
 
-  if (expression.type === 'TemplateLiteral' && isSimpleTemplateLiteral(expression as any)) {
-    return (expression as any).quasis?.[0]?.cooked
-  }
-
   // Be tolerant to parens / TS assertions depending on parser output
   if ((expression as any).type === 'ParenExpression' && (expression as any).expr) {
     return getStaticStringFromExpression((expression as any).expr)
@@ -67,6 +63,60 @@ function getStaticStringFromExpression (expression: Expression | null | undefine
   }
   if ((expression as any).type === 'TsAsExpression' && (expression as any).expression) {
     return getStaticStringFromExpression((expression as any).expression)
+  }
+
+  // Static JSX (used in some ConditionalExpression branches):
+  // <>some text{" "}more</>  -> "some text more"
+  if ((expression as any).type === 'JSXFragment' || (expression as any).type === 'JSXElement') {
+    const jsxChildren = (expression as any).children ?? []
+    let out = ''
+
+    for (const ch of jsxChildren) {
+      if (!ch) continue
+
+      if (ch.type === 'JSXText') {
+        out += ch.value
+        continue
+      }
+
+      if (ch.type === 'JSXExpressionContainer') {
+        if (!ch.expression || ch.expression.type === 'JSXEmptyExpression') continue
+        const lit = getStringLiteralFromExpression(ch.expression)
+        if (lit === undefined) return undefined
+        out += lit
+        continue
+      }
+
+      // Any nested JSXElement/Fragment/etc => not statically serializable here
+      return undefined
+    }
+
+    return out
+  }
+
+  // TemplateLiteral with no expressions: join all quasis (handles multi-quasi literals too)
+  if (
+    expression.type === 'TemplateLiteral' &&
+    Array.isArray((expression as any).expressions) &&
+    (expression as any).expressions.length === 0
+  ) {
+    const quasis = (expression as any).quasis ?? []
+    const cooked = quasis.map((q: any) => q?.cooked ?? q?.raw ?? '').join('')
+    return cooked
+  }
+
+  if (expression.type === 'TemplateLiteral' && isSimpleTemplateLiteral(expression as any)) {
+    return (expression as any).quasis?.[0]?.cooked
+  }
+
+  // Support static string concatenation: 'a' + 'b'
+  if ((expression as any).type === 'BinaryExpression') {
+    const op = (expression as any).operator ?? (expression as any).op
+    if (op === '+') {
+      const left = getStaticStringFromExpression((expression as any).left)
+      const right = getStaticStringFromExpression((expression as any).right)
+      if (left !== undefined && right !== undefined) return left + right
+    }
   }
 
   return undefined
@@ -333,27 +383,6 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
     return undefined
   }
 
-  // Unwrap common TS/paren wrappers so slotting logic sees the real expression kind.
-  const unwrapExpression = (expr: any): any => {
-    let e = expr
-    while (e) {
-      if (e.type === 'ParenExpression' && e.expr) {
-        e = e.expr
-        continue
-      }
-      if (e.type === 'ParenthesizedExpression' && e.expression) {
-        e = e.expression
-        continue
-      }
-      if (e.type === 'TsAsExpression' && e.expression) {
-        e = e.expression
-        continue
-      }
-      break
-    }
-    return e
-  }
-
   // Build deterministic global slot list (pre-order)
   function collectSlots (nodes: any[], slots: any[], parentIsNonPreserved = false, isRootLevel = false) {
     if (!nodes || !nodes.length) return
@@ -454,34 +483,12 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
       }
 
       if (n.type === 'JSXExpressionContainer') {
-        // If this expression is inside a non-preserved parent element that has NO
-        // element children (e.g. <pre>{'foo'}</pre>), treat common simple expressions
-        // as part of the parent and do NOT add them as separate sibling/global slots.
-        if (parentIsNonPreserved && !parentHasElementChildren && n.expression) {
-          const innerExpr = unwrapExpression(n.expression)
-          const innerType = innerExpr?.type
-
-          // ObjectExpression placeholders ({{ key: value }}) should be treated
-          // as part of the parent. This must also include TS assertions:
-          // {{ one } as any} => TsAsExpression(ObjectExpression) in SWC.
-          if (innerType === 'ObjectExpression') {
-            continue
-          }
-
-          // For any simple string expression inside a non-preserved parent with NO
-          // element children treat it as part of the parent (including {" "}),
-          // do NOT allocate a separate global slot. This avoids creating an
-          // extra placeholder for internal formatting-only expressions.
-          const textVal = getStaticStringFromExpression(innerExpr)
-          if (textVal !== undefined) {
-            continue
-          } else if (
-            innerType === 'Identifier' ||
-            innerType === 'MemberExpression' ||
-            innerType === 'CallExpression'
-          ) {
-            continue
-          }
+        // IMPORTANT:
+        // Inside a non-preserved parent with NO element children (e.g. <Text.Span>{...only text/expr...}</Text.Span>),
+        // inner expressions must NOT create global slots. They serialize as part of the parent's text content and
+        // must not shift sibling placeholder indices outside this element.
+        if (parentIsNonPreserved && !parentHasElementChildren) {
+          continue
         }
 
         // Handle pure-string expression containers (e.g. {" "}):
@@ -809,6 +816,23 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
       // remove trailing newline-only indentation
       .replace(/\s*\n\s*$/g, '')
 
+  const getElementTag = (el: any): string | undefined =>
+    el?.opening?.name?.type === 'Identifier' ? el.opening.name.value : undefined
+
+  // If el is a preserved/basic-html element with exactly one "pure text" child, return that child's text.
+  // Used only for whitespace heuristics around preserved inline tags like <strong>.
+  const getSinglePureTextChildText = (el: any): string | undefined => {
+    const tag = getElementTag(el)
+    if (!tag || !allowedTags.has(tag)) return undefined
+    const kids = el?.children || []
+    if (kids.length !== 1) return undefined
+    const k = kids[0]
+    if (!k) return undefined
+    if (k.type === 'JSXText') return String(k.value)
+    if (k.type === 'JSXExpressionContainer') return getStringLiteralFromExpression(k.expression) // may be undefined
+    return undefined
+  }
+
   function visitNodes (nodes: any[], localIndexMap?: Map<any, number>, isRootLevel = false): string {
     if (!nodes || nodes.length === 0) return ''
     let out = ''
@@ -887,6 +911,22 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             continue
           }
 
+          // if previous preserved tag is NOT self-closing and its inner text ends with whitespace,
+          // drop leading newline/indentation/space from the following text node to avoid double-spacing.
+          if (prevIsPreservedTag && !prevIsSelfClosing && /^\s*\n\s*/.test(node.value)) {
+            const prevInner = getSinglePureTextChildText(prevNode)
+            if (prevInner !== undefined && /\s$/.test(prevInner)) {
+              const trimmedValue = node.value
+                .replace(/^\s*\n\s*/g, '')
+                .replace(/^\s+/g, '')
+              if (trimmedValue) {
+                out += trimmedValue
+                continue
+              }
+              continue
+            }
+          }
+
           // If previous node is a non-preserved element (an indexed placeholder)
           // and the current text starts with a formatting newline, detect
           // the "word-split" scenario: previous meaningful text (before the element)
@@ -935,6 +975,11 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             // Check if the preserved tag has children (not self-closing)
             const nextChildren = nextNode.children || []
             const nextHasChildren = nextChildren.length > 0
+
+            // for preserved tags with a single pure text child, detect leading whitespace in the child
+            // so we don't inject an extra space before the tag (e.g. "for\n<strong> 3 seconds </strong>").
+            const nextInner = getSinglePureTextChildText(nextNode)
+            const nextInnerStartsWithSpace = nextInner !== undefined && /^\s/.test(nextInner)
 
             // Check if there was a space BEFORE the newline in the source
             const hasSpaceBeforeNewline = /\s\n/.test(node.value)
@@ -996,12 +1041,12 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
               tightNoSpaceNodes.add(nextNode)
             }
 
+            // only auto-insert space before preserved tags with children when the tag's inner
+            // does NOT already start with whitespace.
             if (
               hasSpaceBeforeNewline ||
-              (isPreservedTag && nextHasChildren) ||
-              // non-preserved with text after must have an explicit leading space
+              (isPreservedTag && nextHasChildren && !nextInnerStartsWithSpace) ||
               (!isPreservedTag && hasTextAfter && hasLeadingSpace) ||
-              // next element with attrs: only when not a word-split (see above)
               shouldInsertForNextWithAttrsFinal
             ) {
               out += withLeading + ' '
@@ -1037,7 +1082,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             if (prop && prop.type === 'Identifier') {
               out += `{{${prop.value}}}`
             } else {
-              throw new Error('Unrecognized expression in JSX placeholder')
+              // non-fatal
+              out += ''
             }
           }
         } else if (expr.type === 'ObjectExpression') {
@@ -1047,7 +1093,8 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           } else if (prop && prop.type === 'Identifier') {
             out += `{{${prop.value}}}`
           } else {
-            throw new Error('Unrecognized expression in JSX placeholder')
+            // non-fatal
+            out += ''
           }
         } else if (expr.type === 'MemberExpression' && expr.property && expr.property.type === 'Identifier') {
           out += `{{${expr.property.value}}}`
@@ -1059,21 +1106,32 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
           const b = getStaticStringFromExpression(expr.alternate)
 
           if (a !== undefined && b !== undefined) {
-            // Deterministic best-effort: choose the longer string (usually more complete text)
-            out += (a.length >= b.length) ? a : b
+            // Heuristic:
+            // - If one branch is a strict prefix of the other, pick the longer (keeps extra static tail),
+            //   e.g. "to select" vs "to select, or right click..."
+            // - Otherwise, stay deterministic and prefer consequent (avoids choosing alternates just because they’re 1 char longer).
+            const aTrim = a.trim()
+            const bTrim = b.trim()
+
+            const aIsPrefixOfB = bTrim.startsWith(aTrim)
+            const bIsPrefixOfA = aTrim.startsWith(bTrim)
+
+            if (aIsPrefixOfB && bTrim.length > aTrim.length) out += bTrim
+            else if (bIsPrefixOfA && aTrim.length > bTrim.length) out += aTrim
+            else out += a
           } else if (a !== undefined) {
             out += a
           } else if (b !== undefined) {
             out += b
           } else {
-            // If neither branch is statically serializable, omit it (do not throw).
-            // The caller can still extract other keys in this file / component.
+            // non-fatal: omit non-serializable conditionals
             out += ''
           }
         } else if (expr.type === 'JSXEmptyExpression') {
           // skip
         } else {
-          throw new Error(`Unrecognized expression in JSX placeholder: ${expr.type}`)
+          // IMPORTANT: do not throw (throwing skips the whole file extraction)
+          out += ''
         }
         continue
       }
@@ -1260,6 +1318,12 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
   //    remove space before period and trim.
   tmp = tmp.replace(/\s*\n\s*/g, ' ')
   tmp = tmp.replace(/\s+/g, ' ')
+
+  // Tighten whitespace inside parentheses around interpolations/placeholders:
+  // "( {{x}})" -> "({{x}})" and "({{x}} )" -> "({{x}})"
+  tmp = tmp.replace(/\(\s+(\{\{)/g, '($1')
+  tmp = tmp.replace(/(\}\})\s+\)/g, '$1)')
+
   // remove spaces before common punctuation (comma, semicolon, colon, question, exclamation, period)
   tmp = tmp.replace(/\s+([,;:!?.])/g, '$1')
   const finalResult = tmp.trim()

@@ -475,6 +475,62 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should serialize whitespace-sensitive multi-span Trans with object placeholders and a ternary string expression', async () => {
+    const sampleCode = `
+      const action = 'S';
+
+      <Trans i18nKey="white-ex-1">
+        <Text.Span>
+          {{ employee1: superUserFirstName }} (
+          {{ employee1Company: superUserCompanyName }})
+        </Text.Span>
+        <Text.Span
+          light
+          style={{
+            margin: '0 4px',
+          }}>
+          {action === 'S' ? 'viewed content via' : 'changed content via'}
+        </Text.Span>
+        <Text.Span>
+          {{ employee2: firstName }} ({{ employee2Company: companyName }})
+        </Text.Span>
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      'white-ex-1':
+        '<0>{{employee1}} ({{employee1Company}})</0><1>viewed content via</1><2>{{employee2}} ({{employee2Company}})</2>',
+    })
+  })
+
+  it('should serialize whitespace-sensitive paragraphs with preserved <strong> spacing (white-ex-2)', async () => {
+    const sampleCode = `
+      <Trans i18nKey="white-ex-2">
+        <Text.P>This action is irreversible.</Text.P>
+        <Text.P>
+          Hold down button for
+          <strong> 3 seconds </strong>
+          to confirm deletion of data
+        </Text.P>
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      'white-ex-2':
+        '<0>This action is irreversible.</0><1>Hold down button for<strong> 3 seconds </strong>to confirm deletion of data</1>',
+    })
+  })
+
   it('should handle TextLink with explicit spacing and correct index', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
