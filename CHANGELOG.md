@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.4](https://github.com/i18next/i18next-cli/compare/v1.33.3...v1.33.4) - 2025-12-19
+
+- fix(extractor): make `<Trans>` placeholder indexing stable for nested structures (paragraphs/lists) and TypeScript `as` assertions [#148](https://github.com/i18next/i18next-cli/issues/148)
+
 ## [1.33.3](https://github.com/i18next/i18next-cli/compare/v1.33.2...v1.33.3) - 2025-12-18
 
 - fix(extractor): normalize `<Trans>` placeholder indexes when TS `as` assertions appear inside child elements (prevents off-by-one numbering) [#148](https://github.com/i18next/i18next-cli/issues/148)

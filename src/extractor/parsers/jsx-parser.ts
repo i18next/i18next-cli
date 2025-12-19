@@ -687,39 +687,113 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
   const globalSlots: any[] = []
   collectSlots(children, globalSlots, false, true)
 
-  // Helper: more precise detection whether children contain non-element global
-  // slots that should force the parent to use global indexing. This mirrors
-  // the later inlined logic and avoids counting trailing text as forcing global.
-  function hasNonElementGlobalSlotsAmongChildren (childrenList: any[]) {
-    if (!childrenList || !childrenList.length) return false
-    let foundElement = false
+  // Helper: build a local (restarted) index map for JSXElement children that should render
+  // as numeric placeholders, while ALSO counting preceding meaningful text/expressions/<br />
+  // as slots (even though they are not rendered as <n>...</n> placeholders).
+  function buildLocalChildIndexMap (childrenList: any[]) {
+    const map = new Map<any, number>()
+    if (!childrenList || !childrenList.length) return map
+
+    const isMeaningfulJSXText = (n: any) =>
+      n && n.type === 'JSXText' && !isFormattingWhitespace(n) && String(n.value).length > 0
+
+    const isMeaningfulJSXExpression = (n: any) => {
+      if (!n || n.type !== 'JSXExpressionContainer') return false
+      const expr = n.expression
+      if (!expr || expr.type === 'JSXEmptyExpression') return false
+
+      const lit = getStringLiteralFromExpression(expr)
+      if (lit !== undefined) {
+        // ignore newline+indentation formatting expressions, but count normal spaces
+        if (/^\s*$/.test(lit) && lit.includes('\n')) return false
+        return true
+      }
+
+      // identifiers / object expressions / calls etc. serialize to {{...}} and still consume a slot
+      return true
+    }
+
+    const getTag = (el: any): string | undefined =>
+      el?.opening?.name?.type === 'Identifier' ? el.opening.name.value : undefined
+
+    const isSinglePureTextChild = (el: any) => {
+      const kids = el?.children || []
+      return (
+        kids.length === 1 && (
+          kids[0]?.type === 'JSXText' ||
+          (kids[0]?.type === 'JSXExpressionContainer' &&
+            getStringLiteralFromExpression(kids[0].expression) !== undefined)
+        )
+      )
+    }
+
+    const isIndexedPlaceholderElement = (el: any) => {
+      const tag = getTag(el)
+      if (!tag || !allowedTags.has(tag)) return true // non-preserved => always indexed
+
+      // <p> is treated as indexed in this serializer in most cases (and in all non-root cases)
+      if (tag === 'p') return true
+
+      const hasAttrs =
+        el.opening &&
+        Array.isArray((el.opening as any).attributes) &&
+        (el.opening as any).attributes.length > 0
+
+      const kids = el.children || []
+      const hasKids = kids.length > 0
+
+      // self-closing basic HTML tags are rendered as literal (<br />) not numeric
+      if (!hasKids) return false
+
+      // basic HTML with a single pure text child is rendered as literal (<strong>text</strong>)
+      if (isSinglePureTextChild(el)) return false
+
+      // basic HTML with attributes + complex children is indexed
+      if (hasAttrs) return true
+
+      // complex basic HTML without attrs: only index it if our existing slotter decided it’s a slot
+      return globalSlots.indexOf(el) !== -1
+    }
+
+    const isLiteralPreservedSelfClosingSlot = (el: any) => {
+      const tag = getTag(el)
+      if (!tag || !allowedTags.has(tag)) return false
+      const kids = el.children || []
+      if (kids.length !== 0) return false
+
+      const hasAttrs =
+        el.opening &&
+        Array.isArray((el.opening as any).attributes) &&
+        (el.opening as any).attributes.length > 0
+
+      // Match existing behavior: count <br /> (no attrs) as a slot that shifts later indexes.
+      return tag === 'br' && !hasAttrs
+    }
+
+    let local = 0
     for (const ch of childrenList) {
       if (!ch) continue
-      if (ch.type === 'JSXElement') {
-        foundElement = true
+
+      if (isMeaningfulJSXText(ch) || isMeaningfulJSXExpression(ch)) {
+        local += 1
         continue
       }
-      if (ch.type === 'JSXExpressionContainer' && globalSlots.indexOf(ch) !== -1) {
-        // Only count an expression as forcing global indexing when it appears
-        // after at least one element (i.e. between elements), not if it's before.
-        return foundElement
-      }
-      if (ch.type === 'JSXText' && globalSlots.indexOf(ch) !== -1) {
-        // Exclude pure formatting whitespace
-        if (isFormattingWhitespace(ch)) continue
 
-        // If text appears before the first element -> force global indexing
-        if (!foundElement) return true
-
-        // If text is between elements -> force global indexing
-        const idx = childrenList.indexOf(ch)
-        const remaining = childrenList.slice(idx + 1)
-        const hasMoreElements = remaining.some((n: any) => n && n.type === 'JSXElement')
-        if (hasMoreElements) return true
-        // Trailing text after last element does not force global indexing
+      if (ch.type === 'JSXElement') {
+        if (isIndexedPlaceholderElement(ch)) {
+          map.set(ch, local)
+          local += 1
+        } else if (isLiteralPreservedSelfClosingSlot(ch)) {
+          // literal <br /> still occupies a slot position
+          local += 1
+        }
+        continue
       }
+
+      // fragments: do not consume a slot themselves (keep existing behavior)
     }
-    return false
+
+    return map
   }
 
   // Track ELEMENT NODES that MUST be tight (no spaces) because the element splits a word across a newline.
@@ -1069,220 +1143,25 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             }
           } else if (hasAttrs && !isSinglePureTextChild) {
             // Has attributes -> treat as indexed element with numeric placeholder
-            const childrenLocal = children
-            // determine this element's numeric index once for all branches
             const idx = isRootLevel && myRuntimeIndex !== undefined ? myRuntimeIndex : resolveIndex(node)
-            // Use precise detection so trailing text doesn't force global indexing
-            const hasNonElementGlobalSlots = hasNonElementGlobalSlotsAmongChildren(childrenLocal)
-            if (hasNonElementGlobalSlots) {
-              // Build a local index map for inner children so nested placeholders
-              // restart locally instead of using global indices.
-              const childrenLocalMap = new Map<any, number>()
-              // always restart local child indices at 0
-              let localIdxCounter = 0
-              for (const ch of childrenLocal) {
-                if (!ch) continue
-                if (ch.type === 'JSXElement') {
-                  const chTag = ch.opening && ch.opening.name && ch.opening.name.type === 'Identifier'
-                    ? ch.opening.name.value
-                    : undefined
-                  if (chTag && allowedTags.has(chTag)) {
-                    const chHasAttrs =
-                      ch.opening &&
-                      Array.isArray((ch.opening as any).attributes) &&
-                      (ch.opening as any).attributes.length > 0
-                    const chChildren = ch.children || []
-                    const chIsSinglePureText =
-                      chChildren.length === 1 && (
-                        chChildren[0]?.type === 'JSXText' ||
-                        (chChildren[0]?.type === 'JSXExpressionContainer' &&
-                          getStringLiteralFromExpression(chChildren[0].expression) !== undefined)
-                      )
-                    const chWillBePreserved = !chHasAttrs && (!chChildren.length || chIsSinglePureText)
-                    if (!chWillBePreserved) {
-                      childrenLocalMap.set(ch, localIdxCounter++)
-                    }
-                  } else {
-                    childrenLocalMap.set(ch, localIdxCounter++)
-                  }
-                }
-              }
-              const inner = visitNodes(childrenLocal, childrenLocalMap.size ? childrenLocalMap : undefined)
-              out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
-            } else {
-              const childrenLocalMap = new Map<any, number>()
-              // Local child indexes always restart at 0 for the inner mapping.
-              let localIdxCounter = 0
 
-              for (const ch of children) {
-                if (!ch) continue
-                if (ch.type === 'JSXElement') {
-                  const chTag = ch.opening && ch.opening.name && ch.opening.name.type === 'Identifier'
-                    ? ch.opening.name.value
-                    : undefined
-                  if (chTag && allowedTags.has(chTag)) {
-                    // Check if this child will be preserved as literal HTML
-                    const chHasAttrs =
-                      ch.opening &&
-                      Array.isArray((ch.opening as any).attributes) &&
-                      (ch.opening as any).attributes.length > 0
-                    const chChildren = ch.children || []
-                    const chIsSinglePureText =
-                      chChildren.length === 1 && (
-                        chChildren[0]?.type === 'JSXText' ||
-                        (chChildren[0]?.type === 'JSXExpressionContainer' &&
-                          getStringLiteralFromExpression(chChildren[0].expression) !== undefined)
-                      )
-                    const chWillBePreserved = !chHasAttrs && (!chChildren.length || chIsSinglePureText)
-                    if (!chWillBePreserved) {
-                      // Will be indexed, add to local map
-                      childrenLocalMap.set(ch, localIdxCounter++)
-                    }
-                  } else {
-                    childrenLocalMap.set(ch, localIdxCounter++)
-                  }
-                }
-              }
+            // IMPORTANT: child indexing must account for meaningful text and {" "} expression slots,
+            // otherwise inline elements inside <p> end up as <0>...</0> instead of <1>/<2>/...
+            const childrenLocalMap = buildLocalChildIndexMap(children)
+            const inner = visitNodes(children, childrenLocalMap.size ? childrenLocalMap : undefined)
 
-              const inner = visitNodes(children, childrenLocalMap.size ? childrenLocalMap : undefined)
-              out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
-            }
+            out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
           } else {
             // Has complex children but no attributes -> preserve tag as literal but index children
-            // Check if this tag is in globalSlots - if so, index it
             const idx = globalSlots.indexOf(node)
             if (idx !== -1) {
               // This tag is in globalSlots, so index it
-              // At root level, use the element's position among root elements (runtimeIndex)
               const indexToUse = myRuntimeIndex !== undefined ? myRuntimeIndex : idx
 
-              // Check if children have text/expression nodes in globalSlots
-              // that appear BEFORE or BETWEEN element children (not just trailing)
-              // Exclude formatting whitespace (newline-only text) from this check
-              const hasNonElementGlobalSlots = (() => {
-                let foundElement = false
+              // Use the same slot-aware local mapping for children (counts text + {" "} + <br /> as slots)
+              const childrenLocalMap = buildLocalChildIndexMap(children)
+              const inner = visitNodes(children, childrenLocalMap.size ? childrenLocalMap : undefined, false)
 
-                for (const ch of children) {
-                  if (!ch) continue
-
-                  if (ch.type === 'JSXElement') {
-                    foundElement = true
-                    continue
-                  }
-
-                  if (ch.type === 'JSXExpressionContainer' && globalSlots.indexOf(ch) !== -1) {
-                    // Only count if before/between elements, not trailing
-                    return foundElement  // false if before first element, true if after
-                  }
-
-                  if (ch.type === 'JSXText' && globalSlots.indexOf(ch) !== -1) {
-                    // Exclude formatting whitespace
-                    if (isFormattingWhitespace(ch)) continue
-
-                    // Only count text that appears BEFORE the first element
-                    // Trailing text after all elements should not force global indexing
-                    if (!foundElement) {
-                      // Text before first element - counts
-                      return true
-                    }
-                    // Text after an element - check if there are more elements after this text
-                    const remainingNodes = children.slice(children.indexOf(ch) + 1)
-                    const hasMoreElements = remainingNodes.some((n: any) => n && n.type === 'JSXElement')
-                    if (hasMoreElements) return true
-                    // Trailing text after last element does not force global indexing
-                  }
-                }
-
-                return false
-              })()
-
-              // If children have non-element global slots, use global indexes
-              // Otherwise use local indexes starting from parent's index + 1
-              if (hasNonElementGlobalSlots) {
-                // For non-root parents we compact child indexes locally.
-                // For root-level parents (index 0) preserve global indexes so tests
-                // that expect global numbering (1,3,5...) keep working.
-                if (indexToUse === 0) {
-                  const inner = visitNodes(children, undefined, false)
-                  out += `<${indexToUse}>${trimFormattingEdges(inner)}</${indexToUse}>`
-                  continue
-                }
-
-                // Build a local index map for the inner children so nested placeholders
-                // restart locally (avoids leaking global indices into the parent's inner string).
-                const childrenLocalMap = new Map<any, number>()
-                // local children numbering should start at 0
-                for (const ch of children) {
-                  if (!ch) continue
-                  if (ch.type === 'JSXElement') {
-                    const chTag = ch.opening && ch.opening.name && ch.opening.name.type === 'Identifier'
-                      ? ch.opening.name.value
-                      : undefined
-                    if (chTag && allowedTags.has(chTag)) {
-                      const chHasAttrs =
-                        ch.opening &&
-                        Array.isArray((ch.opening as any).attributes) &&
-                        (ch.opening as any).attributes.length > 0
-                      const chChildren = ch.children || []
-                      const chIsSinglePureText =
-                        chChildren.length === 1 && (
-                          chChildren[0]?.type === 'JSXText' ||
-                          (chChildren[0]?.type === 'JSXExpressionContainer' &&
-                            getStringLiteralFromExpression(chChildren[0].expression) !== undefined)
-                        )
-                      const chWillBePreserved = !chHasAttrs && (!chChildren.length || chIsSinglePureText)
-                      if (!chWillBePreserved) {
-                        const inner = visitNodes(ch.children, undefined, false)
-                        out += `<${indexToUse}>${trimFormattingEdges(inner)}</${indexToUse}>`
-                      }
-                    } else {
-                      const inner = visitNodes(ch.children, undefined, false)
-                      out += `<${indexToUse}>${trimFormattingEdges(inner)}</${indexToUse}>`
-                    }
-                  }
-                }
-
-                const inner = visitNodes(children, childrenLocalMap.size ? childrenLocalMap : undefined, false)
-                out += `<${indexToUse}>${trimFormattingEdges(inner)}</${indexToUse}>`
-                continue
-              }
-
-              // Build local index map for children of this indexed element
-              const childrenLocalMap = new Map<any, number>()
-              // Local child indexes restart at 0 inside this element (do not start from parent index)
-              let localIdxCounter = 0
-              for (const ch of children) {
-                if (!ch) continue
-                if (ch.type === 'JSXElement') {
-                  const chTag = ch.opening && ch.opening.name && ch.opening.name.type === 'Identifier'
-                    ? ch.opening.name.value
-                    : undefined
-
-                  if (chTag && allowedTags.has(chTag)) {
-                    // Check if this child will be preserved as literal HTML
-                    const chHasAttrs =
-                      ch.opening &&
-                      Array.isArray((ch.opening as any).attributes) &&
-                      (ch.opening as any).attributes.length > 0
-                    const chChildren = ch.children || []
-                    const chIsSinglePureText =
-                      chChildren.length === 1 && (
-                        chChildren[0]?.type === 'JSXText' ||
-                        (chChildren[0]?.type === 'JSXExpressionContainer' &&
-                          getStringLiteralFromExpression(chChildren[0].expression) !== undefined)
-                      )
-                    const chWillBePreserved = !chHasAttrs && (!chChildren.length || chIsSinglePureText)
-                    if (!chWillBePreserved) {
-                      // Will be indexed, add to local map
-                      childrenLocalMap.set(ch, localIdxCounter++)
-                    }
-                  } else {
-                    // Non-preserved tag, always indexed
-                    childrenLocalMap.set(ch, localIdxCounter++)
-                  }
-                }
-              }
-              const inner = visitNodes(children, childrenLocalMap.size > 0 ? childrenLocalMap : undefined, false)
               out += `<${indexToUse}>${trimFormattingEdges(inner)}</${indexToUse}>`
             } else {
               // Not in globalSlots, preserve as literal HTML
@@ -1291,56 +1170,16 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
             }
           }
         } else {
-          // Decide whether to use local (restarted) indexes for this element's
-          // immediate children or fall back to the global pre-order indexes.
-          // If the element's children contain non-element slots (JSXText /
-          // JSXExpressionContainer) that were collected as global slots, we must
-          // use the global indexes so those text slots keep their positions.
-          const children = node.children || []
-          const hasNonElementGlobalSlots = children.some((ch: any) =>
-            ch && (ch.type === 'JSXText' || ch.type === 'JSXExpressionContainer') && globalSlots.indexOf(ch) !== -1
-          )
+          // Non-preserved element: always render this element with its global index,
+          // but compute CHILD placeholder indices locally (restarted at 0) while
+          // counting meaningful text/expressions/<br /> as slot positions.
+          const kids = node.children || []
+          const idx = resolveIndex(node)
 
-          // If there are non-element global slots among the children, render using
-          // global indexes. Otherwise build a compact local index map so nested
-          // placeholders restart at 0 inside this parent element.
-          if (hasNonElementGlobalSlots) {
-            const idx = globalSlots.indexOf(node)
-            const inner = visitNodes(children, undefined)
-            out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
-          } else {
-            const childrenLocalMap = new Map<any, number>()
-            const idx = resolveIndex(node)
-            let localIdxCounter = 0
+          const kidsLocalMap = buildLocalChildIndexMap(kids)
+          const inner = visitNodes(kids, kidsLocalMap.size ? kidsLocalMap : undefined)
 
-            for (const ch of children) {
-              if (!ch) continue
-              if (ch.type === 'JSXElement') {
-                const chTag = ch.opening && ch.opening.name && ch.opening.name.type === 'Identifier'
-                  ? ch.opening.name.value
-                  : undefined
-                if (chTag && allowedTags.has(chTag)) {
-                  // Check if this child will be preserved as literal HTML
-                  const chHasAttrs =
-                    ch.opening &&
-                    Array.isArray((ch.opening as any).attributes) &&
-                    (ch.opening as any).attributes.length > 0
-                  const chChildren = ch.children || []
-                  const chIsSinglePureText = chChildren.length === 1 && chChildren[0]?.type === 'JSXText'
-                  const chWillBePreserved = !chHasAttrs && (!chChildren.length || chIsSinglePureText)
-                  if (!chWillBePreserved) {
-                    // Will be indexed, add to local map
-                    childrenLocalMap.set(ch, localIdxCounter++)
-                  }
-                } else {
-                  childrenLocalMap.set(ch, localIdxCounter++)
-                }
-              }
-            }
-
-            const inner = visitNodes(children, childrenLocalMap.size ? childrenLocalMap : undefined)
-            out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
-          }
+          out += `<${idx}>${trimFormattingEdges(inner)}</${idx}>`
         }
         continue
       }
@@ -1470,215 +1309,6 @@ function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): s
       }
     }
   } catch (e) { /* ignore */ }
-
-  // Remap numeric placeholders to compact local indices inside each parent placeholder.
-  // This fixes cases where global pre-order indices leak into a parent's inner string
-  // (e.g. "<4>...<6>...</6></4>") — we want the inner child placeholders to restart
-  // locally (1,2...) when appropriate.
-  function remapNumericPlaceholders (input: string) {
-    if (!input || !input.includes('<')) return input
-
-    type Node = { type: 'text'; text: string } | { type: 'ph'; idx: number; children: Node[] }
-
-    // Parse into a simple tree of numeric-placeholder nodes and text nodes.
-    function parse (s: string): Node[] {
-      const nodes: Node[] = []
-      const stack: { node: Node; idx: number }[] = []
-      let lastIndex = 0
-      const re = /<\/?(\d+)>|<[^>]+>/g
-      let m: RegExpExecArray | null
-      while ((m = re.exec(s))) {
-        const match = m[0]
-        const matchIndex = m.index
-        if (matchIndex > lastIndex) {
-          const text = s.slice(lastIndex, matchIndex)
-          const textNode: Node = { type: 'text', text }
-          if (stack.length) (stack[stack.length - 1].node as any).children.push(textNode)
-          else nodes.push(textNode)
-        }
-
-        const closingNumeric = /^<\/(\d+)>$/.exec(match)
-        const openingNumeric = /^<(\d+)>$/.exec(match)
-
-        if (openingNumeric) {
-          const idx = Number(openingNumeric[1])
-          const ph: Node = { type: 'ph', idx, children: [] }
-          if (stack.length) (stack[stack.length - 1].node as any).children.push(ph)
-          else nodes.push(ph)
-          stack.push({ node: ph, idx })
-        } else if (closingNumeric) {
-          // pop matching numeric placeholder; if mismatch, just pop last
-          if (stack.length) {
-            stack.pop()
-          }
-        } else {
-          // non-numeric tag (preserved HTML like <br /> or <strong>) -> treat as text
-          const textNode: Node = { type: 'text', text: match }
-          if (stack.length) (stack[stack.length - 1].node as any).children.push(textNode)
-          else nodes.push(textNode)
-        }
-
-        lastIndex = re.lastIndex
-      }
-      if (lastIndex < s.length) {
-        const text = s.slice(lastIndex)
-        const textNode: Node = { type: 'text', text }
-        if (stack.length) (stack[stack.length - 1].node as any).children.push(textNode)
-        else nodes.push(textNode)
-      }
-      return nodes
-    }
-
-    // Reconstruct string with remapped local indices.
-    function build (nodes: Node[], parentIdx: number | null = null): string {
-      let out = ''
-      for (const n of nodes) {
-        if (n.type === 'text') {
-          out += n.text
-        } else {
-          // Map direct child placeholder indices to local sequence
-          const childPhs = (n as any).children.filter((c: any) => c.type === 'ph') as { type: 'ph'; idx: number; children: Node[] }[]
-
-          let map: Map<number, number> | undefined
-
-          // Try to build map from AST to handle gaps (e.g. text nodes) correctly
-          if (typeof n.idx === 'number') {
-            const parentAst = globalSlots[n.idx]
-            if (parentAst && Array.isArray(parentAst.children)) {
-              const potentialMap = new Map<number, number>()
-              let localCounter = 0
-
-              // Iterate over actual AST children to determine local indices
-              for (const child of parentAst.children) {
-                const gIdx = globalSlots.indexOf(child)
-
-                if (child.type === 'JSXText') {
-                  if (isFormattingWhitespace(child)) continue
-                  // Meaningful text consumes a local index, even if skipped from global slots (e.g. i=0 rule)
-                  if (gIdx !== -1) potentialMap.set(gIdx, localCounter)
-                  localCounter++
-                } else if (child.type === 'JSXElement') {
-                  // Elements always consume a local index
-                  if (gIdx !== -1) potentialMap.set(gIdx, localCounter)
-                  localCounter++
-                } else if (child.type === 'JSXExpressionContainer') {
-                  // Expressions consume a local index if they are in global slots
-                  // If not in global slots, they are likely formatting/empty/skipped-simple-string
-                  if (gIdx !== -1) {
-                    potentialMap.set(gIdx, localCounter)
-                    localCounter++
-                  }
-                }
-              }
-
-              // Verify that all child placeholders found in the string are covered by the AST map
-              const allCovered = childPhs.every(c => potentialMap.has(c.idx))
-              if (allCovered) {
-                map = potentialMap
-              }
-            }
-          }
-
-          // Fallback to original logic if AST mapping failed (e.g. parent not found)
-          if (!map) {
-            // If the child's original global indices are NOT contiguous (i.e. gaps),
-            // do not remap — emit original numbers to preserve tests that expect
-            // global pre-order indices like 1,3,5.
-            const origIndices = childPhs.map(c => c.idx)
-            const isContiguous = origIndices.length <= 1 || origIndices.every((v, i) => i === 0 || v === origIndices[i - 1] + 1)
-
-            if (isContiguous) {
-              map = new Map()
-              let start = 0
-
-              // Try to replicate the start offset logic from original code
-              // (though AST mapping should handle this naturally if it worked)
-              try {
-                const parentAst = globalSlots[n.idx]
-                if (parentAst && parentAst.span) {
-                  const parentStart = parentAst.span.start
-                  const parentEnd = parentAst.span.end
-
-                  // Count non-element global slots before first element child
-                  let nonElementBefore = 0
-                  let firstElementGIdx = -1
-                  for (let gIdx = n.idx + 1; gIdx < globalSlots.length; gIdx++) {
-                    const s = globalSlots[gIdx]
-                    if (!s || !s.span) continue
-                    if (s.span.start >= parentStart && s.span.end <= parentEnd && s.type === 'JSXElement') {
-                      firstElementGIdx = gIdx
-                      break
-                    }
-                  }
-
-                  if (firstElementGIdx !== -1) {
-                    for (let gIdx = n.idx + 1; gIdx < firstElementGIdx; gIdx++) {
-                      const s = globalSlots[gIdx]
-                      if (!s || !s.span) continue
-                      if (s.span.start >= parentStart && s.span.end <= parentEnd) {
-                        if (s.type === 'JSXText' || s.type === 'JSXExpressionContainer') nonElementBefore++
-                      }
-                    }
-                  } else {
-                    for (let gIdx = n.idx + 1; gIdx < globalSlots.length; gIdx++) {
-                      const s = globalSlots[gIdx]
-                      if (!s || !s.span) continue
-                      if (s.span.start >= parentStart && s.span.end <= parentEnd) {
-                        if (s.type === 'JSXText' || s.type === 'JSXExpressionContainer') nonElementBefore++
-                      }
-                    }
-                  }
-
-                  const parentTag = parentAst?.opening?.name?.value
-                  const parentIsPreserved = parentTag && allowedTags.has(parentTag)
-                  const parentIsRoot = parentIdx === null
-
-                  if (childPhs.length === 1) {
-                    start = Math.max(1, nonElementBefore + 1)
-                    if (
-                      parentIsRoot &&
-                      !parentIsPreserved &&
-                      childPhs[0].idx === 0 &&
-                      (parentTag === 'a' || parentTag === 'p')
-                    ) {
-                      start = 0
-                    }
-                  }
-                }
-              } catch (e) { /* ignore */ }
-
-              for (const c of childPhs) {
-                if (!map.has(c.idx)) {
-                  map.set(c.idx, start++)
-                }
-              }
-            }
-          }
-
-          // recursively build children, but when emitting child ph tags replace indices
-          const inner = (n as any).children.map((child: any) => {
-            if (child.type === 'text') return child.text
-            const orig = child.idx
-            const newIdx = map && map.has(orig) ? map.get(orig)! : orig
-            return `<${newIdx}>${build(child.children, newIdx)}</${newIdx}>`
-          }).join('')
-
-          out += `<${n.idx}>${inner}</${n.idx}>`
-        }
-      }
-      return out
-    }
-
-    try {
-      const parsed = parse(input)
-      const built = build(parsed)
-      return built
-    } catch (e) {
-      return input
-    }
-  }
-
-  postFinal = remapNumericPlaceholders(postFinal)
 
   return postFinal.trim()
 }

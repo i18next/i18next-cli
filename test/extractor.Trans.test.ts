@@ -2146,6 +2146,35 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should serialize list structures with nested indexed children and self-closing icon components', async () => {
+    const sampleCode = `
+      <Trans i18nKey="list-1">
+        You can also do this:
+        <ul>
+          <Li>
+            Go under Item A <ItemAIcon />.
+          </Li>
+          <Li>
+            Tap the Item B icon <ItemBIcon /> in the sidebar.
+          </Li>
+          <Li>
+            Do one more thing.
+          </Li>
+        </ul>
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      'list-1':
+        'You can also do this:<1><0>Go under Item A <1></1>.</0><1>Tap the Item B icon <1></1> in the sidebar.</1><2>Do one more thing.</2></1>',
+    })
+  })
+
   it('should correctly extract object placeholders from JSX with TypeScript type assertions', async () => {
     const sampleCode = `
       let property = 'my var';
