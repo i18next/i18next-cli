@@ -1102,6 +1102,7 @@ This programmatic API gives you the same power as the CLI but with full control 
 ## Known plugins
 
 - [i18next-cli-plugin-svelte](https://github.com/dreamscached/i18next-cli-plugin-svelte) &mdash; a simple plugin to extract translation keys from Svelte components
+[rsbuild-plugin-i18next-extractor](https://github.com/rspack-contrib/rsbuild-plugin-i18next-extractor) &mdash; A Rsbuild plugin that leverages the Rspack module graph to extract only the i18n translations that are actually imported and used in your code, preventing unused translations from being bundled.
 
 ---
 
