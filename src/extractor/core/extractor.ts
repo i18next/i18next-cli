@@ -1,6 +1,7 @@
 import ora from 'ora'
 import chalk from 'chalk'
 import { parse } from '@swc/core'
+import type { Module } from '@swc/types'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, extname } from 'node:path'
 import type { Logger, I18nextToolkitConfig, Plugin, PluginContext } from '../../types'
@@ -167,7 +168,7 @@ export async function processFile (
     const isTSX = fileExt === '.tsx'
     const isJSX = fileExt === '.jsx'
 
-    let ast: any
+    let ast: Module
     try {
       ast = await parse(code, {
         syntax: isTypeScriptFile ? 'typescript' : 'ecmascript',

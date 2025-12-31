@@ -1,6 +1,9 @@
-import type { Expression, JSXAttribute, JSXElement, JSXExpression, ObjectExpression } from '@swc/core'
+import type { Expression, JSXAttribute, JSXAttributeOrSpread, JSXElement, JSXElementChild, JSXElementName, JSXExpression, ObjectExpression } from '@swc/core'
 import type { I18nextToolkitConfig } from '../../types'
 import { getObjectPropValue, getObjectPropValueExpression, isSimpleTemplateLiteral } from './ast-utils'
+import * as React from 'react'
+import { getDefaults } from 'react-i18next'
+import { nodesToString } from 'react-i18next/TransWithoutContext'
 
 export interface ExtractedJSXAttributes {
   /** holds the raw key expression from the AST */
@@ -356,11 +359,156 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
 }
 
 /**
+ * Creates a dummy React component. The implementation / return value is
+ * irrelevant, as long as we have something realistic-looking to pass to
+ * react-i18next.
+ */
+function makeDummyComponent (name: string): React.JSXElementConstructor<any> {
+  const result = () => null
+  Object.defineProperty(result, 'name', { value: name })
+  result.displayName = name
+  return result
+}
+
+function makeDummyProps (attributes: JSXAttributeOrSpread[]): Record<string, any> | null {
+  return attributes.length
+    ? Object.fromEntries(attributes.map((attr): ([string, string] | null) => {
+      if (attr.type === 'SpreadElement') {
+        return null
+      } else if (attr.name.type === 'Identifier') {
+        return [attr.name.value, '']
+      } else {
+        return [`${attr.name.namespace.value}:${attr.name.name.value}`, '']
+      }
+    }).filter(i => i != null))
+    : null
+}
+
+function getElementName (element: JSXElementName): string | React.JSXElementConstructor<any> {
+  switch (element.type) {
+    case 'Identifier':
+      return /\p{Uppercase_Letter}/u.test(element.value) ? makeDummyComponent(element.value) : element.value
+    case 'JSXMemberExpression':
+      // element.object should be irrelevant for naming purposes here
+      return makeDummyComponent(element.property.value)
+    case 'JSXNamespacedName':
+      return `${element.namespace.value}:${element.name.value}`
+  }
+}
+
+function trimTextNode (text: string): string | null {
+  text = text.replace(/\r\n/g, '\n') // Normalize line endings
+
+  // If text is ONLY whitespace AND contains a newline, remove it entirely
+  if (/^\s+$/.test(text) && /\n/.test(text)) {
+    return null
+  }
+
+  // Trim leading/trailing whitespace sequences containing newlines
+  text = text.replace(/^[ \t]*\n[ \t]*/, '')
+  text = text.replace(/[ \t]*\n[ \t]*$/, '')
+
+  // Replace whitespace sequences containing newlines with single space
+  text = text.replace(/[ \t]*\n[ \t]*/g, ' ')
+
+  return text
+}
+
+function swcExpressionToReactNode (expr: JSXExpression): string | React.ReactElement | null {
+  switch (expr.type) {
+    case 'JSXEmptyExpression':
+      return null
+
+    case 'TsAsExpression':
+      return swcExpressionToReactNode(expr.expression)
+    case 'ParenthesisExpression':
+      return swcExpressionToReactNode(expr.expression)
+
+    case 'ConditionalExpression': {
+      const consequent = swcExpressionToReactNode(expr.consequent)
+      const alternate = swcExpressionToReactNode(expr.alternate)
+
+      // Heuristic:
+      // - If one branch is a strict prefix of the other, pick the longer (keeps extra static tail),
+      //   e.g. "to select" vs "to select, or right click..."
+      // - Otherwise, stay deterministic and prefer consequent (avoids choosing alternates just because they’re 1 char longer).
+      if (typeof consequent === 'string' &&
+          typeof alternate === 'string' &&
+          alternate.length !== consequent.length &&
+          alternate.startsWith(consequent)) {
+        return alternate
+      }
+
+      return consequent
+    }
+
+    case 'StringLiteral':
+      return expr.value
+    case 'TemplateLiteral':
+      if (isSimpleTemplateLiteral(expr)) {
+        return expr.quasis[0].raw
+      }
+      // Too complex!
+      break
+    case 'Identifier':
+      // TODO: This might actually be an error - not sure that react-i18next can handle at runtime
+      return `{{${expr.value}}}`
+    case 'ObjectExpression': {
+      const keys = expr.properties.map((prop) => {
+        if (prop.type === 'KeyValueProperty' && (prop.key.type === 'Identifier' || prop.key.type === 'StringLiteral')) {
+          return prop.key.value
+        } else if (prop.type === 'Identifier') {
+          return prop.value
+        } else {
+        // Too complex to represent! TODO: Flag an error
+          return null
+        }
+      }).filter(k => k !== null)
+      return `{{${keys.join(',')}}}`
+    }
+  }
+
+  // Too complex to represent! TODO: Flag an error
+  return React.createElement('expression', { expression: expr })
+}
+
+function swcChildToReactNode (node: JSXElementChild): string | React.ReactElement | null {
+  switch (node.type) {
+    case 'JSXText':
+      return trimTextNode(node.value)
+    case 'JSXExpressionContainer':
+      return swcExpressionToReactNode(node.expression)
+    case 'JSXSpreadChild':
+      return ''
+    case 'JSXElement':
+      return React.createElement(
+        getElementName(node.opening.name),
+        makeDummyProps(node.opening.attributes),
+        ...swcChildrenToReactNodes(node.children)
+      )
+    case 'JSXFragment':
+      return React.createElement(React.Fragment, null, ...swcChildrenToReactNodes(node.children))
+  }
+}
+
+function swcChildrenToReactNodes (children: JSXElementChild[]): (string | React.ReactElement)[] {
+  return children.map(swcChildToReactNode).filter(n => n !== null)
+}
+
+function serializeJSXChildren (children: JSXElementChild[], config: I18nextToolkitConfig): string {
+  const i18nextOptions = { ...getDefaults() }
+  if (config.extract.transKeepBasicHtmlNodesFor) {
+    i18nextOptions.transKeepBasicHtmlNodesFor = config.extract.transKeepBasicHtmlNodesFor
+  }
+  return nodesToString(swcChildrenToReactNodes(children), i18nextOptions)
+}
+
+/**
  * Serializes JSX children into a string, correctly indexing component placeholders.
  * This version correctly calculates an element's index based on its position
  * among its sibling *elements*, ignoring text nodes for indexing purposes.
  */
-function serializeJSXChildren (children: any[], config: I18nextToolkitConfig): string {
+function serializeJSXChildren2 (children: any[], config: I18nextToolkitConfig): string {
   if (!children || children.length === 0) return ''
 
   const allowedTags = new Set(config.extract.transKeepBasicHtmlNodesFor ?? ['br', 'strong', 'i', 'p'])

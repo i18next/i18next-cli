@@ -682,7 +682,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      SomeKey: 'Some text <br /> other text.',
+      SomeKey: 'Some text <br/> other text.',
     })
   })
 
@@ -733,7 +733,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
 
-    const expectedDefaultValue = 'First line with empty JSXTextNode <p><1>Span that should have index 1 but has index 0</1></p> Second line'
+    const expectedDefaultValue = 'First line with empty JSXTextNode<1><0>Span that should have index 1 but has index 0</0></1>Second line'
 
     expect(translationFile!.newTranslations).toEqual({
       children_receive_wrong_index: expectedDefaultValue,
@@ -755,7 +755,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
 
-    const expectedDefaultValue = 'First line with empty JSXTextNode <1>Span that should have index 1 but has index 0</1> Second line'
+    const expectedDefaultValue = 'First line with empty JSXTextNode<1>Span that should have index 1 but has index 0</1>Second line'
 
     expect(translationFile!.newTranslations).toEqual({
       children_receive_wrong_index_attr: expectedDefaultValue,
@@ -777,7 +777,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
 
-    const expectedDefaultValue = 'First line with empty JSXTextNode <2>Span that should have index 2 but has index 0</2> Second line'
+    const expectedDefaultValue = 'First line with empty JSXTextNode <2>Span that should have index 2 but has index 0</2>Second line'
 
     expect(translationFile!.newTranslations).toEqual({
       children_receive_wrong_second_index: expectedDefaultValue,
@@ -894,7 +894,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
 
     const expectedDefaultValue =
-      'Maybe you mistyped the URL or the plugin with the id <1></1> is unavailable.<br />To see a list of available datasources please <5>click here</5>.'
+      'Maybe you mistyped the URL or the plugin with the id <1></1> is unavailable.<br/>To see a list of available datasources please <5>click here</5>.'
 
     expect(translationFile!.newTranslations).toEqual({
       another_children_receive_wrong_index: expectedDefaultValue,
@@ -943,7 +943,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
 
     const expectedDefaultValue =
-      'Your changes will be lost when you update the plugin.<br /><2>Use <strong>Save As</strong> to create custom version.</2>'
+      'Your changes will be lost when you update the plugin.<br/><2>Use <strong>Save As</strong> to create custom version.</2>'
 
     expect(translationFile!.newTranslations).toEqual({
       another_wrong_code_index_1: expectedDefaultValue,
@@ -966,7 +966,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
 
     const expectedDefaultValue =
-      'A dashboard with the same name in selected folder already exists.<br /><2>Would you still like to save this dashboard?</2>'
+      'A dashboard with the same name in selected folder already exists.<br/><2>Would you still like to save this dashboard?</2>'
 
     expect(translationFile!.newTranslations).toEqual({
       another_wrong_code_index_2: expectedDefaultValue,
@@ -1045,7 +1045,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
     // Should preserve the space before the closing slash
     expect(translationFile!.newTranslations).toEqual({
-      SomeKey: 'SomeText<br /><br />Some other Text',
+      SomeKey: 'SomeText<br/><br/>Some other Text',
     })
   })
 
@@ -1069,7 +1069,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      message: 'First line.<br />Second line starts on new line.',
+      message: 'First line.<br/>Second line starts on new line.',
     })
   })
 
@@ -1090,7 +1090,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      multiline: 'Line one<br />Line two<br />Line three',
+      multiline: 'Line one<br/>Line two<br/>Line three',
     })
   })
 
@@ -1111,7 +1111,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      address: 'John Doe<br />123 Main Street<br />City, State 12345',
+      address: 'John Doe<br/>123 Main Street<br/>City, State 12345',
     })
   })
 
@@ -1132,7 +1132,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
     // First br has newline (no space), second br has explicit space before next text
     expect(translationFile!.newTranslations).toEqual({
-      mixed: 'Text before<br />Newline after br<br /> Space after this br Final text',
+      mixed: 'Text before<br/>Newline after br<br/> Space after this br Final text',
     })
   })
 
@@ -1150,7 +1150,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      compact: 'First<br />Second',
+      compact: 'First<br/>Second',
     })
   })
 
@@ -1800,7 +1800,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
 
     const expectedDefaultValue =
-      '<br />Your feedback will be incorporated into the further development of this application and will be discussed, evaluated, and prioritized by us in the next step. Due to the large amount of feedback we receive, we are unfortunately unable to respond to each piece of feedback individually.<br /><br /><4>If you have any questions or problems, please contact our <2>free support</2>.</4>'
+      '<br/>Your feedback will be incorporated into the further development of this application and will be discussed, evaluated, and prioritized by us in the next step. Due to the large amount of feedback we receive, we are unfortunately unable to respond to each piece of feedback individually.<br/><br/><4>If you have any questions or problems, please contact our <2>free support</2>.</4>'
 
     expect(translationFile!.newTranslations).toEqual({
       example: {

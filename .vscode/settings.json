@@ -12,7 +12,7 @@
     "editor.defaultFormatter": "dbaeumer.vscode-eslint"
   },
   // enable ESLint formatting
-  "eslint.format.enable": true, 
+  "eslint.format.enable": true,
   // run ESLint “fix” on save
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": "explicit"
@@ -25,5 +25,8 @@
     "typescriptreact"
   ],
   // run linting on save
-  "eslint.run": "onSave"
+  "eslint.run": "onSave",
+  "cSpell.words": [
+    "Locize"
+  ]
 }
