@@ -202,7 +202,7 @@ describe('extractor: advanced Trans features', () => {
           const isOpen = true;
           t('open', 'Open');
           t('closed', 'Closed');
-          
+
           const Component = () => {
             return <Trans i18nKey={isOpen ? 'open' : 'closed'} />;
           }
@@ -238,7 +238,7 @@ describe('extractor: advanced Trans features', () => {
   it('should extract all possible keys with a template string first argument', async () => {
     const sampleCode = `
           const isOpen = true;
-  
+
           const Component = () => {
             return <Trans i18nKey={\`state.\${isDone ? 'done' : 'notDone'}.title\`}>Done</Trans>;
           }
@@ -264,7 +264,7 @@ describe('extractor: advanced Trans features', () => {
     const sampleCode = `
           const test = false;
           const state = 'unknown';
-  
+
           <Trans i18nKey={test ? \`state.\${state === 'final' ? 'finalized' : \`\${state === 'pending' ? 'pending' : 'unknown'}\`}.title\` : 'state.test.title'}>State</Trans>;
         `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
@@ -367,11 +367,11 @@ describe('extractor: advanced Trans features', () => {
 
   it('should find ns and context from the tOptions prop as a fallback', async () => {
     const sampleCode = `
-      <Trans 
-        i18nKey="myKey" 
-        tOptions={{ 
-          ns: 'my-ns', 
-          context: 'male' 
+      <Trans
+        i18nKey="myKey"
+        tOptions={{
+          ns: 'my-ns',
+          context: 'male'
         }}
       >
         A value
@@ -534,10 +534,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle TextLink with explicit spacing and correct index', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey='SomeKey'>
             Some text{' '}
@@ -594,10 +594,10 @@ describe('extractor: advanced Trans features', () => {
   it('should NOT extract space between text and component when separated by newline (formatting)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey='SomeKey'>
             Some text
@@ -629,10 +629,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle word split across component with newline formatting', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey='SomeKey'>
             I want to highlight part of this wo
@@ -664,10 +664,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle br tag with surrounding text', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey='SomeKey'>
             Some text <br /> other text.
@@ -689,10 +689,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle nested paragraphs with inline elements and correct indexes', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans i18nKey="testme">
             <p>
@@ -861,7 +861,7 @@ describe('extractor: advanced Trans features', () => {
   it('should serialize code-wrapped placeholders and assign correct indexes for multiple code tags', async () => {
     const sampleCode = `
       <Trans i18nKey="children_receive_more_wronger_index" values={{ from: fromLabel, to: toLabel }}>
-        <code>{'{{from}}'}</code> to <code>{'{{to}}'}</code>        
+        <code>{'{{from}}'}</code> to <code>{'{{to}}'}</code>
       </Trans>
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
@@ -1052,7 +1052,7 @@ describe('extractor: advanced Trans features', () => {
   it('should NOT add space after <br /> with indented newline formatting', async () => {
     const sampleCode = `
       import { Trans } from 'react-i18next';
-      
+
       function Component() {
         return (
           <Trans i18nKey="message">
@@ -1157,10 +1157,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle inline component in middle of word (no newlines)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.inlineMiddle">
             wo<b>r</b>d
@@ -1184,10 +1184,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle inline component in middle of word (with newlines)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.inlineMiddleMultiline">
             wo
@@ -1212,10 +1212,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle component at start of text', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.componentStart">
             <b>start</b>text
@@ -1239,10 +1239,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle component at end of text', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.componentEnd">
             text<b>end</b>
@@ -1266,10 +1266,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle TextLink between words with newlines (no spaces)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.noSpaces">
             word
@@ -1295,10 +1295,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle TextLink between words with explicit spaces', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.withSpaces">
             word <TextLink to="/path">link</TextLink> word
@@ -1322,10 +1322,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle multiple inline components without spaces', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.multipleInline">
             first<b>middle</b>last
@@ -1349,10 +1349,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle multiline with TextLink and no spaces', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.multilineNoSpaces">
             line one
@@ -1378,10 +1378,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle multiline with TextLink and explicit JSX spaces', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.multilineWithSpaces">
             line one{" "}
@@ -1409,10 +1409,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle nested components with newlines', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.nested">
             before
@@ -1441,10 +1441,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle single line with tight component', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.singleLine">
             prefix<b>suffix</b>
@@ -1468,10 +1468,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle tight spacing with multiple components', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.tightSpacing">
             start<b>middle</b>end
@@ -1495,10 +1495,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle component with text content and newlines', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.componentWithText">
             text
@@ -1524,10 +1524,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle multiple different components with mixed spacing', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.multipleComponents">
             word<b>r</b>d<TextLink to="/path">link</TextLink>
