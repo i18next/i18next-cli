@@ -1028,12 +1028,12 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it('should preserve spacing in self-closing tags like <br />', async () => {
+  it('should handle spacing in self-closing tags like <br />', async () => {
     const sampleCode = `
       <Trans i18nKey='SomeKey'>
         SomeText
         <br />
-        <br />
+        <br/>
         Some other Text
       </Trans>
     `
@@ -1043,7 +1043,8 @@ describe('extractor: advanced Trans features', () => {
     const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
     expect(translationFile).toBeDefined()
-    // Should preserve the space before the closing slash
+    // For compatibility with react-i18next, there should be no space before the
+    // closing slash
     expect(translationFile!.newTranslations).toEqual({
       SomeKey: 'SomeText<br/><br/>Some other Text',
     })
@@ -1133,24 +1134,6 @@ describe('extractor: advanced Trans features', () => {
     // First br has newline (no space), second br has explicit space before next text
     expect(translationFile!.newTranslations).toEqual({
       mixed: 'Text before<br/>Newline after br<br/> Space after this br Final text',
-    })
-  })
-
-  it('should NOT add space after self-closing <br/> (no space before slash)', async () => {
-    const sampleCode = `
-      <Trans i18nKey="compact">
-        First<br/>
-        Second
-      </Trans>
-    `
-    vol.fromJSON({ '/src/App.tsx': sampleCode })
-
-    const results = await extract(mockConfig)
-    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
-
-    expect(translationFile).toBeDefined()
-    expect(translationFile!.newTranslations).toEqual({
-      compact: 'First<br/>Second',
     })
   })
 

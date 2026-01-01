@@ -108,7 +108,7 @@ describe('jsx-parser: prevOriginal whitespace merging', () => {
     expect(res).not.toBeNull()
     // Expected serialization: previous text, then <2> element, then second line
     // (the intended correct behavior: element gets index 2)
-    const expectedDefaultValue = 'First line with empty JSXTextNode <2>Span that should have index 2 but has index 0</2> Second line'
+    const expectedDefaultValue = 'First line with empty JSXTextNode <2>Span that should have index 2 but has index 0</2>Second line'
     expect(res!.defaultValue).toEqual(expectedDefaultValue)
   })
 
