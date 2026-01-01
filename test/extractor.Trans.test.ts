@@ -202,7 +202,7 @@ describe('extractor: advanced Trans features', () => {
           const isOpen = true;
           t('open', 'Open');
           t('closed', 'Closed');
-          
+
           const Component = () => {
             return <Trans i18nKey={isOpen ? 'open' : 'closed'} />;
           }
@@ -238,7 +238,7 @@ describe('extractor: advanced Trans features', () => {
   it('should extract all possible keys with a template string first argument', async () => {
     const sampleCode = `
           const isOpen = true;
-  
+
           const Component = () => {
             return <Trans i18nKey={\`state.\${isDone ? 'done' : 'notDone'}.title\`}>Done</Trans>;
           }
@@ -264,7 +264,7 @@ describe('extractor: advanced Trans features', () => {
     const sampleCode = `
           const test = false;
           const state = 'unknown';
-  
+
           <Trans i18nKey={test ? \`state.\${state === 'final' ? 'finalized' : \`\${state === 'pending' ? 'pending' : 'unknown'}\`}.title\` : 'state.test.title'}>State</Trans>;
         `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
@@ -367,11 +367,11 @@ describe('extractor: advanced Trans features', () => {
 
   it('should find ns and context from the tOptions prop as a fallback', async () => {
     const sampleCode = `
-      <Trans 
-        i18nKey="myKey" 
-        tOptions={{ 
-          ns: 'my-ns', 
-          context: 'male' 
+      <Trans
+        i18nKey="myKey"
+        tOptions={{
+          ns: 'my-ns',
+          context: 'male'
         }}
       >
         A value
@@ -534,10 +534,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle TextLink with explicit spacing and correct index', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey='SomeKey'>
             Some text{' '}
@@ -594,10 +594,10 @@ describe('extractor: advanced Trans features', () => {
   it('should NOT extract space between text and component when separated by newline (formatting)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey='SomeKey'>
             Some text
@@ -629,10 +629,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle word split across component with newline formatting', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey='SomeKey'>
             I want to highlight part of this wo
@@ -664,10 +664,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle br tag with surrounding text', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey='SomeKey'>
             Some text <br /> other text.
@@ -682,17 +682,17 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      SomeKey: 'Some text <br /> other text.',
+      SomeKey: 'Some text <br/> other text.',
     })
   })
 
   it('should handle nested paragraphs with inline elements and correct indexes', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans i18nKey="testme">
             <p>
@@ -733,7 +733,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
 
-    const expectedDefaultValue = 'First line with empty JSXTextNode <p><1>Span that should have index 1 but has index 0</1></p> Second line'
+    const expectedDefaultValue = 'First line with empty JSXTextNode<1><0>Span that should have index 1 but has index 0</0></1>Second line'
 
     expect(translationFile!.newTranslations).toEqual({
       children_receive_wrong_index: expectedDefaultValue,
@@ -755,7 +755,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
 
-    const expectedDefaultValue = 'First line with empty JSXTextNode <1>Span that should have index 1 but has index 0</1> Second line'
+    const expectedDefaultValue = 'First line with empty JSXTextNode<1>Span that should have index 1 but has index 0</1>Second line'
 
     expect(translationFile!.newTranslations).toEqual({
       children_receive_wrong_index_attr: expectedDefaultValue,
@@ -777,7 +777,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
 
-    const expectedDefaultValue = 'First line with empty JSXTextNode <2>Span that should have index 2 but has index 0</2> Second line'
+    const expectedDefaultValue = 'First line with empty JSXTextNode <2>Span that should have index 2 but has index 0</2>Second line'
 
     expect(translationFile!.newTranslations).toEqual({
       children_receive_wrong_second_index: expectedDefaultValue,
@@ -861,7 +861,7 @@ describe('extractor: advanced Trans features', () => {
   it('should serialize code-wrapped placeholders and assign correct indexes for multiple code tags', async () => {
     const sampleCode = `
       <Trans i18nKey="children_receive_more_wronger_index" values={{ from: fromLabel, to: toLabel }}>
-        <code>{'{{from}}'}</code> to <code>{'{{to}}'}</code>        
+        <code>{'{{from}}'}</code> to <code>{'{{to}}'}</code>
       </Trans>
     `
     vol.fromJSON({ '/src/App.tsx': sampleCode })
@@ -894,7 +894,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
 
     const expectedDefaultValue =
-      'Maybe you mistyped the URL or the plugin with the id <1></1> is unavailable.<br />To see a list of available datasources please <5>click here</5>.'
+      'Maybe you mistyped the URL or the plugin with the id <1></1> is unavailable.<br/>To see a list of available datasources please <5>click here</5>.'
 
     expect(translationFile!.newTranslations).toEqual({
       another_children_receive_wrong_index: expectedDefaultValue,
@@ -943,7 +943,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
 
     const expectedDefaultValue =
-      'Your changes will be lost when you update the plugin.<br /><2>Use <strong>Save As</strong> to create custom version.</2>'
+      'Your changes will be lost when you update the plugin.<br/><2>Use <strong>Save As</strong> to create custom version.</2>'
 
     expect(translationFile!.newTranslations).toEqual({
       another_wrong_code_index_1: expectedDefaultValue,
@@ -966,7 +966,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
 
     const expectedDefaultValue =
-      'A dashboard with the same name in selected folder already exists.<br /><2>Would you still like to save this dashboard?</2>'
+      'A dashboard with the same name in selected folder already exists.<br/><2>Would you still like to save this dashboard?</2>'
 
     expect(translationFile!.newTranslations).toEqual({
       another_wrong_code_index_2: expectedDefaultValue,
@@ -1028,12 +1028,12 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
-  it('should preserve spacing in self-closing tags like <br />', async () => {
+  it('should handle spacing in self-closing tags like <br />', async () => {
     const sampleCode = `
       <Trans i18nKey='SomeKey'>
         SomeText
         <br />
-        <br />
+        <br/>
         Some other Text
       </Trans>
     `
@@ -1043,16 +1043,17 @@ describe('extractor: advanced Trans features', () => {
     const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
     expect(translationFile).toBeDefined()
-    // Should preserve the space before the closing slash
+    // For compatibility with react-i18next, there should be no space before the
+    // closing slash
     expect(translationFile!.newTranslations).toEqual({
-      SomeKey: 'SomeText<br /><br />Some other Text',
+      SomeKey: 'SomeText<br/><br/>Some other Text',
     })
   })
 
   it('should NOT add space after <br /> with indented newline formatting', async () => {
     const sampleCode = `
       import { Trans } from 'react-i18next';
-      
+
       function Component() {
         return (
           <Trans i18nKey="message">
@@ -1069,7 +1070,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      message: 'First line.<br />Second line starts on new line.',
+      message: 'First line.<br/>Second line starts on new line.',
     })
   })
 
@@ -1090,7 +1091,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      multiline: 'Line one<br />Line two<br />Line three',
+      multiline: 'Line one<br/>Line two<br/>Line three',
     })
   })
 
@@ -1111,7 +1112,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      address: 'John Doe<br />123 Main Street<br />City, State 12345',
+      address: 'John Doe<br/>123 Main Street<br/>City, State 12345',
     })
   })
 
@@ -1132,35 +1133,17 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
     // First br has newline (no space), second br has explicit space before next text
     expect(translationFile!.newTranslations).toEqual({
-      mixed: 'Text before<br />Newline after br<br /> Space after this br Final text',
-    })
-  })
-
-  it('should NOT add space after self-closing <br/> (no space before slash)', async () => {
-    const sampleCode = `
-      <Trans i18nKey="compact">
-        First<br/>
-        Second
-      </Trans>
-    `
-    vol.fromJSON({ '/src/App.tsx': sampleCode })
-
-    const results = await extract(mockConfig)
-    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
-
-    expect(translationFile).toBeDefined()
-    expect(translationFile!.newTranslations).toEqual({
-      compact: 'First<br />Second',
+      mixed: 'Text before<br/>Newline after br<br/> Space after this br Final text',
     })
   })
 
   it('should handle inline component in middle of word (no newlines)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.inlineMiddle">
             wo<b>r</b>d
@@ -1184,10 +1167,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle inline component in middle of word (with newlines)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.inlineMiddleMultiline">
             wo
@@ -1212,10 +1195,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle component at start of text', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.componentStart">
             <b>start</b>text
@@ -1239,10 +1222,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle component at end of text', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.componentEnd">
             text<b>end</b>
@@ -1266,10 +1249,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle TextLink between words with newlines (no spaces)', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.noSpaces">
             word
@@ -1295,10 +1278,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle TextLink between words with explicit spaces', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.withSpaces">
             word <TextLink to="/path">link</TextLink> word
@@ -1322,10 +1305,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle multiple inline components without spaces', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.multipleInline">
             first<b>middle</b>last
@@ -1349,10 +1332,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle multiline with TextLink and no spaces', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.multilineNoSpaces">
             line one
@@ -1378,10 +1361,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle multiline with TextLink and explicit JSX spaces', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.multilineWithSpaces">
             line one{" "}
@@ -1409,10 +1392,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle nested components with newlines', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.nested">
             before
@@ -1441,10 +1424,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle single line with tight component', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.singleLine">
             prefix<b>suffix</b>
@@ -1468,10 +1451,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle tight spacing with multiple components', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.tightSpacing">
             start<b>middle</b>end
@@ -1495,10 +1478,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle component with text content and newlines', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.componentWithText">
             text
@@ -1524,10 +1507,10 @@ describe('extractor: advanced Trans features', () => {
   it('should handle multiple different components with mixed spacing', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';
-      
+
       function Component() {
         const { t } = useTranslation();
-        
+
         return (
           <Trans t={t} i18nKey="example.multipleComponents">
             word<b>r</b>d<TextLink to="/path">link</TextLink>
@@ -1800,7 +1783,7 @@ describe('extractor: advanced Trans features', () => {
     expect(translationFile).toBeDefined()
 
     const expectedDefaultValue =
-      '<br />Your feedback will be incorporated into the further development of this application and will be discussed, evaluated, and prioritized by us in the next step. Due to the large amount of feedback we receive, we are unfortunately unable to respond to each piece of feedback individually.<br /><br /><4>If you have any questions or problems, please contact our <2>free support</2>.</4>'
+      '<br/>Your feedback will be incorporated into the further development of this application and will be discussed, evaluated, and prioritized by us in the next step. Due to the large amount of feedback we receive, we are unfortunately unable to respond to each piece of feedback individually.<br/><br/><4>If you have any questions or problems, please contact our <2>free support</2>.</4>'
 
     expect(translationFile!.newTranslations).toEqual({
       example: {

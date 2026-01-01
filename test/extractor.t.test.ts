@@ -710,7 +710,7 @@ describe('extractor: advanced t features', () => {
       // The serializer extracts the content ("Hello <strong>World</strong>") for the defaultValue
       // and separately extracts the key from the title attribute.
       expect(file!.newTranslations).toEqual({
-        myKey: 'Hello <strong>World</strong>',
+        myKey: 'Hello <1>World</1>',
         tooltips: {
           save: 'tooltips.save',
         },
@@ -780,10 +780,10 @@ describe('extractor: advanced t features', () => {
   describe('plurals', () => {
     it('should extract plural-specific default values (e.g., defaultValue_other)', async () => {
       const sampleCode = `
-        t('DogCount', { 
-          count: 5, 
-          defaultValue_other: "{{count}} dogs", 
-          defaultValue: "{{count}} dog" 
+        t('DogCount', {
+          count: 5,
+          defaultValue_other: "{{count}} dogs",
+          defaultValue: "{{count}} dog"
         });
       `
       vol.fromJSON({ '/src/App.tsx': sampleCode })
@@ -881,12 +881,12 @@ describe('extractor: advanced t features', () => {
 
     it('should generate all required keys for languages with multiple plural forms (e.g., Arabic)', async () => {
       const sampleCode = `
-        t('item', { 
-          count: 5, 
-          defaultValue_other: "{{count}} items", 
-          defaultValue_two: "two items", 
-          defaultValue_many: "many items", 
-          defaultValue: "{{count}} item" 
+        t('item', {
+          count: 5,
+          defaultValue_other: "{{count}} items",
+          defaultValue_two: "two items",
+          defaultValue_many: "many items",
+          defaultValue: "{{count}} item"
         });
       `
       vol.fromJSON({ '/src/App.tsx': sampleCode })
@@ -920,8 +920,8 @@ describe('extractor: advanced t features', () => {
 
     it('should generate ordinal plural keys when ordinal: true is used', async () => {
       const sampleCode = `
-        t('place', { 
-          count: 1, 
+        t('place', {
+          count: 1,
           ordinal: true,
           defaultValue_ordinal_one: "{{count}}st place",
           defaultValue_ordinal_two: "{{count}}nd place",
@@ -947,8 +947,8 @@ describe('extractor: advanced t features', () => {
 
     it('should extract ordinal plural keys from a key with an _ordinal suffix', async () => {
       const sampleCode = `
-      t('place_ordinal', { 
-        count: 1, 
+      t('place_ordinal', {
+        count: 1,
         // Test with specific default values for ordinal forms
         defaultValue_ordinal_one: "{{count}}st place",
         defaultValue_ordinal_other: "{{count}}th place",
@@ -974,7 +974,7 @@ describe('extractor: advanced t features', () => {
         const test = true;
 
         t('state', {
-          context: test ? 'test' : 'production', 
+          context: test ? 'test' : 'production',
           count: 2,
           defaultValue_one: "{{count}} car",
           defaultValue_other: "{{count}} cars",
@@ -1350,10 +1350,10 @@ describe('extractor: advanced t features', () => {
           t('item', { count: 1, defaultValue: 'Item' })
           t('product', { count: 5, defaultValue: 'Product' })
           t('message', { count: 0 })
-          
+
           // Context should still work normally
           t('friend', { context: 'male', defaultValue: 'Friend' })
-          
+
           // But context + count should not generate plurals
           t('greeting', { context: 'formal', count: 2, defaultValue: 'Greeting' })
         `
