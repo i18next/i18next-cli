@@ -2,13 +2,7 @@ import type { Expression, JSXAttribute, JSXAttributeOrSpread, JSXElement, JSXEle
 import type { I18nextToolkitConfig } from '../../types'
 import { getObjectPropValue, getObjectPropValueExpression, isSimpleTemplateLiteral } from './ast-utils'
 import * as React from 'react'
-import { getDefaults } from 'react-i18next'
-
-// TODO: Fix upstream
-/* eslint-disable import/no-unresolved */
-// @ts-ignore
-import { nodesToString } from 'react-i18next/TransWithoutContext'
-/* eslint-enable import/no-unresolved */
+import { getDefaults, nodesToString } from 'react-i18next'
 
 export interface ExtractedJSXAttributes {
   /** holds the raw key expression from the AST */
