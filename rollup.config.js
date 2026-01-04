@@ -1,9 +1,9 @@
 import replace from '@rollup/plugin-replace'
-import terser from '@rollup/plugin-terser'
+// import terser from '@rollup/plugin-terser'
 import typescript from 'rollup-plugin-typescript2'
-import { readFile } from 'node:fs/promises'
+import { readFileSync, writeFileSync, chmodSync } from 'node:fs'
 
-const pkg = JSON.parse(await readFile(new URL('./package.json', import.meta.url)))
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'))
 
 export default {
   input: {
@@ -33,8 +33,22 @@ export default {
     ...Object.keys(pkg.dependencies || {})
   ],
   plugins: [
-    replace({ __packageVersion__: pkg.version }),
+    replace({
+      __packageName: pkg.name,
+      __packageVersion__: pkg.version,
+      preventAssignment: true
+    }),
     typescript(),
-    terser() // minifies generated bundles
+    // terser(), // minifies generated bundles
+    {
+      name: 'post-build-steps',
+      writeBundle () {
+        // Make CLI files executable
+        try { chmodSync('dist/esm/cli.js', 0o755) } catch {}
+        try { chmodSync('dist/cjs/cli.js', 0o755) } catch {}
+        // Write CJS package.json
+        writeFileSync('dist/cjs/package.json', '{"type":"commonjs"}\n')
+      }
+    }
   ]
 }

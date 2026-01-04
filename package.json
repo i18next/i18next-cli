@@ -29,7 +29,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && rollup -c && chmod +x dist/esm/cli.js && chmod +x dist/cjs/cli.js && echo '{\"type\":\"commonjs\"}' > dist/cjs/package.json && rm -rf types && tsc -d --declarationDir types --declarationMap --emitDeclarationOnly",
+    "build": "rm -rf dist && rollup -c && rm -rf types && tsc -d --declarationDir types --declarationMap --emitDeclarationOnly",
     "lint": "eslint .",
     "test": "npm run lint && vitest run",
     "test:watch": "vitest",
