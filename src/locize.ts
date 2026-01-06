@@ -122,13 +122,17 @@ LOCIZE_API_KEY=${answers.apiKey}
  */
 function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: any): string[] {
   const { locize: locizeConfig = {}, extract } = config
-  const { projectId, apiKey, version } = locizeConfig
 
   const commandArgs: string[] = [command]
 
+  const projectId = cliOptions.projectId ?? locizeConfig.projectId
   if (projectId) commandArgs.push('--project-id', projectId)
+  const apiKey = cliOptions.apiKey ?? locizeConfig.apiKey
   if (apiKey) commandArgs.push('--api-key', apiKey)
+  const version = cliOptions.version ?? locizeConfig.version
   if (version) commandArgs.push('--ver', version)
+  const cdnType = cliOptions.cdnType ?? locizeConfig.cdnType
+  if (cdnType) commandArgs.push('--cdn-type', cdnType)
   // TODO: there might be more configurable locize-cli options in future
 
   // Pass-through options from the CLI
@@ -139,8 +143,6 @@ function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: a
     if (srcLngOnly) commandArgs.push('--reference-language-only', 'true')
     const compareMtime = cliOptions.compareMtime ?? locizeConfig.compareModificationTime
     if (compareMtime) commandArgs.push('--compare-modification-time', 'true')
-    const cdnType = cliOptions.cdnType ?? locizeConfig.cdnType
-    if (cdnType) commandArgs.push('--cdn-type', cdnType)
     const dryRun = cliOptions.dryRun ?? locizeConfig.dryRun
     if (dryRun) commandArgs.push('--dry', 'true')
   }
