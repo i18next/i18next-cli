@@ -48,10 +48,10 @@ export class CallExpressionHandler {
     const code = this.getCurrentCode()
 
     // Extract searchable text from the node
-    // For CallExpression, we can search for the key argument
+    // For CallExpression and NewExpression, we can search for the key argument
     let searchText: string | undefined
 
-    if (node.type === 'CallExpression' && node.arguments.length > 0) {
+    if ((node.type === 'CallExpression' || node.type === 'NewExpression') && node.arguments.length > 0) {
       const firstArg = node.arguments[0].expression
 
       if (firstArg.type === 'StringLiteral') {
@@ -89,17 +89,18 @@ export class CallExpressionHandler {
   }
 
   /**
-   * Processes function call expressions to extract translation keys.
+   * Processes function call expressions and new expressions to extract translation keys.
    *
    * This is the core extraction method that handles:
    * - Standard t() calls with string literals
+   * - NewExpression calls like new TranslatedError(...)
    * - Selector API calls with arrow functions: `t($ => $.path.to.key)`
    * - Namespace resolution from multiple sources
    * - Default value extraction from various argument patterns
    * - Pluralization and context handling
    * - Key prefix application from scope
    *
-   * @param node - Call expression node to process
+   * @param node - Call expression or new expression node to process
    * @param getScopeInfo - Function to retrieve scope information for variables
    */
   handleCallExpression (node: CallExpression, getScopeInfo: (name: string) => ScopeInfo | undefined): void {
