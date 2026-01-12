@@ -1744,6 +1744,32 @@ describe('extractor: advanced t features', () => {
 }`)
   })
 
+  it('should extract keys from NewExpression (e.g., new TranslatedError())', async () => {
+    const sampleCode = `
+      new TranslatedError('error.notFound', 'Not found');
+      new TranslatedError('error.unauthorized', 'Unauthorized');
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        keySeparator: false,
+        functions: ['t', 'TranslatedError'],
+      },
+    }
+
+    const results = await extract(customConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      'error.notFound': 'Not found',
+      'error.unauthorized': 'Unauthorized',
+    })
+  })
+
   describe('colons in value', () => {
     it('should correctly extract fallback values containing colons', async () => {
       const sampleCode = `
