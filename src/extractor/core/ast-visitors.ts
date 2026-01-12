@@ -264,11 +264,12 @@ export class ASTVisitors {
       case 'NewExpression':
         // Handle NewExpression similarly to CallExpression (e.g., new TranslatedError(...))
         // NewExpression has the same structure: callee and arguments
-        this.callExpressionHandler.handleCallExpression({
-          ...node,
-          arguments: node.arguments || []
-        },
-        this.scopeManager.getVarFromScope.bind(this.scopeManager)
+        this.callExpressionHandler.handleCallExpression(
+          {
+            ...node,
+            arguments: node.arguments || []
+          },
+          this.scopeManager.getVarFromScope.bind(this.scopeManager)
         )
         break
       case 'JSXElement':
