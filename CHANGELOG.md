@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.1](https://github.com/i18next/i18next-cli/compare/v1.36.0...v1.36.1) - 2026-01-14
+
+- status: fix fallbackNS option for merged namespaces handling [#158](https://github.com/i18next/i18next-cli/issues/158)
+
 ## [1.36.0](https://github.com/i18next/i18next-cli/compare/v1.35.0...v1.36.0) - 2026-01-14
 
 - status: introduce fallbackNS option, to prevent missing key warnings [#158](https://github.com/i18next/i18next-cli/issues/158)

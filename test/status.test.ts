@@ -757,4 +757,67 @@ describe('status (fallbackNS)', () => {
     expect(logCalls).toContain('- de: [■■■■■■■■■■■■■■■■■■■■] 100% (3/3 keys)')
     expect(processExitSpy).not.toHaveBeenCalled()
   })
+
+  it('should not flag keys as missing if present in fallbackNS with mergeNamespaces', async () => {
+    // Simulate scenario with mergeNamespaces: true and fallbackNS
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/app.tsx')]: `
+          import { useTranslation } from 'react-i18next'
+          export default function App() {
+            const { t } = useTranslation('feature')
+            return (
+              <div>
+                <p>{t('feature-specific')}</p>
+                <p>{t('ok')}</p>
+                <p>{t('cancel')}</p>
+              </div>
+            )
+          }
+        `,
+      [resolve(process.cwd(), 'locales/en.json')]: JSON.stringify({
+        shared: {
+          ok: 'This is a common string that can be used anywhere',
+          cancel: 'This is a common string',
+        },
+        feature: {
+          'feature-specific': 'This is a feature-specific string',
+          cancel: 'This is an override of a common string',
+        }
+      }),
+      [resolve(process.cwd(), 'locales/de.json')]: JSON.stringify({
+        shared: {
+          ok: 'Das ist ein common text der überall verwendet werden kann',
+          cancel: 'Das ist ein common text',
+        },
+        feature: {
+          'feature-specific': 'Das ist ein feature-speziefischer text',
+          cancel: 'Das sit ein überschriebener text gegenüber common',
+        }
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}.json',
+        fallbackNS: 'shared',
+        mergeNamespaces: true,
+      },
+    }
+
+    await runStatus(config)
+
+    const logCalls = consoleLogSpy.mock.calls.map((call: any[]) => call[0])
+    expect(logCalls).toContain('\ni18next Project Status')
+    expect(logCalls).toContain('------------------------')
+    expect(logCalls).toContain('🔑 Keys Found:         3')
+    expect(logCalls).toContain('📚 Namespaces Found:   1')
+    expect(logCalls).toContain('🌍 Locales:            en, de')
+    expect(logCalls).toContain('✅ Primary Language:   en')
+    expect(logCalls).toContain('\nTranslation Progress:')
+    // Should include the correct progress line for de (all keys present via fallbackNS)
+    expect(logCalls).toContain('- de: [■■■■■■■■■■■■■■■■■■■■] 100% (3/3 keys)')
+    expect(processExitSpy).not.toHaveBeenCalled()
+  })
 })

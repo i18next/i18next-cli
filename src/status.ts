@@ -147,9 +147,14 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
       // Load fallbackNS translations if configured
       let fallbackTranslations: any
       if (fallbackNS && ns !== fallbackNS) {
-        fallbackTranslations = await loadTranslationFile(
-          resolve(process.cwd(), getOutputPath(config.extract.output, locale, fallbackNS))
-        ) || {}
+        if (mergeNamespaces) {
+          // In merged mode, fallbackNS keys are in mergedTranslations under fallbackNS
+          fallbackTranslations = mergedTranslations?.[fallbackNS] ?? mergedTranslations ?? {}
+        } else {
+          fallbackTranslations = await loadTranslationFile(
+            resolve(process.cwd(), getOutputPath(config.extract.output, locale, fallbackNS))
+          ) || {}
+        }
       }
 
       let translatedInNs = 0
