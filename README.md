@@ -379,6 +379,7 @@ export default defineConfig({
     
     // Namespace and key configuration
     defaultNS: 'translation', // If set to false it will not generate any namespace, useful if i.e. the output is a single language json with 1 namespace (and no nesting).
+    fallbackNS: 'fallback', // Namespace to use as fallback when a key is missing in the current namespace for a locale. (default undefined)
     nsSeparator: ':',
     keySeparator: '.', // Or `false` to disable nesting and use flat keys
     contextSeparator: '_',

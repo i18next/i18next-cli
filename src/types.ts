@@ -42,6 +42,9 @@ export interface I18nextToolkitConfig {
      */
     defaultNS?: string | false;
 
+    /** Namespace to use as fallback when a key is missing in the current namespace for a locale. */
+    fallbackNS?: string;
+
     /** Separator for nested keys, or false for flat keys (default: '.') */
     keySeparator?: string | false | null;
 

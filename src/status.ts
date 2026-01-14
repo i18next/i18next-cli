@@ -101,7 +101,7 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
 
   const { allKeys: allExtractedKeys } = await findKeys(config)
-  const { secondaryLanguages, keySeparator = '.', defaultNS = 'translation', mergeNamespaces = false, pluralSeparator = '_' } = config.extract
+  const { secondaryLanguages, keySeparator = '.', defaultNS = 'translation', mergeNamespaces = false, pluralSeparator = '_', fallbackNS } = config.extract
 
   const keysByNs = new Map<string, ExtractedKey[]>()
   for (const key of allExtractedKeys.values()) {
@@ -144,6 +144,14 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
         ? (mergedTranslations?.[ns] ?? mergedTranslations ?? {})
         : await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, locale, ns))) || {}
 
+      // Load fallbackNS translations if configured
+      let fallbackTranslations: any
+      if (fallbackNS && ns !== fallbackNS) {
+        fallbackTranslations = await loadTranslationFile(
+          resolve(process.cwd(), getOutputPath(config.extract.output, locale, fallbackNS))
+        ) || {}
+      }
+
       let translatedInNs = 0
       let totalInNs = 0
       const keyDetails: Array<{ key: string; isTranslated: boolean }> = []
@@ -179,7 +187,11 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
             // Only count this key if it's a plural form used by this locale
             if (localePluralCategories.includes(category)) {
               totalInNs++
-              const value = getNestedValue(translationsForNs, baseKey, keySeparator ?? '.')
+              let value = getNestedValue(translationsForNs, baseKey, keySeparator ?? '.')
+              // Fallback lookup
+              if (!value && fallbackTranslations) {
+                value = getNestedValue(fallbackTranslations, baseKey, keySeparator ?? '.')
+              }
               const isTranslated = !!value
               if (isTranslated) translatedInNs++
               keyDetails.push({ key: baseKey, isTranslated })
@@ -194,7 +206,11 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
               const pluralKey = isOrdinal
                 ? `${baseKey}${pluralSeparator}ordinal${pluralSeparator}${category}`
                 : `${baseKey}${pluralSeparator}${category}`
-              const value = getNestedValue(translationsForNs, pluralKey, keySeparator ?? '.')
+              let value = getNestedValue(translationsForNs, pluralKey, keySeparator ?? '.')
+              // Fallback lookup
+              if (!value && fallbackTranslations) {
+                value = getNestedValue(fallbackTranslations, pluralKey, keySeparator ?? '.')
+              }
               const isTranslated = !!value
               if (isTranslated) translatedInNs++
               keyDetails.push({ key: pluralKey, isTranslated })
@@ -203,7 +219,11 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
         } else {
           // It's a simple key
           totalInNs++
-          const value = getNestedValue(translationsForNs, baseKey, keySeparator ?? '.')
+          let value = getNestedValue(translationsForNs, baseKey, keySeparator ?? '.')
+          // Fallback lookup
+          if (!value && fallbackTranslations) {
+            value = getNestedValue(fallbackTranslations, baseKey, keySeparator ?? '.')
+          }
           const isTranslated = !!value
           if (isTranslated) translatedInNs++
           keyDetails.push({ key: baseKey, isTranslated })

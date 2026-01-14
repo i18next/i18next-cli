@@ -672,3 +672,89 @@ describe('status (plurals)', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (3/3 keys)'))
   })
 })
+
+describe('status (fallbackNS)', () => {
+  let consoleLogSpy: any
+  // let consoleErrorSpy: any
+  let processExitSpy: any
+
+  beforeEach(async () => {
+    vol.reset()
+    vi.clearAllMocks()
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async (pattern: any, options?: any) => {
+      return Object.keys(vol.toJSON()).filter(p => p.includes('/src/'))
+    })
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    // consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('Process exit called')
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('should not flag keys as missing if present in fallbackNS', async () => {
+    // Simulate the scenario from the bug report
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/app.tsx')]: `
+        import { useTranslation } from 'react-i18next'
+        export default function App() {
+          const { t } = useTranslation('feature')
+          return (
+            <div>
+              <p>{t('feature-specific')}</p>
+              <p>{t('ok')}</p>
+              <p>{t('cancel')}</p>
+            </div>
+          )
+        }
+      `,
+      [resolve(process.cwd(), 'locales/en/shared.json')]: JSON.stringify({
+        ok: 'This is a common string that can be used anywhere',
+        cancel: 'This is a common string',
+      }),
+      [resolve(process.cwd(), 'locales/en/feature.json')]: JSON.stringify({
+        'feature-specific': 'This is a feature-specific string',
+        cancel: 'This is an override of a common string',
+      }),
+      [resolve(process.cwd(), 'locales/de/shared.json')]: JSON.stringify({
+        ok: 'Das ist ein common text der überall verwendet werden kann',
+        cancel: 'Das ist ein common text',
+      }),
+      [resolve(process.cwd(), 'locales/de/feature.json')]: JSON.stringify({
+        'feature-specific': 'Das ist ein feature-speziefischer text',
+        cancel: 'Das sit ein überschriebener text gegenüber common',
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        fallbackNS: 'shared',
+      },
+    }
+
+    await runStatus(config)
+
+    // const errorLogCalls = consoleErrorSpy.mock.calls.map((call: any[]) => call[0])
+
+    // Should not flag 'ok' as missing for feature namespace, since it's present in fallbackNS
+    const logCalls = consoleLogSpy.mock.calls.map((call: any[]) => call[0])
+    // Should include the expected summary lines
+    expect(logCalls).toContain('\ni18next Project Status')
+    expect(logCalls).toContain('------------------------')
+    expect(logCalls).toContain('🔑 Keys Found:         3')
+    expect(logCalls).toContain('📚 Namespaces Found:   1')
+    expect(logCalls).toContain('🌍 Locales:            en, de')
+    expect(logCalls).toContain('✅ Primary Language:   en')
+    expect(logCalls).toContain('\nTranslation Progress:')
+    // Should include the correct progress line for de (all keys present via fallbackNS)
+    expect(logCalls).toContain('- de: [■■■■■■■■■■■■■■■■■■■■] 100% (3/3 keys)')
+    expect(processExitSpy).not.toHaveBeenCalled()
+  })
+})
