@@ -217,6 +217,9 @@ export interface I18nextToolkitConfig {
 
     /** Glob pattern(s) for files to ignore during lint (in addition to those defined during extract) */
     ignore?: string | string[];
+
+    /** Enable linting for interpolation parameter errors in translation calls (default: true) */
+    checkInterpolationParams?: boolean;
   };
 
   /** Configuration options for TypeScript type generation */

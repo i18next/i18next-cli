@@ -480,6 +480,9 @@ export default defineConfig({
 
     /** Glob pattern(s) for files to ignore during lint (in addition to those defined during extract) */
     ignore: ['additional/stuff/**'],
+
+    /** Enable linting for interpolation parameter errors in translation calls (default: true) */
+    checkInterpolationParams: true,
   },
   
   // TypeScript type generation

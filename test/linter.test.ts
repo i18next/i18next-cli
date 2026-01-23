@@ -919,4 +919,37 @@ describe('Linter (core logic)', () => {
     expect(result.files['/src/admin/ignored.tsx']).toBeUndefined()
     expect(result.files['/src/legacy/ignored.tsx']).toBeUndefined()
   })
+
+  it('should detect interpolation parameter errors in t() calls', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {
+        // checkInterpolationParams: true,
+      },
+    }
+    const sampleCode = `
+      // Missing parameter 'name', extra parameter 'name2'
+      const msg = t("Hello {{name}}!", { name2: "Seven" })
+      // Correct usage
+      const msg2 = t("Hello {{name}}!", { name: "Seven" })
+      // Extra parameter 'unused'
+      const msg3 = t("Hi!", { unused: "foo" })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Linter found 3 potential issues')
+    expect(result.files['/src/App.tsx']).toHaveLength(3)
+    const texts = result.files['/src/App.tsx'].map(issue => issue.text)
+    expect(texts).toContain('Interpolation parameter "name" was not provided')
+    expect(texts).toContain('Parameter "name2" is not used in translation string')
+    expect(texts).toContain('Parameter "unused" is not used in translation string')
+  })
 })

@@ -7,6 +7,121 @@ import chalk from 'chalk'
 import ora from 'ora'
 import type { I18nextToolkitConfig } from './types'
 
+// Helper to extract interpolation keys from a translation string
+function extractInterpolationKeys (str: string, config: I18nextToolkitConfig): string[] {
+  const prefix = config.extract.interpolationPrefix ?? '{{'
+  const suffix = config.extract.interpolationSuffix ?? '}}'
+  // Regex to match {{key}}
+  const regex = new RegExp(
+    `${prefix.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*([\\w.-]+)\\s*${suffix.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}`,
+    'g'
+  )
+  const keys: string[] = []
+  let match
+  while ((match = regex.exec(str))) {
+    if (match[1]) keys.push(match[1])
+  }
+  return keys
+}
+
+// Helper to lint interpolation parameter errors in t() calls
+function lintInterpolationParams (ast: any, code: string, config: I18nextToolkitConfig): HardcodedString[] {
+  const issues: HardcodedString[] = []
+  // Only run if enabled (default true)
+  const enabled = config.lint?.checkInterpolationParams !== false
+  if (!enabled) return issues
+
+  // Traverse AST for CallExpressions matching t() or i18n.t()
+  function walk (node: any, ancestors: any[]) {
+    if (!node || typeof node !== 'object') return
+    const currentAncestors = [...ancestors, node]
+
+    // Handle CallExpression nodes
+    if (node.type === 'CallExpression') {
+      handleCallExpression(node, currentAncestors)
+    }
+
+    // Recurse into all child nodes (arrays and objects), skip 'span'
+    for (const key of Object.keys(node)) {
+      if (key === 'span') continue
+      const child = node[key]
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (item && typeof item === 'object') walk(item, currentAncestors)
+        }
+      } else if (child && typeof child === 'object') {
+        walk(child, currentAncestors)
+      }
+    }
+  }
+
+  // Modularized CallExpression handler
+  function handleCallExpression (node: any, ancestors: any[]) {
+    let calleeName = ''
+    if (node.callee) {
+      if (node.callee.type === 'Identifier' && node.callee.value) {
+        calleeName = node.callee.value
+      } else if (node.callee.type === 'Identifier' && node.callee.name) {
+        calleeName = node.callee.name
+      } else if (node.callee.type === 'MemberExpression' && node.callee.property?.type === 'Identifier') {
+        calleeName = node.callee.property.value || node.callee.property.name
+      }
+    }
+    const fnPatterns = config.extract.functions || ['t', '*.t']
+    let matches = false
+    for (const pattern of fnPatterns) {
+      if (pattern.startsWith('*.')) {
+        if (calleeName === pattern.slice(2)) matches = true
+      } else {
+        if (calleeName === pattern) matches = true
+      }
+    }
+    if (matches) {
+      let str = ''
+      const arg0 = node.arguments?.[0]?.expression
+      const arg1 = node.arguments?.[1]?.expression
+      if (arg0?.type === 'StringLiteral') str = arg0.value
+      if (str) {
+        const keys = extractInterpolationKeys(str, config)
+        let paramKeys: string[] = []
+        if (arg1?.type === 'ObjectExpression') {
+          paramKeys = arg1.properties
+            .filter((p: any) => p.type === 'KeyValueProperty')
+            .map((p: any) => {
+              if (p.key?.type === 'Identifier') return p.key.value
+              if (p.key?.type === 'StringLiteral') return p.key.value
+              return undefined
+            })
+            .filter((k: any) => typeof k === 'string')
+        }
+        if (!Array.isArray(paramKeys)) paramKeys = []
+        for (const k of keys) {
+          if (!paramKeys.includes(k)) {
+            issues.push({
+              text: `Interpolation parameter "${k}" was not provided`,
+              line: getLineNumber(node.span?.start ?? 0),
+            })
+          }
+        }
+        for (const pk of paramKeys) {
+          if (!keys.includes(pk)) {
+            issues.push({
+              text: `Parameter "${pk}" is not used in translation string`,
+              line: getLineNumber(node.span?.start ?? 0),
+            })
+          }
+        }
+      }
+    }
+  }
+  // Helper for line number
+  const getLineNumber = (pos: number): number => {
+    return code.substring(0, pos).split('\n').length
+  }
+  walk(ast, [])
+  return issues
+}
+
 type LinterEventMap = {
   progress: [{
     message: string;
@@ -120,11 +235,14 @@ export class Linter extends EventEmitter<LinterEventMap> {
           }
         }
 
+        // Collect hardcoded string issues
         const hardcodedStrings = findHardcodedStrings(ast, code, config)
-
-        if (hardcodedStrings.length > 0) {
-          totalIssues += hardcodedStrings.length
-          issuesByFile.set(file, hardcodedStrings)
+        // Collect interpolation parameter issues
+        const interpolationIssues = lintInterpolationParams(ast, code, config)
+        const allIssues = [...hardcodedStrings, ...interpolationIssues]
+        if (allIssues.length > 0) {
+          totalIssues += allIssues.length
+          issuesByFile.set(file, allIssues)
         }
       }
 
@@ -204,12 +322,12 @@ export async function runLinterCli (config: I18nextToolkitConfig) {
 }
 
 /**
- * Represents a found hardcoded string with its location information.
+ * Represents a found hardcoded string or interpolation parameter error with its location information.
  */
 interface HardcodedString {
-  /** The hardcoded text content */
+  /** The hardcoded text content or error message */
   text: string;
-  /** Line number where the string was found */
+  /** Line number where the string or error was found */
   line: number;
 }
 
@@ -229,6 +347,8 @@ const isUrlOrPath = (text: string) => /^(https|http|\/\/|^\/)/.test(text)
  * - Ignores interpolation syntax starting with `{{`
  * - Filters out ellipsis/spread operator notation `...`
  * - Only reports non-empty, trimmed strings
+ *
+ * Also checks for interpolation parameter errors in translation function calls if enabled via config.
  *
  * @param config - The toolkit configuration with input patterns and component names
  *
