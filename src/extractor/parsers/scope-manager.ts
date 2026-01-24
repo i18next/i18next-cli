@@ -150,7 +150,6 @@ export class ScopeManager {
       const hookConfig = this.getUseTranslationConfig(callee.value)
       if (hookConfig) {
         this.handleUseTranslationDeclarator(node, callExpr, hookConfig)
-
         // ALSO store in the legacy scope for comment parsing compatibility
         this.handleUseTranslationForComments(node, callExpr, hookConfig)
         return
@@ -295,39 +294,6 @@ export class ScopeManager {
    * @param hookConfig - Configuration describing argument positions for namespace and keyPrefix
    */
   private handleUseTranslationDeclarator (node: VariableDeclarator, callExpr: CallExpression, hookConfig: UseTranslationHookConfig): void {
-    let variableName: string | undefined
-
-    // Handle simple assignment: let t = useTranslation()
-    if (node.id.type === 'Identifier') {
-      variableName = node.id.value
-    }
-
-    // Handle array destructuring: const [t, i18n] = useTranslation()
-    if (node.id.type === 'ArrayPattern') {
-      const firstElement = node.id.elements[0]
-      if (firstElement?.type === 'Identifier') {
-        variableName = firstElement.value
-      }
-    }
-
-    // Handle object destructuring: const { t } or { t: t1 } = useTranslation()
-    if (node.id.type === 'ObjectPattern') {
-      for (const prop of node.id.properties) {
-        // Also consider getFixedT so scope info is attached to that identifier
-        if (prop.type === 'AssignmentPatternProperty' && prop.key.type === 'Identifier' && (prop.key.value === 't' || prop.key.value === 'getFixedT')) {
-          variableName = prop.key.value
-          break
-        }
-        if (prop.type === 'KeyValuePatternProperty' && prop.key.type === 'Identifier' && (prop.key.value === 't' || prop.key.value === 'getFixedT') && prop.value.type === 'Identifier') {
-          variableName = prop.value.value
-          break
-        }
-      }
-    }
-
-    // If we couldn't find a `t` function being declared, exit
-    if (!variableName) return
-
     // Position-driven extraction: respect hookConfig positions (nsArg/keyPrefixArg).
     const nsArgIndex = hookConfig.nsArg ?? 0
     const kpArgIndex = hookConfig.keyPrefixArg ?? 1
@@ -374,8 +340,24 @@ export class ScopeManager {
       }
     }
 
-    // Store the scope info for the declared variable
-    this.setVarInScope(variableName, { defaultNs, keyPrefix })
+    // Attach scope info to all destructured properties (custom functions, t, getFixedT, etc.)
+    if (node.id.type === 'ObjectPattern') {
+      for (const prop of node.id.properties) {
+        if (prop.type === 'AssignmentPatternProperty' && prop.key.type === 'Identifier') {
+          this.setVarInScope(prop.key.value, { defaultNs, keyPrefix })
+        }
+        if (prop.type === 'KeyValuePatternProperty' && prop.value.type === 'Identifier') {
+          this.setVarInScope(prop.value.value, { defaultNs, keyPrefix })
+        }
+      }
+    } else if (node.id.type === 'Identifier') {
+      this.setVarInScope(node.id.value, { defaultNs, keyPrefix })
+    } else if (node.id.type === 'ArrayPattern') {
+      const firstElement = node.id.elements[0]
+      if (firstElement?.type === 'Identifier') {
+        this.setVarInScope(firstElement.value, { defaultNs, keyPrefix })
+      }
+    }
   }
 
   /**

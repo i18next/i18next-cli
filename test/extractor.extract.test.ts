@@ -24,24 +24,21 @@ const mockConfig: I18nextToolkitConfig = {
   },
 }
 
-describe('extractor.extract', () => {
+describe('extractor.extract - default', () => {
   beforeEach(async () => {
     vol.reset()
     vi.clearAllMocks()
     const { glob } = await import('glob')
-    // Use consistent file paths
-    // Make the glob mock conditional and more realistic
     vi.mocked(glob).mockImplementation(async (pattern: string | string[]) => {
-      // If glob is looking for source files, return the source file.
       if (Array.isArray(pattern) && pattern[0].startsWith('src/')) {
         return ['src/App.tsx']
       }
-      // If glob is looking for existing translation files (from translation-manager),
-      // check the virtual file system. In this test, none exist, so return empty.
+      if (typeof pattern === 'string' && pattern.startsWith('src/')) {
+        return ['src/App.tsx']
+      }
       if (typeof pattern === 'string' && pattern.startsWith('locales/')) {
         return []
       }
-      // Default fallback
       return []
     })
   })
@@ -63,28 +60,81 @@ describe('extractor.extract', () => {
       }
     `
     vol.fromJSON({
-      'src/App.tsx': sampleCode, // Remove leading slash for consistency
+      'src/App.tsx': sampleCode,
     })
 
     const result = await extract(mockConfig)
-    // Use Vitest assertion syntax
     expect(result).toHaveLength(2)
-
     const enJson = result[0].newTranslations
     const deJson = result[1].newTranslations
-
     expect(enJson).toEqual({
       app: {
         description: 'This is a <strong>description</strong>.',
         title: 'Welcome!',
       },
     })
-
     expect(deJson).toEqual({
       app: {
         description: '',
         title: '',
       },
     })
+
+    expect(result[0].path).toContain('/locales/en/translation.json')
+    expect(result[1].path).toContain('/locales/de/translation.json')
+  })
+})
+
+describe('extractor.extract - custom function and useTranslationNames', () => {
+  beforeEach(async () => {
+    vol.reset()
+    vi.clearAllMocks()
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async (pattern: string | string[]) => {
+      if (Array.isArray(pattern) && pattern[0].startsWith('src/')) {
+        return ['src/createDeclareKey.tsx', 'src/exampleConfig.tsx']
+      }
+      if (typeof pattern === 'string' && pattern.startsWith('src/')) {
+        return ['src/createDeclareKey.tsx', 'src/exampleConfig.tsx']
+      }
+      if (typeof pattern === 'string' && pattern.startsWith('locales/')) {
+        return []
+      }
+      return []
+    })
+  })
+
+  it('extracts keys with custom function and useTranslationNames (issue #162)', async () => {
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: ['src/**/*.{ts,tsx}'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        functions: ['t', '*.t', 'declareKey'],
+        useTranslationNames: ['useTranslation', 'getT', 'useT', 'createDeclareKey'],
+        defaultNS: 'translation',
+      },
+    }
+
+    const createDeclareKeyCode = `
+      export const createDeclareKey = (namespace, options) => {
+        return { declareKey: (key) => key };
+      };
+    `
+    const exampleConfigCode = `
+      import { createDeclareKey } from "./createDeclareKey";
+      const { declareKey } = createDeclareKey("use-case-1", { keyPrefix: "config" });
+      export const exampleConfig = {
+        value: declareKey("key")
+      };
+    `
+    vol.fromJSON({
+      'src/createDeclareKey.tsx': createDeclareKeyCode,
+      'src/exampleConfig.tsx': exampleConfigCode,
+    })
+
+    const result = await extract(config)
+    expect(result).toHaveLength(1)
+    expect(result[0].path).toContain('/locales/en/use-case-1.json')
   })
 })
