@@ -1,8 +1,9 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 // Fix import path based on actual module location
-import { extract } from '../src/index' // Verify this path exists
+import { extract } from '../src/index'
 import type { I18nextToolkitConfig } from '../src/index'
+import { pathEndsWith } from './utils/path'
 
 vi.mock('fs/promises', async () => {
   const memfs = await vi.importActual<typeof import('memfs')>('memfs')
@@ -80,8 +81,8 @@ describe('extractor.extract - default', () => {
       },
     })
 
-    expect(result[0].path).toContain('/locales/en/translation.json')
-    expect(result[1].path).toContain('/locales/de/translation.json')
+    expect(pathEndsWith(result[0].path, '/locales/en/translation.json')).toBe(true)
+    expect(pathEndsWith(result[1].path, '/locales/de/translation.json')).toBe(true)
   })
 })
 
@@ -135,6 +136,6 @@ describe('extractor.extract - custom function and useTranslationNames', () => {
 
     const result = await extract(config)
     expect(result).toHaveLength(1)
-    expect(result[0].path).toContain('/locales/en/use-case-1.json')
+    expect(pathEndsWith(result[0].path, '/locales/en/use-case-1.json')).toBe(true)
   })
 })
