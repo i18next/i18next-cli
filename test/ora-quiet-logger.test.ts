@@ -129,6 +129,7 @@ describe('ora spinner quiet and logger options', () => {
       error: () => {}
     }
     await runSyncer(withTempConfig(dummyConfig), {}, logger)
+    console.log({ logs })
     // Accept either 'Synchronization complete!' or 'Synchronization failed.'
     expect(logs.some(l => l.includes('Synchronization complete!') || l.includes('Synchronization failed.'))).toBeTruthy()
   })
