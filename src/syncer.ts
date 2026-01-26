@@ -62,11 +62,18 @@ export async function runSyncer (
     let wasAnythingSynced = false
 
     // 1. Find all namespace files for the primary language
-    const primaryNsPattern = getOutputPath(output, primaryLanguage, '*')
+    const primaryNsPatternRaw = getOutputPath(output, primaryLanguage, '*')
+    console.log({ primaryNsPatternRaw })
+    // Normalize to posix-style paths for glob (cross-platform)
+    const primaryNsPattern = primaryNsPatternRaw.replace(/\\/g, '/')
     const primaryNsFiles = await glob(primaryNsPattern)
 
     if (primaryNsFiles.length === 0) {
-      spinner.warn(`No translation files found for primary language "${primaryLanguage}". Nothing to sync.`)
+      const noFilesMsg = `No translation files found for primary language "${primaryLanguage}". Nothing to sync.`
+      spinner.warn(noFilesMsg)
+      // Always emit the message to the provided logger (if any) so tests / CI can observe it
+      if (typeof internalLogger.warn === 'function') internalLogger.warn(noFilesMsg)
+      else console.warn(noFilesMsg)
       return
     }
 
