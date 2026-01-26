@@ -47,9 +47,9 @@ export async function runExtractor (
     isDryRun?: boolean,
     syncPrimaryWithDefaults?: boolean,
     syncAll?: boolean,
-    quiet?: boolean
-  } = {},
-  logger?: Logger
+    quiet?: boolean,
+    logger?: Logger
+  } = {}
 ): Promise<boolean> {
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
@@ -61,9 +61,9 @@ export async function runExtractor (
   validateExtractorConfig(config)
 
   const plugins = config.plugins || []
-  const internalLogger = logger ?? new ConsoleLogger()
+  const internalLogger = options.logger ?? new ConsoleLogger()
   // Only pass logger to spinner if explicitly provided
-  const spinner = createSpinnerLike('Running i18next key extractor...\n', { quiet: !!options.quiet, logger })
+  const spinner = createSpinnerLike('Running i18next key extractor...\n', { quiet: !!options.quiet, logger: options.logger })
 
   try {
     const { allKeys, objectKeys } = await findKeys(config, internalLogger)
@@ -108,7 +108,7 @@ export async function runExtractor (
     spinner.succeed(chalk.bold('Extraction complete!'))
 
     // Show the funnel message only if files were actually changed.
-    if (anyFileUpdated) await printLocizeFunnel(logger)
+    if (anyFileUpdated) await printLocizeFunnel(options.logger)
 
     return anyFileUpdated
   } catch (error) {

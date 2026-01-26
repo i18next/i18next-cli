@@ -6,7 +6,7 @@ import chalk from 'chalk'
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
 import { basename, extname, resolve, dirname, join, relative } from 'node:path'
 import { transform } from '@swc/core'
-import type { I18nextToolkitConfig } from './types'
+import type { I18nextToolkitConfig, Logger } from './types'
 import { getOutputPath } from './utils/file-utils'
 import vm from 'node:vm'
 
@@ -88,11 +88,10 @@ async function loadFile (file: string) {
  */
 export async function runTypesGenerator (
   config: I18nextToolkitConfig,
-  options: { quiet?: boolean } = {},
-  logger?: import('./types').Logger
+  options: { quiet?: boolean, logger?: Logger } = {}
 ) {
-  const internalLogger = logger ?? new ConsoleLogger()
-  const spinner = createSpinnerLike('Generating TypeScript types for translations...\n', { quiet: !!options.quiet, logger })
+  const internalLogger = options.logger ?? new ConsoleLogger()
+  const spinner = createSpinnerLike('Generating TypeScript types for translations...\n', { quiet: !!options.quiet, logger: options.logger })
 
   try {
     config.extract.primaryLanguage ||= config.locales[0] || 'en'

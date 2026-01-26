@@ -5,7 +5,8 @@ export type {
   ExtractedKey,
   TranslationResult,
   ExtractedKeysMap,
-  RenameKeyResult
+  RenameKeyResult,
+  Logger,
 } from './types'
 export { defineConfig } from './config'
 export {

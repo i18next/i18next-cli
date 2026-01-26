@@ -4,7 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { createSpinnerLike } from './utils/wrap-ora'
 import { ConsoleLogger } from './utils/logger'
-import type { I18nextToolkitConfig } from './types'
+import type { I18nextToolkitConfig, Logger } from './types'
 import { resolveDefaultValue } from './utils/default-value'
 import { getOutputPath, loadTranslationFile, serializeTranslationFile, loadRawJson5Content } from './utils/file-utils'
 import { recordFunnelShown, shouldShowFunnel } from './utils/funnel-msg-tracker'
@@ -42,11 +42,10 @@ import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-ob
  */
 export async function runSyncer (
   config: I18nextToolkitConfig,
-  options: { quiet?: boolean } = {},
-  logger?: any
+  options: { quiet?: boolean, logger?: Logger } = {}
 ) {
-  const internalLogger = logger ?? new ConsoleLogger()
-  const spinner = createSpinnerLike('Running i18next locale synchronizer...\n', { quiet: !!options.quiet, logger })
+  const internalLogger = options.logger ?? new ConsoleLogger()
+  const spinner = createSpinnerLike('Running i18next locale synchronizer...\n', { quiet: !!options.quiet, logger: options.logger })
   try {
     const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
     const secondaryLanguages = config.locales.filter((l) => l !== primaryLanguage)
@@ -63,8 +62,7 @@ export async function runSyncer (
 
     // 1. Find all namespace files for the primary language
     const primaryNsPatternRaw = getOutputPath(output, primaryLanguage, '*')
-    console.log({ primaryNsPatternRaw })
-    // Normalize to posix-style paths for glob (cross-platform)
+    // Ensure glob receives POSIX-style separators so pattern matching works cross-platform (Windows -> backslashes)
     const primaryNsPattern = primaryNsPatternRaw.replace(/\\/g, '/')
     const primaryNsFiles = await glob(primaryNsPattern)
 

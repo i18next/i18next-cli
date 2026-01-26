@@ -6,7 +6,7 @@ import { EventEmitter } from 'node:events'
 import chalk from 'chalk'
 import { ConsoleLogger } from './utils/logger'
 import { createSpinnerLike } from './utils/wrap-ora'
-import type { I18nextToolkitConfig } from './types'
+import type { I18nextToolkitConfig, Logger } from './types'
 
 // Helper to extract interpolation keys from a translation string
 function extractInterpolationKeys (str: string, config: I18nextToolkitConfig): string[] {
@@ -294,12 +294,11 @@ export async function runLinter (config: I18nextToolkitConfig) {
 
 export async function runLinterCli (
   config: I18nextToolkitConfig,
-  options: { quiet?: boolean } = {},
-  logger?: any
+  options: { quiet?: boolean, logger?: Logger } = {}
 ) {
-  const internalLogger = logger ?? new ConsoleLogger()
+  const internalLogger = options.logger ?? new ConsoleLogger()
   const linter = new Linter(config)
-  const spinner = createSpinnerLike('', { quiet: !!options.quiet, logger })
+  const spinner = createSpinnerLike('', { quiet: !!options.quiet, logger: options.logger })
   linter.on('progress', (event) => {
     spinner.text = event.message
   })

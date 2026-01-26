@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.38.1](https://github.com/i18next/i18next-cli/compare/v1.38.0...v1.38.1) - 2026-01-26
+
+- pass logger via options [#164](https://github.com/i18next/i18next-cli/issues/164)
+
 ## [1.38.0](https://github.com/i18next/i18next-cli/compare/v1.37.1...v1.38.0) - 2026-01-26
 
 - feat: Add `--quiet` flag to all spinner-based commands (extract, types, lint, sync) to silence spinner and non-essential output for CI or scripting [#164](https://github.com/i18next/i18next-cli/issues/164)

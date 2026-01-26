@@ -68,7 +68,7 @@ describe('ora spinner quiet and logger options', () => {
       warn: () => {},
       error: () => {}
     }
-    await runExtractor(withTempConfig(dummyConfig), {}, logger)
+    await runExtractor(withTempConfig(dummyConfig), { logger })
     expect(logs.some(l => l.includes('Extraction complete!'))).toBeTruthy()
   })
 
@@ -89,7 +89,7 @@ describe('ora spinner quiet and logger options', () => {
       warn: () => {},
       error: () => {}
     }
-    await runTypesGenerator(withTempConfig(dummyConfig), {}, logger)
+    await runTypesGenerator(withTempConfig(dummyConfig), { logger })
     expect(logs.some(l => l.includes('TypeScript definitions generated successfully.'))).toBeTruthy()
   })
 
@@ -107,7 +107,7 @@ describe('ora spinner quiet and logger options', () => {
       warn: () => {},
       error: () => {}
     }
-    await runLinterCli(withTempConfig(dummyConfig), {}, logger)
+    await runLinterCli(withTempConfig(dummyConfig), { logger })
     expect(logs.length).toBeGreaterThan(0)
   })
 
@@ -128,8 +128,7 @@ describe('ora spinner quiet and logger options', () => {
       warn: () => {},
       error: () => {}
     }
-    await runSyncer(withTempConfig(dummyConfig), {}, logger)
-    console.log({ logs })
+    await runSyncer(withTempConfig(dummyConfig), { logger })
     // Accept either 'Synchronization complete!' or 'Synchronization failed.'
     expect(logs.some(l => l.includes('Synchronization complete!') || l.includes('Synchronization failed.'))).toBeTruthy()
   })

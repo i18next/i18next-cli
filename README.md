@@ -115,6 +115,7 @@ npx i18next-cli extract [options]
 - `--sync-primary`: Sync primary language values with default values from code
 - `--sync-all`: Sync primary language values with default values from code AND clear synced keys in all other locales (implies `--sync-primary`)
 - `--quiet`: Suppress spinner and non-essential output (for CI or scripting)
+
 ### Spinner and Logger Output Control
 
 All commands that show progress spinners (extract, types, lint, sync) now support:
@@ -137,7 +138,7 @@ const logger = {
   warn: (msg) => myWarnStream.write(msg + '\n'),
   error: (msg) => myErrStream.write(msg + '\n'),
 };
-await runExtractor(config, { quiet: false }, logger);
+await runExtractor(config, { quiet: false, logger });
 ```
 
 If you pass a logger, spinner output and all progress/info messages are routed to your logger instead of the interactive spinner.
