@@ -36,6 +36,7 @@ program
   .option('--dry-run', 'Run the extractor without writing any files to disk.')
   .option('--sync-primary', 'Sync primary language values with default values from code.')
   .option('--sync-all', 'Sync primary language values with default values from code AND clear synced keys in all other locales.')
+  .option('-q, --quiet', 'Suppress spinner and output')
   .action(async (options) => {
     try {
       const cfgPath = program.opts().config
@@ -48,7 +49,8 @@ program
           isWatchMode: !!options.watch,
           isDryRun: !!options.dryRun,
           syncPrimaryWithDefaults: syncPrimary,
-          syncAll: !!options.syncAll
+          syncAll: !!options.syncAll,
+          quiet: !!options.quiet
         })
 
         if (options.ci && !success) {
@@ -117,11 +119,12 @@ program
   .command('types')
   .description('Generate TypeScript definitions from translation resource files.')
   .option('-w, --watch', 'Watch for file changes and re-run the type generator.')
+  .option('-q, --quiet', 'Suppress spinner and output')
   .action(async (options) => {
     const cfgPath = program.opts().config
     const config = await ensureConfig(cfgPath)
 
-    const run = () => runTypesGenerator(config)
+    const run = () => runTypesGenerator(config, { quiet: !!options.quiet })
     await run()
 
     if (options.watch) {
@@ -140,10 +143,11 @@ program
 program
   .command('sync')
   .description('Synchronize secondary language files with the primary language file.')
-  .action(async () => {
+  .option('-q, --quiet', 'Suppress spinner and output')
+  .action(async (options) => {
     const cfgPath = program.opts().config
     const config = await ensureConfig(cfgPath)
-    await runSyncer(config)
+    await runSyncer(config, { quiet: !!options.quiet })
   })
 
 program
@@ -162,6 +166,7 @@ program
   .command('lint')
   .description('Find potential issues like hardcoded strings in your codebase.')
   .option('-w, --watch', 'Watch for file changes and re-run the linter.')
+  .option('-q, --quiet', 'Suppress spinner and output')
   .action(async (options) => {
     const cfgPath = program.opts().config
 
@@ -179,7 +184,7 @@ program
         console.log(chalk.green('Project structure detected successfully!'))
         config = detected as I18nextToolkitConfig
       }
-      await runLinterCli(config)
+      await runLinterCli(config, { quiet: !!options.quiet })
     }
 
     // Run the linter once initially

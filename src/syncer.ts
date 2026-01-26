@@ -2,7 +2,8 @@ import chalk from 'chalk'
 import { glob } from 'glob'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
-import ora from 'ora'
+import { createSpinnerLike } from './utils/wrap-ora'
+import { ConsoleLogger } from './utils/logger'
 import type { I18nextToolkitConfig } from './types'
 import { resolveDefaultValue } from './utils/default-value'
 import { getOutputPath, loadTranslationFile, serializeTranslationFile, loadRawJson5Content } from './utils/file-utils'
@@ -39,8 +40,13 @@ import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-ob
  * await runSyncer(config)
  * ```
  */
-export async function runSyncer (config: I18nextToolkitConfig) {
-  const spinner = ora('Running i18next locale synchronizer...\n').start()
+export async function runSyncer (
+  config: I18nextToolkitConfig,
+  options: { quiet?: boolean } = {},
+  logger?: any
+) {
+  const internalLogger = logger ?? new ConsoleLogger()
+  const spinner = createSpinnerLike('Running i18next locale synchronizer...\n', { quiet: !!options.quiet, logger })
   try {
     const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
     const secondaryLanguages = config.locales.filter((l) => l !== primaryLanguage)
@@ -111,16 +117,18 @@ export async function runSyncer (config: I18nextToolkitConfig) {
     }
 
     spinner.succeed(chalk.bold('Synchronization complete!'))
-    logMessages.forEach(msg => console.log(msg))
+    logMessages.forEach(msg => internalLogger.info ? internalLogger.info(msg) : console.log(msg))
 
     if (wasAnythingSynced) {
       await printLocizeFunnel()
     } else {
-      console.log(chalk.green.bold('\n✅ All locales are already in sync.'))
+      if (typeof internalLogger.info === 'function') internalLogger.info(chalk.green.bold('\n✅ All locales are already in sync.'))
+      else console.log(chalk.green.bold('\n✅ All locales are already in sync.'))
     }
   } catch (error) {
     spinner.fail(chalk.red('Synchronization failed.'))
-    console.error(error)
+    if (typeof internalLogger.error === 'function') internalLogger.error(error)
+    else console.error(error)
   }
 }
 

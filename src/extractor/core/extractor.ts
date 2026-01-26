@@ -1,4 +1,4 @@
-import ora from 'ora'
+import { createSpinnerLike } from '../../utils/wrap-ora'
 import chalk from 'chalk'
 import { parse } from '@swc/core'
 import type { Module } from '@swc/types'
@@ -42,18 +42,14 @@ import { shouldShowFunnel, recordFunnelShown } from '../../utils/funnel-msg-trac
  */
 export async function runExtractor (
   config: I18nextToolkitConfig,
-  {
-    isWatchMode = false,
-    isDryRun = false,
-    syncPrimaryWithDefaults = false,
-    syncAll = false
-  }: {
+  options: {
     isWatchMode?: boolean,
     isDryRun?: boolean,
     syncPrimaryWithDefaults?: boolean,
     syncAll?: boolean,
+    quiet?: boolean
   } = {},
-  logger: Logger = new ConsoleLogger()
+  logger?: Logger
 ): Promise<boolean> {
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
@@ -65,20 +61,24 @@ export async function runExtractor (
   validateExtractorConfig(config)
 
   const plugins = config.plugins || []
-
-  const spinner = ora('Running i18next key extractor...\n').start()
+  const internalLogger = logger ?? new ConsoleLogger()
+  // Only pass logger to spinner if explicitly provided
+  const spinner = createSpinnerLike('Running i18next key extractor...\n', { quiet: !!options.quiet, logger })
 
   try {
-    const { allKeys, objectKeys } = await findKeys(config, logger)
+    const { allKeys, objectKeys } = await findKeys(config, internalLogger)
     spinner.text = `Found ${allKeys.size} unique keys. Updating translation files...`
 
-    const results = await getTranslations(allKeys, objectKeys, config, { syncPrimaryWithDefaults, syncAll })
+    const results = await getTranslations(allKeys, objectKeys, config, {
+      syncPrimaryWithDefaults: options.syncPrimaryWithDefaults,
+      syncAll: options.syncAll
+    })
 
     let anyFileUpdated = false
     for (const result of results) {
       if (result.updated) {
         anyFileUpdated = true
-        if (!isDryRun) {
+        if (!options.isDryRun) {
           // prefer explicit outputFormat; otherwise infer from file extension per-file
           const effectiveFormat = config.extract.outputFormat ?? (result.path.endsWith('.json5') ? 'json5' : 'json')
           const rawContent = effectiveFormat === 'json5'
@@ -92,7 +92,7 @@ export async function runExtractor (
           )
           await mkdir(dirname(result.path), { recursive: true })
           await writeFile(result.path, fileContent)
-          logger.info(chalk.green(`Updated: ${result.path}`))
+          internalLogger.info(chalk.green(`Updated: ${result.path}`))
         }
       }
     }
@@ -108,7 +108,7 @@ export async function runExtractor (
     spinner.succeed(chalk.bold('Extraction complete!'))
 
     // Show the funnel message only if files were actually changed.
-    if (anyFileUpdated) await printLocizeFunnel()
+    if (anyFileUpdated) await printLocizeFunnel(logger)
 
     return anyFileUpdated
   } catch (error) {
@@ -272,14 +272,23 @@ export async function extract (config: I18nextToolkitConfig, { syncPrimaryWithDe
  * Prints a promotional message for the locize saveMissing workflow.
  * This message is shown after a successful extraction that resulted in changes.
  */
-async function printLocizeFunnel () {
+async function printLocizeFunnel (logger?: import('../../types').Logger) {
   if (!(await shouldShowFunnel('extract'))) return
 
-  console.log(chalk.yellow.bold('\n💡 Tip: Tired of running the extractor manually?'))
-  console.log('   Discover a real-time "push" workflow with `saveMissing` and Locize AI,')
-  console.log('   where keys are created and translated automatically as you code.')
-  console.log(`   Learn more: ${chalk.cyan('https://www.locize.com/blog/i18next-savemissing-ai-automation')}`)
-  console.log(`   Watch the video: ${chalk.cyan('https://youtu.be/joPsZghT3wM')}`)
+  const internalLogger = logger ?? new ConsoleLogger()
+  if (typeof internalLogger.info === 'function') {
+    internalLogger.info(chalk.yellow.bold('\n💡 Tip: Tired of running the extractor manually?'))
+    internalLogger.info('   Discover a real-time "push" workflow with `saveMissing` and Locize AI,')
+    internalLogger.info('   where keys are created and translated automatically as you code.')
+    internalLogger.info(`   Learn more: ${chalk.cyan('https://www.locize.com/blog/i18next-savemissing-ai-automation')}`)
+    internalLogger.info(`   Watch the video: ${chalk.cyan('https://youtu.be/joPsZghT3wM')}`)
+  } else {
+    console.log(chalk.yellow.bold('\n💡 Tip: Tired of running the extractor manually?'))
+    console.log('   Discover a real-time "push" workflow with `saveMissing` and Locize AI,')
+    console.log('   where keys are created and translated automatically as you code.')
+    console.log(`   Learn more: ${chalk.cyan('https://www.locize.com/blog/i18next-savemissing-ai-automation')}`)
+    console.log(`   Watch the video: ${chalk.cyan('https://youtu.be/joPsZghT3wM')}`)
+  }
 
   return recordFunnelShown('extract')
 }

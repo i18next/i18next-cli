@@ -114,6 +114,33 @@ npx i18next-cli extract [options]
 - `--dry-run`: Does not change any files - useful in combination with `--ci` (for CI/CD)
 - `--sync-primary`: Sync primary language values with default values from code
 - `--sync-all`: Sync primary language values with default values from code AND clear synced keys in all other locales (implies `--sync-primary`)
+- `--quiet`: Suppress spinner and non-essential output (for CI or scripting)
+### Spinner and Logger Output Control
+
+All commands that show progress spinners (extract, types, lint, sync) now support:
+
+- `--quiet` flag to silence spinner and non-essential output (for CI, scripting, or log capture)
+- Programmatic logger support: pass a custom logger object to capture output in your own format or stream
+
+**CLI Example:**
+
+```bash
+npx i18next-cli extract --quiet
+```
+
+**Programmatic Example:**
+
+```typescript
+import { runExtractor } from 'i18next-cli';
+const logger = {
+  info: (msg) => myLogStream.write(msg + '\n'),
+  warn: (msg) => myWarnStream.write(msg + '\n'),
+  error: (msg) => myErrStream.write(msg + '\n'),
+};
+await runExtractor(config, { quiet: false }, logger);
+```
+
+If you pass a logger, spinner output and all progress/info messages are routed to your logger instead of the interactive spinner.
 
 **Examples:**
 ```bash

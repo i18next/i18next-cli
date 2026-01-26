@@ -1,6 +1,7 @@
+import { ConsoleLogger } from './utils/logger'
 import { mergeResourcesAsInterface } from 'i18next-resources-for-ts'
 import { glob } from 'glob'
-import ora from 'ora'
+import { createSpinnerLike } from './utils/wrap-ora'
 import chalk from 'chalk'
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
 import { basename, extname, resolve, dirname, join, relative } from 'node:path'
@@ -85,8 +86,13 @@ async function loadFile (file: string) {
  * await runTypesGenerator(config)
  * ```
  */
-export async function runTypesGenerator (config: I18nextToolkitConfig) {
-  const spinner = ora('Generating TypeScript types for translations...\n').start()
+export async function runTypesGenerator (
+  config: I18nextToolkitConfig,
+  options: { quiet?: boolean } = {},
+  logger?: import('./types').Logger
+) {
+  const internalLogger = logger ?? new ConsoleLogger()
+  const spinner = createSpinnerLike('Generating TypeScript types for translations...\n', { quiet: !!options.quiet, logger })
 
   try {
     config.extract.primaryLanguage ||= config.locales[0] || 'en'
@@ -182,9 +188,10 @@ declare module 'i18next' {
       logMessages.push(`  ${chalk.green('✓')} TypeScript definitions written to ${config.types.output || ''}`)
     }
     spinner.succeed(chalk.bold('TypeScript definitions generated successfully.'))
-    logMessages.forEach(msg => console.log(msg))
+    logMessages.forEach(msg => typeof internalLogger.info === 'function' ? internalLogger.info(msg) : console.log(msg))
   } catch (error) {
     spinner.fail(chalk.red('Failed to generate TypeScript definitions.'))
-    console.error(error)
+    if (typeof internalLogger.error === 'function') internalLogger.error(error)
+    else console.error(error)
   }
 }

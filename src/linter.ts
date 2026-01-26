@@ -4,7 +4,8 @@ import { parse } from '@swc/core'
 import { extname } from 'node:path'
 import { EventEmitter } from 'node:events'
 import chalk from 'chalk'
-import ora from 'ora'
+import { ConsoleLogger } from './utils/logger'
+import { createSpinnerLike } from './utils/wrap-ora'
 import type { I18nextToolkitConfig } from './types'
 
 // Helper to extract interpolation keys from a translation string
@@ -291,9 +292,14 @@ export async function runLinter (config: I18nextToolkitConfig) {
   return new Linter(config).run()
 }
 
-export async function runLinterCli (config: I18nextToolkitConfig) {
+export async function runLinterCli (
+  config: I18nextToolkitConfig,
+  options: { quiet?: boolean } = {},
+  logger?: any
+) {
+  const internalLogger = logger ?? new ConsoleLogger()
   const linter = new Linter(config)
-  const spinner = ora().start()
+  const spinner = createSpinnerLike('', { quiet: !!options.quiet, logger })
   linter.on('progress', (event) => {
     spinner.text = event.message
   })
@@ -304,9 +310,11 @@ export async function runLinterCli (config: I18nextToolkitConfig) {
 
       // Print detailed report after spinner fails
       for (const [file, issues] of Object.entries(files)) {
-        console.log(chalk.yellow(`\n${file}`))
+        if (internalLogger.info) internalLogger.info(chalk.yellow(`\n${file}`))
+        else console.log(chalk.yellow(`\n${file}`))
         issues.forEach(({ text, line }) => {
-          console.log(`  ${chalk.gray(`${line}:`)} ${chalk.red('Error:')} Found hardcoded string: "${text}"`)
+          if (typeof internalLogger.info === 'function') internalLogger.info(`  ${chalk.gray(`${line}:`)} ${chalk.red('Error:')} Found hardcoded string: "${text}"`)
+          else console.log(`  ${chalk.gray(`${line}:`)} ${chalk.red('Error:')} Found hardcoded string: "${text}"`)
         })
       }
       process.exit(1)
@@ -316,7 +324,8 @@ export async function runLinterCli (config: I18nextToolkitConfig) {
   } catch (error) {
     const wrappedError = linter.wrapError(error)
     spinner.fail(wrappedError.message)
-    console.error(wrappedError)
+    if (internalLogger.error) internalLogger.error(wrappedError)
+    else console.error(wrappedError)
     process.exit(1)
   }
 }
