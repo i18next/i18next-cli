@@ -48,6 +48,22 @@ describe('Linter (core logic)', () => {
     expect(Object.keys(result.files)).toHaveLength(0)
   })
 
+  it('should not flag parameters as unused when t() is called with a translation key', async () => {
+    // This test reproduces issue #165
+    const sampleCode = `
+      // Should NOT be flagged: translation key, not a string literal
+      t("greeting", { name: "hello" })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(mockConfig)
+    console.log(JSON.stringify(result, null, 2))
+    // Should not report any issues
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
   it('should detect a hardcoded string in a JSX element', async () => {
     const sampleCode = '<p>This is a hardcoded string.</p>'
     vol.fromJSON({ '/src/App.tsx': sampleCode })
@@ -945,11 +961,10 @@ describe('Linter (core logic)', () => {
     const result = await runLinter(config)
 
     expect(result.success).toBe(false)
-    expect(result.message).toContain('Linter found 3 potential issues')
-    expect(result.files['/src/App.tsx']).toHaveLength(3)
+    expect(result.message).toContain('Linter found 2 potential issues')
+    expect(result.files['/src/App.tsx']).toHaveLength(2)
     const texts = result.files['/src/App.tsx'].map(issue => issue.text)
     expect(texts).toContain('Interpolation parameter "name" was not provided')
     expect(texts).toContain('Parameter "name2" is not used in translation string')
-    expect(texts).toContain('Parameter "unused" is not used in translation string')
   })
 })

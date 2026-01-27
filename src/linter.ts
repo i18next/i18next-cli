@@ -78,11 +78,14 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
       }
     }
     if (matches) {
-      let str = ''
-      const arg0 = node.arguments?.[0]?.expression
-      const arg1 = node.arguments?.[1]?.expression
-      if (arg0?.type === 'StringLiteral') str = arg0.value
-      if (str) {
+      // Support both .expression and direct node for arguments
+      const arg0raw = node.arguments?.[0]
+      const arg1raw = node.arguments?.[1]
+      const arg0 = arg0raw?.expression ?? arg0raw
+      const arg1 = arg1raw?.expression ?? arg1raw
+      // Only check interpolation params if the first argument is a string literal (translation string)
+      if (arg0?.type === 'StringLiteral') {
+        const str = arg0.value
         const keys = extractInterpolationKeys(str, config)
         let paramKeys: string[] = []
         if (arg1?.type === 'ObjectExpression') {
@@ -96,20 +99,23 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
             .filter((k: any) => typeof k === 'string')
         }
         if (!Array.isArray(paramKeys)) paramKeys = []
-        for (const k of keys) {
-          if (!paramKeys.includes(k)) {
-            issues.push({
-              text: `Interpolation parameter "${k}" was not provided`,
-              line: getLineNumber(node.span?.start ?? 0),
-            })
+        // Only check for unused parameters if there is at least one interpolation key in the string
+        if (keys.length > 0) {
+          for (const k of keys) {
+            if (!paramKeys.includes(k)) {
+              issues.push({
+                text: `Interpolation parameter "${k}" was not provided`,
+                line: getLineNumber(node.span?.start ?? 0),
+              })
+            }
           }
-        }
-        for (const pk of paramKeys) {
-          if (!keys.includes(pk)) {
-            issues.push({
-              text: `Parameter "${pk}" is not used in translation string`,
-              line: getLineNumber(node.span?.start ?? 0),
-            })
+          for (const pk of paramKeys) {
+            if (!keys.includes(pk)) {
+              issues.push({
+                text: `Parameter "${pk}" is not used in translation string`,
+                line: getLineNumber(node.span?.start ?? 0),
+              })
+            }
           }
         }
       }
