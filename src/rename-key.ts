@@ -1,9 +1,9 @@
 import { glob } from 'glob'
 import { readFile, writeFile } from 'node:fs/promises'
+import { resolve, basename } from 'node:path'
 import type { I18nextToolkitConfig, Logger, RenameKeyResult } from './types'
 import { ConsoleLogger } from './utils/logger'
 import { loadTranslationFile, serializeTranslationFile, getOutputPath } from './utils/file-utils'
-import { resolve } from 'node:path'
 import { getNestedValue, setNestedValue } from './utils/nested-object'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker'
 import chalk from 'chalk'
@@ -216,8 +216,8 @@ async function buildNamespaceKeyMap (config: I18nextToolkitConfig): Promise<Map<
     try {
       const translations = await loadTranslationFile(resolve(process.cwd(), f))
       if (!translations) continue
-      // derive namespace name from filename: basename without extension
-      const base = f.split('/').pop() || f
+      // derive namespace name from filename: basename without extension (platform-safe)
+      const base = basename(f)
       const ns = base.replace(/\.[^.]+$/, '') // remove extension
       const set = map.get(ns) ?? new Set<string>()
       // flatten keys recursively
