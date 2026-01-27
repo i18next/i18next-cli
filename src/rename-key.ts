@@ -205,9 +205,10 @@ async function updateSourceFiles (
     pattern.replace(/\\/g, '/')
   )
 
+  // glob accepts array of patterns; do not force cwd to avoid accidental path rewriting
   const sourceFiles = await glob(normalizedPatterns, {
     ignore: [...defaultIgnore, ...userIgnore],
-    cwd: process.cwd()
+    nodir: true
   })
 
   const results: Array<{ path: string; changes: number }> = []
@@ -238,7 +239,7 @@ async function replaceKeyInSource (
   newParts: KeyParts,
   config: I18nextToolkitConfig
 ): Promise<{ newCode: string; changes: number }> {
-  // Use regex-based replacement which is more reliable than AST manipulation
+  // Simpler and robust regex-based replacement that covers tests' patterns
   return replaceKeyWithRegex(code, oldParts, newParts, config)
 }
 
@@ -252,131 +253,112 @@ function replaceKeyWithRegex (
   let newCode = code
   const nsSeparator = config.extract.nsSeparator ?? ':'
 
-  // Helper to determine which key form to use in replacement
-  const getReplacementKey = (originalKey: string): string => {
-    const hasNamespace = nsSeparator && originalKey.includes(String(nsSeparator))
-    return hasNamespace ? newParts.fullKey : newParts.key
-  }
-
-  // Pattern 1: Function calls - respect configured functions
   const configuredFunctions = config.extract.functions || ['t', '*.t']
-  const functionPatterns: Array<{ pattern: RegExp; original: string }> = []
 
-  for (const fnPattern of configuredFunctions) {
+  // Helper to create function-prefix regex fragment
+  const fnPrefixToRegex = (fnPattern: string) => {
     if (fnPattern.startsWith('*.')) {
-      // Wildcard pattern like '*.t' - match any prefix
-      const suffix = fnPattern.substring(1) // '.t'
-      const escapedSuffix = escapeRegex(suffix)
-
-      // Match: anyIdentifier.t('key')
-      functionPatterns.push({
-        pattern: new RegExp(`\\w+${escapedSuffix}\\((['"\`])${escapeRegex(oldParts.fullKey)}\\1`, 'g'),
-        original: oldParts.fullKey
-      })
-      functionPatterns.push({
-        pattern: new RegExp(`\\w+${escapedSuffix}\\((['"\`])${escapeRegex(oldParts.key)}\\1`, 'g'),
-        original: oldParts.key
-      })
-    } else {
-      // Exact function name
-      const escapedFn = escapeRegex(fnPattern)
-      functionPatterns.push({
-        pattern: new RegExp(`\\b${escapedFn}\\((['"\`])${escapeRegex(oldParts.fullKey)}\\1`, 'g'),
-        original: oldParts.fullKey
-      })
-      functionPatterns.push({
-        pattern: new RegExp(`\\b${escapedFn}\\((['"\`])${escapeRegex(oldParts.key)}\\1`, 'g'),
-        original: oldParts.key
-      })
+      // '*.t' -> match anyIdentifier.t
+      const suffix = fnPattern.slice(2)
+      return `\\b[\\w$]+\\.${escapeRegex(suffix)}` // e.g. \b[\w$]+\.t
     }
+    // exact function name (may include dot like 'i18n.t' or 'translate')
+    return `\\b${escapeRegex(fnPattern)}`
   }
 
-  for (const { pattern, original } of functionPatterns) {
-    if (pattern.test(newCode)) {
-      const replacement = getReplacementKey(original)
-      newCode = newCode.replace(pattern, (match, quote) => {
+  // Replace exact string-key usages inside function calls: fn('key') or fn(`key`) or fn("key")
+  for (const fnPattern of configuredFunctions) {
+    const prefix = fnPrefixToRegex(fnPattern)
+
+    // Match fullKey first (namespace-prefixed in source)
+    if (oldParts.fullKey) {
+      const regexFull = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.fullKey)}\\1`, 'g')
+      newCode = newCode.replace(regexFull, (match, q) => {
         changes++
-        // Preserve the function name part, only replace the key
-        const functionNameMatch = match.match(/^(\w+(?:\.\w+)*)\(/)
-        if (functionNameMatch) {
-          return `${functionNameMatch[1]}(${quote}${replacement}${quote}`
-        }
-        return match
+        const replacementKey = (oldParts.fullKey.includes(nsSeparator || ':') ? newParts.fullKey : newParts.key)
+        // preserve surrounding characters up to the opening quote
+        return match.replace(oldParts.fullKey, replacementKey)
       })
     }
+
+    // Then match bare key (no namespace in source)
+    const regexKey = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1`, 'g')
+    newCode = newCode.replace(regexKey, (match) => {
+      changes++
+      const replacementKey = newParts.key
+      return match.replace(new RegExp(escapeRegex(oldParts.key)), replacementKey)
+    })
+
+    // Handle ns option in options object: fn('key', { ns: 'oldNs', ... })
+    if (oldParts.namespace && newParts.namespace && oldParts.namespace !== newParts.namespace) {
+      // We want to change only when key matches and ns value equals oldParts.namespace
+      const nsRegexFullKey = new RegExp(
+        `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*,\\s*\\{([^}]*)\\bns\\s*:\\s*(['"\`])${escapeRegex(oldParts.namespace)}\\3([^}]*)\\}\\s*\\)`,
+        'g'
+      )
+      newCode = newCode.replace(nsRegexFullKey, (match, keyQ, beforeNs, nsQ, afterNs) => {
+        changes++
+        // replace ns value
+        return match.replace(
+          new RegExp(`(\\bns\\s*:\\s*['"\`])${escapeRegex(oldParts.namespace ?? '')}(['"\`])`),
+          `$1${newParts.namespace ?? ''}$2`
+        )
+      })
+
+      // same but if the call used fullKey (ns included inside key string), still update ns option if present
+      if (oldParts.fullKey) {
+        const nsRegexFull = new RegExp(
+          `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.fullKey)}\\1\\s*,\\s*\\{([^}]*)\\bns\\s*:\\s*(['"\`])${escapeRegex(oldParts.namespace)}\\3([^}]*)\\}\\s*\\)`,
+          'g'
+        )
+        newCode = newCode.replace(nsRegexFull, (match) => {
+          changes++
+          return match.replace(new RegExp(`(\\bns\\s*:\\s*['"\`])${escapeRegex(oldParts.namespace ?? '')}(['"\`])`), `$1${newParts.namespace ?? ''}$2`)
+        })
+      }
+    }
   }
 
-  // Pattern 2: Selector API arrow functions (e.g. t(($) => $.old.key) or i18n.t($ => $.old.key))
-  // Respect configured function names (including wildcard patterns)
+  // Selector API: dot-notation: fn(($) => $.old.key)
   for (const fnPattern of configuredFunctions) {
-    // Build a regex prefix for the function invocation (handles wildcard '*.t' -> '\w+\.t')
-    let patternPrefix: string
-    if (fnPattern.startsWith('*.')) {
-      const suffix = fnPattern.substring(1) // '.t'
-      patternPrefix = `\\w+${escapeRegex(suffix)}`
-    } else {
-      patternPrefix = escapeRegex(fnPattern)
-    }
+    const prefix = fnPrefixToRegex(fnPattern)
+    // match forms like: prefix( $ => $.old.key )
+    // capture the arrow param name and the rest
+    // We'll attempt to match the param and the dotted property chain equal to oldParts.key (exact)
+    const dotRegex = new RegExp(`${prefix}\\s*\\(\\s*\\(?\\s*([a-zA-Z_$][\\w$]*)\\s*\\)?\\s*=>\\s*\\1\\.${escapeRegex(oldParts.key)}\\s*\\)`, 'g')
+    newCode = newCode.replace(dotRegex, (match, param) => {
+      changes++
+      // Determine replacement (if source used namespace in key it would be fullKey, but in selector dot-notation it's always key form)
+      const replacementKey = newParts.key
+      return match.replace(`.${oldParts.key}`, `.${replacementKey}`)
+    })
 
-    // Try matching both the plain key and the ns-prefixed fullKey used in selector access
-    for (const original of [oldParts.fullKey, oldParts.key]) {
-      // Match dot-notation selector forms like:
-      // t(($) => $.old.key)
-      // i18n.t($ => $.old.key.nested)
-      const selectorDotRegex = new RegExp(
-        `(\\b${patternPrefix}\\(\\s*\\(?\\s*([a-zA-Z_$][\\w$]*)\\s*\\)?\\s*=>\\s*)\\2\\.${escapeRegex(original)}(\\s*\\))`,
-        'g'
-      )
-
-      if (selectorDotRegex.test(newCode)) {
-        const replacementKey = getReplacementKey(original)
-        newCode = newCode.replace(selectorDotRegex, (match, prefix, param, suffix) => {
-          changes++
-          // Replace property chain with dot-notation replacement
-          return `${prefix}${param}.${replacementKey}${suffix}`
-        })
+    // Bracket notation: fn(($) => $["Old Key"]) etc.
+    const bracketRegex = new RegExp(`${prefix}\\s*\\(\\s*\\(?\\s*([a-zA-Z_$][\\w$]*)\\s*\\)?\\s*=>\\s*\\1\\s*\\[\\s*(['"\`])${escapeRegex(oldParts.key)}\\2\\s*\\]\\s*\\)`, 'g')
+    newCode = newCode.replace(bracketRegex, (match, param, quote) => {
+      changes++
+      const replacementKey = newParts.key
+      // If replacementKey is a valid identifier, convert to dot-notation, otherwise keep bracket form with preserved quote style
+      if (/^[A-Za-z_$][\w$]*$/.test(replacementKey)) {
+        return match.replace(new RegExp(`\\[\\s*['"\`]${escapeRegex(oldParts.key)}['"\`]\\s*\\]`), `.${replacementKey}`)
+      } else {
+        return match.replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `$1${replacementKey}$1`)
       }
-
-      // Match bracket-notation selector forms like:
-      // t(($) => $["Old Key"])
-      const selectorBracketRegex = new RegExp(
-        `(\\b${patternPrefix}\\(\\s*\\(?\\s*([a-zA-Z_$][\\w$]*)\\s*\\)?\\s*=>\\s*)\\2\\[\\s*(['"\`])${escapeRegex(original)}\\3\\s*\\](\\s*\\))`,
-        'g'
-      )
-
-      if (selectorBracketRegex.test(newCode)) {
-        const replacementKey = getReplacementKey(original)
-        const isIdentifier = (s: string) => /^[A-Za-z_$][\w$]*$/.test(s)
-        newCode = newCode.replace(selectorBracketRegex, (match, prefix, param, quote, suffix) => {
-          changes++
-          // If the replacement is a valid identifier, convert to dot-notation, otherwise keep bracket-notation
-          if (isIdentifier(replacementKey)) {
-            return `${prefix}${param}.${replacementKey}${suffix}`
-          }
-          return `${prefix}${param}[${quote}${replacementKey}${quote}]${suffix}`
-        })
-      }
-    }
+    })
   }
 
-  // Pattern 3: JSX i18nKey attribute - respect configured transComponents
-  // const transComponents = config.extract.transComponents || ['Trans']
-
-  // Create a pattern that matches i18nKey on any of the configured components
-  // This is a simplified approach - for more complex cases, consider AST-based replacement
-  const i18nKeyPatterns = [
-    { pattern: new RegExp(`i18nKey=(['"\`])${escapeRegex(oldParts.fullKey)}\\1`, 'g'), original: oldParts.fullKey },
-    { pattern: new RegExp(`i18nKey=(['"\`])${escapeRegex(oldParts.key)}\\1`, 'g'), original: oldParts.key }
+  // JSX i18nKey attribute (handles all quote types)
+  const jsxPatterns = [
+    { orig: oldParts.fullKey, regex: new RegExp(`i18nKey=(['"\`])${escapeRegex(oldParts.fullKey)}\\1`, 'g') },
+    { orig: oldParts.key, regex: new RegExp(`i18nKey=(['"\`])${escapeRegex(oldParts.key)}\\1`, 'g') }
   ]
-
-  for (const { pattern, original } of i18nKeyPatterns) {
-    if (pattern.test(newCode)) {
-      const replacement = getReplacementKey(original)
-      newCode = newCode.replace(pattern, (match, quote) => {
-        changes++
-        return `i18nKey=${quote}${replacement}${quote}`
-      })
-    }
+  for (const p of jsxPatterns) {
+    newCode = newCode.replace(p.regex, (match, q) => {
+      changes++
+      const nsSepStr = nsSeparator === false ? ':' : nsSeparator
+      const replacement = (p.orig === oldParts.fullKey && oldParts.fullKey.includes(nsSepStr)) ? newParts.fullKey : newParts.key
+      return `i18nKey=${q}${replacement}${q}`
+    })
   }
 
   return { newCode, changes }
