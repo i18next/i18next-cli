@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.39.4](https://github.com/i18next/i18next-cli/compare/v1.39.3...v1.39.4) - 2026-01-27
+
+- further improve rename-key: when moving from defaultNS [#167](https://github.com/i18next/i18next-cli/issues/167)
+
 ## [1.39.3](https://github.com/i18next/i18next-cli/compare/v1.39.2...v1.39.3) - 2026-01-27
 
 - further improve rename-key: when moving from defaultNS [#167](https://github.com/i18next/i18next-cli/issues/167)

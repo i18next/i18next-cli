@@ -334,16 +334,21 @@ function replaceKeyWithRegex (
       )
       newCode = newCode.replace(nsRegexToDefault, (match, keyQ, beforeNs, nsQ, afterNs) => {
         changes++
-        // Remove the ns property and any trailing comma if present
-        // Remove possible preceding/trailing commas and whitespace
-        let obj = beforeNs + afterNs
-        obj = obj.replace(/,?\s*$/, '')
-        obj = obj.replace(/^\s*,?/, '')
-        if (obj.trim()) {
-          return `${prefix}(${keyQ}${newParts.key}${keyQ}, {${obj}})`
+        // Build remaining object props (everything except the ns property)
+        const obj = (beforeNs + afterNs).replace(/,?\s*$/, '').replace(/^\s*,?/, '').trim()
+
+        // Start by replacing the key string itself, preserving the original quote style
+        let updated = match.replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `${keyQ}${newParts.key}${keyQ}`)
+
+        if (obj) {
+          // If other properties remain, replace the whole object content with the cleaned props
+          updated = updated.replace(/\{\s*([^}]*)\s*\}/, `{${obj}}`)
         } else {
-          return `${prefix}(${keyQ}${newParts.key}${keyQ})`
+          // No other props — remove the whole options object (", { ... }") leaving "fn('key')"
+          updated = updated.replace(/\s*,\s*\{[^}]*\}\s*\)/, ')')
         }
+
+        return updated
       })
     }
 
