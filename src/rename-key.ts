@@ -75,10 +75,15 @@ export async function runRenameKey (
     }
   }
 
+  // Build a quick map of which namespaces contain which keys (union across locales).
+  // This allows us to decide, per-call, whether an explicit `{ ns: 'x' }` refers to
+  // the namespace we're renaming, and whether that namespace actually contains the key.
+  const namespaceKeyMap = await buildNamespaceKeyMap(config)
+
   logger.info(`🔍 Scanning for usages of "${oldKey}"...`)
 
   // Find and update source files
-  const sourceResults = await updateSourceFiles(oldParts, newParts, config, dryRun, logger)
+  const sourceResults = await updateSourceFiles(oldParts, newParts, config, dryRun, logger, namespaceKeyMap)
 
   // Update translation files
   const translationResults = await updateTranslationFiles(oldParts, newParts, config, dryRun, logger)
@@ -123,6 +128,7 @@ interface KeyParts {
   namespace?: string
   key: string
   fullKey: string
+  explicitNamespace?: boolean
 }
 
 function parseKeyWithNamespace (key: string, config: I18nextToolkitConfig): KeyParts {
@@ -133,14 +139,16 @@ function parseKeyWithNamespace (key: string, config: I18nextToolkitConfig): KeyP
     return {
       namespace: ns,
       key: rest.join(nsSeparator),
-      fullKey: key
+      fullKey: key,
+      explicitNamespace: true
     }
   }
 
   return {
     namespace: config.extract.defaultNS || 'translation',
     key,
-    fullKey: key
+    fullKey: key,
+    explicitNamespace: false
   }
 }
 
@@ -184,12 +192,63 @@ async function checkConflicts (newParts: KeyParts, config: I18nextToolkitConfig)
   return conflicts
 }
 
+async function buildNamespaceKeyMap (config: I18nextToolkitConfig): Promise<Map<string, Set<string>>> {
+  // Map namespace -> set of flattened keys present in that namespace (union across locales)
+  const map = new Map<string, Set<string>>()
+
+  // config.extract.output may be either a string template or a function(language, namespace) => string.
+  // Produce a string we can turn into a glob pattern. For functions, call with wildcard values.
+  const rawOutput = config.extract.output
+  const outputTemplate = typeof rawOutput === 'function'
+    ? rawOutput('*', '*') // produce a path with wildcards we can glob
+    : String(rawOutput)
+
+  // make a glob pattern by replacing placeholders with *
+  const pat = outputTemplate
+    .replace(/\{\{language\}\}/g, '*')
+    .replace(/\{\{namespace\}\}/g, '*')
+
+  // glob expects unix-style
+  const files = await glob([pat.replace(/\\/g, '/')], { nodir: true })
+  const keySeparator = config.extract.keySeparator ?? '.'
+
+  for (const f of files) {
+    try {
+      const translations = await loadTranslationFile(resolve(process.cwd(), f))
+      if (!translations) continue
+      // derive namespace name from filename: basename without extension
+      const base = f.split('/').pop() || f
+      const ns = base.replace(/\.[^.]+$/, '') // remove extension
+      const set = map.get(ns) ?? new Set<string>()
+      // flatten keys recursively
+      const collect = (obj: any, prefix = '') => {
+        if (typeof obj !== 'object' || obj === null) {
+          // only add non-empty prefix (avoid adding '')
+          if (prefix) set.add(prefix)
+          return
+        }
+        for (const k of Object.keys(obj)) {
+          const next = prefix ? `${prefix}${keySeparator}${k}` : k
+          collect(obj[k], next)
+        }
+      }
+      collect(translations, '')
+      map.set(ns, set)
+    } catch {
+      // ignore unreadable files
+    }
+  }
+
+  return map
+}
+
 async function updateSourceFiles (
   oldParts: KeyParts,
   newParts: KeyParts,
   config: I18nextToolkitConfig,
   dryRun: boolean,
-  logger: Logger
+  logger: Logger,
+  namespaceKeyMap: Map<string, Set<string>>
 ): Promise<Array<{ path: string; changes: number }>> {
   const defaultIgnore = ['node_modules/**']
   const userIgnore = Array.isArray(config.extract.ignore)
@@ -215,7 +274,7 @@ async function updateSourceFiles (
 
   for (const file of sourceFiles) {
     const code = await readFile(file, 'utf-8')
-    const { newCode, changes } = await replaceKeyInSource(code, oldParts, newParts, config)
+    const { newCode, changes } = await replaceKeyInSource(code, oldParts, newParts, config, namespaceKeyMap)
 
     if (changes > 0) {
       if (!dryRun) {
@@ -237,17 +296,19 @@ async function replaceKeyInSource (
   code: string,
   oldParts: KeyParts,
   newParts: KeyParts,
-  config: I18nextToolkitConfig
+  config: I18nextToolkitConfig,
+  namespaceKeyMap: Map<string, Set<string>>
 ): Promise<{ newCode: string; changes: number }> {
   // Simpler and robust regex-based replacement that covers tests' patterns
-  return replaceKeyWithRegex(code, oldParts, newParts, config)
+  return replaceKeyWithRegex(code, oldParts, newParts, config, namespaceKeyMap)
 }
 
 function replaceKeyWithRegex (
   code: string,
   oldParts: KeyParts,
   newParts: KeyParts,
-  config: I18nextToolkitConfig
+  config: I18nextToolkitConfig,
+  namespaceKeyMap: Map<string, Set<string>>
 ): { newCode: string; changes: number } {
   let changes = 0
   let newCode = code
@@ -266,66 +327,25 @@ function replaceKeyWithRegex (
     return `\\b${escapeRegex(fnPattern)}`
   }
 
+  // Helper: check whether the old key exists in a given namespace (from the prebuilt map)
+  const hasKeyInNamespace = (ns?: string) => {
+    if (!ns) return false
+    const set = namespaceKeyMap.get(ns)
+    return !!(set && set.has(oldParts.key))
+  }
+
   // Replace exact string-key usages inside function calls: fn('key') or fn(`key`) or fn("key")
   for (const fnPattern of configuredFunctions) {
     const prefix = fnPrefixToRegex(fnPattern)
 
-    // Match fullKey first (namespace-prefixed in source)
-    if (oldParts.fullKey) {
-      const regexFull = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.fullKey)}\\1`, 'g')
-      newCode = newCode.replace(regexFull, (match, q) => {
-        changes++
-        const replacementKey = (oldParts.fullKey.includes(nsSeparator || ':') ? newParts.fullKey : newParts.key)
-        // preserve surrounding characters up to the opening quote
-        return match.replace(oldParts.fullKey, replacementKey)
-      })
-    }
-
-    // Then match bare key (no namespace in source)
-    const regexKey = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1`, 'g')
-    newCode = newCode.replace(regexKey, (match) => {
-      changes++
-      const replacementKey = newParts.key
-      return match.replace(new RegExp(escapeRegex(oldParts.key)), replacementKey)
-    })
-    // Then match bare key (no namespace in source)
-    // If moving from defaultNS to another, and call is t('key') with no options, add ns option
-    const regexKeyWithParen = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*\\)`, 'g')
-    newCode = newCode.replace(regexKeyWithParen, (match, quote) => {
-      if (
-        oldParts.namespace && newParts.namespace &&
-        oldParts.namespace !== newParts.namespace &&
-        config.extract.defaultNS === oldParts.namespace
-      ) {
-        changes++
-        return match.replace(
-          new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1\\s*\\)`),
-          `${quote}${newParts.key}${quote}, { ns: '${newParts.namespace}' })`
-        )
-      } else if (
-        oldParts.namespace && newParts.namespace &&
-        oldParts.namespace !== newParts.namespace &&
-        config.extract.defaultNS === newParts.namespace
-      ) {
-        // If moving from a namespaced key to defaultNS, update t('key', { ns: 'oldNs' }) to t('key')
-        // Remove the ns option if it matches the defaultNS
-        // This is handled below in the ns option replacement
-        // But also handle t('key', { ns: 'defaultNS' }) -> t('key')
-        // See below for explicit ns option removal
-        // No action here, handled below
-        return match
-      } else {
-        changes++
-        const replacementKey = newParts.key
-        return match.replace(new RegExp(escapeRegex(oldParts.key)), replacementKey)
-      }
-    })
-
-    // Remove ns option if moving to defaultNS
+    // 1) If moving TO the defaultNS, remove the explicit ns option and update key in one go:
+    //    t('key', { ns: 'oldNs', ... }) -> t('newKey') (or t('newKey', { otherProps }) if other props exist)
+    // Only do this if the old key actually exists in the old namespace
     if (
       oldParts.namespace && newParts.namespace &&
       oldParts.namespace !== newParts.namespace &&
-      config.extract.defaultNS === newParts.namespace
+      config.extract.defaultNS === newParts.namespace &&
+      hasKeyInNamespace(oldParts.namespace)
     ) {
       // t('key', { ns: 'oldNs' }) -> t('key')
       const nsRegexToDefault = new RegExp(
@@ -337,14 +357,14 @@ function replaceKeyWithRegex (
         // Build remaining object props (everything except the ns property)
         const obj = (beforeNs + afterNs).replace(/,?\s*$/, '').replace(/^\s*,?/, '').trim()
 
-        // Start by replacing the key string itself, preserving the original quote style
+        // Replace the key string itself, preserving the original quote style
         let updated = match.replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `${keyQ}${newParts.key}${keyQ}`)
 
         if (obj) {
-          // If other properties remain, replace the whole object content with the cleaned props
+          // If other properties remain, keep them
           updated = updated.replace(/\{\s*([^}]*)\s*\}/, `{${obj}}`)
         } else {
-          // No other props — remove the whole options object (", { ... }") leaving "fn('key')"
+          // No other props — remove the options object entirely
           updated = updated.replace(/\s*,\s*\{[^}]*\}\s*\)/, ')')
         }
 
@@ -352,14 +372,15 @@ function replaceKeyWithRegex (
       })
     }
 
-    // Handle ns option in options object: fn('key', { ns: 'oldNs', ... })
-    if (oldParts.namespace && newParts.namespace && oldParts.namespace !== newParts.namespace) {
-      // We want to change only when key matches and ns value equals oldParts.namespace
+    // 2) Update ns option value when moving across namespaces (when options are present)
+    // Only attempt to update the ns option if the old namespace actually contains the key.
+    if (oldParts.namespace && newParts.namespace && oldParts.namespace !== newParts.namespace && hasKeyInNamespace(oldParts.namespace)) {
+      // case where key is bare (e.g. t('key', { ns: 'oldNs', ... }))
       const nsRegexFullKey = new RegExp(
         `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*,\\s*\\{([^}]*)\\bns\\s*:\\s*(['"\`])${escapeRegex(oldParts.namespace)}\\3([^}]*)\\}\\s*\\)`,
         'g'
       )
-      newCode = newCode.replace(nsRegexFullKey, (match, keyQ, beforeNs, nsQ, afterNs) => {
+      newCode = newCode.replace(nsRegexFullKey, (match) => {
         changes++
         // replace ns value
         return match.replace(
@@ -368,8 +389,8 @@ function replaceKeyWithRegex (
         )
       })
 
-      // same but if the call used fullKey (ns included inside key string), still update ns option if present
-      if (oldParts.fullKey) {
+      // case where fullKey was used inside the string (e.g. t('ns:key', { ns: 'oldNs' }))
+      if (oldParts.fullKey && oldParts.explicitNamespace) {
         const nsRegexFull = new RegExp(
           `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.fullKey)}\\1\\s*,\\s*\\{([^}]*)\\bns\\s*:\\s*(['"\`])${escapeRegex(oldParts.namespace)}\\3([^}]*)\\}\\s*\\)`,
           'g'
@@ -380,48 +401,83 @@ function replaceKeyWithRegex (
         })
       }
     }
-  }
 
-  // Selector API: dot-notation: fn(($) => $.old.key)
-  for (const fnPattern of configuredFunctions) {
-    const prefix = fnPrefixToRegex(fnPattern)
-    // match forms like: prefix( $ => $.old.key )
-    // capture the arrow param name and the rest
-    // We'll attempt to match the param and the dotted property chain equal to oldParts.key (exact)
-    const dotRegex = new RegExp(`${prefix}\\s*\\(\\s*\\(?\\s*([a-zA-Z_$][\\w$]*)\\s*\\)?\\s*=>\\s*\\1\\.${escapeRegex(oldParts.key)}\\s*\\)`, 'g')
-    newCode = newCode.replace(dotRegex, (match, param) => {
-      changes++
-      // Determine replacement (if source used namespace in key it would be fullKey, but in selector dot-notation it's always key form)
-      const replacementKey = newParts.key
-      return match.replace(`.${oldParts.key}`, `.${replacementKey}`)
-    })
+    // 3) Replace occurrences where the call uses the fullKey inside the string (e.g. t('ns:key'))
+    if (oldParts.fullKey && oldParts.explicitNamespace) {
+      const regexFull = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.fullKey)}\\1`, 'g')
+      newCode = newCode.replace(regexFull, (match) => {
+        changes++
+        const replacementKey = (oldParts.fullKey.includes(nsSeparator || ':') ? newParts.fullKey : newParts.key)
+        return match.replace(oldParts.fullKey, replacementKey)
+      })
+    }
 
-    // Bracket notation: fn(($) => $["Old Key"]) etc.
-    const bracketRegex = new RegExp(`${prefix}\\s*\\(\\s*\\(?\\s*([a-zA-Z_$][\\w$]*)\\s*\\)?\\s*=>\\s*\\1\\s*\\[\\s*(['"\`])${escapeRegex(oldParts.key)}\\2\\s*\\]\\s*\\)`, 'g')
-    newCode = newCode.replace(bracketRegex, (match, param, quote) => {
-      changes++
-      const replacementKey = newParts.key
-      // If replacementKey is a valid identifier, convert to dot-notation, otherwise keep bracket form with preserved quote style
-      if (/^[A-Za-z_$][\w$]*$/.test(replacementKey)) {
-        return match.replace(new RegExp(`\\[\\s*['"\`]${escapeRegex(oldParts.key)}['"\`]\\s*\\]`), `.${replacementKey}`)
-      } else {
-        return match.replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `$1${replacementKey}$1`)
-      }
-    })
-  }
+    // 4) Handle selector / arrow and bracket forms (these are always "key form" so safe to replace)
+    // Selector API: dot-notation: fn(($) => $.old.key)
+    {
+      const dotRegex = new RegExp(`${prefix}\\s*\\(\\s*\\(?\\s*([a-zA-Z_$][\\w$]*)\\s*\\)?\\s*=>\\s*\\1\\.${escapeRegex(oldParts.key)}\\s*\\)`, 'g')
+      newCode = newCode.replace(dotRegex, (match) => {
+        changes++
+        const replacementKey = newParts.key
+        return match.replace(`.${oldParts.key}`, `.${replacementKey}`)
+      })
 
-  // JSX i18nKey attribute (handles all quote types)
-  const jsxPatterns = [
-    { orig: oldParts.fullKey, regex: new RegExp(`i18nKey=(['"\`])${escapeRegex(oldParts.fullKey)}\\1`, 'g') },
-    { orig: oldParts.key, regex: new RegExp(`i18nKey=(['"\`])${escapeRegex(oldParts.key)}\\1`, 'g') }
-  ]
-  for (const p of jsxPatterns) {
-    newCode = newCode.replace(p.regex, (match, q) => {
-      changes++
-      const nsSepStr = nsSeparator === false ? ':' : nsSeparator
-      const replacement = (p.orig === oldParts.fullKey && oldParts.fullKey.includes(nsSepStr)) ? newParts.fullKey : newParts.key
-      return `i18nKey=${q}${replacement}${q}`
-    })
+      const bracketRegex = new RegExp(`${prefix}\\s*\\(\\s*\\(?\\s*([a-zA-Z_$][\\w$]*)\\s*\\)?\\s*=>\\s*\\1\\s*\\[\\s*(['"\`])${escapeRegex(oldParts.key)}\\2\\s*\\]\\s*\\)`, 'g')
+      newCode = newCode.replace(bracketRegex, (match) => {
+        changes++
+        const replacementKey = newParts.key
+        if (/^[A-Za-z_$][\w$]*$/.test(replacementKey)) {
+          return match.replace(new RegExp(`\\[\\s*['"\`]${escapeRegex(oldParts.key)}['"\`]\\s*\\]`), `.${replacementKey}`)
+        } else {
+          return match.replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `$1${replacementKey}$1`)
+        }
+      })
+    }
+
+    // 5) Replace bare calls WITHOUT an options object: fn('key') -> fn('newKey')
+    //    We purposely only match when the string is directly followed by the closing paren (no comma/options).
+    {
+      const regexKeyNoOptions = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*\\)`, 'g')
+      newCode = newCode.replace(regexKeyNoOptions, (match, q) => {
+        changes++
+        const replacementKey = newParts.key
+        return match.replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `${q}${replacementKey}${q}`)
+      })
+    }
+
+    // 6) Handle the case where we have fn('key', /*no ns*/ { otherProps }) and we are moving
+    //    from defaultNS to another namespace: add ns when appropriate.
+    // This block is only relevant when moving FROM defaultNS (add ns option). Only perform it
+    // if the old key exists in the old namespace (if we tracked one).
+    if (
+      oldParts.namespace && newParts.namespace &&
+      oldParts.namespace !== newParts.namespace &&
+      config.extract.defaultNS === oldParts.namespace &&
+      hasKeyInNamespace(oldParts.namespace)
+    ) {
+      const regexKeyWithParen = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*\\)`, 'g')
+      newCode = newCode.replace(regexKeyWithParen, (match, quote) => {
+        changes++
+        return match.replace(
+          new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1\\s*\\)`),
+          `${quote}${newParts.key}${quote}, { ns: '${newParts.namespace}' })`
+        )
+      })
+    }
+
+    // 7) JSX i18nKey attribute (handles both fullKey and key)
+    const jsxPatterns = [
+      { orig: oldParts.fullKey, regex: new RegExp(`i18nKey=(['"\`])${escapeRegex(oldParts.fullKey)}\\1`, 'g') },
+      { orig: oldParts.key, regex: new RegExp(`i18nKey=(['"\`])${escapeRegex(oldParts.key)}\\1`, 'g') }
+    ]
+    for (const p of jsxPatterns) {
+      newCode = newCode.replace(p.regex, (match, q) => {
+        changes++
+        const nsSepStr = nsSeparator === false ? ':' : nsSeparator
+        const replacement = (p.orig === oldParts.fullKey && oldParts.fullKey.includes(nsSepStr)) ? newParts.fullKey : newParts.key
+        return `i18nKey=${q}${replacement}${q}`
+      })
+    }
   }
 
   return { newCode, changes }

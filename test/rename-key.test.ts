@@ -718,6 +718,65 @@ const d = t(\`old.key\`)`
       expect(updatedCode).not.toContain("t('key', { ns: 'ns2' })")
     })
 
+    it('should update t("key", { ns: "ns2" }) to t("key2") when renaming ns2:key to key2', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          nsSeparator: ':',
+          defaultNS: 'ns1'
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('key', { ns: 'ns2' })\n")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/ns2.json'),
+        JSON.stringify({ key: 'Value' })
+      )
+      await writeFile(
+        join(testDir, 'locales/en/ns1.json'),
+        JSON.stringify({})
+      )
+
+      const result = await runRenameKey(config, 'ns2:key', 'key2')
+      expect(result.success).toBe(true)
+      const updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      expect(updatedCode).toContain("t('key2')")
+      expect(updatedCode).not.toContain("t('key', { ns: 'ns2' })")
+      expect(updatedCode).not.toContain("t('key2', { ns: 'ns2' })")
+    })
+
+    it('should not update t("key", { ns: "ns2" }) since no ns1:key exists', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          nsSeparator: ':',
+          defaultNS: 'ns1'
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('key', { ns: 'ns2' })\n")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/ns2.json'),
+        JSON.stringify({ key: 'Value' })
+      )
+      await writeFile(
+        join(testDir, 'locales/en/ns1.json'),
+        JSON.stringify({})
+      )
+
+      const result = await runRenameKey(config, 'key', 'key2')
+      expect(result.success).toBe(true)
+      const updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      expect(updatedCode).not.toContain("t('key2', { ns: 'ns2' })")
+      expect(updatedCode).toContain("t('key', { ns: 'ns2' })")
+    })
+
     it('should update t("key", { ns: "ns1" }) to t("key", { ns: "ns2" })', async () => {
       const config = {
         locales: ['en'],
