@@ -726,4 +726,38 @@ const d = t(\`old.key\`)`
       expect(ns2.move.key).toBe('Value')
     })
   })
+
+  it('should update t("key") to t("key", { ns: "ns2" }) when moving from defaultNS', async () => {
+    const config = {
+      locales: ['en'],
+      extract: {
+        input: [join(testDir, '*.ts')],
+        output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+        nsSeparator: ':',
+        defaultNS: 'ns1'
+      }
+    }
+
+    await writeFile(join(testDir, 'test.ts'), "t('move.key')\n")
+    await mkdir(join(testDir, 'locales/en'), { recursive: true })
+    await writeFile(
+      join(testDir, 'locales/en/ns1.json'),
+      JSON.stringify({ move: { key: 'Value' } })
+    )
+    await writeFile(
+      join(testDir, 'locales/en/ns2.json'),
+      JSON.stringify({})
+    )
+
+    const result = await runRenameKey(config, 'ns1:move.key', 'ns2:move.key')
+
+    expect(result.success).toBe(true)
+    const updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+    expect(updatedCode).toContain("t('move.key', { ns: 'ns2' })")
+    // Confirm translation file update
+    const ns2 = JSON.parse(
+      await readFile(join(testDir, 'locales/en/ns2.json'), 'utf-8')
+    )
+    expect(ns2.move.key).toBe('Value')
+  })
 })

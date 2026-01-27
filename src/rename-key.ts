@@ -288,6 +288,26 @@ function replaceKeyWithRegex (
       const replacementKey = newParts.key
       return match.replace(new RegExp(escapeRegex(oldParts.key)), replacementKey)
     })
+    // Then match bare key (no namespace in source)
+    // If moving from defaultNS to another, and call is t('key') with no options, add ns option
+    const regexKeyWithParen = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*\\)`, 'g')
+    newCode = newCode.replace(regexKeyWithParen, (match, quote) => {
+      if (
+        oldParts.namespace && newParts.namespace &&
+        oldParts.namespace !== newParts.namespace &&
+        config.extract.defaultNS === oldParts.namespace
+      ) {
+        changes++
+        return match.replace(
+          new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1\\s*\\)`),
+          `${quote}${newParts.key}${quote}, { ns: '${newParts.namespace}' })`
+        )
+      } else {
+        changes++
+        const replacementKey = newParts.key
+        return match.replace(new RegExp(escapeRegex(oldParts.key)), replacementKey)
+      }
+    })
 
     // Handle ns option in options object: fn('key', { ns: 'oldNs', ... })
     if (oldParts.namespace && newParts.namespace && oldParts.namespace !== newParts.namespace) {
