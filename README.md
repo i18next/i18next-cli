@@ -33,7 +33,7 @@ A unified, high-performance i18next CLI toolchain, powered by SWC.
 
 ## Features
 
-- **Key Extraction**: Extract translation keys from JavaScript/TypeScript files with advanced AST analysis.
+- **Key Extraction**: Extraction means automatically finding and collecting all translation keys used in your source code (JavaScript/TypeScript, etc.) by analyzing the code's structure (AST). This ensures every string that needs translation is identified and included in your translation files, reducing manual work and preventing missing keys.
 - **Type Safety**: Generate TypeScript definitions for full autocomplete and type safety.
 - **Locale Synchronization**: Keep all language files in sync with your primary language.
 - **Accurate Code Linting**: Detect hardcoded strings with high precision and configurable rules.
