@@ -302,12 +302,50 @@ function replaceKeyWithRegex (
           new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1\\s*\\)`),
           `${quote}${newParts.key}${quote}, { ns: '${newParts.namespace}' })`
         )
+      } else if (
+        oldParts.namespace && newParts.namespace &&
+        oldParts.namespace !== newParts.namespace &&
+        config.extract.defaultNS === newParts.namespace
+      ) {
+        // If moving from a namespaced key to defaultNS, update t('key', { ns: 'oldNs' }) to t('key')
+        // Remove the ns option if it matches the defaultNS
+        // This is handled below in the ns option replacement
+        // But also handle t('key', { ns: 'defaultNS' }) -> t('key')
+        // See below for explicit ns option removal
+        // No action here, handled below
+        return match
       } else {
         changes++
         const replacementKey = newParts.key
         return match.replace(new RegExp(escapeRegex(oldParts.key)), replacementKey)
       }
     })
+
+    // Remove ns option if moving to defaultNS
+    if (
+      oldParts.namespace && newParts.namespace &&
+      oldParts.namespace !== newParts.namespace &&
+      config.extract.defaultNS === newParts.namespace
+    ) {
+      // t('key', { ns: 'oldNs' }) -> t('key')
+      const nsRegexToDefault = new RegExp(
+        `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*,\\s*\\{([^}]*)\\bns\\s*:\\s*(['"\`])${escapeRegex(oldParts.namespace)}\\3([^}]*)\\}\\s*\\)`,
+        'g'
+      )
+      newCode = newCode.replace(nsRegexToDefault, (match, keyQ, beforeNs, nsQ, afterNs) => {
+        changes++
+        // Remove the ns property and any trailing comma if present
+        // Remove possible preceding/trailing commas and whitespace
+        let obj = beforeNs + afterNs
+        obj = obj.replace(/,?\s*$/, '')
+        obj = obj.replace(/^\s*,?/, '')
+        if (obj.trim()) {
+          return `${prefix}(${keyQ}${newParts.key}${keyQ}, {${obj}})`
+        } else {
+          return `${prefix}(${keyQ}${newParts.key}${keyQ})`
+        }
+      })
+    }
 
     // Handle ns option in options object: fn('key', { ns: 'oldNs', ... })
     if (oldParts.namespace && newParts.namespace && oldParts.namespace !== newParts.namespace) {

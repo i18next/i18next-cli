@@ -725,6 +725,48 @@ const d = t(\`old.key\`)`
       )
       expect(ns2.move.key).toBe('Value')
     })
+
+    it('should not update t("ns1:key") when renaming "key" to "ns2:key" and back', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          nsSeparator: ':',
+          defaultNS: 'ns1'
+        }
+      }
+
+      // Create a source file with t('ns1:key') and t('key')
+      await writeFile(join(testDir, 'test.ts'), "t('ns1:key')\nt('key')\n")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/ns1.json'),
+        JSON.stringify({ key: 'Value' })
+      )
+      await writeFile(
+        join(testDir, 'locales/en/ns2.json'),
+        JSON.stringify({})
+      )
+
+      // Rename 'key' to 'ns2:key'
+      const result1 = await runRenameKey(config, 'key', 'ns2:key')
+      expect(result1.success).toBe(true)
+      let updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      // t('ns1:key') should NOT be changed
+      expect(updatedCode).toContain("t('ns1:key')")
+      // t('key') should be updated to t('key', { ns: 'ns2' })
+      expect(updatedCode).toContain("t('key', { ns: 'ns2' })")
+
+      // Now rename 'ns2:key' back to 'key'
+      const result2 = await runRenameKey(config, 'ns2:key', 'key')
+      expect(result2.success).toBe(true)
+      updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      // t('ns1:key') should still NOT be changed
+      expect(updatedCode).toContain("t('ns1:key')")
+      // t('key', { ns: 'ns2' }) should be updated back to t('key')
+      expect(updatedCode).toContain("t('key')")
+    })
   })
 
   it('should update t("key") to t("key", { ns: "ns2" }) when moving from defaultNS', async () => {
@@ -759,5 +801,128 @@ const d = t(\`old.key\`)`
       await readFile(join(testDir, 'locales/en/ns2.json'), 'utf-8')
     )
     expect(ns2.move.key).toBe('Value')
+  })
+
+  it('should not update t("ns1:key") when renaming "key" to "ns2:key" and back', async () => {
+    const config = {
+      locales: ['en'],
+      extract: {
+        input: [join(testDir, '*.ts')],
+        output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+        nsSeparator: ':',
+        defaultNS: 'ns1'
+      }
+    }
+
+    // Create a source file with t('ns1:key') and t('key')
+    await writeFile(join(testDir, 'test.ts'), "t('ns1:key')\nt('key')\n")
+    await mkdir(join(testDir, 'locales/en'), { recursive: true })
+    await writeFile(
+      join(testDir, 'locales/en/ns1.json'),
+      JSON.stringify({ key: 'Value' })
+    )
+    await writeFile(
+      join(testDir, 'locales/en/ns2.json'),
+      JSON.stringify({})
+    )
+
+    // Rename 'key' to 'ns2:key'
+    const result1 = await runRenameKey(config, 'key', 'ns2:key')
+    expect(result1.success).toBe(true)
+    let updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+    // t('ns1:key') should NOT be changed
+    expect(updatedCode).toContain("t('ns1:key')")
+    // t('key') should be updated to t('key', { ns: 'ns2' })
+    expect(updatedCode).toContain("t('key', { ns: 'ns2' })")
+
+    // Now rename 'ns2:key' back to 'key'
+    const result2 = await runRenameKey(config, 'ns2:key', 'key')
+    expect(result2.success).toBe(true)
+    updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+    // t('ns1:key') should still NOT be changed
+    expect(updatedCode).toContain("t('ns1:key')")
+    // t('key', { ns: 'ns2' }) should be updated back to t('key')
+    expect(updatedCode).toContain("t('key')")
+  })
+
+  it('should update t("key", { ns: "ns1" }) to t("key", { ns: "ns2" })', async () => {
+    const config = {
+      locales: ['en'],
+      extract: {
+        input: [join(testDir, '*.ts')],
+        output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+        nsSeparator: ':'
+      }
+    }
+
+    await writeFile(join(testDir, 'test.ts'), [
+      "t('move.key', { ns: 'ns1' })",
+      "t('move.key', { ns: \"ns1\" })",
+      "t('move.key', { ns: `ns1` })"
+    ].join('\n'))
+    await mkdir(join(testDir, 'locales/en'), { recursive: true })
+    await writeFile(
+      join(testDir, 'locales/en/ns1.json'),
+      JSON.stringify({ move: { key: 'Value' } })
+    )
+    await writeFile(
+      join(testDir, 'locales/en/ns2.json'),
+      JSON.stringify({})
+    )
+
+    const result = await runRenameKey(config, 'ns1:move.key', 'ns2:move.key')
+
+    expect(result.success).toBe(true)
+    const updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+    expect(updatedCode).toContain("t('move.key', { ns: 'ns2' })")
+    expect(updatedCode).toContain("t('move.key', { ns: \"ns2\" })")
+    expect(updatedCode).toContain("t('move.key', { ns: `ns2` })")
+    // Confirm translation file update
+    const ns2 = JSON.parse(
+      await readFile(join(testDir, 'locales/en/ns2.json'), 'utf-8')
+    )
+    expect(ns2.move.key).toBe('Value')
+  })
+
+  it('should not update t("ns1:key") when renaming "key" to "ns2:key" and back', async () => {
+    const config = {
+      locales: ['en'],
+      extract: {
+        input: [join(testDir, '*.ts')],
+        output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+        nsSeparator: ':',
+        defaultNS: 'ns1'
+      }
+    }
+
+    // Create a source file with t('ns1:key') and t('key')
+    await writeFile(join(testDir, 'test.ts'), "t('ns1:key')\nt('key')\n")
+    await mkdir(join(testDir, 'locales/en'), { recursive: true })
+    await writeFile(
+      join(testDir, 'locales/en/ns1.json'),
+      JSON.stringify({ key: 'Value' })
+    )
+    await writeFile(
+      join(testDir, 'locales/en/ns2.json'),
+      JSON.stringify({})
+    )
+
+    // Rename 'key' to 'ns2:key'
+    const result1 = await runRenameKey(config, 'key', 'ns2:key')
+    expect(result1.success).toBe(true)
+    let updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+    // t('ns1:key') should NOT be changed
+    expect(updatedCode).toContain("t('ns1:key')")
+    // t('key') should be updated to t('key', { ns: 'ns2' })
+    expect(updatedCode).toContain("t('key', { ns: 'ns2' })")
+
+    // Now rename 'ns2:key' back to 'key'
+    const result2 = await runRenameKey(config, 'ns2:key', 'key')
+    expect(result2.success).toBe(true)
+    updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+    // t('ns1:key') should still NOT be changed
+    expect(updatedCode).toContain("t('ns1:key')")
+    // t('key', { ns: 'ns2' }) should be updated back to t('key')
+    expect(updatedCode).toContain("t('key')")
   })
 })
