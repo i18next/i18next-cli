@@ -397,35 +397,67 @@ async function updateTranslationFiles (
   const keySeparator = config.extract.keySeparator ?? '.'
 
   for (const locale of config.locales) {
-    const outputPath = getOutputPath(config.extract.output, locale, oldParts.namespace)
-    const fullPath = resolve(process.cwd(), outputPath)
+    const oldOutputPath = getOutputPath(config.extract.output, locale, oldParts.namespace)
+    const oldFullPath = resolve(process.cwd(), oldOutputPath)
+    const newOutputPath = getOutputPath(config.extract.output, locale, newParts.namespace)
+    const newFullPath = resolve(process.cwd(), newOutputPath)
+
+    let oldTranslations: any
+    let newTranslations: any
 
     try {
-      const translations = await loadTranslationFile(fullPath)
-      if (!translations) continue
+      oldTranslations = await loadTranslationFile(oldFullPath)
+    } catch {}
+    if (!oldTranslations) continue
 
-      const oldValue = getNestedValue(translations, oldParts.key, keySeparator)
-      if (oldValue === undefined) continue
+    const oldValue = getNestedValue(oldTranslations, oldParts.key, keySeparator)
+    if (oldValue === undefined) continue
 
-      // Remove old key
-      deleteNestedValue(translations, oldParts.key, keySeparator)
-
-      // Add new key with same value
-      setNestedValue(translations, newParts.key, oldValue, keySeparator)
-
+    if (oldParts.namespace === newParts.namespace) {
+      // Rename within the same namespace
+      deleteNestedValue(oldTranslations, oldParts.key, keySeparator)
+      setNestedValue(oldTranslations, newParts.key, oldValue, keySeparator)
       if (!dryRun) {
         const content = serializeTranslationFile(
-          translations,
+          oldTranslations,
           config.extract.outputFormat,
           config.extract.indentation
         )
-        await writeFile(fullPath, content, 'utf-8')
+        await writeFile(oldFullPath, content, 'utf-8')
       }
+      results.push({ path: oldFullPath, updated: true })
+      logger.info(`   ${dryRun ? '(dry-run) ' : ''}✓ ${oldFullPath}`)
+    } else {
+      // Move across namespaces
+      // Remove from old namespace
+      deleteNestedValue(oldTranslations, oldParts.key, keySeparator)
+      if (!dryRun) {
+        const content = serializeTranslationFile(
+          oldTranslations,
+          config.extract.outputFormat,
+          config.extract.indentation
+        )
+        await writeFile(oldFullPath, content, 'utf-8')
+      }
+      results.push({ path: oldFullPath, updated: true })
+      logger.info(`   ${dryRun ? '(dry-run) ' : ''}✓ ${oldFullPath}`)
 
-      results.push({ path: fullPath, updated: true })
-      logger.info(`   ${dryRun ? '(dry-run) ' : ''}✓ ${fullPath}`)
-    } catch (error) {
-      // File doesn't exist or couldn't be processed
+      // Add to new namespace
+      try {
+        newTranslations = await loadTranslationFile(newFullPath)
+      } catch {}
+      if (!newTranslations) newTranslations = {}
+      setNestedValue(newTranslations, newParts.key, oldValue, keySeparator)
+      if (!dryRun) {
+        const content = serializeTranslationFile(
+          newTranslations,
+          config.extract.outputFormat,
+          config.extract.indentation
+        )
+        await writeFile(newFullPath, content, 'utf-8')
+      }
+      results.push({ path: newFullPath, updated: true })
+      logger.info(`   ${dryRun ? '(dry-run) ' : ''}✓ ${newFullPath}`)
     }
   }
 
@@ -442,10 +474,18 @@ function deleteNestedValue (obj: any, path: string, separator: string | boolean)
     return
   }
   const keys = path.split(String(separator))
-  let current = obj
-  for (let i = 0; i < keys.length - 1; i++) {
-    if (!current[keys[i]]) return
-    current = current[keys[i]]
+  function _delete (current: any, idx: number): boolean {
+    const key = keys[idx]
+    if (idx === keys.length - 1) {
+      delete current[key]
+    } else if (current[key]) {
+      const shouldDelete = _delete(current[key], idx + 1)
+      if (shouldDelete) {
+        delete current[key]
+      }
+    }
+    // Return true if current is now empty
+    return typeof current === 'object' && current !== null && Object.keys(current).length === 0
   }
-  delete current[keys[keys.length - 1]]
+  _delete(obj, 0)
 }

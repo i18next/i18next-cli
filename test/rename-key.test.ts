@@ -590,4 +590,99 @@ const d = t(\`old.key\`)`
       expect(updatedTranslation['Old Key']).toBeUndefined()
     })
   })
+
+  describe('namespace migration', () => {
+    it('should move a key from one namespace to another', async () => {
+      const config = {
+        locales: ['en', 'de'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          nsSeparator: ':'
+        }
+      }
+
+      // Create a source file using the old namespace
+      await writeFile(join(testDir, 'test.ts'), "t('ns1:move.key')")
+      // Create translation files for both namespaces and locales
+      for (const locale of ['en', 'de']) {
+        await mkdir(join(testDir, `locales/${locale}`), { recursive: true })
+        await writeFile(
+          join(testDir, `locales/${locale}/ns1.json`),
+          JSON.stringify({ move: { key: `Value in ${locale}` } })
+        )
+        await writeFile(
+          join(testDir, `locales/${locale}/ns2.json`),
+          JSON.stringify({})
+        )
+      }
+
+      const result = await runRenameKey(config, 'ns1:move.key', 'ns2:move.key')
+
+      expect(result.success).toBe(true)
+      // Source file should be updated
+      const updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      expect(updatedCode).toContain("t('ns2:move.key')")
+      // Old key should be removed from ns1.json, new key should be in ns2.json
+      for (const locale of ['en', 'de']) {
+        const ns1 = JSON.parse(
+          await readFile(join(testDir, `locales/${locale}/ns1.json`), 'utf-8')
+        )
+        const ns2 = JSON.parse(
+          await readFile(join(testDir, `locales/${locale}/ns2.json`), 'utf-8')
+        )
+        expect(ns1.move?.key).toBeUndefined()
+        expect(ns2.move.key).toBe(`Value in ${locale}`)
+      }
+    })
+  })
+
+  describe('namespace migration', () => {
+    it('should move a key from one namespace to another', async () => {
+      const config = {
+        locales: ['en', 'de'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          nsSeparator: ':'
+        }
+      }
+
+      // Create a source file using the old namespace
+      await writeFile(join(testDir, 'test.ts'), "t('ns1:move.key')")
+      // Create translation files for both namespaces and locales
+      for (const locale of ['en', 'de']) {
+        await mkdir(join(testDir, `locales/${locale}`), { recursive: true })
+        await writeFile(
+          join(testDir, `locales/${locale}/ns1.json`),
+          JSON.stringify({ move: { key: `Value in ${locale}` }, another: { keyHere: 'here' } })
+        )
+        await writeFile(
+          join(testDir, `locales/${locale}/ns2.json`),
+          JSON.stringify({ existing: { stuff: 'there' } })
+        )
+      }
+
+      const result = await runRenameKey(config, 'ns1:move.key', 'ns2:move.key')
+
+      expect(result.success).toBe(true)
+      // Source file should be updated
+      const updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      expect(updatedCode).toContain("t('ns2:move.key')")
+      // Old key should be removed from ns1.json, new key should be in ns2.json
+      for (const locale of ['en', 'de']) {
+        const ns1 = JSON.parse(
+          await readFile(join(testDir, `locales/${locale}/ns1.json`), 'utf-8')
+        )
+        const ns2 = JSON.parse(
+          await readFile(join(testDir, `locales/${locale}/ns2.json`), 'utf-8')
+        )
+        expect(ns1.another.keyHere).toBe('here')
+        expect(ns1.move?.key).toBeUndefined()
+        expect(ns1.move).toBeUndefined() // because empty
+        expect(ns2.move.key).toBe(`Value in ${locale}`)
+        expect(ns2.existing.stuff).toBe('there')
+      }
+    })
+  })
 })
