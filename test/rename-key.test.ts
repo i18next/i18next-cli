@@ -1017,6 +1017,45 @@ const d = t(\`old.key\`)`
   })
 
   describe('simultaneous key and namespace changes', () => {
+    it('should NOT update t("key") when renaming ns2:key to key2 or ns1:key2', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          nsSeparator: ':',
+          defaultNS: 'ns1'
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('key')\n")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/ns2.json'),
+        JSON.stringify({ key: 'Value' })
+      )
+      await writeFile(
+        join(testDir, 'locales/en/ns1.json'),
+        JSON.stringify({})
+      )
+
+      // Rename ns2:key to key2
+      const result1 = await runRenameKey(config, 'ns2:key', 'key2')
+      expect(result1.success).toBe(true)
+      let updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      // Should NOT be updated
+      expect(updatedCode).toContain("t('key')")
+      expect(updatedCode).not.toContain("t('key2')")
+
+      // Rename ns2:key to ns1:key2
+      const result2 = await runRenameKey(config, 'ns2:key', 'ns1:key2')
+      expect(result2.success).toBe(true)
+      updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      // Should still NOT be updated
+      expect(updatedCode).toContain("t('key')")
+      expect(updatedCode).not.toContain("t('key2')")
+    })
+
     it('should update t("key") to t("key2", { ns: "ns2" }) when renaming key to ns2:key2', async () => {
       const config = {
         locales: ['en'],

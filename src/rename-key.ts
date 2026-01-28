@@ -66,13 +66,21 @@ export async function runRenameKey (
   // Check for conflicts in translation files
   const conflicts = await checkConflicts(newParts, config)
   if (conflicts.length > 0) {
-    return {
-      success: false,
-      sourceFiles: [],
-      translationFiles: [],
-      conflicts,
-      error: 'Target key already exists in translation files'
+    // If the old key doesn't exist in any translation file, treat this as a
+    // no-op (allow the command to succeed). This mirrors previous behavior
+    // where renaming a missing key doesn't fail just because the target
+    // already exists (it avoids blocking repeated/no-op renames).
+    const oldExists = await checkOldKeyExists(parseKeyWithNamespace(oldKey, config), config)
+    if (oldExists) {
+      return {
+        success: false,
+        sourceFiles: [],
+        translationFiles: [],
+        conflicts,
+        error: 'Target key already exists in translation files'
+      }
     }
+    // otherwise: old key not present -> continue (no-op)
   }
 
   // Build a quick map of which namespaces contain which keys (union across locales).
@@ -190,6 +198,27 @@ async function checkConflicts (newParts: KeyParts, config: I18nextToolkitConfig)
   }
 
   return conflicts
+}
+
+async function checkOldKeyExists (oldParts: KeyParts, config: I18nextToolkitConfig): Promise<boolean> {
+  const keySeparator = config.extract.keySeparator ?? '.'
+
+  for (const locale of config.locales) {
+    const outputPath = getOutputPath(config.extract.output, locale, oldParts.namespace)
+    const fullPath = resolve(process.cwd(), outputPath)
+
+    try {
+      const translations = await loadTranslationFile(fullPath)
+      if (translations) {
+        const val = getNestedValue(translations, oldParts.key, keySeparator)
+        if (val !== undefined) return true
+      }
+    } catch {
+      // file missing — continue to next locale
+    }
+  }
+
+  return false
 }
 
 async function buildNamespaceKeyMap (config: I18nextToolkitConfig): Promise<Map<string, Set<string>>> {
@@ -469,14 +498,22 @@ function replaceKeyWithRegex (
 
     //
     // 6) Bare calls without options: fn('key') -> fn('newKey')
+    //    Apply this replacement only when the old key's namespace is the
+    //    *effective* default namespace (config.extract.defaultNS ?? 'translation').
+    //    This preserves previous behaviour: default-namespace bare-calls are
+    //    considered "key form" and should be rewritten even when the translation
+    //    file exists but the specific key isn't present.
     //
     {
-      const regexKeyNoOptions = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*\\)`, 'g')
-      newCode = newCode.replace(regexKeyNoOptions, (match, q) => {
-        changes++
-        const replacementKey = newParts.key
-        return match.replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `${q}${replacementKey}${q}`)
-      })
+      const effectiveDefaultNS = config.extract.defaultNS ?? 'translation'
+      if (oldParts.namespace === effectiveDefaultNS) {
+        const regexKeyNoOptions = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*\\)`, 'g')
+        newCode = newCode.replace(regexKeyNoOptions, (match, q) => {
+          changes++
+          const replacementKey = newParts.key
+          return match.replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `${q}${replacementKey}${q}`)
+        })
+      }
     }
 
     //
