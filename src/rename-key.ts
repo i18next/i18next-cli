@@ -453,7 +453,11 @@ function replaceKeyWithRegex (
     // is changing. If only the namespace is changing but the key name stays
     // identical (e.g. `key` -> `ns2:key`) we should NOT rewrite explicit
     // `t('ns1:key')` occurrences — keep their explicit namespace intact.
-    if (oldParts.namespace && newParts.key !== oldParts.key) {
+    // Only consider replacing explicit `ns:key` literals when the CLI was
+    // invoked with a bare key (no explicit namespace). If the user supplied
+    // an explicit old namespace (oldParts.explicitNamespace === true),
+    // handle that case in the fullKey branch below instead.
+    if (oldParts.namespace && !oldParts.explicitNamespace && newParts.key !== oldParts.key) {
       // ensure ns separator is a string for regex building (default ':')
       const nsSepStr = nsSeparator === false ? ':' : String(nsSeparator)
       const prefixed = `${escapeRegex(String(oldParts.namespace))}${escapeRegex(nsSepStr)}${escapeRegex(oldParts.key)}`
