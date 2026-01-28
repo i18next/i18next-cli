@@ -1015,4 +1015,107 @@ const d = t(\`old.key\`)`
     // t('key', { ns: 'ns2' }) should be updated back to t('key')
     expect(updatedCode).toContain("t('key')")
   })
+
+  describe('simultaneous key and namespace changes', () => {
+    it('should update t("key") to t("key2", { ns: "ns2" }) when renaming key to ns2:key2', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          nsSeparator: ':',
+          defaultNS: 'ns1'
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('key')\n")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/ns1.json'),
+        JSON.stringify({ key: 'Value' })
+      )
+      await writeFile(
+        join(testDir, 'locales/en/ns2.json'),
+        JSON.stringify({})
+      )
+
+      const result = await runRenameKey(config, 'key', 'ns2:key2')
+      expect(result.success).toBe(true)
+      const updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      // Should be exactly t('key2', { ns: 'ns2' })
+      expect(updatedCode).toContain("t('key2', { ns: 'ns2' })")
+      expect(updatedCode).not.toContain("t('key')")
+      // Confirm translation file update
+      const ns2 = JSON.parse(
+        await readFile(join(testDir, 'locales/en/ns2.json'), 'utf-8')
+      )
+      expect(ns2.key2).toBe('Value')
+    })
+
+    it('should update t("key", { ns: "ns1" }) to t("key2", { ns: "ns2" }) when renaming key to ns2:key2', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          nsSeparator: ':',
+          defaultNS: 'ns1'
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('key', { ns: 'ns1' })\n")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/ns1.json'),
+        JSON.stringify({ key: 'Value' })
+      )
+      await writeFile(
+        join(testDir, 'locales/en/ns2.json'),
+        JSON.stringify({})
+      )
+
+      const result = await runRenameKey(config, 'key', 'ns2:key2')
+      expect(result.success).toBe(true)
+      const updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      // Should be exactly t('key2', { ns: 'ns2' })
+      expect(updatedCode).toContain("t('key2', { ns: 'ns2' })")
+      expect(updatedCode).not.toContain("t('key', { ns: 'ns1' })")
+      // Confirm translation file update
+      const ns2 = JSON.parse(
+        await readFile(join(testDir, 'locales/en/ns2.json'), 'utf-8')
+      )
+      expect(ns2.key2).toBe('Value')
+    })
+
+    it('should update t("key", { ns: "ns1" }) to t("key2", { ns: "ns1" }) when renaming ns1:key to ns1:key2', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          nsSeparator: ':',
+          defaultNS: 'ns1'
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('key', { ns: 'ns1' })\n")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/ns1.json'),
+        JSON.stringify({ key: 'Value' })
+      )
+
+      const result = await runRenameKey(config, 'ns1:key', 'ns1:key2')
+      expect(result.success).toBe(true)
+      const updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      // Should be exactly t('key2', { ns: 'ns1' })
+      expect(updatedCode).toContain("t('key2', { ns: 'ns1' })")
+      expect(updatedCode).not.toContain("t('key', { ns: 'ns1' })")
+      // Confirm translation file update
+      const ns1 = JSON.parse(
+        await readFile(join(testDir, 'locales/en/ns1.json'), 'utf-8')
+      )
+      expect(ns1.key2).toBe('Value')
+    })
+  })
 })
