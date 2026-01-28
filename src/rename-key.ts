@@ -441,36 +441,33 @@ function replaceKeyWithRegex (
       })
     }
 
-    //
     // 3a) Replace occurrences where the call uses an explicitly namespaced string
     //     literal like t('ns:key') while the CLI rename was invoked with the
-    //     key without namespace (oldKey='key'). Example: defaultNS = 'ns1',
-    //     source contains t('ns1:key'), and user called runRenameKey('key', 'key2').
-    //     We should update 'ns1:key' -> 'ns1:key2' or to a new namespace if the
-    //     target includes an explicit namespace.
+    //     key without namespace (oldKey='key').
     //
-    // Only update explicit "ns:oldKey" string literals when the key name itself
-    // is changing. If only the namespace is changing but the key name stays
-    // identical (e.g. `key` -> `ns2:key`) we should NOT rewrite explicit
-    // `t('ns1:key')` occurrences — keep their explicit namespace intact.
-    // Only consider replacing explicit `ns:key` literals when the CLI was
-    // invoked with a bare key (no explicit namespace). If the user supplied
-    // an explicit old namespace (oldParts.explicitNamespace === true),
-    // handle that case in the fullKey branch below instead.
-    if (oldParts.namespace && !oldParts.explicitNamespace && newParts.key !== oldParts.key) {
-      // ensure ns separator is a string for regex building (default ':')
-      const nsSepStr = nsSeparator === false ? ':' : String(nsSeparator)
-      const prefixed = `${escapeRegex(String(oldParts.namespace))}${escapeRegex(nsSepStr)}${escapeRegex(oldParts.key)}`
-      const regexPrefixed = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${prefixed}\\1`, 'g')
-      newCode = newCode.replace(regexPrefixed, (match) => {
-        changes++
-        // determine replacement: if newParts is explicitly namespaced, use fullKey;
-        // otherwise keep the original namespace but swap the key.
-        const replacement = newParts.explicitNamespace
-          ? newParts.fullKey
-          : `${oldParts.namespace}${nsSepStr}${newParts.key}`
-        return match.replace(`${oldParts.namespace}${nsSepStr}${oldParts.key}`, replacement)
-      })
+    // Run this when the CLI was given a bare key and either the key OR the namespace
+    // is changing. However, if the file contains a bare usage of the key (e.g.
+    // t('key')), we must NOT touch explicit ns:key occurrences — leave them alone.
+    if (
+      oldParts.namespace &&
+      !oldParts.explicitNamespace &&
+      (newParts.key !== oldParts.key || newParts.namespace !== oldParts.namespace)
+    ) {
+      // If the current file contains a bare usage of the old key, skip changing explicit ns:key.
+      const bareUsageRegex = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1`, 'g')
+      if (!bareUsageRegex.test(code)) {
+        const nsSepStr = nsSeparator === false ? ':' : String(nsSeparator)
+        const prefixed = `${escapeRegex(String(oldParts.namespace))}${escapeRegex(nsSepStr)}${escapeRegex(oldParts.key)}`
+        const regexPrefixed = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${prefixed}\\1`, 'g')
+
+        newCode = newCode.replace(regexPrefixed, (match) => {
+          changes++
+          const replacement = newParts.explicitNamespace
+            ? newParts.fullKey
+            : `${oldParts.namespace}${nsSepStr}${newParts.key}`
+          return match.replace(`${oldParts.namespace}${nsSepStr}${oldParts.key}`, replacement)
+        })
+      }
     }
 
     //
