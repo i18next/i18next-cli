@@ -508,6 +508,57 @@ function replaceKeyWithRegex (
     }
 
     //
+    // 4.5) Calls with an options object but without an `ns` property.
+    //      - When renaming inside the effective default namespace (key -> key2),
+    //        update t('key', { ... }) -> t('key2', { ... }).
+    //      - When moving FROM the default namespace to another namespace,
+    //        add the ns property into the options object: t('key', { ... })
+    //        -> t('key', { ..., ns: 'newNs' }).
+    //
+    {
+      const effectiveDefaultNS = config.extract.defaultNS ?? 'translation'
+
+      // 4.5a) Moving FROM defaultNS to another namespace: add ns to options object.
+      if (
+        oldParts.namespace && newParts.namespace &&
+        oldParts.namespace !== newParts.namespace &&
+        config.extract.defaultNS === oldParts.namespace &&
+        hasKeyInNamespace(oldParts.namespace)
+      ) {
+        const regexOptionsNoNs = new RegExp(
+          `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*,\\s*\\{([^}]*)\\}\\s*\\)`,
+          'g'
+        )
+        newCode = newCode.replace(regexOptionsNoNs, (match, q, objContents) => {
+          // If object already contains ns, skip (other branches handle it).
+          if (/\bns\s*:\s*['"`]/.test(objContents)) return match
+          changes++
+          const obj = objContents.replace(/,?\s*$/, '').trim()
+          const newObj = obj ? `${obj}, ns: '${newParts.namespace}'` : `ns: '${newParts.namespace}'`
+          // replace the key and the object contents (preserve spacing minimally)
+          return match
+            .replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `${q}${newParts.key}${q}`)
+            .replace(/\{\s*([^}]*)\s*\}/, `{ ${newObj} }`)
+        })
+      }
+
+      // 4.5b) Same-namespace rename where call already has options object (no ns):
+      //        t('key', { user: 'name' }) -> t('key2', { user: 'name' })
+      if (oldParts.namespace === newParts.namespace && oldParts.namespace === effectiveDefaultNS) {
+        const regexKeyWithOptions = new RegExp(
+          `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*,\\s*\\{([^}]*)\\}\\s*\\)`,
+          'g'
+        )
+        newCode = newCode.replace(regexKeyWithOptions, (match, q, objContents) => {
+          // don't touch objects that already explicitly set ns (handled elsewhere)
+          if (/\bns\s*:\s*['"`]/.test(objContents)) return match
+          changes++
+          return match.replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `${q}${newParts.key}${q}`)
+        })
+      }
+    }
+
+    //
     // 5) Special-case: moving FROM defaultNS to another namespace for bare calls.
     //    Add ns option for bare calls. This must happen *before* the plain bare-call replacement
     //    so the final call includes the ns option.

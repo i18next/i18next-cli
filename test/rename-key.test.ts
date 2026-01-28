@@ -1017,6 +1017,37 @@ const d = t(\`old.key\`)`
   })
 
   describe('simultaneous key and namespace changes', () => {
+    it('should update t("key", { user: "name" }) to t("key2", { user: "name" }) when renaming key to key2 (interpolation)', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          nsSeparator: ':',
+          defaultNS: 'ns1'
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('key', { user: 'name' })\n")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/ns1.json'),
+        JSON.stringify({ key: 'Value' })
+      )
+
+      const result = await runRenameKey(config, 'key', 'key2')
+      expect(result.success).toBe(true)
+      const updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      expect(updatedCode).toContain("t('key2', { user: 'name' })")
+      expect(updatedCode).not.toContain("t('key', { user: 'name' })")
+      // Confirm translation file update
+      const ns1 = JSON.parse(
+        await readFile(join(testDir, 'locales/en/ns1.json'), 'utf-8')
+      )
+      expect(ns1.key2).toBe('Value')
+      expect(ns1.key).toBeUndefined()
+    })
+
     it('should update t("ns2:key2") to t("key") when renaming ns2:key2 to key', async () => {
       const config = {
         locales: ['en'],
