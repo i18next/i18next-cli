@@ -91,10 +91,10 @@ export async function runRenameKey (
   logger.info(`🔍 Scanning for usages of "${oldKey}"...`)
 
   // Find and update source files
-  const sourceResults = await updateSourceFiles(oldParts, newParts, config, dryRun, logger, namespaceKeyMap)
+  const sourceResults = await updateSourceFiles(oldParts, newParts, config, dryRun, namespaceKeyMap, logger)
 
   // Update translation files
-  const translationResults = await updateTranslationFiles(oldParts, newParts, config, dryRun, logger)
+  const translationResults = await updateTranslationFiles(oldParts, newParts, config, dryRun, namespaceKeyMap, logger)
 
   const totalChanges = sourceResults.reduce((sum, r) => sum + r.changes, 0)
 
@@ -276,8 +276,8 @@ async function updateSourceFiles (
   newParts: KeyParts,
   config: I18nextToolkitConfig,
   dryRun: boolean,
-  logger: Logger,
-  namespaceKeyMap: Map<string, Set<string>>
+  namespaceKeyMap: Map<string, Set<string>>,
+  logger: Logger
 ): Promise<Array<{ path: string; changes: number }>> {
   const defaultIgnore = ['node_modules/**']
   const userIgnore = Array.isArray(config.extract.ignore)
@@ -358,7 +358,26 @@ function replaceKeyWithRegex (
   const hasKeyInNamespace = (ns?: string) => {
     if (!ns) return false
     const set = namespaceKeyMap.get(ns)
-    return !!(set && set.has(oldParts.key))
+    if (!set) return false
+
+    // exact key match
+    if (set.has(oldParts.key)) return true
+
+    // nested keys using keySeparator, e.g. "key.one", "key.other"
+    const keySeparator = config.extract.keySeparator ?? '.'
+    const nestedPrefix = `${oldParts.key}${String(keySeparator)}`
+    for (const s of set) {
+      if (s.startsWith(nestedPrefix)) return true
+    }
+
+    // flat plural keys like "key_one", "key_other"
+    const pluralSuffixes = ['zero', 'one', 'two', 'few', 'many', 'other']
+    const flatPluralRegex = new RegExp(`^${escapeRegex(oldParts.key)}_(${pluralSuffixes.join('|')})$`)
+    for (const s of set) {
+      if (flatPluralRegex.test(s)) return true
+    }
+
+    return false
   }
 
   for (const fnPattern of configuredFunctions) {
@@ -627,73 +646,208 @@ async function updateTranslationFiles (
   newParts: KeyParts,
   config: I18nextToolkitConfig,
   dryRun: boolean,
+  namespaceKeyMap: Map<string, Set<string>>,
   logger: Logger
 ): Promise<Array<{ path: string; updated: boolean }>> {
   const results: Array<{ path: string; updated: boolean }> = []
   const keySeparator = config.extract.keySeparator ?? '.'
 
+  // plural suffixes commonly used by i18next (for flat underscore style: key_one)
+  const pluralSuffixes = ['zero', 'one', 'two', 'few', 'many', 'other']
+
+  // Helper: determine whether a flattened key-set indicates presence of `baseKey`.
+  const namespaceHasKey = (set: Set<string> | undefined, baseKey: string): boolean => {
+    if (!set) return false
+    // exact key (for scalar or object)
+    if (set.has(baseKey)) return true
+
+    // nested keys using keySeparator, e.g. "key.one", "key.other"
+    const nestedPrefix = `${baseKey}${String(keySeparator)}`
+    for (const s of set) {
+      if (s.startsWith(nestedPrefix)) return true
+    }
+
+    // flat plural keys like "key_one", "key_other"
+    const flatPluralRegex = new RegExp(`^${escapeRegex(baseKey)}_(${pluralSuffixes.join('|')})$`)
+    for (const s of set) {
+      if (flatPluralRegex.test(s)) return true
+    }
+
+    return false
+  }
+
+  // Decide candidate namespaces to inspect:
+  // - If the old key was explicitly namespaced in the CLI (oldParts.explicitNamespace),
+  //   we only inspect that namespace.
+  // - Otherwise, inspect every namespace that appears to contain the key (from namespaceKeyMap).
+  const candidateNamespaces: string[] = []
+  if (oldParts.explicitNamespace && oldParts.namespace) {
+    candidateNamespaces.push(oldParts.namespace)
+  } else {
+    for (const [ns, set] of namespaceKeyMap.entries()) {
+      if (namespaceHasKey(set, oldParts.key)) candidateNamespaces.push(ns)
+    }
+  }
+
+  // if nothing found, nothing to do
+  if (candidateNamespaces.length === 0) {
+    return results
+  }
+
+  // Iterate each locale and each candidate source namespace found
   for (const locale of config.locales) {
-    const oldOutputPath = getOutputPath(config.extract.output, locale, oldParts.namespace)
-    const oldFullPath = resolve(process.cwd(), oldOutputPath)
-    const newOutputPath = getOutputPath(config.extract.output, locale, newParts.namespace)
-    const newFullPath = resolve(process.cwd(), newOutputPath)
+    for (const ns of candidateNamespaces) {
+      const oldOutputPath = getOutputPath(config.extract.output, locale, ns)
+      const oldFullPath = resolve(process.cwd(), oldOutputPath)
 
-    let oldTranslations: any
-    let newTranslations: any
+      // When explicitly targeting a namespace in the CLI, always use that target.
+      // When not explicit, keep keys in their current namespace (don't move them).
+      const targetNamespace = (oldParts.explicitNamespace || newParts.explicitNamespace)
+        ? newParts.namespace
+        : ns
 
-    try {
-      oldTranslations = await loadTranslationFile(oldFullPath)
-    } catch {}
-    if (!oldTranslations) continue
+      const newOutputPath = getOutputPath(config.extract.output, locale, targetNamespace)
+      const newFullPath = resolve(process.cwd(), newOutputPath)
 
-    const oldValue = getNestedValue(oldTranslations, oldParts.key, keySeparator)
-    if (oldValue === undefined) continue
+      let oldTranslations: any
+      let newTranslations: any
 
-    if (oldParts.namespace === newParts.namespace) {
-      // Rename within the same namespace
-      deleteNestedValue(oldTranslations, oldParts.key, keySeparator)
-      setNestedValue(oldTranslations, newParts.key, oldValue, keySeparator)
-      if (!dryRun) {
-        const content = serializeTranslationFile(
-          oldTranslations,
-          config.extract.outputFormat,
-          config.extract.indentation
-        )
-        await writeFile(oldFullPath, content, 'utf-8')
-      }
-      results.push({ path: oldFullPath, updated: true })
-      logger.info(`   ${dryRun ? '(dry-run) ' : ''}✓ ${oldFullPath}`)
-    } else {
-      // Move across namespaces
-      // Remove from old namespace
-      deleteNestedValue(oldTranslations, oldParts.key, keySeparator)
-      if (!dryRun) {
-        const content = serializeTranslationFile(
-          oldTranslations,
-          config.extract.outputFormat,
-          config.extract.indentation
-        )
-        await writeFile(oldFullPath, content, 'utf-8')
-      }
-      results.push({ path: oldFullPath, updated: true })
-      logger.info(`   ${dryRun ? '(dry-run) ' : ''}✓ ${oldFullPath}`)
-
-      // Add to new namespace
       try {
-        newTranslations = await loadTranslationFile(newFullPath)
+        oldTranslations = await loadTranslationFile(oldFullPath)
       } catch {}
-      if (!newTranslations) newTranslations = {}
-      setNestedValue(newTranslations, newParts.key, oldValue, keySeparator)
-      if (!dryRun) {
-        const content = serializeTranslationFile(
-          newTranslations,
-          config.extract.outputFormat,
-          config.extract.indentation
-        )
-        await writeFile(newFullPath, content, 'utf-8')
+      if (!oldTranslations) continue
+
+      // 1) nested/exact path value (object or scalar) at the nested path
+      const oldValue = getNestedValue(oldTranslations, oldParts.key, keySeparator)
+
+      // 2) flat plural matches like `key_one`, `key_other`
+      const flatPluralMatches: Array<{ flatKey: string; suffix: string; value: any }> = []
+      if (oldTranslations && typeof oldTranslations === 'object') {
+        const re = new RegExp(`^${escapeRegex(oldParts.key)}_(${pluralSuffixes.join('|')})$`)
+        for (const k of Object.keys(oldTranslations)) {
+          const m = k.match(re)
+          if (m) flatPluralMatches.push({ flatKey: k, suffix: m[1], value: oldTranslations[k] })
+        }
       }
-      results.push({ path: newFullPath, updated: true })
-      logger.info(`   ${dryRun ? '(dry-run) ' : ''}✓ ${newFullPath}`)
+
+      // nothing found for this file/namespace
+      if (oldValue === undefined && flatPluralMatches.length === 0) continue
+
+      //
+      // Handle flat plurals first (top-level underscore keys)
+      //
+      if (flatPluralMatches.length > 0) {
+        if (ns === targetNamespace) {
+          // rename in-place within same file
+          for (const m of flatPluralMatches) {
+            delete oldTranslations[m.flatKey]
+            const newFlatKey = `${newParts.key}_${m.suffix}`
+            oldTranslations[newFlatKey] = m.value
+          }
+          if (!dryRun) {
+            const content = serializeTranslationFile(
+              oldTranslations,
+              config.extract.outputFormat,
+              config.extract.indentation
+            )
+            await writeFile(oldFullPath, content, 'utf-8')
+          }
+          results.push({ path: oldFullPath, updated: true })
+          logger.info(`   ${dryRun ? '(dry-run) ' : ''}✓ ${oldFullPath}`)
+        } else {
+          // move them to the new namespace file
+          for (const m of flatPluralMatches) delete oldTranslations[m.flatKey]
+
+          if (!dryRun) {
+            const contentOld = serializeTranslationFile(
+              oldTranslations,
+              config.extract.outputFormat,
+              config.extract.indentation
+            )
+            await writeFile(oldFullPath, contentOld, 'utf-8')
+          }
+          results.push({ path: oldFullPath, updated: true })
+          logger.info(`   ${dryRun ? '(dry-run) ' : ''}✓ ${oldFullPath}`)
+
+          try {
+            newTranslations = await loadTranslationFile(newFullPath)
+          } catch {}
+          if (!newTranslations) newTranslations = {}
+
+          for (const m of flatPluralMatches) {
+            const newFlatKey = `${newParts.key}_${m.suffix}`
+            newTranslations[newFlatKey] = m.value
+          }
+
+          if (!dryRun) {
+            const contentNew = serializeTranslationFile(
+              newTranslations,
+              config.extract.outputFormat,
+              config.extract.indentation
+            )
+            await writeFile(newFullPath, contentNew, 'utf-8')
+          }
+          results.push({ path: newFullPath, updated: true })
+          logger.info(`   ${dryRun ? '(dry-run) ' : ''}✓ ${newFullPath}`)
+        }
+      }
+
+      //
+      // Handle nested/exact key
+      //
+      if (oldValue !== undefined) {
+        if (ns === targetNamespace) {
+          // rename within same file (nested)
+          deleteNestedValue(oldTranslations, oldParts.key, keySeparator)
+          setNestedValue(oldTranslations, newParts.key, oldValue, keySeparator)
+          if (!dryRun) {
+            const content = serializeTranslationFile(
+              oldTranslations,
+              config.extract.outputFormat,
+              config.extract.indentation
+            )
+            await writeFile(oldFullPath, content, 'utf-8')
+          }
+          if (!results.find(r => r.path === oldFullPath)) {
+            results.push({ path: oldFullPath, updated: true })
+            logger.info(`   ${dryRun ? '(dry-run) ' : ''}✓ ${oldFullPath}`)
+          }
+        } else {
+          // move nested value across namespaces
+          const updatedOld = { ...oldTranslations }
+          deleteNestedValue(updatedOld, oldParts.key, keySeparator)
+          if (!dryRun) {
+            const contentOld = serializeTranslationFile(
+              updatedOld,
+              config.extract.outputFormat,
+              config.extract.indentation
+            )
+            await writeFile(oldFullPath, contentOld, 'utf-8')
+          }
+          if (!results.find(r => r.path === oldFullPath)) {
+            results.push({ path: oldFullPath, updated: true })
+            logger.info(`   ${dryRun ? '(dry-run) ' : ''}✓ ${oldFullPath}`)
+          }
+
+          try {
+            newTranslations = await loadTranslationFile(newFullPath)
+          } catch {}
+          if (!newTranslations) newTranslations = {}
+          setNestedValue(newTranslations, newParts.key, oldValue, keySeparator)
+          if (!dryRun) {
+            const contentNew = serializeTranslationFile(
+              newTranslations,
+              config.extract.outputFormat,
+              config.extract.indentation
+            )
+            await writeFile(newFullPath, contentNew, 'utf-8')
+          }
+          if (!results.find(r => r.path === newFullPath)) {
+            results.push({ path: newFullPath, updated: true })
+            logger.info(`   ${dryRun ? '(dry-run) ' : ''}✓ ${newFullPath}`)
+          }
+        }
+      }
     }
   }
 
