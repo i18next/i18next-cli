@@ -442,7 +442,35 @@ function replaceKeyWithRegex (
     }
 
     //
-    // 3) fullKey (explicitly namespaced string in call): only when user supplied a namespaced target
+    // 3a) Replace occurrences where the call uses an explicitly namespaced string
+    //     literal like t('ns:key') while the CLI rename was invoked with the
+    //     key without namespace (oldKey='key'). Example: defaultNS = 'ns1',
+    //     source contains t('ns1:key'), and user called runRenameKey('key', 'key2').
+    //     We should update 'ns1:key' -> 'ns1:key2' or to a new namespace if the
+    //     target includes an explicit namespace.
+    //
+    // Only update explicit "ns:oldKey" string literals when the key name itself
+    // is changing. If only the namespace is changing but the key name stays
+    // identical (e.g. `key` -> `ns2:key`) we should NOT rewrite explicit
+    // `t('ns1:key')` occurrences — keep their explicit namespace intact.
+    if (oldParts.namespace && newParts.key !== oldParts.key) {
+      // ensure ns separator is a string for regex building (default ':')
+      const nsSepStr = nsSeparator === false ? ':' : String(nsSeparator)
+      const prefixed = `${escapeRegex(String(oldParts.namespace))}${escapeRegex(nsSepStr)}${escapeRegex(oldParts.key)}`
+      const regexPrefixed = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${prefixed}\\1`, 'g')
+      newCode = newCode.replace(regexPrefixed, (match) => {
+        changes++
+        // determine replacement: if newParts is explicitly namespaced, use fullKey;
+        // otherwise keep the original namespace but swap the key.
+        const replacement = newParts.explicitNamespace
+          ? newParts.fullKey
+          : `${oldParts.namespace}${nsSepStr}${newParts.key}`
+        return match.replace(`${oldParts.namespace}${nsSepStr}${oldParts.key}`, replacement)
+      })
+    }
+
+    //
+    // 3b) fullKey (explicitly namespaced string in call): only when user supplied a namespaced target
     //
     if (oldParts.fullKey && oldParts.explicitNamespace) {
       const regexFull = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.fullKey)}\\1`, 'g')
