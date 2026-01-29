@@ -15,6 +15,44 @@ describe('runRenameKey (plurals', () => {
   })
 
   describe('basic functionality', () => {
+    it('should detect conflicts when renaming to an existing plural key', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json')
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('key', { count: 1 })\nt('key2', { count: 1 })")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/translation.json'),
+        JSON.stringify({
+          key_one: 'keyItem',
+          key_other: 'keyItems',
+          key2_one: 'key2Item',
+          key2_other: 'keys2Items'
+        })
+      )
+
+      const result = await runRenameKey(config, 'key', 'key2')
+
+      expect(result.success).toBe(false)
+      expect(result.conflicts?.length).toBeGreaterThan(0)
+      expect(result.conflicts).toContain('en:key2_one')
+      expect(result.conflicts).toContain('en:key2_other')
+
+      // Should not overwrite key2_one and key2_other with key_one and key_other values
+      const updatedTranslation = JSON.parse(
+        await readFile(join(testDir, 'locales/en/translation.json'), 'utf-8')
+      )
+      expect(updatedTranslation.key_one).toBe('keyItem')
+      expect(updatedTranslation.key_other).toBe('keyItems')
+      expect(updatedTranslation.key2_one).toBe('key2Item')
+      expect(updatedTranslation.key2_other).toBe('keys2Items')
+    })
+
     it('should rename all plural forms in translation files when renaming a pluralized key', async () => {
       const config = {
         locales: ['en'],

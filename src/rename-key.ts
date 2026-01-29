@@ -8,6 +8,8 @@ import { getNestedValue, setNestedValue } from './utils/nested-object'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker'
 import chalk from 'chalk'
 
+const pluralSuffixes = ['zero', 'one', 'two', 'few', 'many', 'other']
+
 /**
  * Renames a translation key across all source files and translation files.
  *
@@ -178,6 +180,7 @@ function validateKeys (oldKey: string, newKey: string, config: I18nextToolkitCon
 
 async function checkConflicts (newParts: KeyParts, config: I18nextToolkitConfig): Promise<string[]> {
   const conflicts: string[] = []
+  const keySeparator = config.extract.keySeparator ?? '.'
 
   for (const locale of config.locales) {
     const outputPath = getOutputPath(config.extract.output, locale, newParts.namespace)
@@ -186,10 +189,20 @@ async function checkConflicts (newParts: KeyParts, config: I18nextToolkitConfig)
     try {
       const existingTranslations = await loadTranslationFile(fullPath)
       if (existingTranslations) {
-        const keySeparator = config.extract.keySeparator ?? '.'
+        // Check for exact key match (nested or scalar)
         const value = getNestedValue(existingTranslations, newParts.key, keySeparator)
         if (value !== undefined) {
           conflicts.push(`${locale}:${newParts.fullKey}`)
+        }
+
+        // Check for flat plural form conflicts like "key2_one", "key2_other"
+        if (existingTranslations && typeof existingTranslations === 'object') {
+          const pluralRegex = new RegExp(`^${escapeRegex(newParts.key)}_(${pluralSuffixes.join('|')})$`)
+          for (const k of Object.keys(existingTranslations)) {
+            if (pluralRegex.test(k)) {
+              conflicts.push(`${locale}:${k}`)
+            }
+          }
         }
       }
     } catch {
@@ -210,8 +223,19 @@ async function checkOldKeyExists (oldParts: KeyParts, config: I18nextToolkitConf
     try {
       const translations = await loadTranslationFile(fullPath)
       if (translations) {
+        // Check for exact key match (nested or scalar)
         const val = getNestedValue(translations, oldParts.key, keySeparator)
         if (val !== undefined) return true
+
+        // Check for flat plural forms like "key_one", "key_other"
+        if (translations && typeof translations === 'object') {
+          const pluralRegex = new RegExp(`^${escapeRegex(oldParts.key)}_(${pluralSuffixes.join('|')})$`)
+          for (const k of Object.keys(translations)) {
+            if (pluralRegex.test(k)) {
+              return true
+            }
+          }
+        }
       }
     } catch {
       // file missing — continue to next locale
@@ -371,7 +395,6 @@ function replaceKeyWithRegex (
     }
 
     // flat plural keys like "key_one", "key_other"
-    const pluralSuffixes = ['zero', 'one', 'two', 'few', 'many', 'other']
     const flatPluralRegex = new RegExp(`^${escapeRegex(oldParts.key)}_(${pluralSuffixes.join('|')})$`)
     for (const s of set) {
       if (flatPluralRegex.test(s)) return true
@@ -651,9 +674,6 @@ async function updateTranslationFiles (
 ): Promise<Array<{ path: string; updated: boolean }>> {
   const results: Array<{ path: string; updated: boolean }> = []
   const keySeparator = config.extract.keySeparator ?? '.'
-
-  // plural suffixes commonly used by i18next (for flat underscore style: key_one)
-  const pluralSuffixes = ['zero', 'one', 'two', 'few', 'many', 'other']
 
   // Helper: determine whether a flattened key-set indicates presence of `baseKey`.
   const namespaceHasKey = (set: Set<string> | undefined, baseKey: string): boolean => {
