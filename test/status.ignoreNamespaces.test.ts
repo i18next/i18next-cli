@@ -29,7 +29,6 @@ const mockConfig: I18nextToolkitConfig = {
 
 describe('status: ignoreNamespaces', () => {
   let consoleLogSpy: any
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let processExitSpy: any
 
   beforeEach(async () => {
@@ -84,6 +83,7 @@ describe('status: ignoreNamespaces', () => {
       await runStatus(config)
     } catch (e) {
       // Expected to throw when process.exit is called
+      expect(processExitSpy).toHaveBeenCalled()
     }
 
     // Should only report 2 keys (from local namespace), not 4
