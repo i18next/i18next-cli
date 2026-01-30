@@ -109,9 +109,21 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
     if (!keysByNs.has(ns)) keysByNs.set(ns, [])
     keysByNs.get(ns)!.push(key)
   }
+  
+  // Filter out ignored namespaces
+  const ignoreNamespaces = new Set(config.extract.ignoreNamespaces ?? [])
+  for (const ns of ignoreNamespaces) {
+    keysByNs.delete(ns)
+  }
+
+  // Count total keys after filtering
+  let filteredKeyCount = 0
+  for (const keys of keysByNs.values()) {
+    filteredKeyCount += keys.length
+  }
 
   const report: StatusReport = {
-    totalBaseKeys: allExtractedKeys.size,
+    totalBaseKeys: filteredKeyCount,
     keysByNs,
     locales: new Map(),
   }

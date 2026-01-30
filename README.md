@@ -456,6 +456,11 @@ export default defineConfig({
     /** If true, keys that are not found in the source code will be removed from translation files. (default: true) */
     removeUnusedKeys: true,
 
+    // Namespaces to ignore during extraction, status, and sync operations.
+    // Useful for monorepos where shared namespaces are managed elsewhere.
+    // Keys using these namespaces will be excluded from processing.
+    ignoreNamespaces?: ['shared', 'common'], // Optional
+
     // When true (default), the extractor also scans code comments for t(...) / Trans examples and will extract keys found there.
     // Set to false to ignore translation-like patterns in comments (useful to avoid extracting example/documentation strings).
     extractFromComments: true,

@@ -782,6 +782,12 @@ export async function getTranslations (
     }
   }
 
+  // Filter out ignored namespaces
+  const ignoreNamespaces = new Set(config.extract.ignoreNamespaces ?? [])
+  for (const ns of ignoreNamespaces) {
+    keysByNS.delete(ns)
+  }
+
   const results: TranslationResult[] = []
   const userIgnore = Array.isArray(config.extract.ignore)
     ? config.extract.ignore
