@@ -29,6 +29,7 @@ const mockConfig: I18nextToolkitConfig = {
 
 describe('status: ignoreNamespaces', () => {
   let consoleLogSpy: any
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let processExitSpy: any
 
   beforeEach(async () => {

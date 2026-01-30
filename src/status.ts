@@ -109,7 +109,7 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
     if (!keysByNs.has(ns)) keysByNs.set(ns, [])
     keysByNs.get(ns)!.push(key)
   }
-  
+
   // Filter out ignored namespaces
   const ignoreNamespaces = new Set(config.extract.ignoreNamespaces ?? [])
   for (const ns of ignoreNamespaces) {

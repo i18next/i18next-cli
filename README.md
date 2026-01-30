@@ -459,7 +459,7 @@ export default defineConfig({
     // Namespaces to ignore during extraction, status, and sync operations.
     // Useful for monorepos where shared namespaces are managed elsewhere.
     // Keys using these namespaces will be excluded from processing.
-    ignoreNamespaces?: ['shared', 'common'], // Optional
+    ignoreNamespaces: ['shared', 'common'], // Optional
 
     // When true (default), the extractor also scans code comments for t(...) / Trans examples and will extract keys found there.
     // Set to false to ignore translation-like patterns in comments (useful to avoid extracting example/documentation strings).
