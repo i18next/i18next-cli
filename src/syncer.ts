@@ -75,9 +75,14 @@ export async function runSyncer (
       return
     }
 
+    // Filter out ignored namespaces
+    const ignoreNamespaces = new Set(config.extract.ignoreNamespaces ?? [])
+
     // 2. Loop through each primary namespace file
     for (const primaryPath of primaryNsFiles) {
       const ns = basename(primaryPath).split('.')[0]
+      // Skip ignored namespaces
+      if (ignoreNamespaces.has(ns)) continue
       const primaryTranslations = await loadTranslationFile(primaryPath)
 
       if (!primaryTranslations) {

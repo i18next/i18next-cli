@@ -149,6 +149,14 @@ export interface I18nextToolkitConfig {
     removeUnusedKeys?: boolean;
 
     /**
+     * Array of namespace names to ignore during extraction, status, and sync operations.
+     * Keys using these namespaces will be excluded from processing.
+     * Useful for monorepos where shared namespaces are managed elsewhere.
+     * @example ['shared', 'common']
+     */
+    ignoreNamespaces?: string[];
+
+    /**
      * If false, translation keys will not be extracted from comments.
      * (default: true)
      */
