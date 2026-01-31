@@ -225,19 +225,28 @@ export class CallExpressionHandler {
 
       let finalKey = key
 
+      let keyPrefix: string | undefined
+      // Check for keyPrefix in call options before falling back to scope
+      if (options) {
+        const kpVal = getObjectPropValue(options, 'keyPrefix')
+        if (typeof kpVal === 'string') keyPrefix = kpVal
+      }
+      // Fall back to scope keyPrefix if not overridden in options
+      keyPrefix ||= scopeInfo?.keyPrefix
+
       // Apply keyPrefix AFTER namespace extraction
-      if (scopeInfo?.keyPrefix) {
+      if (keyPrefix) {
         const keySeparator = this.config.extract.keySeparator ?? '.'
 
         // Apply keyPrefix - handle case where keyPrefix already ends with separator
         if (keySeparator !== false) {
-          if (scopeInfo.keyPrefix.endsWith(keySeparator)) {
-            finalKey = `${scopeInfo.keyPrefix}${key}`
+          if (keyPrefix.endsWith(keySeparator)) {
+            finalKey = `${keyPrefix}${key}`
           } else {
-            finalKey = `${scopeInfo.keyPrefix}${keySeparator}${key}`
+            finalKey = `${keyPrefix}${keySeparator}${key}`
           }
         } else {
-          finalKey = `${scopeInfo.keyPrefix}${key}`
+          finalKey = `${keyPrefix}${key}`
         }
 
         // Validate keyPrefix combinations that create problematic keys
@@ -247,7 +256,7 @@ export class CallExpressionHandler {
           const hasEmptySegment = segments.some(segment => segment.trim() === '')
 
           if (hasEmptySegment) {
-            this.logger.warn(`Skipping key with empty segments: '${finalKey}' (keyPrefix: '${scopeInfo.keyPrefix}', key: '${key}')`)
+            this.logger.warn(`Skipping key with empty segments: '${finalKey}' (keyPrefix: '${keyPrefix}', key: '${key}')`)
             continue
           }
         }

@@ -201,6 +201,35 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should handle keyPrefix override in t() options', async () => {
+      const sampleCode = `
+        const { t } = useTranslation('translation', { keyPrefix: 'very.deeply.nested' });
+        const defaultText = t('key');
+        const overrideText = t('key', { keyPrefix: 'overridden.prefix' }); // Should be 'overridden.prefix.key'
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        overridden: { // Create prefix for overridden keyPrefix
+          prefix: {
+            key: 'key',
+          },
+        },
+        very: { // Preserve default keyPrefix entries
+          deeply: {
+            nested: {
+              key: 'key',
+            },
+          },
+        },
+      })
+    })
+
     it('should handle aliased t functions from useTranslation', async () => {
       const sampleCode = `
         const { t: myTr } = useTranslation('ns1');
