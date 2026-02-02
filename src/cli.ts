@@ -4,7 +4,7 @@ import { Command } from 'commander'
 import chokidar from 'chokidar'
 import { glob } from 'glob'
 import { minimatch } from 'minimatch'
-import chalk from 'chalk'
+import { styleText } from 'node:util'
 import { loadConfig, ensureConfig } from './config'
 import { detectConfig } from './heuristic-config'
 import { runExtractor } from './extractor'
@@ -102,14 +102,14 @@ program
     const cfgPath = program.opts().config
     let config = await loadConfig(cfgPath)
     if (!config) {
-      console.log(chalk.blue('No config file found. Attempting to detect project structure...'))
+      console.log(styleText('blue', 'No config file found. Attempting to detect project structure...'))
       const detected = await detectConfig()
       if (!detected) {
-        console.error(chalk.red('Could not automatically detect your project structure.'))
-        console.log(`Please create a config file first by running: ${chalk.cyan('npx i18next-cli init')}`)
+        console.error(styleText('red', 'Could not automatically detect your project structure.'))
+        console.log(`Please create a config file first by running: ${styleText('cyan', 'npx i18next-cli init')}`)
         process.exit(1)
       }
-      console.log(chalk.green('Project structure detected successfully!'))
+      console.log(styleText('green', 'Project structure detected successfully!'))
       config = detected as I18nextToolkitConfig
     }
     await runStatus(config, { detail: locale, namespace: options.namespace })
@@ -174,14 +174,14 @@ program
       // The existing logic for loading the config or detecting it is now inside this function
       let config = await loadConfig(cfgPath)
       if (!config) {
-        console.log(chalk.blue('No config file found. Attempting to detect project structure...'))
+        console.log(styleText('blue', 'No config file found. Attempting to detect project structure...'))
         const detected = await detectConfig()
         if (!detected) {
-          console.error(chalk.red('Could not automatically detect your project structure.'))
-          console.log(`Please create a config file first by running: ${chalk.cyan('npx i18next-cli init')}`)
+          console.error(styleText('red', 'Could not automatically detect your project structure.'))
+          console.log(`Please create a config file first by running: ${styleText('cyan', 'npx i18next-cli init')}`)
           process.exit(1)
         }
-        console.log(chalk.green('Project structure detected successfully!'))
+        console.log(styleText('green', 'Project structure detected successfully!'))
         config = detected as I18nextToolkitConfig
       }
       await runLinterCli(config, { quiet: !!options.quiet })
@@ -261,21 +261,21 @@ program
 
       if (!result.success) {
         if (result.conflicts) {
-          console.error(chalk.red('\n❌ Conflicts detected:'))
+          console.error(styleText('red', '\n❌ Conflicts detected:'))
           result.conflicts.forEach(c => console.error(`   - ${c}`))
         }
         if (result.error) {
-          console.error(chalk.red(`\n❌ ${result.error}`))
+          console.error(styleText('red', `\n❌ ${result.error}`))
         }
         process.exit(1)
       }
 
       const totalChanges = result.sourceFiles.reduce((sum, f) => sum + f.changes, 0)
       if (totalChanges === 0) {
-        console.log(chalk.yellow(`\n⚠️  No usages found for "${oldKey}"`))
+        console.log(styleText('yellow', `\n⚠️  No usages found for "${oldKey}"`))
       }
     } catch (error) {
-      console.error(chalk.red('Error renaming key:'), error)
+      console.error(styleText('red', 'Error renaming key:'), error)
       process.exit(1)
     }
   })

@@ -1,4 +1,4 @@
-import chalk from 'chalk'
+import { styleText } from 'node:util'
 import { glob } from 'glob'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
@@ -86,7 +86,7 @@ export async function runSyncer (
       const primaryTranslations = await loadTranslationFile(primaryPath)
 
       if (!primaryTranslations) {
-        logMessages.push(`  ${chalk.yellow('-')} Could not read primary file: ${primaryPath}`)
+        logMessages.push(`  ${styleText('yellow', '-')} Could not read primary file: ${primaryPath}`)
         continue
       }
 
@@ -119,24 +119,24 @@ export async function runSyncer (
           const serializedContent = serializeTranslationFile(newSecondaryTranslations, perFileFormat, indentation, raw)
           await mkdir(dirname(fullSecondaryPath), { recursive: true })
           await writeFile(fullSecondaryPath, serializedContent)
-          logMessages.push(`  ${chalk.green('✓')} Synchronized: ${secondaryPath}`)
+          logMessages.push(`  ${styleText('green', '✓')} Synchronized: ${secondaryPath}`)
         } else {
-          logMessages.push(`  ${chalk.gray('-')} Already in sync: ${secondaryPath}`)
+          logMessages.push(`  ${styleText('gray', '-')} Already in sync: ${secondaryPath}`)
         }
       }
     }
 
-    spinner.succeed(chalk.bold('Synchronization complete!'))
+    spinner.succeed(styleText('bold', 'Synchronization complete!'))
     logMessages.forEach(msg => internalLogger.info ? internalLogger.info(msg) : console.log(msg))
 
     if (wasAnythingSynced) {
       await printLocizeFunnel()
     } else {
-      if (typeof internalLogger.info === 'function') internalLogger.info(chalk.green.bold('\n✅ All locales are already in sync.'))
-      else console.log(chalk.green.bold('\n✅ All locales are already in sync.'))
+      if (typeof internalLogger.info === 'function') internalLogger.info(styleText(['green', 'bold'], '\n✅ All locales are already in sync.'))
+      else console.log(styleText(['green', 'bold'], '\n✅ All locales are already in sync.'))
     }
   } catch (error) {
-    spinner.fail(chalk.red('Synchronization failed.'))
+    spinner.fail(styleText('red', 'Synchronization failed.'))
     if (typeof internalLogger.error === 'function') internalLogger.error(error)
     else console.error(error)
   }
@@ -145,9 +145,9 @@ export async function runSyncer (
 async function printLocizeFunnel () {
   if (!(await shouldShowFunnel('syncer'))) return
 
-  console.log(chalk.green.bold('\n✅ Sync complete.'))
-  console.log(chalk.yellow('🚀 Ready to collaborate with translators? Move your files to the cloud.'))
-  console.log(`   Get started with the official TMS for i18next: ${chalk.cyan('npx i18next-cli locize-migrate')}`)
+  console.log(styleText(['green', 'bold'], '\n✅ Sync complete.'))
+  console.log(styleText('yellow', '🚀 Ready to collaborate with translators? Move your files to the cloud.'))
+  console.log(`   Get started with the official TMS for i18next: ${styleText('cyan', 'npx i18next-cli locize-migrate')}`)
 
   return recordFunnelShown('syncer')
 }

@@ -1,5 +1,5 @@
 import { execa } from 'execa'
-import chalk from 'chalk'
+import { styleText } from 'node:util'
 import ora from 'ora'
 import inquirer from 'inquirer'
 import { resolve, sep } from 'node:path'
@@ -22,9 +22,9 @@ async function checkLocizeCliExists (): Promise<void> {
     await execa('locize', ['--version'])
   } catch (error: any) {
     if (error.code === 'ENOENT') {
-      console.error(chalk.red('Error: `locize-cli` command not found.'))
-      console.log(chalk.yellow('Please install it globally to use the locize integration:'))
-      console.log(chalk.cyan('npm install -g locize-cli'))
+      console.error(styleText('red', 'Error: `locize-cli` command not found.'))
+      console.log(styleText('yellow', 'Please install it globally to use the locize integration:'))
+      console.log(styleText('cyan', 'npm install -g locize-cli'))
       process.exit(1)
     }
   }
@@ -53,7 +53,7 @@ async function checkLocizeCliExists (): Promise<void> {
  * ```
  */
 async function interactiveCredentialSetup (config: I18nextToolkitConfig): Promise<{ projectId?: string, apiKey?: string, version?: string } | undefined> {
-  console.log(chalk.yellow('\nLocize configuration is missing or invalid. Let\'s set it up!'))
+  console.log(styleText('yellow', '\nLocize configuration is missing or invalid. Let\'s set it up!'))
 
   const answers = await inquirer.prompt([
     {
@@ -77,7 +77,7 @@ async function interactiveCredentialSetup (config: I18nextToolkitConfig): Promis
   ])
 
   if (!answers.projectId) {
-    console.error(chalk.red('Project ID is required to continue.'))
+    console.error(styleText('red', 'Project ID is required to continue.'))
     return undefined
   }
 
@@ -102,11 +102,11 @@ LOCIZE_API_KEY=${answers.apiKey}
     version: '${answers.version}',
   },`
 
-    console.log(chalk.cyan('\nGreat! For the best security, we recommend using environment variables for your API key.'))
-    console.log(chalk.bold('\nRecommended approach (.env file):'))
-    console.log(chalk.green(envSnippet))
-    console.log(chalk.bold('Then, in your i18next.config.ts:'))
-    console.log(chalk.green(configSnippet))
+    console.log(styleText('cyan', '\nGreat! For the best security, we recommend using environment variables for your API key.'))
+    console.log(styleText('bold', '\nRecommended approach (.env file):'))
+    console.log(styleText('green', envSnippet))
+    console.log(styleText('bold', 'Then, in your i18next.config.ts:'))
+    console.log(styleText('green', configSnippet))
   }
 
   return {
@@ -221,10 +221,10 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
   try {
     // 1. First attempt
     const initialArgs = buildArgs(command, effectiveConfig, cliOptions)
-    console.log(chalk.cyan(`\nRunning 'locize ${initialArgs.join(' ')}'...`))
+    console.log(styleText('cyan', `\nRunning 'locize ${initialArgs.join(' ')}'...`))
     const result = await execa('locize', initialArgs, { stdio: 'pipe' })
 
-    spinner.succeed(chalk.green(`'locize ${command}' completed successfully.`))
+    spinner.succeed(styleText('green', `'locize ${command}' completed successfully.`))
     if (result?.stdout) console.log(result.stdout) // Print captured output on success
   } catch (error: any) {
     const stderr = error.stderr || ''
@@ -238,13 +238,13 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
         try {
           // 3. Retry attempt, rebuilding args with the NOW-UPDATED currentConfig object
           const retryArgs = buildArgs(command, effectiveConfig, cliOptions)
-          console.log(chalk.cyan(`\nRunning 'locize ${retryArgs.join(' ')}'...`))
+          console.log(styleText('cyan', `\nRunning 'locize ${retryArgs.join(' ')}'...`))
           const result = await execa('locize', retryArgs, { stdio: 'pipe' })
 
-          spinner.succeed(chalk.green('Retry successful!'))
+          spinner.succeed(styleText('green', 'Retry successful!'))
           if (result?.stdout) console.log(result.stdout)
         } catch (retryError: any) {
-          spinner.fail(chalk.red('Error during retry.'))
+          spinner.fail(styleText('red', 'Error during retry.'))
           console.error(retryError.stderr || retryError.message)
           process.exit(1)
         }
@@ -254,12 +254,12 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
       }
     } else {
       // Handle other errors
-      spinner.fail(chalk.red(`Error executing 'locize ${command}'.`))
+      spinner.fail(styleText('red', `Error executing 'locize ${command}'.`))
       console.error(stderr || error.message)
       process.exit(1)
     }
   }
-  console.log(chalk.green(`\n✅ 'locize ${command}' completed successfully.`))
+  console.log(styleText('green', `\n✅ 'locize ${command}' completed successfully.`))
 }
 
 export const runLocizeSync = (config: I18nextToolkitConfig, cliOptions?: any) => runLocizeCommand('sync', config, cliOptions)

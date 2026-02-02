@@ -63,7 +63,6 @@
     "memfs": "4.56.10",
     "neostandard": "0.12.2",
     "rollup-plugin-typescript2": "0.36.0",
-    "ts-node": "10.9.2",
     "typescript": "5.9.3",
     "unplugin-swc": "1.5.9",
     "vitest": "4.0.18"
@@ -71,7 +70,6 @@
   "dependencies": {
     "@croct/json5-parser": "0.2.2",
     "@swc/core": "1.15.10",
-    "chalk": "5.6.2",
     "chokidar": "5.0.0",
     "commander": "14.0.2",
     "execa": "9.6.1",
@@ -83,7 +81,6 @@
     "minimatch": "10.1.1",
     "ora": "9.1.0",
     "react": "^19.2.3",
-    "react-i18next": "^16.5.3",
-    "swc-walk": "1.0.1"
+    "react-i18next": "^16.5.3"
   }
 }
