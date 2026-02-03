@@ -717,6 +717,7 @@ describe('runExtractor: defaultValue option', () => {
       item: {
         count_one: '[FR] translation/item.count_one',
         count_other: '[FR] translation/item.count_other',
+        count_many: '[FR] translation/item.count_many',
       },
       no: {
         defaults: '[FR] translation/no.defaults',

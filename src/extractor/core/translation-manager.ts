@@ -8,6 +8,8 @@ import { resolveDefaultValue } from '../../utils/default-value'
 // used for natural language check
 const chars = [' ', ',', '?', '!', ';']
 
+const pluralForms = ['zero', 'one', 'two', 'few', 'many', 'other']
+
 /**
  * Converts a glob pattern to a regular expression for matching keys
  * @param glob - The glob pattern to convert
@@ -45,7 +47,6 @@ function isContextVariantOfAcceptingKey (
   let potentialBaseKey = existingKey
 
   // First, try removing plural suffixes if present
-  const pluralForms = ['zero', 'one', 'two', 'few', 'many', 'other']
   for (const form of pluralForms) {
     if (potentialBaseKey.endsWith(`${pluralSeparator}${form}`)) {
       potentialBaseKey = potentialBaseKey.slice(0, -(pluralSeparator.length + form.length))
@@ -111,8 +112,7 @@ function sortObject (obj: any, config?: I18nextToolkitConfig, customSort?: (a: s
   const pluralSeparator = config?.extract?.pluralSeparator ?? '_'
 
   // Define the canonical order for plural forms
-  const pluralOrder = ['zero', 'one', 'two', 'few', 'many', 'other']
-  const ordinalPluralOrder = pluralOrder.map(form => `ordinal${pluralSeparator}${form}`)
+  const ordinalPluralOrder = pluralForms.map(form => `ordinal${pluralSeparator}${form}`)
 
   const keys = Object.keys(obj).sort((a, b) => {
     // Helper function to extract base key and form info
@@ -125,7 +125,7 @@ function sortObject (obj: any, config?: I18nextToolkitConfig, customSort?: (a: s
         }
       }
       // Handle cardinal plurals: key_form or key_context_form
-      for (const form of pluralOrder) {
+      for (const form of pluralForms) {
         if (key.endsWith(`${pluralSeparator}${form}`)) {
           const base = key.slice(0, -(pluralSeparator.length + form.length))
           return { base, form, isOrdinal: false, isPlural: true, fullKey: key }
@@ -154,7 +154,7 @@ function sortObject (obj: any, config?: I18nextToolkitConfig, customSort?: (a: s
       }
 
       // Both same type (cardinal or ordinal), sort by canonical order
-      const orderArray = aInfo.isOrdinal ? ordinalPluralOrder : pluralOrder
+      const orderArray = aInfo.isOrdinal ? ordinalPluralOrder : pluralForms
       const aIndex = orderArray.indexOf(aInfo.form)
       const bIndex = orderArray.indexOf(bInfo.form)
 
@@ -270,17 +270,15 @@ function buildNewTranslationsForNs (
     }
   }
 
-  // Get the plural categories for the target language
+  // Get the plural categories for the target language (only used for filtering extracted keys)
   const targetLanguagePluralCategories = new Set<string>()
   // Track cardinal plural categories separately so we can special-case single-"other" languages
   let cardinalCategories: string[] = []
-  let ordinalCategories: string[] = []
   try {
     const cardinalRules = new Intl.PluralRules(locale, { type: 'cardinal' })
     const ordinalRules = new Intl.PluralRules(locale, { type: 'ordinal' })
 
     cardinalCategories = cardinalRules.resolvedOptions().pluralCategories
-    ordinalCategories = ordinalRules.resolvedOptions().pluralCategories
     cardinalCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
     ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
   } catch (e) {
@@ -290,7 +288,6 @@ function buildNewTranslationsForNs (
     const ordinalRules = new Intl.PluralRules(fallbackLang, { type: 'ordinal' })
 
     cardinalCategories = cardinalRules.resolvedOptions().pluralCategories
-    ordinalCategories = ordinalRules.resolvedOptions().pluralCategories
     cardinalCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
     ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
   }
@@ -436,6 +433,55 @@ function buildNewTranslationsForNs (
     }
   }
 
+  // PRESERVE LOCALE-SPECIFIC PLURAL FORMS: When dealing with plural keys in non-primary locales,
+  // preserve any existing plural forms that are NOT being explicitly generated.
+  // This ensures that locale-specific forms (like _few, _many) added by translators are preserved.
+  if (locale !== primaryLanguage && removeUnusedKeys) {
+    const existingKeys = getNestedKeys(existingTranslations, keySeparator ?? '.')
+
+    for (const existingKey of existingKeys) {
+      // Check if this is a plural form variant (ends with _form)
+      let isPluralForm = false
+      let baseKey = existingKey
+      let foundForm = ''
+
+      for (const form of pluralForms) {
+        if (existingKey.endsWith(`${pluralSeparator}${form}`)) {
+          baseKey = existingKey.slice(0, -(pluralSeparator.length + form.length))
+          foundForm = form
+          isPluralForm = true
+          break
+        }
+      }
+
+      if (isPluralForm && foundForm) {
+        // Check if the base key is in our filtered keys (meaning it's a plural key we're handling)
+        const isBaseInExtracted = filteredKeys.some(({ key }) => {
+          let extractedBase = key
+          for (const form of pluralForms) {
+            if (extractedBase.endsWith(`${pluralSeparator}${form}`)) {
+              extractedBase = extractedBase.slice(0, -(pluralSeparator.length + form.length))
+              break
+            }
+          }
+          return extractedBase === baseKey
+        })
+
+        if (isBaseInExtracted) {
+          // This is a plural form for a key we're handling.
+          // Check if it's already in newTranslations (will be set by the normal flow)
+          const isAlreadySet = getNestedValue(newTranslations, existingKey, keySeparator ?? '.') !== undefined
+
+          if (!isAlreadySet) {
+            // This plural form is NOT being generated by our code, so preserve it
+            const value = getNestedValue(existingTranslations, existingKey, keySeparator ?? '.')
+            setNestedValue(newTranslations, existingKey, value, keySeparator ?? '.')
+          }
+        }
+      }
+    }
+  }
+
   // SPECIAL HANDLING: Preserve existing _zero forms even if not in extracted keys
   // This ensures that optional _zero forms are not removed when they exist
   if (removeUnusedKeys) {
@@ -481,50 +527,106 @@ function buildNewTranslationsForNs (
       }
     }
 
-    // If this is a base plural key (no explicit suffix) and the locale is NOT the primary,
-    // expand it into locale-specific plural variants (e.g. key_one, key_other).
-    // Use the extracted defaultValue (fallback to base) for variant values.
+    // If this is a base plural key (no explicit suffix), expand it into locale-specific plural variants.
+    // For non-primary locales, we generate forms for that specific locale from CLDR.
+    // Additionally, we generate empty placeholders for ALL other CLDR forms not in the target locale
+    // (so translators can add them manually if needed).
     if (hasCount && !isExpandedPlural) {
       const parts = String(key).split(pluralSeparator)
       const isBaseKey = parts.length === 1
-      if (isBaseKey && locale !== primaryLanguage) {
+      if (isBaseKey) {
         // If explicit expanded variants exist, do not expand the base.
         const base = key
         if (expandedBases.has(base)) {
           // Skip expansion when explicit variants were provided
         } else {
-          // choose categories based on ordinal flag
-          const categories = isOrdinal ? ordinalCategories : cardinalCategories
-          for (const category of categories) {
-            const finalKey = isOrdinal
-              ? `${base}${pluralSeparator}ordinal${pluralSeparator}${category}`
-              : `${base}${pluralSeparator}${category}`
+          // Determine which plural forms to generate
+          let formsToGenerate: string[]
+          if (locale !== primaryLanguage) {
+            // For non-primary locales:
+            // 1. Generate the forms that locale actually needs
+            formsToGenerate = cardinalCategories
+            // 2. Also prepare empty placeholders for all OTHER CLDR forms not in this locale
+            //    so translators can add them manually without --sync-primary removing them
+            const otherForms = pluralForms.filter(f => !cardinalCategories.includes(f))
 
-            // If the key looks like a serialized Trans component (starts with <), treat it as a flat key
-            // to prevent splitting on dots that appear within the content.
-            const separator = finalKey.startsWith('<') ? false : (keySeparator ?? '.')
+            // Process the locale-specific forms normally
+            for (const form of formsToGenerate) {
+              const finalKey = isOrdinal
+                ? `${base}${pluralSeparator}${form}`
+                : `${base}${pluralSeparator}${form}`
 
-            // Preserve existing translation if present; otherwise set a sensible default
-            const existingVariantValue = getNestedValue(existingTranslations, finalKey, separator)
-            if (existingVariantValue === undefined) {
-              // Prefer explicit defaultValue extracted for this key; fall back to configured defaultValue
-              // (resolved via resolveDefaultValue which handles functions or strings and accepts the full parameter set).
-              let resolvedValue: string
-              if (typeof defaultValue === 'string') {
-                resolvedValue = defaultValue
+              const separator = finalKey.startsWith('<') ? false : (keySeparator ?? '.')
+              const existingVariantValue = getNestedValue(existingTranslations, finalKey, separator)
+              if (existingVariantValue === undefined) {
+                // Use the default value for secondary locale forms
+                let resolvedValue: string
+                if (typeof defaultValue === 'string') {
+                  resolvedValue = defaultValue
+                } else {
+                  resolvedValue = resolveDefaultValue(emptyDefaultValue, String(base), namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
+                }
+                setNestedValue(newTranslations, finalKey, resolvedValue, separator)
               } else {
-                // Use resolveDefaultValue to compute a sensible default, providing namespace and locale context.
-                resolvedValue = resolveDefaultValue(emptyDefaultValue, String(base), namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
+                setNestedValue(newTranslations, finalKey, existingVariantValue, separator)
               }
-              setNestedValue(newTranslations, finalKey, resolvedValue, separator)
+            }
+
+            // Now process other CLDR forms: set empty placeholders for forms this locale doesn't use
+            // but preserve any that were manually added by translators
+            for (const form of otherForms) {
+              const finalKey = isOrdinal
+                ? `${base}${pluralSeparator}${form}`
+                : `${base}${pluralSeparator}${form}`
+
+              const separator = finalKey.startsWith('<') ? false : (keySeparator ?? '.')
+              const existingVariantValue = getNestedValue(existingTranslations, finalKey, separator)
+              if (existingVariantValue !== undefined) {
+                // Preserve manually-added forms
+                setNestedValue(newTranslations, finalKey, existingVariantValue, separator)
+              }
+              // Don't generate empty placeholders - only generate what the locale needs and preserve what's manual
+            }
+          } else {
+            // For primary language, only expand if it has multiple plural forms
+            // Single-"other" languages (ja, zh, ko) should NOT expand the base key
+            if (cardinalCategories.length === 1 && cardinalCategories[0] === 'other') {
+              // Single-"other" language - don't expand, keep just the base key
+              formsToGenerate = []
             } else {
-              // Keep existing translation
-              setNestedValue(newTranslations, finalKey, existingVariantValue, separator)
+              // Multi-form language - expand to its plural forms
+              formsToGenerate = cardinalCategories
+
+              for (const form of formsToGenerate) {
+                const finalKey = isOrdinal
+                  ? `${base}${pluralSeparator}${form}`
+                  : `${base}${pluralSeparator}${form}`
+
+                const separator = finalKey.startsWith('<') ? false : (keySeparator ?? '.')
+                const existingVariantValue = getNestedValue(existingTranslations, finalKey, separator)
+                if (existingVariantValue === undefined) {
+                  // Prefer explicit defaultValue extracted for this key; fall back to configured defaultValue
+                  let resolvedValue: string
+                  if (typeof defaultValue === 'string') {
+                    resolvedValue = defaultValue
+                  } else {
+                    resolvedValue = resolveDefaultValue(emptyDefaultValue, String(base), namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
+                  }
+                  setNestedValue(newTranslations, finalKey, resolvedValue, separator)
+                } else {
+                  setNestedValue(newTranslations, finalKey, existingVariantValue, separator)
+                }
+              }
             }
           }
+
+          if (formsToGenerate && formsToGenerate.length > 0) {
+            // We've handled expansion for this base key; skip the normal single-key handling.
+            continue
+          }
+          // else: formsToGenerate is empty (single-"other" primary language)
+          // Fall through to normal key handling below
         }
-        // We've expanded variants for this base key; skip the normal single-key handling.
-        continue
       }
     }
 

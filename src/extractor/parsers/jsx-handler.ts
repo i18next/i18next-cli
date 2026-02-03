@@ -427,7 +427,25 @@ export class JSXHandler {
   ): void {
     try {
       const type = isOrdinal ? 'ordinal' : 'cardinal'
-      const pluralCategories = new Intl.PluralRules(this.config.extract?.primaryLanguage, { type }).resolvedOptions().pluralCategories
+
+      // Generate plural forms for ALL target languages to ensure we have all necessary keys
+      // This matches the behavior of generatePluralKeys used for t()
+      const allPluralCategories = new Set<string>()
+
+      for (const locale of this.config.locales) {
+        try {
+          const pluralRules = new Intl.PluralRules(locale, { type })
+          const categories = pluralRules.resolvedOptions().pluralCategories
+          categories.forEach(cat => allPluralCategories.add(cat))
+        } catch (e) {
+          // If a locale is invalid, fall back to English rules
+          const englishRules = new Intl.PluralRules('en', { type })
+          const categories = englishRules.resolvedOptions().pluralCategories
+          categories.forEach(cat => allPluralCategories.add(cat))
+        }
+      }
+
+      const pluralCategories = Array.from(allPluralCategories).sort()
       const pluralSeparator = this.config.extract.pluralSeparator ?? '_'
 
       // Get plural-specific default values from tOptions if available
