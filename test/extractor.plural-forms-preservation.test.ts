@@ -65,16 +65,25 @@ describe('plural form preservation across locales with --sync-primary', () => {
     expect(en1.translation['example.itemCount_one']).toEqual('{{count}} item')
     expect(en1.translation['example.itemCount_other']).toEqual('{{count}} items')
 
-    // Verify Polish also has one and other forms
+    // BUG REPRODUCTION: Verify Polish ALSO only got one and other (primary locale's forms)
+    // This is the ROOT CAUSE - extractor doesn't generate locale-specific plural forms
     expect(pl1.translation['example.itemCount_one']).toBeDefined()
     expect(pl1.translation['example.itemCount_other']).toBeDefined()
+    // The extractor generates empty strings for forms it doesn't have data for
+    expect(pl1.translation['example.itemCount_few']).toBeFalsy() // Empty or undefined
+    expect(pl1.translation['example.itemCount_many']).toBeFalsy() // Empty or undefined
 
-    // Now manually add Polish-specific plural forms (few and many) to simulate existing translations
+    // Now manually add Polish-specific plural forms (few and many) to simulate translator work
+    // These would be added by: translator manually editing, previous version with proper plural support,
+    // or from another source like Locize/crowdin
+    // Polish CLDR rules require: one, few, many, other (not just one, other like English).
     pl1.translation['example.itemCount_few'] = '{{count}} elementy'
     pl1.translation['example.itemCount_many'] = '{{count}} elementów'
     await fs.writeFile(plPath, JSON.stringify(pl1, null, 2), 'utf-8')
 
     // Second run: Re-extraction with sync-primary should NOT remove _few and _many
+    // EXPECTED: pl.json retains itemCount_few and itemCount_many because they're valid forms for Polish
+    // ACTUAL BUG (before fix): pl.json loses itemCount_few and itemCount_many (only itemCount_one/_other remain)
     await runExtractor(config, { isDryRun: false, syncPrimaryWithDefaults: true })
 
     const en2 = JSON.parse(await fs.readFile(enPath, 'utf-8'))
@@ -85,7 +94,10 @@ describe('plural form preservation across locales with --sync-primary', () => {
     expect(en2.translation['example.itemCount_other']).toEqual('{{count}} items')
 
     // Polish should PRESERVE _few and _many forms added manually
-    // BUG: Currently these are removed during sync-primary
+    // BUG (before fix): Currently these are removed during sync-primary
+    // ROOT CAUSE: Extractor only emits key_one/key_other (from English plural rules), so
+    // when --sync-primary syncs, key_few/key_many are treated as "unknown" and removed.
+    // FIX: Don't remove plural forms that are valid for the target locale even if not in primary.
     expect(pl2.translation['example.itemCount_one']).toBeDefined()
     expect(pl2.translation['example.itemCount_other']).toBeDefined()
     expect(pl2.translation['example.itemCount_few']).toEqual('{{count}} elementy')
@@ -120,7 +132,19 @@ describe('plural form preservation across locales with --sync-primary', () => {
     const arPath = join(tempDir, 'locales', 'ar.json')
     const ar1 = JSON.parse(await fs.readFile(arPath, 'utf-8'))
 
-    // Manually add all Arabic plural forms
+    // BUG REPRODUCTION: Verify Arabic only got one and other from the extractor
+    // Arabic CLDR requires: zero, one, two, few, many, other (6 forms!)
+    // But extractor only generates English's _one/_other (others are empty strings)
+    expect(ar1.translation.messages.unread_one).toBeDefined()
+    expect(ar1.translation.messages.unread_other).toBeDefined()
+    expect(ar1.translation.messages.unread_zero).toBeFalsy() // Generated as empty string
+    expect(ar1.translation.messages.unread_two).toBeFalsy() // Generated as empty string
+    expect(ar1.translation.messages.unread_few).toBeFalsy() // Generated as empty string
+    expect(ar1.translation.messages.unread_many).toBeFalsy() // Generated as empty string
+
+    // Now manually add all Arabic plural forms
+    // Arabic CLDR: zero, one, two, few, many, other (6 forms vs English's 2)
+    // These might come from translators, previous versions, or manual curation.
     if (!ar1.translation.messages) ar1.translation.messages = {}
     ar1.translation.messages.unread_zero = 'لا توجد رسائل'
     ar1.translation.messages.unread_one = 'رسالة واحدة'
@@ -132,6 +156,8 @@ describe('plural form preservation across locales with --sync-primary', () => {
     await fs.writeFile(arPath, JSON.stringify(ar1, null, 2), 'utf-8')
 
     // Second extraction should preserve all forms
+    // BUG: Only unread_one/_other survive (English forms); _zero, _two, _few, _many are removed.
+    // EXPECTED: All 6 Arabic CLDR forms survive because they're valid for Arabic locale.
     await runExtractor(config, { isDryRun: false, syncPrimaryWithDefaults: true })
 
     const ar2 = JSON.parse(await fs.readFile(arPath, 'utf-8'))
@@ -174,13 +200,21 @@ describe('plural form preservation across locales with --sync-primary', () => {
       },
     }
 
-    // First extraction
+    // First extraction - Trans component with count generates key_one and key_other
+    // (again, only primary locale's plural forms are emitted)
     await runExtractor(config, { isDryRun: false })
 
     const plPath = join(tempDir, 'locales', 'pl.json')
     const pl1 = JSON.parse(await fs.readFile(plPath, 'utf-8'))
 
-    // Manually add Polish plural forms
+    // BUG REPRODUCTION: Verify Trans component also only got primary locale's forms
+    expect(pl1.translation.shop.items_one).toBeDefined()
+    expect(pl1.translation.shop.items_other).toBeDefined()
+    expect(pl1.translation.shop.items_few).toBeFalsy() // Generated as empty string
+    expect(pl1.translation.shop.items_many).toBeFalsy() // Generated as empty string
+
+    // Now manually add Polish plural forms for Trans component
+    // These would come from translators who need to handle Polish plurals: one, few, many, other
     if (!pl1.translation.shop) pl1.translation.shop = {}
     pl1.translation.shop.items_few = 'Masz <1>{{count}}</1> przedmioty'
     pl1.translation.shop.items_many = 'Masz <1>{{count}}</1> przedmiotów'
@@ -188,6 +222,8 @@ describe('plural form preservation across locales with --sync-primary', () => {
     await fs.writeFile(plPath, JSON.stringify(pl1, null, 2), 'utf-8')
 
     // Second extraction should preserve the added forms
+    // BUG: items_few and items_many are removed (sync-primary strips unknown forms)
+    // EXPECTED: Trans plural forms for locale-specific needs are preserved
     await runExtractor(config, { isDryRun: false, syncPrimaryWithDefaults: true })
 
     const pl2 = JSON.parse(await fs.readFile(plPath, 'utf-8'))
@@ -221,13 +257,20 @@ describe('plural form preservation across locales with --sync-primary', () => {
       },
     }
 
-    // First extraction
+    // First extraction - nested plural key with keySeparator: '.'
     await runExtractor(config, { isDryRun: false })
 
     const plPath = join(tempDir, 'locales', 'pl.json')
     const pl1 = JSON.parse(await fs.readFile(plPath, 'utf-8'))
 
+    // BUG REPRODUCTION: Verify nested plural keys also only get primary locale's forms
+    expect(pl1.translation.notifications.messages.new_one).toBeDefined()
+    expect(pl1.translation.notifications.messages.new_other).toBeDefined()
+    expect(pl1.translation.notifications.messages.new_few).toBeFalsy() // Generated as empty string
+    expect(pl1.translation.notifications.messages.new_many).toBeFalsy() // Generated as empty string
+
     // Manually add Polish-specific plural forms for nested key
+    // Even with nested structure (notifications > messages > new), the bug applies.
     if (!pl1.translation.notifications) pl1.translation.notifications = {}
     if (!pl1.translation.notifications.messages) pl1.translation.notifications.messages = {}
     pl1.translation.notifications.messages.new_few = '{{count}} nowe wiadomości'
@@ -236,6 +279,7 @@ describe('plural form preservation across locales with --sync-primary', () => {
     await fs.writeFile(plPath, JSON.stringify(pl1, null, 2), 'utf-8')
 
     // Second extraction should preserve nested plural forms
+    // BUG: Nested forms are also lost during sync-primary (plural handling applies to all depths)
     await runExtractor(config, { isDryRun: false, syncPrimaryWithDefaults: true })
 
     const pl2 = JSON.parse(await fs.readFile(plPath, 'utf-8'))
@@ -272,14 +316,25 @@ describe('plural form preservation across locales with --sync-primary', () => {
       },
     }
 
-    // First extraction
+    // First extraction - both t() and <Trans> plurals are affected
     await runExtractor(config, { isDryRun: false })
 
     const plPath = join(tempDir, 'locales', 'pl.json')
     const pl1 = JSON.parse(await fs.readFile(plPath, 'utf-8'))
 
-    // Add Polish plural forms for both keys
+    // BUG REPRODUCTION: Verify t() and Trans only got primary locale forms
     if (!pl1.translation.items) pl1.translation.items = {}
+    expect(pl1.translation.items.tExample_one).toBeDefined()
+    expect(pl1.translation.items.tExample_other).toBeDefined()
+    expect(pl1.translation.items.tExample_few).toBeFalsy() // Generated as empty string
+    expect(pl1.translation.items.tExample_many).toBeFalsy() // Generated as empty string
+    expect(pl1.translation.items.transExample_one).toBeDefined()
+    expect(pl1.translation.items.transExample_other).toBeDefined()
+    expect(pl1.translation.items.transExample_few).toBeFalsy() // Generated as empty string
+    expect(pl1.translation.items.transExample_many).toBeFalsy() // Generated as empty string
+
+    // Add Polish plural forms for both t() and <Trans> keys
+    // Both are affected by the same bug: only _one/_other emitted from extraction
     pl1.translation.items.tExample_few = '{{count}} przedmioty'
     pl1.translation.items.tExample_many = '{{count}} przedmiotów'
     pl1.translation.items.transExample_few = 'Masz {{count}} przedmioty'
@@ -287,7 +342,8 @@ describe('plural form preservation across locales with --sync-primary', () => {
 
     await fs.writeFile(plPath, JSON.stringify(pl1, null, 2), 'utf-8')
 
-    // Second extraction
+    // Second extraction - t() and <Trans> forms should both be preserved
+    // BUG: All _few/_many forms are removed for both types
     await runExtractor(config, { isDryRun: false, syncPrimaryWithDefaults: true })
 
     const pl2 = JSON.parse(await fs.readFile(plPath, 'utf-8'))
@@ -320,18 +376,25 @@ describe('plural form preservation across locales with --sync-primary', () => {
     }
 
     // First extraction
+    // Scenario: Code has one plural key
     await runExtractor(config, { isDryRun: false })
 
     const plPath = join(tempDir, 'locales', 'pl.json')
     let pl = JSON.parse(await fs.readFile(plPath, 'utf-8'))
 
-    // Add Polish plural forms
+    // BUG REPRODUCTION: Verify first extraction only generated primary locale's forms
+    expect(pl.translation.products.total_one).toBeDefined()
+    expect(pl.translation.products.total_other).toBeDefined()
+    expect(pl.translation.products.total_few).toBeFalsy() // Generated as empty string
+    expect(pl.translation.products.total_many).toBeFalsy() // Generated as empty string
+
+    // Add Polish plural forms for products.total
     if (!pl.translation.products) pl.translation.products = {}
     pl.translation.products.total_few = '{{count}} produkty'
     pl.translation.products.total_many = '{{count}} produktów'
     await fs.writeFile(plPath, JSON.stringify(pl, null, 2), 'utf-8')
 
-    // Add a new key to source code
+    // Add a new key to source code (source code changes)
     component = `
       import { useTranslation } from 'react-i18next';
 
@@ -348,11 +411,13 @@ describe('plural form preservation across locales with --sync-primary', () => {
     await fs.writeFile(join(tempDir, 'src', 'App.tsx'), component)
 
     // Second extraction (adds new key, shouldn't remove existing forms)
+    // BUG: Even with new keys added, existing plural forms are at risk of removal
     await runExtractor(config, { isDryRun: false, syncPrimaryWithDefaults: true })
 
     pl = JSON.parse(await fs.readFile(plPath, 'utf-8'))
 
     // Original plural forms should still be there
+    // EXPECTED: products.total_few/many survive the first sync-primary
     expect(pl.translation.products.total_few).toEqual('{{count}} produkty')
     expect(pl.translation.products.total_many).toEqual('{{count}} produktów')
 
@@ -361,12 +426,13 @@ describe('plural form preservation across locales with --sync-primary', () => {
     expect(pl.translation.orders.total_one).toBeDefined()
     expect(pl.translation.orders.total_other).toBeDefined()
 
-    // Add forms for the new key
+    // Add forms for the new key - translator adds Polish forms for the new orders key
     pl.translation.orders.total_few = '{{count}} zamówienia'
     pl.translation.orders.total_many = '{{count}} zamówień'
     await fs.writeFile(plPath, JSON.stringify(pl, null, 2), 'utf-8')
 
-    // Third extraction (no changes to source)
+    // Third extraction (no changes to source) - run sync-primary again
+    // EXPECTED: Both keys' locale forms survive repeated sync-primary runs
     await runExtractor(config, { isDryRun: false, syncPrimaryWithDefaults: true })
 
     pl = JSON.parse(await fs.readFile(plPath, 'utf-8'))
@@ -400,6 +466,7 @@ describe('plural form preservation across locales with --sync-primary', () => {
     }
 
     // First extraction
+    // All locales get status.active_one and status.active_other (English plural forms)
     await runExtractor(config, { isDryRun: false })
 
     const plPath = join(tempDir, 'locales', 'pl.json')
@@ -408,7 +475,19 @@ describe('plural form preservation across locales with --sync-primary', () => {
     let pl = JSON.parse(await fs.readFile(plPath, 'utf-8'))
     let ru = JSON.parse(await fs.readFile(ruPath, 'utf-8'))
 
-    // Add locale-specific plural forms
+    // BUG REPRODUCTION: Verify first extraction only generated primary locale's forms for both
+    expect(pl.translation.status.active_one).toBeDefined()
+    expect(pl.translation.status.active_other).toBeDefined()
+    expect(pl.translation.status.active_few).toBeFalsy() // Generated as empty string
+    expect(pl.translation.status.active_many).toBeFalsy() // Generated as empty string
+
+    expect(ru.translation.status.active_one).toBeDefined()
+    expect(ru.translation.status.active_other).toBeDefined()
+    expect(ru.translation.status.active_few).toBeFalsy() // Generated as empty string
+    expect(ru.translation.status.active_many).toBeFalsy() // Generated as empty string
+
+    // Add locale-specific plural forms to Polish and Russian
+    // Both languages have plural forms that English doesn't have
     if (!pl.translation.status) pl.translation.status = {}
     pl.translation.status.active_few = '{{count}} aktywne'
     pl.translation.status.active_many = '{{count}} aktywnych'
@@ -420,13 +499,16 @@ describe('plural form preservation across locales with --sync-primary', () => {
     await fs.writeFile(plPath, JSON.stringify(pl, null, 2), 'utf-8')
     await fs.writeFile(ruPath, JSON.stringify(ru, null, 2), 'utf-8')
 
-    // Second extraction
+    // Second extraction with sync-primary
+    // BUG: Polish and Russian _few/_many forms removed, leaving only _one/_other
+    // EXPECTED: Each locale keeps its CLDR forms even if they don't exist in primary language
     await runExtractor(config, { isDryRun: false, syncPrimaryWithDefaults: true })
 
     pl = JSON.parse(await fs.readFile(plPath, 'utf-8'))
     ru = JSON.parse(await fs.readFile(ruPath, 'utf-8'))
 
     // Locale-specific forms should NOT be removed
+    // These forms are required by the locale's CLDR plural rules
     expect(pl.translation.status.active_few).toEqual('{{count}} aktywne')
     expect(pl.translation.status.active_many).toEqual('{{count}} aktywnych')
     expect(ru.translation.status.active_few).toEqual('{{count}} активных')
