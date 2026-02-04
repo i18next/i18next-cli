@@ -4,7 +4,7 @@ import { access, readFile } from 'node:fs/promises'
 import { createJiti } from 'jiti'
 import { parse } from 'jsonc-parser'
 import inquirer from 'inquirer'
-import chalk from 'chalk'
+import { styleText } from 'node:util'
 import type { I18nextToolkitConfig, Logger } from './types'
 import { runInit } from './init'
 import { ConsoleLogger } from './utils/logger'
@@ -139,19 +139,19 @@ export async function ensureConfig (configPath?: string, logger: Logger = new Co
   const { shouldInit } = await inquirer.prompt([{
     type: 'confirm',
     name: 'shouldInit',
-    message: chalk.yellow('Configuration file not found. Would you like to create one now?'),
+    message: styleText('yellow', 'Configuration file not found. Would you like to create one now?'),
     default: true,
   }])
 
   if (shouldInit) {
     await runInit() // Run the interactive setup wizard (keeps existing behavior)
-    logger.info(chalk.green('Configuration created. Resuming command...'))
+    logger.info(styleText('green', 'Configuration created. Resuming command...'))
     config = await loadConfig(configPath, logger) // Try loading the newly created config
 
     if (config) {
       return config
     } else {
-      logger.error(chalk.red('Error: Failed to load configuration after creation. Please try running the command again.'))
+      logger.error(styleText('red', 'Error: Failed to load configuration after creation. Please try running the command again.'))
       process.exit(1)
     }
   } else {

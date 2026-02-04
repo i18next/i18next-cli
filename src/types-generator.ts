@@ -2,7 +2,7 @@ import { ConsoleLogger } from './utils/logger'
 import { mergeResourcesAsInterface } from 'i18next-resources-for-ts'
 import { glob } from 'glob'
 import { createSpinnerLike } from './utils/wrap-ora'
-import chalk from 'chalk'
+import { styleText } from 'node:util'
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
 import { basename, extname, resolve, dirname, join, relative } from 'node:path'
 import { transform } from '@swc/core'
@@ -134,7 +134,7 @@ export async function runTypesGenerator (
 
           const nonObjectKeys = keys.filter(k => !parsedContent[k] || typeof parsedContent[k] !== 'object')
           if (nonObjectKeys.length > 0) {
-            console.warn(chalk.yellow(`Warning: The file ${file} contains top-level keys that are not objects (${nonObjectKeys.join(', ')}). When 'mergeNamespaces' is enabled, top-level keys are treated as namespaces. These keys will be ignored.`))
+            console.warn(styleText('yellow', `Warning: The file ${file} contains top-level keys that are not objects (${nonObjectKeys.join(', ')}). When 'mergeNamespaces' is enabled, top-level keys are treated as namespaces. These keys will be ignored.`))
           }
           continue
         }
@@ -154,7 +154,7 @@ ${mergeResourcesAsInterface(resources, { optimize: !!enableSelector, indentation
     const resourcesOutputPath = resolve(process.cwd(), config.types.resourcesFile)
     await mkdir(dirname(resourcesOutputPath), { recursive: true })
     await writeFile(resourcesOutputPath, interfaceDefinition)
-    logMessages.push(`  ${chalk.green('✓')} Resources interface written to ${config.types.resourcesFile}`)
+    logMessages.push(`  ${styleText('green', '✓')} Resources interface written to ${config.types.resourcesFile}`)
 
     let outputPathExists
     try {
@@ -184,12 +184,12 @@ declare module 'i18next' {
 }`
       await mkdir(dirname(outputPath), { recursive: true })
       await writeFile(outputPath, fileContent)
-      logMessages.push(`  ${chalk.green('✓')} TypeScript definitions written to ${config.types.output || ''}`)
+      logMessages.push(`  ${styleText('green', '✓')} TypeScript definitions written to ${config.types.output || ''}`)
     }
-    spinner.succeed(chalk.bold('TypeScript definitions generated successfully.'))
+    spinner.succeed(styleText('bold', 'TypeScript definitions generated successfully.'))
     logMessages.forEach(msg => typeof internalLogger.info === 'function' ? internalLogger.info(msg) : console.log(msg))
   } catch (error) {
-    spinner.fail(chalk.red('Failed to generate TypeScript definitions.'))
+    spinner.fail(styleText('red', 'Failed to generate TypeScript definitions.'))
     if (typeof internalLogger.error === 'function') internalLogger.error(error)
     else console.error(error)
   }
