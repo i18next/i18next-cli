@@ -4,6 +4,7 @@ import { createJiti } from 'jiti'
 import type { I18nextToolkitConfig } from '../types'
 import { getTsConfigAliases } from '../config'
 import { JsonParser, JsonObjectNode } from '@croct/json5-parser'
+import yaml from 'yaml'
 
 /**
  * Ensures that the directory for a given file path exists.
@@ -120,6 +121,9 @@ export async function loadTranslationFile (filePath: string): Promise<Record<str
       // Parse as a JSON5 object node
       const node = JsonParser.parse(content, JsonObjectNode)
       return node.toJSON()
+    } else if (ext === '.yaml' || ext === '.yml') {
+      const content = await readFile(fullPath, 'utf-8')
+      return yaml.parse(content) as Record<string, any>
     } else if (ext === '.json') {
       const content = await readFile(fullPath, 'utf-8')
       return JSON.parse(content)
@@ -178,6 +182,8 @@ export function serializeTranslationFile (
       const node = JsonParser.parse(jsonString, JsonObjectNode)
       return node.toString({ object: { indentationSize: Number(indentation) ?? 2 } })
     }
+    case 'yaml':
+      return yaml.stringify(data, { indent: Number(indentation) || 2, lineWidth: 0 })
     case 'js':
     case 'js-esm':
       return `export default ${jsonString};\n`
@@ -190,4 +196,22 @@ export function serializeTranslationFile (
     default:
       return `${jsonString}\n`
   }
+}
+
+/**
+ * Infers the output format from the file path extension.
+ * @param filePath - The path to the translation file
+ * @param defaultFormat - The default format to return if no match (default: 'json')
+ * @returns The inferred output format
+ */
+export function inferFormatFromPath (
+  filePath: string,
+  defaultFormat: I18nextToolkitConfig['extract']['outputFormat'] = 'json'
+): NonNullable<I18nextToolkitConfig['extract']['outputFormat']> {
+  if (filePath.endsWith('.json5')) return 'json5'
+  if (filePath.endsWith('.yaml') || filePath.endsWith('.yml')) return 'yaml'
+  if (filePath.endsWith('.ts')) return 'ts'
+  if (filePath.endsWith('.js')) return 'js'
+  if (filePath.endsWith('.json')) return 'json'
+  return defaultFormat || 'json'
 }

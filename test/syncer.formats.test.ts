@@ -309,4 +309,112 @@ describe('syncer: file formats and namespace merging', () => {
     expect(updatedDeContent).toContain('"greet": "Hallo"')
     expect(updatedDeContent).not.toContain('"greet": ""') // sanity: value kept
   })
+
+  it('should correctly sync YAML files using the real file system', async () => {
+    const enPath = resolve(TEMP_DIR, 'locales/en/translation.yaml')
+    const dePath = resolve(TEMP_DIR, 'locales/de/translation.yaml')
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue([enPath])
+
+    await mkdir(dirname(enPath), { recursive: true })
+    await mkdir(dirname(dePath), { recursive: true })
+
+    const enContent = `key1: Value 1
+key2: Value 2
+`
+    const deContent = `key1: Wert 1
+`
+    await writeFile(enPath, enContent)
+    await writeFile(dePath, deContent)
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: `${TEMP_DIR}/locales/{{language}}/{{namespace}}.yaml`,
+        outputFormat: 'yaml',
+      },
+    }
+
+    await runSyncer(config)
+
+    const updatedDeContent = await readFile(dePath, 'utf-8')
+
+    expect(updatedDeContent).toContain('key2: ""')
+    expect(updatedDeContent).toContain('key1: Wert 1')
+    // Should be YAML format (no JSON braces)
+    expect(updatedDeContent).not.toContain('{')
+    expect(updatedDeContent).not.toContain('}')
+  })
+
+  it('should sync YAML when outputFormat is omitted but file extension is .yaml', async () => {
+    const enPath = resolve(TEMP_DIR, 'locales/en/translation.yaml')
+    const dePath = resolve(TEMP_DIR, 'locales/de/translation.yaml')
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue([enPath])
+
+    await mkdir(dirname(enPath), { recursive: true })
+    await mkdir(dirname(dePath), { recursive: true })
+
+    const enContent = `greeting: Hello
+`
+    const deContent = `greeting: Hallo
+`
+    await writeFile(enPath, enContent)
+    await writeFile(dePath, deContent)
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: `${TEMP_DIR}/locales/{{language}}/{{namespace}}.yaml`,
+        // outputFormat omitted - should infer from extension
+      },
+    }
+
+    await runSyncer(config)
+
+    const updatedDeContent = await readFile(dePath, 'utf-8')
+    expect(updatedDeContent).toContain('greeting: Hallo')
+    // Should be YAML format
+    expect(updatedDeContent).not.toContain('{')
+    expect(updatedDeContent).not.toContain('}')
+  })
+
+  it('should sync YAML when outputFormat is omitted but file extension is .yml', async () => {
+    const enPath = resolve(TEMP_DIR, 'locales/en/translation.yml')
+    const dePath = resolve(TEMP_DIR, 'locales/de/translation.yml')
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue([enPath])
+
+    await mkdir(dirname(enPath), { recursive: true })
+    await mkdir(dirname(dePath), { recursive: true })
+
+    const enContent = `greeting: Hello
+`
+    const deContent = `greeting: Hallo
+`
+    await writeFile(enPath, enContent)
+    await writeFile(dePath, deContent)
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: `${TEMP_DIR}/locales/{{language}}/{{namespace}}.yml`,
+        // outputFormat omitted - should infer from extension
+      },
+    }
+
+    await runSyncer(config)
+
+    const updatedDeContent = await readFile(dePath, 'utf-8')
+    expect(updatedDeContent).toContain('greeting: Hallo')
+    // Should be YAML format
+    expect(updatedDeContent).not.toContain('{')
+    expect(updatedDeContent).not.toContain('}')
+  })
 })

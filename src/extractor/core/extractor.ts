@@ -11,7 +11,7 @@ import { validateExtractorConfig, ExtractorError } from '../../utils/validation'
 import { extractKeysFromComments } from '../parsers/comment-parser'
 import { ASTVisitors } from './ast-visitors'
 import { ConsoleLogger } from '../../utils/logger'
-import { serializeTranslationFile, loadRawJson5Content } from '../../utils/file-utils'
+import { serializeTranslationFile, loadRawJson5Content, inferFormatFromPath } from '../../utils/file-utils'
 import { shouldShowFunnel, recordFunnelShown } from '../../utils/funnel-msg-tracker'
 
 /**
@@ -80,7 +80,7 @@ export async function runExtractor (
         anyFileUpdated = true
         if (!options.isDryRun) {
           // prefer explicit outputFormat; otherwise infer from file extension per-file
-          const effectiveFormat = config.extract.outputFormat ?? (result.path.endsWith('.json5') ? 'json5' : 'json')
+          const effectiveFormat = config.extract.outputFormat ?? inferFormatFromPath(result.path)
           const rawContent = effectiveFormat === 'json5'
             ? (await loadRawJson5Content(result.path)) ?? undefined
             : undefined

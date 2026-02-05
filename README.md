@@ -375,7 +375,8 @@ export default defineConfig({
 
     // Use '.ts' files with `export default` instead of '.json'
     // Or use 'json5' to enable JSON5 features (comments, trailing commas, formatting are tried to be preserved)
-    // if the file ending is .json5 it automatically uses json5 format
+    // Or use 'yaml' for YAML format (.yaml or .yml extensions)
+    // if the file ending is .json5, .yaml, or .yml it automatically uses the corresponding format
     outputFormat: 'ts',
 
     // Combine all namespaces into a single file per language (e.g., locales/en.ts)
@@ -874,6 +875,34 @@ export default {
   "myKey": "My value"
 } as const;
 ```
+
+### YAML Translation Files
+
+For projects that prefer YAML for better readability and compatibility with other tools, you can configure the CLI to output YAML files instead of JSON.
+
+Configuration (`i18next.config.ts`):
+
+```typescript
+export default defineConfig({
+  extract: {
+    output: 'locales/{{language}}/{{namespace}}.yaml', // Use .yaml or .yml
+    outputFormat: 'yaml', // Optional - inferred from file extension
+  }
+});
+```
+
+This will generate files like `locales/en/translation.yaml` with the following content:
+
+```yaml
+app:
+  title: My Application
+  description: Welcome to our app
+button:
+  save: Save
+  cancel: Cancel
+```
+
+> **💡 Note:** Both `.yaml` and `.yml` extensions are supported and preserved. The `outputFormat: 'yaml'` option is optional when using these extensions - the format is automatically inferred from the file extension.
 
 ### Merging Namespaces
 

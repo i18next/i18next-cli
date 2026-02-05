@@ -130,12 +130,13 @@ export interface I18nextToolkitConfig {
      * The format of the output translation files.
      * 'json': Standard JSON file (default)
      * 'json5': JSON5 file
+     * 'yaml': YAML file
      * 'js': JavaScript file with ES Module syntax (export default)
      * 'js-esm': JavaScript file with ES Module syntax (export default)
      * 'js-cjs': JavaScript file with CommonJS syntax (module.exports)
      * 'ts': TypeScript file with ES Module syntax and `as const` for type safety
      */
-    outputFormat?: 'json' | 'json5' | 'js' | 'ts' | 'js-esm' | 'js-cjs' | 'ts';
+    outputFormat?: 'json' | 'json5' | 'yaml' | 'js' | 'ts' | 'js-esm' | 'js-cjs' | 'ts';
 
     /**
      * If true, all namespaces will be merged into a single file per language.
