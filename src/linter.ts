@@ -112,8 +112,11 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
         const issueLineNumber = position > -1 ? getLineNumber(position) : 1
         // Only check for unused parameters if there is at least one interpolation key in the string
         if (keys.length > 0) {
+          // i18next supports nested object access via dot notation (e.g. {{author.name}} with { author }).
+          // For each interpolation key, check if the root (part before the first dot) matches a provided param.
           for (const k of keys) {
-            if (!paramKeys.includes(k)) {
+            const root = k.split('.')[0]
+            if (!paramKeys.includes(k) && !paramKeys.includes(root)) {
               issues.push({
                 text: `Interpolation parameter "${k}" was not provided`,
                 line: issueLineNumber,
@@ -121,8 +124,10 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
               })
             }
           }
+          // For each provided param, check if it is used either directly or as the root of a dotted key.
           for (const pk of paramKeys) {
-            if (!keys.includes(pk)) {
+            const isUsed = keys.some(k => k === pk || k.split('.')[0] === pk)
+            if (!isUsed) {
               issues.push({
                 text: `Parameter "${pk}" is not used in translation string`,
                 line: issueLineNumber,
