@@ -1,8 +1,73 @@
 import type { Expression, JSXAttribute, JSXAttributeOrSpread, JSXElement, JSXElementChild, JSXElementName, JSXExpression, ObjectExpression } from '@swc/core'
 import type { I18nextToolkitConfig } from '../../types'
 import { getObjectPropValue, getObjectPropValueExpression, isSimpleTemplateLiteral } from './ast-utils'
-import * as React from 'react'
+import type { JSXElementConstructor, ReactElement } from 'react'
 import { getDefaults, nodesToString } from 'react-i18next'
+
+/**
+ * Detects which `$$typeof` symbol react-i18next's `nodesToString` expects
+ * from React elements.  This matters because npm hoisting can cause
+ * `react-i18next` to resolve `react` to a *different* version than the one
+ * this package depends on (e.g. the user's React 18 vs the CLI's React 19).
+ *
+ * React 18 uses `Symbol.for('react.element')`, while React 19 uses
+ * `Symbol.for('react.transitional.element')` for its element `$$typeof`.
+ * By probing `nodesToString` at load time we ensure the fake elements we
+ * build match its `isValidElement` check, regardless of which React it
+ * resolved to.
+ */
+const REACT_ELEMENT_TYPE: symbol = (() => {
+  const candidates = [
+    Symbol.for('react.element'), // React ≤ 18
+    Symbol.for('react.transitional.element') // React 19
+  ]
+  const savedWarn = console.warn
+  console.warn = () => {} // suppress probe warnings
+  try {
+    for (const sym of candidates) {
+      const testEl = {
+        $$typeof: sym,
+        type: 'span',
+        props: { children: 'x' },
+        key: null,
+        ref: null
+      }
+      const result = nodesToString([testEl], { ...getDefaults() })
+      if (result === '<0>x</0>') return sym
+    }
+  } finally {
+    console.warn = savedWarn
+  }
+  return candidates[0]
+})()
+
+/** `React.Fragment` equivalent – same symbol across all React versions. */
+const REACT_FRAGMENT: symbol = Symbol.for('react.fragment')
+
+/**
+ * Creates a React-element–like object whose `$$typeof` matches whichever
+ * React version `react-i18next`'s `nodesToString` uses for its
+ * `isValidElement` check.
+ */
+function createElement (
+  type: string | symbol | JSXElementConstructor<any>,
+  props: Record<string, any> | null,
+  ...children: any[]
+): ReactElement {
+  const finalProps: Record<string, any> = props ? { ...props } : {}
+  if (children.length === 1) {
+    finalProps.children = children[0]
+  } else if (children.length > 1) {
+    finalProps.children = children
+  }
+  return {
+    $$typeof: REACT_ELEMENT_TYPE,
+    type,
+    props: finalProps,
+    key: null,
+    ref: null
+  } as unknown as ReactElement
+}
 
 export interface ExtractedJSXAttributes {
   /** holds the raw key expression from the AST */
@@ -285,7 +350,7 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
  * irrelevant, as long as we have something realistic-looking to pass to
  * react-i18next.
  */
-function makeDummyComponent (name: string): React.JSXElementConstructor<any> {
+function makeDummyComponent (name: string): JSXElementConstructor<any> {
   const result = () => null
   Object.defineProperty(result, 'name', { value: name })
   result.displayName = name
@@ -306,7 +371,7 @@ function makeDummyProps (attributes: JSXAttributeOrSpread[]): Record<string, any
     : null
 }
 
-function getElementName (element: JSXElementName): string | React.JSXElementConstructor<any> {
+function getElementName (element: JSXElementName): string | JSXElementConstructor<any> {
   switch (element.type) {
     case 'Identifier':
       return /\p{Uppercase_Letter}/u.test(element.value) ? makeDummyComponent(element.value) : element.value
@@ -336,7 +401,7 @@ function trimTextNode (text: string): string | null {
   return text
 }
 
-function swcExpressionToReactNode (expr: JSXExpression): string | React.ReactElement | null {
+function swcExpressionToReactNode (expr: JSXExpression): string | ReactElement | null {
   switch (expr.type) {
     case 'JSXEmptyExpression':
       return null
@@ -375,7 +440,7 @@ function swcExpressionToReactNode (expr: JSXExpression): string | React.ReactEle
     case 'Identifier':
       // Not a valid React element, but props for Trans interpolation
       // TODO: This might actually be an error - not sure that react-i18next can handle at runtime
-      return { [expr.value]: expr.value } as unknown as React.ReactElement
+      return { [expr.value]: expr.value } as unknown as ReactElement
     case 'ObjectExpression': {
       const keys = expr.properties.map((prop) => {
         if (prop.type === 'KeyValueProperty' && (prop.key.type === 'Identifier' || prop.key.type === 'StringLiteral')) {
@@ -388,15 +453,15 @@ function swcExpressionToReactNode (expr: JSXExpression): string | React.ReactEle
         }
       }).filter(k => k !== null)
       // Not a valid React element, but props for Trans interpolation
-      return Object.fromEntries(keys.map(k => [k, k])) as unknown as React.ReactElement
+      return Object.fromEntries(keys.map(k => [k, k])) as unknown as ReactElement
     }
   }
 
   // Too complex to represent! TODO: Flag an error
-  return React.createElement('expression', { expression: expr })
+  return createElement('expression', { expression: expr })
 }
 
-function swcChildToReactNode (node: JSXElementChild): string | React.ReactElement | null {
+function swcChildToReactNode (node: JSXElementChild): string | ReactElement | null {
   switch (node.type) {
     case 'JSXText':
       return trimTextNode(node.value)
@@ -405,17 +470,17 @@ function swcChildToReactNode (node: JSXElementChild): string | React.ReactElemen
     case 'JSXSpreadChild':
       return ''
     case 'JSXElement':
-      return React.createElement(
+      return createElement(
         getElementName(node.opening.name),
         makeDummyProps(node.opening.attributes),
         ...swcChildrenToReactNodes(node.children)
       )
     case 'JSXFragment':
-      return React.createElement(React.Fragment, null, ...swcChildrenToReactNodes(node.children))
+      return createElement(REACT_FRAGMENT, null, ...swcChildrenToReactNodes(node.children))
   }
 }
 
-function swcChildrenToReactNodes (children: JSXElementChild[]): (string | React.ReactElement)[] {
+function swcChildrenToReactNodes (children: JSXElementChild[]): (string | ReactElement)[] {
   return children.map(swcChildToReactNode).filter(n => n !== null)
 }
 

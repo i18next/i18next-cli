@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.2](https://github.com/i18next/i18next-cli/compare/v1.42.1...v1.42.2) - 2026-02-06
+
+- fix extractor: `<Trans>` serialization broken when user project has a different React version (e.g. React 18) than the CLI — caused by `$$typeof` symbol mismatch in `isValidElement` [#179](https://github.com/i18next/i18next-cli/issues/179)
+
 ## [1.42.1](https://github.com/i18next/i18next-cli/compare/v1.42.0...v1.42.1) - 2026-02-06
 
 - linter: improve `checkInterpolationParams` [#178](https://github.com/i18next/i18next-cli/issues/178)
