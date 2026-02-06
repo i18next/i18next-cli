@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.1](https://github.com/i18next/i18next-cli/compare/v1.42.0...v1.42.1) - 2026-02-06
+
+- linter: improve `checkInterpolationParams` [#178](https://github.com/i18next/i18next-cli/issues/178)
+
 ## [1.42.0](https://github.com/i18next/i18next-cli/compare/v1.41.4...v1.42.0) - 2026-02-05
 
 - YAML translation file support [#177](https://github.com/i18next/i18next-cli/issues/177)

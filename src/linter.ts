@@ -90,22 +90,34 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
         let paramKeys: string[] = []
         if (arg1?.type === 'ObjectExpression') {
           paramKeys = arg1.properties
-            .filter((p: any) => p.type === 'KeyValueProperty')
             .map((p: any) => {
-              if (p.key?.type === 'Identifier') return p.key.value
-              if (p.key?.type === 'StringLiteral') return p.key.value
+              // Standard key:value property like { name: "value" }
+              if (p.type === 'KeyValueProperty' && p.key) {
+                if (p.key.type === 'Identifier') return p.key.value
+                if (p.key.type === 'StringLiteral') return p.key.value
+                return undefined
+              }
+              // Shorthand property like { hours, minutes }
+              if (p.type === 'ShorthandProperty' || p.type === 'Identifier') {
+                return p.value ?? p.name
+              }
               return undefined
             })
             .filter((k: any) => typeof k === 'string')
         }
         if (!Array.isArray(paramKeys)) paramKeys = []
+        // Use text search for accurate line numbers (SWC spans use global byte offsets, not per-file)
+        const searchText = arg0.raw ?? `"${arg0.value}"`
+        const position = code.indexOf(searchText)
+        const issueLineNumber = position > -1 ? getLineNumber(position) : 1
         // Only check for unused parameters if there is at least one interpolation key in the string
         if (keys.length > 0) {
           for (const k of keys) {
             if (!paramKeys.includes(k)) {
               issues.push({
                 text: `Interpolation parameter "${k}" was not provided`,
-                line: getLineNumber(node.span?.start ?? 0),
+                line: issueLineNumber,
+                type: 'interpolation',
               })
             }
           }
@@ -113,7 +125,8 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
             if (!keys.includes(pk)) {
               issues.push({
                 text: `Parameter "${pk}" is not used in translation string`,
-                line: getLineNumber(node.span?.start ?? 0),
+                line: issueLineNumber,
+                type: 'interpolation',
               })
             }
           }
@@ -317,9 +330,10 @@ export async function runLinterCli (
       for (const [file, issues] of Object.entries(files)) {
         if (internalLogger.info) internalLogger.info(chalk.yellow(`\n${file}`))
         else console.log(chalk.yellow(`\n${file}`))
-        issues.forEach(({ text, line }) => {
-          if (typeof internalLogger.info === 'function') internalLogger.info(`  ${chalk.gray(`${line}:`)} ${chalk.red('Error:')} Found hardcoded string: "${text}"`)
-          else console.log(`  ${chalk.gray(`${line}:`)} ${chalk.red('Error:')} Found hardcoded string: "${text}"`)
+        issues.forEach(({ text, line, type }) => {
+          const label = type === 'interpolation' ? 'Interpolation issue' : 'Found hardcoded string'
+          if (typeof internalLogger.info === 'function') internalLogger.info(`  ${chalk.gray(`${line}:`)} ${chalk.red('Error:')} ${label}: "${text}"`)
+          else console.log(`  ${chalk.gray(`${line}:`)} ${chalk.red('Error:')} ${label}: "${text}"`)
         })
       }
       process.exit(1)
@@ -343,6 +357,8 @@ interface HardcodedString {
   text: string;
   /** Line number where the string or error was found */
   line: number;
+  /** The type of issue: 'hardcoded' for hardcoded strings, 'interpolation' for interpolation parameter errors */
+  type?: 'hardcoded' | 'interpolation';
 }
 
 const isUrlOrPath = (text: string) => /^(https|http|\/\/|^\/)/.test(text)

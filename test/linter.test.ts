@@ -967,4 +967,126 @@ describe('Linter (core logic)', () => {
     expect(texts).toContain('Interpolation parameter "name" was not provided')
     expect(texts).toContain('Parameter "name2" is not used in translation string')
   })
+
+  it('should not produce false positives for shorthand properties in t() calls (issue #178)', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    // Shorthand properties like { hours, minutes } should be recognized as provided params
+    const sampleCode = [
+      'import { useMemo } from "react"',
+      'import { useTranslation } from "react-i18next"',
+      '',
+      'const DaySegment = () => {',
+      '  const { t } = useTranslation()',
+      '',
+      '  const summedBreakTimeInMinutes = 10',
+      '',
+      '  const formattedBreakHours = useMemo(() => {',
+      '    const hours = Math.floor(summedBreakTimeInMinutes / 60)',
+      '    const minutes = summedBreakTimeInMinutes % 60',
+      '',
+      '    return t("{{hours}}H {{minutes}}M", { hours, minutes })',
+      '  }, [summedBreakTimeInMinutes])',
+      '',
+      '  return <section>{formattedBreakHours}</section>',
+      '}',
+      '',
+      'export default DaySegment',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    // Should NOT report any interpolation errors - hours and minutes are provided via shorthand
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
+  it('should report correct line numbers for interpolation parameter errors (issue #178)', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    const sampleCode = [
+      '// Line 1',
+      'const a = "foo"',
+      'const msg = t("Hello {{name}}!", { name2: "Seven" })',
+      'const b = "bar"',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(2)
+    const issues = result.files['/src/App.tsx']
+    // Both issues originate from the t() call on line 3, not the last line
+    expect(issues[0].line).toBe(3)
+    expect(issues[1].line).toBe(3)
+  })
+
+  it('should distinguish interpolation errors from hardcoded string issues (issue #178)', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    const sampleCode = [
+      'const msg = t("Hello {{name}}!", { name2: "Seven" })',
+      'const el = <p>Hardcoded text</p>',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(3)
+    const issues = result.files['/src/App.tsx']
+    // Interpolation issues should have type 'interpolation'
+    const interpolationIssues = issues.filter(i => i.type === 'interpolation')
+    const hardcodedIssues = issues.filter(i => !i.type || i.type === 'hardcoded')
+    expect(interpolationIssues).toHaveLength(2)
+    expect(hardcodedIssues).toHaveLength(1)
+    expect(hardcodedIssues[0].text).toBe('Hardcoded text')
+  })
+
+  it('should handle mixed shorthand and key-value properties in t() calls', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    const sampleCode = `
+      const name = "World"
+      const msg = t("{{greeting}}, {{name}}!", { greeting: "Hello", name })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    // Both params are provided (greeting via key-value, name via shorthand)
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+  })
 })
