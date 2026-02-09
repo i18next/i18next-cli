@@ -1,6 +1,44 @@
 import type { Expression, Identifier, ObjectExpression, TemplateLiteral } from '@swc/core'
 
 /**
+ * Recursively normalizes all SWC span offsets in an AST by subtracting a base
+ * offset. SWC's `parse()` accumulates byte offsets across successive calls in
+ * the same process, so `span.start`/`span.end` values can exceed the length of
+ * the source file. Call this once on the root `Module` node right after parsing
+ * to make every span file-relative.
+ *
+ * @param node  - Any AST node (or the root Module)
+ * @param base  - The base offset to subtract (`ast.span.start`)
+ */
+export function normalizeASTSpans (node: any, base: number): void {
+  if (!node || typeof node !== 'object' || base === 0) return
+
+  // Normalize this node's own span
+  if (node.span && typeof node.span.start === 'number') {
+    node.span = {
+      ...node.span,
+      start: node.span.start - base,
+      end: node.span.end - base
+    }
+  }
+
+  // Recurse into every property (skip span itself to avoid double-processing)
+  for (const key of Object.keys(node)) {
+    if (key === 'span') continue
+    const child = node[key]
+    if (Array.isArray(child)) {
+      for (const item of child) {
+        if (item && typeof item === 'object') {
+          normalizeASTSpans(item, base)
+        }
+      }
+    } else if (child && typeof child === 'object') {
+      normalizeASTSpans(child, base)
+    }
+  }
+}
+
+/**
  * Finds and returns the full property node (KeyValueProperty) for the given
  * property name from an ObjectExpression.
  *

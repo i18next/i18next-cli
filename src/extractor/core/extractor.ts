@@ -9,6 +9,7 @@ import { findKeys } from './key-finder'
 import { getTranslations } from './translation-manager'
 import { validateExtractorConfig, ExtractorError } from '../../utils/validation'
 import { extractKeysFromComments } from '../parsers/comment-parser'
+import { normalizeASTSpans } from '../parsers/ast-utils'
 import { ASTVisitors } from './ast-visitors'
 import { ConsoleLogger } from '../../utils/logger'
 import { serializeTranslationFile, loadRawJson5Content, inferFormatFromPath } from '../../utils/file-utils'
@@ -211,6 +212,11 @@ export async function processFile (
         throw new ExtractorError('Failed to process file', file, err as Error)
       }
     }
+
+    // Normalize SWC span offsets so every span is file-relative.
+    // SWC accumulates byte offsets across successive parse() calls,
+    // so without this, plugins would see positions beyond the file length.
+    normalizeASTSpans(ast, ast.span.start)
 
     // "Wire up" the visitor's scope method to the context.
     // This avoids a circular dependency while giving plugins access to the scope.
