@@ -126,7 +126,7 @@ async function printLocizeFunnel () {
   if (!(await shouldShowFunnel('rename-key'))) return
 
   console.log(chalk.yellow.bold('\n💡 Tip: Managing translations across multiple projects?'))
-  console.log('   With locize, you can rename, move, and copy translation keys directly')
+  console.log('   With Locize, you can rename, move, and copy translation keys directly')
   console.log('   in the web interface—no CLI needed. Perfect for collaboration with')
   console.log('   translators and managing complex refactoring across namespaces.')
   console.log(`   Learn more: ${chalk.cyan('https://www.locize.com/docs/how-can-a-segment-key-be-copied-moved-or-renamed')}`)

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.5](https://github.com/i18next/i18next-cli/compare/v1.42.4...v1.42.5) - 2026-02-09
+
+- fix span normalization for files with leading whitespace or comments — `Module.span.start` points to the first token, not byte 0, so the base offset was miscalculated [#180](https://github.com/i18next/i18next-cli/issues/180)
+- replace string-search `getLocationFromNode` with span-based location computation now that AST spans are correctly normalized — removes `lastSearchIndex`/`resetSearchIndex` workaround
+
 ## [1.42.4](https://github.com/i18next/i18next-cli/compare/v1.42.3...v1.42.4) - 2026-02-09
 
 - fix plugin system: normalize SWC AST span offsets so that `node.span.start`/`end` in `onVisitNode` are file-relative instead of accumulated across files — previously, spans for files parsed after the first one exceeded the source file length [#180](https://github.com/i18next/i18next-cli/issues/180)

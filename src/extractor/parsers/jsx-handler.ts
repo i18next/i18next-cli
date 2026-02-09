@@ -2,7 +2,7 @@ import type { JSXElement, ObjectExpression } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, ExtractedKey } from '../../types'
 import { ExpressionResolver } from './expression-resolver'
 import { extractFromTransComponent } from './jsx-parser'
-import { getObjectPropValue } from './ast-utils'
+import { getObjectPropValue, lineColumnFromOffset } from './ast-utils'
 
 export class JSXHandler {
   private config: Omit<I18nextToolkitConfig, 'plugins'>
@@ -10,7 +10,6 @@ export class JSXHandler {
   private expressionResolver: ExpressionResolver
   private getCurrentFile: () => string
   private getCurrentCode: () => string
-  private lastSearchIndex: number = 0
 
   constructor (
     config: Omit<I18nextToolkitConfig, 'plugins'>,
@@ -27,43 +26,13 @@ export class JSXHandler {
   }
 
   /**
-   * Reset the search index when starting to process a new file.
-   */
-  public resetSearchIndex (): void {
-    this.lastSearchIndex = 0
-  }
-
-  /**
-   * Helper method to calculate line and column by searching for the JSX element in the code.
+   * Computes line and column from a node's normalised span.
+   * SWC spans are normalised to file-relative offsets after parsing,
+   * so we can use them directly.
    */
   private getLocationFromNode (node: any): { line: number, column: number } | undefined {
-    const code = this.getCurrentCode()
-
-    // For JSXElement, search for the opening tag
-    let searchText: string | undefined
-
-    if (node.type === 'JSXElement' && node.opening) {
-      const tagName = node.opening.name?.value
-      if (tagName) {
-        searchText = `<${tagName}`
-      }
-    }
-
-    if (!searchText) return undefined
-
-    const position = code.indexOf(searchText, this.lastSearchIndex)
-
-    if (position === -1) return undefined
-
-    this.lastSearchIndex = position + searchText.length
-
-    const upToPosition = code.substring(0, position)
-    const lines = upToPosition.split('\n')
-
-    return {
-      line: lines.length,
-      column: lines[lines.length - 1].length
-    }
+    if (!node?.span || typeof node.span.start !== 'number') return undefined
+    return lineColumnFromOffset(this.getCurrentCode(), node.span.start)
   }
 
   /**

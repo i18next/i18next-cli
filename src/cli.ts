@@ -216,8 +216,8 @@ program
 
 program
   .command('locize-sync')
-  .description('Synchronize local translations with your locize project.')
-  .option('--update-values', 'Update values of existing translations on locize.')
+  .description('Synchronize local translations with your Locize project.')
+  .option('--update-values', 'Update values of existing translations on Locize.')
   .option('--src-lng-only', 'Check for changes in source language only.')
   .option('--compare-mtime', 'Compare modification times when syncing.')
   .option('--dry-run', 'Run the command without making any changes.')
@@ -230,8 +230,8 @@ program
 
 program
   .command('locize-download')
-  .description('Download all translations from your locize project.')
-  .option('--cdn-type <standard|pro>', 'Specify the cdn endpoint that should be used (depends on which cdn type you\'ve in your locize project)')
+  .description('Download all translations from your Locize project.')
+  .option('--cdn-type <standard|pro>', 'Specify the cdn endpoint that should be used (depends on which cdn type you\'ve in your Locize project)')
   .action(async (options) => {
     const cfgPath = program.opts().config
     const config = await ensureConfig(cfgPath)
@@ -240,8 +240,8 @@ program
 
 program
   .command('locize-migrate')
-  .description('Migrate local translation files to a new locize project.')
-  .option('--cdn-type <standard|pro>', 'Specify the cdn endpoint that should be used (depends on which cdn type you\'ve in your locize project)')
+  .description('Migrate local translation files to a new Locize project.')
+  .option('--cdn-type <standard|pro>', 'Specify the cdn endpoint that should be used (depends on which cdn type you\'ve in your Locize project)')
   .action(async (options) => {
     const cfgPath = program.opts().config
     const config = await ensureConfig(cfgPath)

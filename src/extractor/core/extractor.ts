@@ -9,7 +9,7 @@ import { findKeys } from './key-finder'
 import { getTranslations } from './translation-manager'
 import { validateExtractorConfig, ExtractorError } from '../../utils/validation'
 import { extractKeysFromComments } from '../parsers/comment-parser'
-import { normalizeASTSpans } from '../parsers/ast-utils'
+import { normalizeASTSpans, findFirstTokenIndex } from '../parsers/ast-utils'
 import { ASTVisitors } from './ast-visitors'
 import { ConsoleLogger } from '../../utils/logger'
 import { serializeTranslationFile, loadRawJson5Content, inferFormatFromPath } from '../../utils/file-utils'
@@ -213,10 +213,14 @@ export async function processFile (
       }
     }
 
-    // Normalize SWC span offsets so every span is file-relative.
-    // SWC accumulates byte offsets across successive parse() calls,
-    // so without this, plugins would see positions beyond the file length.
-    normalizeASTSpans(ast, ast.span.start)
+    // Normalize SWC span offsets so every span is file-relative (0-based).
+    // SWC accumulates byte offsets across successive parse() calls and uses
+    // 1-based positions, so Module.span.start points to the first token,
+    // NOT to byte 0 of the source.  We derive the true base by subtracting
+    // the 0-based index of that first token in the source string.
+    const firstTokenIdx = findFirstTokenIndex(code)
+    const spanBase = ast.span.start - firstTokenIdx
+    normalizeASTSpans(ast, spanBase)
 
     // "Wire up" the visitor's scope method to the context.
     // This avoids a circular dependency while giving plugins access to the scope.

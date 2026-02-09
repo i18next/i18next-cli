@@ -23,7 +23,7 @@ async function checkLocizeCliExists (): Promise<void> {
   } catch (error: any) {
     if (error.code === 'ENOENT') {
       console.error(chalk.red('Error: `locize-cli` command not found.'))
-      console.log(chalk.yellow('Please install it globally to use the locize integration:'))
+      console.log(chalk.yellow('Please install it globally to use the Locize integration:'))
       console.log(chalk.cyan('npm install -g locize-cli'))
       process.exit(1)
     }
@@ -59,13 +59,13 @@ async function interactiveCredentialSetup (config: I18nextToolkitConfig): Promis
     {
       type: 'input',
       name: 'projectId',
-      message: 'What is your locize Project ID? (Find this in your project settings on www.locize.app)',
+      message: 'What is your Locize Project ID? (Find this in your project settings on www.locize.app)',
       validate: input => !!input || 'Project ID cannot be empty.',
     },
     {
       type: 'password',
       name: 'apiKey',
-      message: 'What is your locize API key? (Create or use one in your project settings > "API Keys")',
+      message: 'What is your Locize API key? (Create or use one in your project settings > "API Keys")',
       validate: input => !!input || 'API Key cannot be empty.',
     },
     {
