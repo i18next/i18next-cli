@@ -1,8 +1,8 @@
 import { TranslationResult, ExtractedKey, I18nextToolkitConfig } from '../../types'
-import { resolve, basename, extname } from 'node:path'
+import { resolve } from 'node:path'
 import { glob } from 'glob'
 import { getNestedValue, setNestedValue, getNestedKeys } from '../../utils/nested-object'
-import { getOutputPath, loadTranslationFile } from '../../utils/file-utils'
+import { getOutputPath, extractNamespaceFromPath, loadTranslationFile } from '../../utils/file-utils'
 import { resolveDefaultValue } from '../../utils/default-value'
 
 // used for natural language check
@@ -949,14 +949,23 @@ export async function getTranslations (
 
     // LOGIC PATH 2: Separate Namespace Files
     } else {
-      // Find all namespaces that exist on disk for this locale
+      // Find all namespaces that exist on disk for this locale.
+      // Use '**' so the glob crosses directory boundaries — namespaces
+      // can contain '/' and span multiple directory levels.
       const namespacesToProcess = new Set(keysByNS.keys())
-      const existingNsPattern = getOutputPath(config.extract.output, locale, '*')
+      const existingNsPattern = getOutputPath(config.extract.output, locale, '**')
       // Ensure glob receives POSIX-style separators so pattern matching works cross-platform (Windows -> backslashes)
       const existingNsGlobPattern = existingNsPattern.replace(/\\/g, '/')
       const existingNsFiles = await glob(existingNsGlobPattern, { ignore: userIgnore })
       for (const file of existingNsFiles) {
-        namespacesToProcess.add(basename(file, extname(file)))
+        // Recover the full (possibly multi-segment) namespace from the file path
+        // by matching it against the output template.
+        const ns = typeof config.extract.output === 'string'
+          ? extractNamespaceFromPath(config.extract.output, locale, file)
+          : undefined
+        if (ns) {
+          namespacesToProcess.add(ns)
+        }
       }
 
       // Process each namespace individually and create a result for each one

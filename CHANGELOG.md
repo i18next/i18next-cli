@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.6](https://github.com/i18next/i18next-cli/compare/v1.42.5...v1.42.6) - 2026-02-09
+
+- fix multi-segment namespaces (e.g. `useTranslation('/widgets/component')` with output `src/{{namespace}}/locales/{{language}}.json`) — glob used `*` which only matches a single directory level, changed to `**`; namespace recovery used `basename()` which returned the filename instead of the full namespace path, replaced with regex-based `extractNamespaceFromPath()` [#182](https://github.com/i18next/i18next-cli/issues/182)
+
 ## [1.42.5](https://github.com/i18next/i18next-cli/compare/v1.42.4...v1.42.5) - 2026-02-09
 
 - fix span normalization for files with leading whitespace or comments — `Module.span.start` points to the first token, not byte 0, so the base offset was miscalculated [#180](https://github.com/i18next/i18next-cli/issues/180)

@@ -101,6 +101,53 @@ export function getOutputPath (
 }
 
 /**
+ * Extracts the namespace value from a concrete file path by matching it against
+ * the output template.
+ *
+ * Given a template like `src/{{namespace}}/locales/{{language}}.json` and a file
+ * path like `src/widgets/component/locales/en.json`, this returns `widgets/component`.
+ *
+ * This handles multi-segment namespaces (namespaces containing `/`) which
+ * `basename()` cannot recover.
+ *
+ * @param outputTemplate - The output path template string (must contain `{{namespace}}`)
+ * @param language - The language value used when the file was generated
+ * @param filePath - The concrete file path to extract the namespace from
+ * @returns The namespace string, or `undefined` if the path doesn't match the template
+ */
+export function extractNamespaceFromPath (
+  outputTemplate: string,
+  language: string,
+  filePath: string
+): string | undefined {
+  // Build a regex from the template by escaping everything except the placeholders.
+  // Replace {{language}}/{{lng}} with the literal language value and
+  // {{namespace}} with a named capture group that matches one or more path segments.
+  const pattern = outputTemplate
+    // Normalise to forward slashes for matching
+    .replace(/\\/g, '/')
+
+  // Escape regex-special characters (but keep our placeholders intact first)
+  const nsPlaceholder = '{{namespace}}'
+  const parts = pattern.split(nsPlaceholder)
+  // Escape each part individually then rejoin with the capture group
+  const escaped = parts.map(p =>
+    p
+      .replace(/\{\{language\}\}|\{\{lng\}\}/g, () => escapeForRegex(language))
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  )
+  // Don't anchor the start — the glob may return absolute or prefixed paths.
+  // Anchor only the end so that the namespace capture is unambiguous.
+  const regexStr = escaped.join('(.+)') + '$'
+
+  const normalized = filePath.replace(/\\/g, '/')
+  const m = new RegExp(regexStr).exec(normalized)
+  return m?.[1]
+}
+
+const escapeForRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
  * Dynamically loads a translation file, supporting .json, .js, and .ts formats.
  * @param filePath - The path to the translation file.
  * @returns The parsed content of the file, or null if not found or failed to parse.
