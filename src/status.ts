@@ -437,7 +437,7 @@ async function printLocizeFunnel () {
   if (!(await shouldShowFunnel('status'))) return
 
   console.log(styleText(['yellow', 'bold'], '\n✨ Take your localization to the next level!'))
-  console.log('Manage translations with your team in the cloud with locize => https://www.locize.com/docs/getting-started')
+  console.log('Manage translations with your team in the cloud with Locize => https://www.locize.com/docs/getting-started')
   console.log(`Run ${styleText('cyan', 'npx i18next-cli locize-migrate')} to get started.`)
 
   return recordFunnelShown('status')

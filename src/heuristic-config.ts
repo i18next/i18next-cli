@@ -26,6 +26,20 @@ const HEURISTIC_PATTERNS = [
   'app/i18n/locales/en/*.json5',
   'src/i18n/locales/en/*.json5',
 
+  'public/locales/en/*.yaml',
+  'locales/en/*.yaml',
+  'src/locales/en/*.yaml',
+  'src/assets/locales/en/*.yaml',
+  'app/i18n/locales/en/*.yaml',
+  'src/i18n/locales/en/*.yaml',
+
+  'public/locales/en/*.yml',
+  'locales/en/*.yml',
+  'src/locales/en/*.yml',
+  'src/assets/locales/en/*.yml',
+  'app/i18n/locales/en/*.yml',
+  'src/i18n/locales/en/*.yml',
+
   'public/locales/en-*/*.json',
   'locales/en-*/*.json',
   'src/locales/en-*/*.json',
@@ -62,6 +76,8 @@ export async function detectConfig (): Promise<Partial<I18nextToolkitConfig> | n
         outputFormat = 'js'
       } else if (extension === '.json5') {
         outputFormat = 'json5'
+      } else if (extension === '.yaml' || extension === '.yml') {
+        outputFormat = 'yaml'
       }
 
       try {

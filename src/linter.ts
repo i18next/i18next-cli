@@ -90,30 +90,48 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
         let paramKeys: string[] = []
         if (arg1?.type === 'ObjectExpression') {
           paramKeys = arg1.properties
-            .filter((p: any) => p.type === 'KeyValueProperty')
             .map((p: any) => {
-              if (p.key?.type === 'Identifier') return p.key.value
-              if (p.key?.type === 'StringLiteral') return p.key.value
+              // Standard key:value property like { name: "value" }
+              if (p.type === 'KeyValueProperty' && p.key) {
+                if (p.key.type === 'Identifier') return p.key.value
+                if (p.key.type === 'StringLiteral') return p.key.value
+                return undefined
+              }
+              // Shorthand property like { hours, minutes }
+              if (p.type === 'ShorthandProperty' || p.type === 'Identifier') {
+                return p.value ?? p.name
+              }
               return undefined
             })
             .filter((k: any) => typeof k === 'string')
         }
         if (!Array.isArray(paramKeys)) paramKeys = []
+        // Use text search for accurate line numbers (SWC spans use global byte offsets, not per-file)
+        const searchText = arg0.raw ?? `"${arg0.value}"`
+        const position = code.indexOf(searchText)
+        const issueLineNumber = position > -1 ? getLineNumber(position) : 1
         // Only check for unused parameters if there is at least one interpolation key in the string
         if (keys.length > 0) {
+          // i18next supports nested object access via dot notation (e.g. {{author.name}} with { author }).
+          // For each interpolation key, check if the root (part before the first dot) matches a provided param.
           for (const k of keys) {
-            if (!paramKeys.includes(k)) {
+            const root = k.split('.')[0]
+            if (!paramKeys.includes(k) && !paramKeys.includes(root)) {
               issues.push({
                 text: `Interpolation parameter "${k}" was not provided`,
-                line: getLineNumber(node.span?.start ?? 0),
+                line: issueLineNumber,
+                type: 'interpolation',
               })
             }
           }
+          // For each provided param, check if it is used either directly or as the root of a dotted key.
           for (const pk of paramKeys) {
-            if (!keys.includes(pk)) {
+            const isUsed = keys.some(k => k === pk || k.split('.')[0] === pk)
+            if (!isUsed) {
               issues.push({
                 text: `Parameter "${pk}" is not used in translation string`,
-                line: getLineNumber(node.span?.start ?? 0),
+                line: issueLineNumber,
+                type: 'interpolation',
               })
             }
           }
@@ -317,9 +335,10 @@ export async function runLinterCli (
       for (const [file, issues] of Object.entries(files)) {
         if (internalLogger.info) internalLogger.info(styleText('yellow', `\n${file}`))
         else console.log(styleText('yellow', `\n${file}`))
-        issues.forEach(({ text, line }) => {
-          if (typeof internalLogger.info === 'function') internalLogger.info(`  ${styleText('gray', `${line}:`)} ${styleText('red', 'Error:')} Found hardcoded string: "${text}"`)
-          else console.log(`  ${styleText('gray', `${line}:`)} ${styleText('red', 'Error:')} Found hardcoded string: "${text}"`)
+        issues.forEach(({ text, line, type }) => {
+          const label = type === 'interpolation' ? 'Interpolation issue' : 'Found hardcoded string'
+          if (typeof internalLogger.info === 'function') internalLogger.info(`  ${styleText('gray', `${line}:`)} ${styleText('red', 'Error:')} ${label}: "${text}"`)
+          else console.log(`  ${styleText('gray', `${line}:`)} ${styleText('red', 'Error:')} ${label}: "${text}"`)
         })
       }
       process.exit(1)
@@ -343,6 +362,8 @@ interface HardcodedString {
   text: string;
   /** Line number where the string or error was found */
   line: number;
+  /** The type of issue: 'hardcoded' for hardcoded strings, 'interpolation' for interpolation parameter errors */
+  type?: 'hardcoded' | 'interpolation';
 }
 
 const isUrlOrPath = (text: string) => /^(https|http|\/\/|^\/)/.test(text)

@@ -4,6 +4,7 @@ import { createJiti } from 'jiti'
 import type { I18nextToolkitConfig } from '../types'
 import { getTsConfigAliases } from '../config'
 import { JsonParser, JsonObjectNode } from '@croct/json5-parser'
+import yaml from 'yaml'
 
 /**
  * Ensures that the directory for a given file path exists.
@@ -100,6 +101,53 @@ export function getOutputPath (
 }
 
 /**
+ * Extracts the namespace value from a concrete file path by matching it against
+ * the output template.
+ *
+ * Given a template like `src/{{namespace}}/locales/{{language}}.json` and a file
+ * path like `src/widgets/component/locales/en.json`, this returns `widgets/component`.
+ *
+ * This handles multi-segment namespaces (namespaces containing `/`) which
+ * `basename()` cannot recover.
+ *
+ * @param outputTemplate - The output path template string (must contain `{{namespace}}`)
+ * @param language - The language value used when the file was generated
+ * @param filePath - The concrete file path to extract the namespace from
+ * @returns The namespace string, or `undefined` if the path doesn't match the template
+ */
+export function extractNamespaceFromPath (
+  outputTemplate: string,
+  language: string,
+  filePath: string
+): string | undefined {
+  // Build a regex from the template by escaping everything except the placeholders.
+  // Replace {{language}}/{{lng}} with the literal language value and
+  // {{namespace}} with a named capture group that matches one or more path segments.
+  const pattern = outputTemplate
+    // Normalise to forward slashes for matching
+    .replace(/\\/g, '/')
+
+  // Escape regex-special characters (but keep our placeholders intact first)
+  const nsPlaceholder = '{{namespace}}'
+  const parts = pattern.split(nsPlaceholder)
+  // Escape each part individually then rejoin with the capture group
+  const escaped = parts.map(p =>
+    p
+      .replace(/\{\{language\}\}|\{\{lng\}\}/g, () => escapeForRegex(language))
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  )
+  // Don't anchor the start — the glob may return absolute or prefixed paths.
+  // Anchor only the end so that the namespace capture is unambiguous.
+  const regexStr = escaped.join('(.+)') + '$'
+
+  const normalized = filePath.replace(/\\/g, '/')
+  const m = new RegExp(regexStr).exec(normalized)
+  return m?.[1]
+}
+
+const escapeForRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
  * Dynamically loads a translation file, supporting .json, .js, and .ts formats.
  * @param filePath - The path to the translation file.
  * @returns The parsed content of the file, or null if not found or failed to parse.
@@ -120,6 +168,9 @@ export async function loadTranslationFile (filePath: string): Promise<Record<str
       // Parse as a JSON5 object node
       const node = JsonParser.parse(content, JsonObjectNode)
       return node.toJSON()
+    } else if (ext === '.yaml' || ext === '.yml') {
+      const content = await readFile(fullPath, 'utf-8')
+      return yaml.parse(content) as Record<string, any>
     } else if (ext === '.json') {
       const content = await readFile(fullPath, 'utf-8')
       return JSON.parse(content)
@@ -178,6 +229,8 @@ export function serializeTranslationFile (
       const node = JsonParser.parse(jsonString, JsonObjectNode)
       return node.toString({ object: { indentationSize: Number(indentation) ?? 2 } })
     }
+    case 'yaml':
+      return yaml.stringify(data, { indent: Number(indentation) || 2, lineWidth: 0 })
     case 'js':
     case 'js-esm':
       return `export default ${jsonString};\n`
@@ -190,4 +243,22 @@ export function serializeTranslationFile (
     default:
       return `${jsonString}\n`
   }
+}
+
+/**
+ * Infers the output format from the file path extension.
+ * @param filePath - The path to the translation file
+ * @param defaultFormat - The default format to return if no match (default: 'json')
+ * @returns The inferred output format
+ */
+export function inferFormatFromPath (
+  filePath: string,
+  defaultFormat: I18nextToolkitConfig['extract']['outputFormat'] = 'json'
+): NonNullable<I18nextToolkitConfig['extract']['outputFormat']> {
+  if (filePath.endsWith('.json5')) return 'json5'
+  if (filePath.endsWith('.yaml') || filePath.endsWith('.yml')) return 'yaml'
+  if (filePath.endsWith('.ts')) return 'ts'
+  if (filePath.endsWith('.js')) return 'js'
+  if (filePath.endsWith('.json')) return 'json'
+  return defaultFormat || 'json'
 }

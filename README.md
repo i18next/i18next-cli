@@ -375,7 +375,8 @@ export default defineConfig({
 
     // Use '.ts' files with `export default` instead of '.json'
     // Or use 'json5' to enable JSON5 features (comments, trailing commas, formatting are tried to be preserved)
-    // if the file ending is .json5 it automatically uses json5 format
+    // Or use 'yaml' for YAML format (.yaml or .yml extensions)
+    // if the file ending is .json5, .yaml, or .yml it automatically uses the corresponding format
     outputFormat: 'ts',
 
     // Combine all namespaces into a single file per language (e.g., locales/en.ts)
@@ -875,6 +876,34 @@ export default {
 } as const;
 ```
 
+### YAML Translation Files
+
+For projects that prefer YAML for better readability and compatibility with other tools, you can configure the CLI to output YAML files instead of JSON.
+
+Configuration (`i18next.config.ts`):
+
+```typescript
+export default defineConfig({
+  extract: {
+    output: 'locales/{{language}}/{{namespace}}.yaml', // Use .yaml or .yml
+    outputFormat: 'yaml', // Optional - inferred from file extension
+  }
+});
+```
+
+This will generate files like `locales/en/translation.yaml` with the following content:
+
+```yaml
+app:
+  title: My Application
+  description: Welcome to our app
+button:
+  save: Save
+  cancel: Cancel
+```
+
+> **💡 Note:** Both `.yaml` and `.yml` extensions are supported and preserved. The `outputFormat: 'yaml'` option is optional when using these extensions - the format is automatically inferred from the file extension.
+
 ### Merging Namespaces
 
 You can also combine all namespaces into a single file per language. This is useful for reducing the number of network requests in some application setups.
@@ -1140,6 +1169,7 @@ This programmatic API gives you the same power as the CLI but with full control 
 
 - [i18next-cli-plugin-svelte](https://github.com/dreamscached/i18next-cli-plugin-svelte) &mdash; a simple plugin to extract translation keys from Svelte components
 - [rsbuild-plugin-i18next-extractor](https://github.com/rspack-contrib/rsbuild-plugin-i18next-extractor) &mdash; A Rsbuild plugin that leverages the Rspack module graph to extract only the i18n translations that are actually imported and used in your code, preventing unused translations from being bundled.
+- [i18next-cli-vue](https://github.com/PBK-B/i18next-cli-vue) &mdash; i18next-cli plugin for extracting i18n keys from Vue SFC files, applicable to vue2 and vue3 
 
 ---
 

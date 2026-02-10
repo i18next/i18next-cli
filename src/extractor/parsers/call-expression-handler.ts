@@ -1,7 +1,7 @@
 import type { CallExpression, ArrowFunctionExpression, ObjectExpression } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey, ScopeInfo } from '../../types'
 import { ExpressionResolver } from './expression-resolver'
-import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral } from './ast-utils'
+import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset } from './ast-utils'
 
 // Helper to escape regex characters
 const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -14,7 +14,6 @@ export class CallExpressionHandler {
   public objectKeys = new Set<string>()
   private getCurrentFile: () => string
   private getCurrentCode: () => string
-  private lastSearchIndex: number = 0
 
   constructor (
     config: Omit<I18nextToolkitConfig, 'plugins'>,
@@ -33,59 +32,26 @@ export class CallExpressionHandler {
   }
 
   /**
-   * Reset the search index when starting to process a new file.
-   * This should be called before processing each file.
-   */
-  public resetSearchIndex (): void {
-    this.lastSearchIndex = 0
-  }
-
-  /**
-   * Helper method to calculate line and column from a position in the code.
-   * Uses string searching instead of SWC span offsets to avoid accumulation bugs.
+   * Computes line and column from a node's normalised span.
+   * For call / new expressions the location points to the first argument
+   * (the translation key) rather than the callee, matching the previous
+   * string-search behaviour.
    */
   private getLocationFromNode (node: any): { line: number, column: number } | undefined {
-    const code = this.getCurrentCode()
+    if (!node?.span || typeof node.span.start !== 'number') return undefined
 
-    // Extract searchable text from the node
-    // For CallExpression and NewExpression, we can search for the key argument
-    let searchText: string | undefined
-
-    if ((node.type === 'CallExpression' || node.type === 'NewExpression') && node.arguments.length > 0) {
+    // For call / new expressions, prefer the first argument's span
+    if (
+      (node.type === 'CallExpression' || node.type === 'NewExpression') &&
+      node.arguments?.length > 0
+    ) {
       const firstArg = node.arguments[0].expression
-
-      if (firstArg.type === 'StringLiteral') {
-        // Search for the string literal including quotes
-        searchText = firstArg.raw ?? `'${firstArg.value}'`
-      } else if (firstArg.type === 'TemplateLiteral') {
-        // For template literals, search for the backtick
-        searchText = '`'
-      } else if (firstArg.type === 'ArrowFunctionExpression') {
-        searchText = '=>'
+      if (firstArg?.span && typeof firstArg.span.start === 'number') {
+        return lineColumnFromOffset(this.getCurrentCode(), firstArg.span.start)
       }
     }
 
-    if (!searchText) return undefined
-
-    // Search for the text starting from last known position
-    const position = code.indexOf(searchText, this.lastSearchIndex)
-
-    if (position === -1) {
-      // Not found - might be a parsing issue, skip location tracking
-      return undefined
-    }
-
-    // Update last search position for next search
-    this.lastSearchIndex = position + searchText.length
-
-    // Calculate line and column from the position
-    const upToPosition = code.substring(0, position)
-    const lines = upToPosition.split('\n')
-
-    return {
-      line: lines.length,
-      column: lines[lines.length - 1].length
-    }
+    return lineColumnFromOffset(this.getCurrentCode(), node.span.start)
   }
 
   /**

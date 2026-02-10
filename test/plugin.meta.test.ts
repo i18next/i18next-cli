@@ -458,4 +458,119 @@ function Component() {
     expect(keyOneLocations[0]).not.toMatch(new RegExp(`src/App\\.tsx:${lastLine}:`))
     expect(keyOneLocations[1]).not.toMatch(new RegExp(`src/App\\.tsx:${lastLine}:`))
   })
+
+  // Regression test for https://github.com/i18next/i18next-cli/issues/180
+  // SWC accumulates span offsets across parse() calls. We normalise them so
+  // plugins always see file-relative positions.
+  it('plugin onVisitNode span positions are within source file length', async () => {
+    const { glob } = await import('glob')
+    ;(glob as any).mockResolvedValueOnce(['src/LargeFile.tsx', 'src/App.tsx'])
+
+    // Collect every visited node's own span, plus recursively collect every
+    // nested span (e.g. node.name.span, node.callee.span) so we can verify
+    // that the entire tree has been normalised, not just the top-level node.
+    const captured: Array<{ file: string, path: string, type?: string, start: number, end: number }> = []
+    let currentPath = ''
+
+    function collectSpans (obj: any, objPath: string, file: string) {
+      if (!obj || typeof obj !== 'object') return
+      if (obj.span && typeof obj.span.start === 'number') {
+        captured.push({ file, path: objPath, type: obj.type, start: obj.span.start, end: obj.span.end })
+      }
+      for (const key of Object.keys(obj)) {
+        if (key === 'span') continue
+        const child = obj[key]
+        if (Array.isArray(child)) {
+          child.forEach((item: any, i: number) => {
+            if (item && typeof item === 'object') collectSpans(item, `${objPath}.${key}[${i}]`, file)
+          })
+        } else if (child && typeof child === 'object') {
+          collectSpans(child, `${objPath}.${key}`, file)
+        }
+      }
+    }
+
+    const spanPlugin = {
+      name: 'span-pos-plugin',
+      onLoad (_code: string, path: string) {
+        currentPath = path
+      },
+      onVisitNode (node: any) {
+        collectSpans(node, 'node', currentPath)
+      }
+    }
+
+    const cfg = { ...mockConfig, plugins: [spanPlugin as any] }
+
+    // A deliberately large first file so that SWC offsets accumulate
+    const largeCode = `import { useTranslation } from 'react-i18next'
+${'// padding line to increase file size\n'.repeat(50)}
+const { t } = useTranslation()
+t('large.key', 'Large')
+`
+
+    const appCode = `import { Trans } from 'react-i18next'
+
+export default function LandingPage({ name }: { name: string }) {
+  const count = 5;
+
+  return <Trans>hi</Trans>;
+}
+`
+
+    vol.fromJSON({
+      'src/LargeFile.tsx': largeCode,
+      'src/App.tsx': appCode,
+    })
+
+    await findKeys(cfg)
+
+    // Only look at spans captured from the second file
+    const appSpans = captured.filter(c => c.file === 'src/App.tsx')
+    expect(appSpans.length).toBeGreaterThan(0)
+
+    // 1. Every span (including deeply nested ones like node.name.span) must
+    //    be within the file's character boundaries with start <= end.
+    for (const c of appSpans) {
+      expect(c.start, `${c.path}.span.start (${c.start}) should be >= 0`).toBeGreaterThanOrEqual(0)
+      expect(c.end, `${c.path}.span.end (${c.end}) should be <= ${appCode.length}`).toBeLessThanOrEqual(appCode.length)
+      expect(c.start, `${c.path} start ${c.start} should be <= end ${c.end}`).toBeLessThanOrEqual(c.end)
+    }
+
+    // 2. Verify specific nodes' spans point at the correct source text via
+    //    appCode.substring(start, end). This is the strongest possible
+    //    assertion: the span actually slices to the right source snippet.
+
+    // StringLiteral 'react-i18next' — import specifier (includes quotes)
+    const importStr = appSpans.find(c => c.type === 'StringLiteral' && c.path === 'node')
+    expect(importStr).toBeDefined()
+    expect(appCode.substring(importStr!.start, importStr!.end)).toBe("'react-i18next'")
+
+    // NumericLiteral 5
+    const numLit = appSpans.find(c => c.type === 'NumericLiteral')
+    expect(numLit).toBeDefined()
+    expect(appCode.substring(numLit!.start, numLit!.end)).toBe('5')
+
+    // JSXText 'hi' (the content between <Trans> and </Trans>)
+    const jsxText = appSpans.find(c => c.type === 'JSXText')
+    expect(jsxText).toBeDefined()
+    expect(appCode.substring(jsxText!.start, jsxText!.end)).toBe('hi')
+
+    // Identifier 'Trans' inside JSXOpeningElement (a nested span: node.name)
+    const jsxOpening = appSpans.find(c => c.type === 'Identifier' && c.path === 'node.name')
+    expect(jsxOpening).toBeDefined()
+    expect(appCode.substring(jsxOpening!.start, jsxOpening!.end)).toBe('Trans')
+
+    // Identifier 'Trans' inside JSXClosingElement (also a nested span)
+    const jsxClosing = appSpans.find(
+      c => c.type === 'Identifier' && c.path === 'node.name' && c.start !== jsxOpening!.start
+    )
+    expect(jsxClosing).toBeDefined()
+    expect(appCode.substring(jsxClosing!.start, jsxClosing!.end)).toBe('Trans')
+
+    // The two Trans identifiers should point at different positions
+    // (opening tag vs closing tag)
+    expect(jsxOpening!.start).not.toBe(jsxClosing!.start)
+    expect(jsxClosing!.start).toBeGreaterThan(jsxOpening!.start)
+  })
 })

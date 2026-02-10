@@ -967,4 +967,231 @@ describe('Linter (core logic)', () => {
     expect(texts).toContain('Interpolation parameter "name" was not provided')
     expect(texts).toContain('Parameter "name2" is not used in translation string')
   })
+
+  it('should not produce false positives for shorthand properties in t() calls (issue #178)', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    // Shorthand properties like { hours, minutes } should be recognized as provided params
+    const sampleCode = [
+      'import { useMemo } from "react"',
+      'import { useTranslation } from "react-i18next"',
+      '',
+      'const DaySegment = () => {',
+      '  const { t } = useTranslation()',
+      '',
+      '  const summedBreakTimeInMinutes = 10',
+      '',
+      '  const formattedBreakHours = useMemo(() => {',
+      '    const hours = Math.floor(summedBreakTimeInMinutes / 60)',
+      '    const minutes = summedBreakTimeInMinutes % 60',
+      '',
+      '    return t("{{hours}}H {{minutes}}M", { hours, minutes })',
+      '  }, [summedBreakTimeInMinutes])',
+      '',
+      '  return <section>{formattedBreakHours}</section>',
+      '}',
+      '',
+      'export default DaySegment',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    // Should NOT report any interpolation errors - hours and minutes are provided via shorthand
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
+  it('should report correct line numbers for interpolation parameter errors (issue #178)', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    const sampleCode = [
+      '// Line 1',
+      'const a = "foo"',
+      'const msg = t("Hello {{name}}!", { name2: "Seven" })',
+      'const b = "bar"',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(2)
+    const issues = result.files['/src/App.tsx']
+    // Both issues originate from the t() call on line 3, not the last line
+    expect(issues[0].line).toBe(3)
+    expect(issues[1].line).toBe(3)
+  })
+
+  it('should distinguish interpolation errors from hardcoded string issues (issue #178)', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    const sampleCode = [
+      'const msg = t("Hello {{name}}!", { name2: "Seven" })',
+      'const el = <p>Hardcoded text</p>',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(3)
+    const issues = result.files['/src/App.tsx']
+    // Interpolation issues should have type 'interpolation'
+    const interpolationIssues = issues.filter(i => i.type === 'interpolation')
+    const hardcodedIssues = issues.filter(i => !i.type || i.type === 'hardcoded')
+    expect(interpolationIssues).toHaveLength(2)
+    expect(hardcodedIssues).toHaveLength(1)
+    expect(hardcodedIssues[0].text).toBe('Hardcoded text')
+  })
+
+  it('should handle mixed shorthand and key-value properties in t() calls', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    const sampleCode = `
+      const name = "World"
+      const msg = t("{{greeting}}, {{name}}!", { greeting: "Hello", name })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    // Both params are provided (greeting via key-value, name via shorthand)
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+  })
+
+  it('should not produce false positives for nested object interpolation like {{obj.prop}}', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    // i18next supports passing objects and accessing nested properties via dot notation
+    const sampleCode = `
+      const fieldDef = { maxDecimals: 2 }
+      const msg = t("{{fieldName}} cannot have more than {{fieldDef.maxDecimals}} decimal places", {
+        fieldName,
+        fieldDef,
+      })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    // Should NOT report any interpolation errors
+    // fieldName is provided via shorthand, fieldDef.maxDecimals is satisfied by the fieldDef object
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
+  it('should not produce false positives for nested object interpolation with key-value syntax', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    // Same pattern but with key-value syntax: { author: authorObj }
+    const sampleCode = `
+      const authorObj = { name: 'Jan', github: 'jamuhl' }
+      const msg = t("I am {{author.name}}", { author: authorObj })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
+  it('should still report errors for genuinely missing root-level interpolation params with nested keys', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    // author.name is used in the string but 'author' is NOT provided as a parameter
+    const sampleCode = `
+      const msg = t("I am {{author.name}}", { user: someObj })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(2)
+    const texts = result.files['/src/App.tsx'].map(issue => issue.text)
+    expect(texts).toContain('Interpolation parameter "author.name" was not provided')
+    expect(texts).toContain('Parameter "user" is not used in translation string')
+  })
+
+  it('should handle mix of simple and nested interpolation keys correctly', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    // Mix: {{name}} (simple) + {{config.timeout}} (nested) + missing {{missing}}
+    const sampleCode = `
+      const msg = t("Hello {{name}}, timeout is {{config.timeout}}, and {{missing}}", { name: "World", config: opts })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    const texts = result.files['/src/App.tsx'].map(issue => issue.text)
+    // 'name' is provided, 'config.timeout' is satisfied by 'config', but 'missing' is not provided
+    expect(texts).toContain('Interpolation parameter "missing" was not provided')
+    // 'name' and 'config' should NOT be flagged as unused
+    expect(texts).not.toContain('Parameter "name" is not used in translation string')
+    expect(texts).not.toContain('Parameter "config" is not used in translation string')
+  })
 })

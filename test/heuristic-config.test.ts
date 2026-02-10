@@ -135,4 +135,43 @@ describe('heuristic-config', () => {
       expect(normalizePath(config.extract.output)).toBe('locales/{{language}}/{{namespace}}.json5')
     }
   })
+
+  it('should detect YAML project structure and infer outputFormat as yaml', async () => {
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['locales/en/translation.yaml'])
+
+    vol.fromJSON({
+      'locales/en/translation.yaml': 'key: value',
+      'locales/de/translation.yaml': 'key: wert',
+      'locales/fr/translation.yaml': 'key: valeur',
+    })
+
+    const config = await detectConfig()
+
+    expect(config).not.toBeNull()
+    expect(config?.locales).toEqual(['en', 'de', 'fr'])
+    expect(config?.extract?.outputFormat).toBe('yaml')
+    if (typeof config?.extract?.output === 'string') {
+      expect(normalizePath(config.extract.output)).toBe('locales/{{language}}/{{namespace}}.yaml')
+    }
+  })
+
+  it('should detect .yml project structure and infer outputFormat as yaml', async () => {
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['locales/en/translation.yml'])
+
+    vol.fromJSON({
+      'locales/en/translation.yml': 'key: value',
+      'locales/de/translation.yml': 'key: wert',
+    })
+
+    const config = await detectConfig()
+
+    expect(config).not.toBeNull()
+    expect(config?.locales).toEqual(['en', 'de'])
+    expect(config?.extract?.outputFormat).toBe('yaml')
+    if (typeof config?.extract?.output === 'string') {
+      expect(normalizePath(config.extract.output)).toBe('locales/{{language}}/{{namespace}}.yml')
+    }
+  })
 })

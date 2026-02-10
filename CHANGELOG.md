@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.6](https://github.com/i18next/i18next-cli/compare/v1.42.5...v1.42.6) - 2026-02-09
+
+- fix multi-segment namespaces (e.g. `useTranslation('/widgets/component')` with output `src/{{namespace}}/locales/{{language}}.json`) — glob used `*` which only matches a single directory level, changed to `**`; namespace recovery used `basename()` which returned the filename instead of the full namespace path, replaced with regex-based `extractNamespaceFromPath()` [#182](https://github.com/i18next/i18next-cli/issues/182)
+
+## [1.42.5](https://github.com/i18next/i18next-cli/compare/v1.42.4...v1.42.5) - 2026-02-09
+
+- fix span normalization for files with leading whitespace or comments — `Module.span.start` points to the first token, not byte 0, so the base offset was miscalculated [#180](https://github.com/i18next/i18next-cli/issues/180)
+- replace string-search `getLocationFromNode` with span-based location computation now that AST spans are correctly normalized — removes `lastSearchIndex`/`resetSearchIndex` workaround
+
+## [1.42.4](https://github.com/i18next/i18next-cli/compare/v1.42.3...v1.42.4) - 2026-02-09
+
+- fix plugin system: normalize SWC AST span offsets so that `node.span.start`/`end` in `onVisitNode` are file-relative instead of accumulated across files — previously, spans for files parsed after the first one exceeded the source file length [#180](https://github.com/i18next/i18next-cli/issues/180)
+
+## [1.42.3](https://github.com/i18next/i18next-cli/compare/v1.42.2...v1.42.3) - 2026-02-06
+
+- linter: improve `checkInterpolationParams` (object as value) [#178](https://github.com/i18next/i18next-cli/issues/178)
+
+## [1.42.2](https://github.com/i18next/i18next-cli/compare/v1.42.1...v1.42.2) - 2026-02-06
+
+- fix extractor: `<Trans>` serialization broken when user project has a different React version (e.g. React 18) than the CLI — caused by `$$typeof` symbol mismatch in `isValidElement` [#179](https://github.com/i18next/i18next-cli/issues/179)
+
+## [1.42.1](https://github.com/i18next/i18next-cli/compare/v1.42.0...v1.42.1) - 2026-02-06
+
+- linter: improve `checkInterpolationParams` [#178](https://github.com/i18next/i18next-cli/issues/178)
+
+## [1.42.0](https://github.com/i18next/i18next-cli/compare/v1.41.4...v1.42.0) - 2026-02-05
+
+- YAML translation file support [#177](https://github.com/i18next/i18next-cli/issues/177)
+
 ## [1.41.4](https://github.com/i18next/i18next-cli/compare/v1.41.1...v1.41.4) - 2026-02-03
 
 - fix extractor: preserve locale-specific plural forms when using `--sync-primary` flag [#174](https://github.com/i18next/i18next-cli/pull/174)

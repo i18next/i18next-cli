@@ -6,7 +6,7 @@ import { createSpinnerLike } from './utils/wrap-ora'
 import { ConsoleLogger } from './utils/logger'
 import type { I18nextToolkitConfig, Logger } from './types'
 import { resolveDefaultValue } from './utils/default-value'
-import { getOutputPath, loadTranslationFile, serializeTranslationFile, loadRawJson5Content } from './utils/file-utils'
+import { getOutputPath, loadTranslationFile, serializeTranslationFile, loadRawJson5Content, inferFormatFromPath } from './utils/file-utils'
 import { recordFunnelShown, shouldShowFunnel } from './utils/funnel-msg-tracker'
 import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-object'
 
@@ -114,7 +114,7 @@ export async function runSyncer (
 
         if (newContent !== oldContent) {
           wasAnythingSynced = true
-          const perFileFormat = config.extract.outputFormat ?? (fullSecondaryPath.endsWith('.json5') ? 'json5' : outputFormat)
+          const perFileFormat = config.extract.outputFormat ?? inferFormatFromPath(fullSecondaryPath, outputFormat)
           const raw = perFileFormat === 'json5' ? (await loadRawJson5Content(fullSecondaryPath)) ?? undefined : undefined
           const serializedContent = serializeTranslationFile(newSecondaryTranslations, perFileFormat, indentation, raw)
           await mkdir(dirname(fullSecondaryPath), { recursive: true })

@@ -354,14 +354,10 @@ export class ASTVisitors {
 
   /**
    * Sets the current file path and code used by the extractor.
-   * Also resets the search index for location tracking.
    */
   public setCurrentFile (file: string, code: string): void {
     this.currentFile = file
     this.currentCode = code
-    // Reset search indexes when processing a new file
-    this.callExpressionHandler.resetSearchIndex()
-    this.jsxHandler.resetSearchIndex()
   }
 
   /**

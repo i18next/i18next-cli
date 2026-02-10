@@ -1,6 +1,104 @@
 import type { Expression, Identifier, ObjectExpression, TemplateLiteral } from '@swc/core'
 
 /**
+ * Returns the 0-based index of the first real token in the source code,
+ * skipping leading whitespace, single-line comments (`//`), multi-line
+ * comments, and hashbang lines (`#!`).
+ *
+ * This is needed because SWC's `Module.span.start` points to the first
+ * token, not to byte 0 of the source. Knowing the first token's index
+ * lets us compute the true base offset for span normalisation:
+ * `base = ast.span.start - findFirstTokenIndex(code)`.
+ */
+export function findFirstTokenIndex (code: string): number {
+  let i = 0
+  while (i < code.length) {
+    const ch = code[i]
+    // Skip whitespace
+    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') { i++; continue }
+    // Skip hashbang (only at very start of file)
+    if (i === 0 && ch === '#' && code[1] === '!') {
+      while (i < code.length && code[i] !== '\n') i++
+      continue
+    }
+    // Skip single-line comment
+    if (ch === '/' && code[i + 1] === '/') {
+      i += 2
+      while (i < code.length && code[i] !== '\n') i++
+      continue
+    }
+    // Skip multi-line comment
+    if (ch === '/' && code[i + 1] === '*') {
+      i += 2
+      while (i < code.length && !(code[i] === '*' && code[i + 1] === '/')) i++
+      i += 2
+      continue
+    }
+    return i
+  }
+  return 0
+}
+
+/**
+ * Recursively normalizes all SWC span offsets in an AST by subtracting a base
+ * offset. SWC's `parse()` accumulates byte offsets across successive calls in
+ * the same process, so `span.start`/`span.end` values can exceed the length of
+ * the source file. Call this once on the root `Module` node right after parsing
+ * to make every span file-relative (0-based index into the source string).
+ *
+ * The correct base is `ast.span.start - findFirstTokenIndex(code)` because
+ * SWC uses 1-based byte positions and `Module.span.start` points to the first
+ * token, not to byte 0 of the source.
+ *
+ * @param node  - Any AST node (or the root Module)
+ * @param base  - The base offset to subtract
+ */
+export function normalizeASTSpans (node: any, base: number): void {
+  if (!node || typeof node !== 'object' || base === 0) return
+
+  // Normalize this node's own span
+  if (node.span && typeof node.span.start === 'number') {
+    node.span = {
+      ...node.span,
+      start: node.span.start - base,
+      end: node.span.end - base
+    }
+  }
+
+  // Recurse into every property (skip span itself to avoid double-processing)
+  for (const key of Object.keys(node)) {
+    if (key === 'span') continue
+    const child = node[key]
+    if (Array.isArray(child)) {
+      for (const item of child) {
+        if (item && typeof item === 'object') {
+          normalizeASTSpans(item, base)
+        }
+      }
+    } else if (child && typeof child === 'object') {
+      normalizeASTSpans(child, base)
+    }
+  }
+}
+
+/**
+ * Computes 1-based line and 0-based column numbers from a byte offset in source code.
+ *
+ * @param code   - The full source code string
+ * @param offset - A character offset (e.g. from a normalised `node.span.start`)
+ * @returns `{ line, column }` or `undefined` when the offset is out of range
+ */
+export function lineColumnFromOffset (code: string, offset: number): { line: number, column: number } | undefined {
+  if (offset < 0 || offset > code.length) return undefined
+  const upTo = code.substring(0, offset)
+  const lines = upTo.split('\n')
+  return {
+    line: lines.length,
+    column: lines[lines.length - 1].length
+  }
+}
+
+/**
  * Finds and returns the full property node (KeyValueProperty) for the given
  * property name from an ObjectExpression.
  *
