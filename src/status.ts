@@ -1,7 +1,7 @@
-import chalk from 'chalk'
+import { styleText } from 'node:util'
 import ora from 'ora'
 import { resolve } from 'node:path'
-import { findKeys } from './extractor/core/key-finder'
+import { findKeys } from './extractor'
 import { getNestedValue } from './utils/nested-object'
 import type { I18nextToolkitConfig, ExtractedKey } from './types'
 import { getOutputPath, loadTranslationFile } from './utils/file-utils'
@@ -294,22 +294,22 @@ async function displayStatusReport (report: StatusReport, config: I18nextToolkit
  */
 async function displayDetailedLocaleReport (report: StatusReport, config: I18nextToolkitConfig, locale: string, namespaceFilter?: string) {
   if (locale === config.extract.primaryLanguage) {
-    console.log(chalk.yellow(`Locale "${locale}" is the primary language. All keys are considered present.`))
+    console.log(styleText('yellow', `Locale "${locale}" is the primary language. All keys are considered present.`))
     return
   }
   if (!config.locales.includes(locale)) {
-    console.error(chalk.red(`Error: Locale "${locale}" is not defined in your configuration.`))
+    console.error(styleText('red', `Error: Locale "${locale}" is not defined in your configuration.`))
     return
   }
 
   const localeData = report.locales.get(locale)
 
   if (!localeData) {
-    console.error(chalk.red(`Error: Locale "${locale}" is not a valid secondary language.`))
+    console.error(styleText('red', `Error: Locale "${locale}" is not a valid secondary language.`))
     return
   }
 
-  console.log(chalk.bold(`\nKey Status for "${chalk.cyan(locale)}":`))
+  console.log(styleText('bold', `\nKey Status for "${styleText('cyan', locale)}":`))
 
   const totalKeysForLocale = localeData.totalKeys
   printProgressBar('Overall', localeData.totalTranslated, totalKeysForLocale)
@@ -320,20 +320,20 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
     const nsData = localeData.namespaces.get(ns)
     if (!nsData) continue
 
-    console.log(chalk.cyan.bold(`\nNamespace: ${ns}`))
+    console.log(styleText(['cyan', 'bold'], `\nNamespace: ${ns}`))
     printProgressBar('Namespace Progress', nsData.translatedKeys, nsData.totalKeys)
 
     nsData.keyDetails.forEach(({ key, isTranslated }) => {
-      const icon = isTranslated ? chalk.green('✓') : chalk.red('✗')
+      const icon = isTranslated ? styleText('green', '✓') : styleText('red', '✗')
       console.log(`  ${icon} ${key}`)
     })
   }
 
   const missingCount = totalKeysForLocale - localeData.totalTranslated
   if (missingCount > 0) {
-    console.log(chalk.yellow.bold(`\nSummary: Found ${missingCount} missing translations for "${locale}".`))
+    console.log(styleText(['yellow', 'bold'], `\nSummary: Found ${missingCount} missing translations for "${locale}".`))
   } else {
-    console.log(chalk.green.bold(`\nSummary: 🎉 All keys are translated for "${locale}".`))
+    console.log(styleText(['green', 'bold'], `\nSummary: 🎉 All keys are translated for "${locale}".`))
   }
 
   await printLocizeFunnel()
@@ -352,11 +352,11 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
 async function displayNamespaceSummaryReport (report: StatusReport, config: I18nextToolkitConfig, namespace: string) {
   const nsData = report.keysByNs.get(namespace)
   if (!nsData) {
-    console.error(chalk.red(`Error: Namespace "${namespace}" was not found in your source code.`))
+    console.error(styleText('red', `Error: Namespace "${namespace}" was not found in your source code.`))
     return
   }
 
-  console.log(chalk.cyan.bold(`\nStatus for Namespace: "${namespace}"`))
+  console.log(styleText(['cyan', 'bold'], `\nStatus for Namespace: "${namespace}"`))
   console.log('------------------------')
 
   for (const [locale, localeData] of report.locales.entries()) {
@@ -385,12 +385,14 @@ async function displayNamespaceSummaryReport (report: StatusReport, config: I18n
 async function displayOverallSummaryReport (report: StatusReport, config: I18nextToolkitConfig) {
   const { primaryLanguage } = config.extract
 
-  console.log(chalk.cyan.bold('\ni18next Project Status'))
+  console.log(styleText(['cyan', 'bold'], '\ni18next Project Status'))
   console.log('------------------------')
-  console.log(`🔑 Keys Found:         ${chalk.bold(report.totalBaseKeys)}`)
-  console.log(`📚 Namespaces Found:   ${chalk.bold(report.keysByNs.size)}`)
-  console.log(`🌍 Locales:            ${chalk.bold(config.locales.join(', '))}`)
-  console.log(`✅ Primary Language:   ${chalk.bold(primaryLanguage)}`)
+  console.log(`🔑 Keys Found:         ${styleText('bold', `${report.totalBaseKeys}`)}`)
+  console.log(`📚 Namespaces Found:   ${styleText('bold', `${report.keysByNs.size}`)}`)
+  console.log(`🌍 Locales:            ${styleText('bold', config.locales.join(', '))}`)
+  if (primaryLanguage) {
+    console.log(`✅ Primary Language:   ${styleText('bold', primaryLanguage)}`)
+  }
   console.log('\nTranslation Progress:')
 
   for (const [locale, localeData] of report.locales.entries()) {
@@ -412,7 +414,7 @@ async function displayOverallSummaryReport (report: StatusReport, config: I18nex
 function printProgressBar (label: string, current: number, total: number) {
   const percentage = total > 0 ? Math.round((current / total) * 100) : 100
   const bar = generateProgressBarText(percentage)
-  console.log(`${chalk.bold(label)}: ${bar} ${percentage}% (${current}/${total})`)
+  console.log(`${styleText('bold', label)}: ${bar} ${percentage}% (${current}/${total})`)
 }
 
 /**
@@ -428,15 +430,15 @@ function generateProgressBarText (percentage: number): string {
   const totalBars = 20
   const filledBars = Math.floor((percentage / 100) * totalBars)
   const emptyBars = totalBars - filledBars
-  return `[${chalk.green(''.padStart(filledBars, '■'))}${''.padStart(emptyBars, '□')}]`
+  return `[${styleText('green', ''.padStart(filledBars, '■'))}${''.padStart(emptyBars, '□')}]`
 }
 
 async function printLocizeFunnel () {
   if (!(await shouldShowFunnel('status'))) return
 
-  console.log(chalk.yellow.bold('\n✨ Take your localization to the next level!'))
+  console.log(styleText(['yellow', 'bold'], '\n✨ Take your localization to the next level!'))
   console.log('Manage translations with your team in the cloud with Locize => https://www.locize.com/docs/getting-started')
-  console.log(`Run ${chalk.cyan('npx i18next-cli locize-migrate')} to get started.`)
+  console.log(`Run ${styleText('cyan', 'npx i18next-cli locize-migrate')} to get started.`)
 
   return recordFunnelShown('status')
 }

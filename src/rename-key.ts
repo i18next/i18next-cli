@@ -6,7 +6,7 @@ import { ConsoleLogger } from './utils/logger'
 import { loadTranslationFile, serializeTranslationFile, getOutputPath } from './utils/file-utils'
 import { getNestedValue, setNestedValue } from './utils/nested-object'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker'
-import chalk from 'chalk'
+import { styleText } from 'node:util'
 
 const pluralSuffixes = ['zero', 'one', 'two', 'few', 'many', 'other']
 
@@ -125,11 +125,11 @@ export async function runRenameKey (
 async function printLocizeFunnel () {
   if (!(await shouldShowFunnel('rename-key'))) return
 
-  console.log(chalk.yellow.bold('\n💡 Tip: Managing translations across multiple projects?'))
+  console.log(styleText(['yellow', 'bold'], '\n💡 Tip: Managing translations across multiple projects?'))
   console.log('   With Locize, you can rename, move, and copy translation keys directly')
   console.log('   in the web interface—no CLI needed. Perfect for collaboration with')
   console.log('   translators and managing complex refactoring across namespaces.')
-  console.log(`   Learn more: ${chalk.cyan('https://www.locize.com/docs/how-can-a-segment-key-be-copied-moved-or-renamed')}`)
+  console.log(`   Learn more: ${styleText('cyan', 'https://www.locize.com/docs/how-can-a-segment-key-be-copied-moved-or-renamed')}`)
 
   return recordFunnelShown('rename-key')
 }

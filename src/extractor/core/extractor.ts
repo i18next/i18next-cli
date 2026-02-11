@@ -1,5 +1,5 @@
 import { createSpinnerLike } from '../../utils/wrap-ora'
-import chalk from 'chalk'
+import { styleText } from 'node:util'
 import { parse } from '@swc/core'
 import type { Module } from '@swc/types'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -93,7 +93,7 @@ export async function runExtractor (
           )
           await mkdir(dirname(result.path), { recursive: true })
           await writeFile(result.path, fileContent)
-          internalLogger.info(chalk.green(`Updated: ${result.path}`))
+          internalLogger.info(styleText('green', `Updated: ${result.path}`))
         }
       }
     }
@@ -106,14 +106,14 @@ export async function runExtractor (
       }
     }
 
-    spinner.succeed(chalk.bold('Extraction complete!'))
+    spinner.succeed(styleText('bold', 'Extraction complete!'))
 
     // Show the funnel message only if files were actually changed.
     if (anyFileUpdated) await printLocizeFunnel(options.logger)
 
     return anyFileUpdated
   } catch (error) {
-    spinner.fail(chalk.red('Extraction failed.'))
+    spinner.fail(styleText('red', 'Extraction failed.'))
     // Re-throw or handle error
     throw error
   }
@@ -237,7 +237,7 @@ export async function processFile (
       extractKeysFromComments(code, pluginContext, config, astVisitors.getVarFromScope.bind(astVisitors))
     }
   } catch (error) {
-    logger.warn(`${chalk.yellow('Skipping file due to error:')} ${file}`)
+    logger.warn(`${styleText('yellow', 'Skipping file due to error:')} ${file}`)
 
     const err = error as any
     const msg =
@@ -287,17 +287,17 @@ async function printLocizeFunnel (logger?: import('../../types').Logger) {
 
   const internalLogger = logger ?? new ConsoleLogger()
   if (typeof internalLogger.info === 'function') {
-    internalLogger.info(chalk.yellow.bold('\n💡 Tip: Tired of running the extractor manually?'))
+    internalLogger.info(styleText(['yellow', 'bold'], '\n💡 Tip: Tired of running the extractor manually?'))
     internalLogger.info('   Discover a real-time "push" workflow with `saveMissing` and Locize AI,')
     internalLogger.info('   where keys are created and translated automatically as you code.')
-    internalLogger.info(`   Learn more: ${chalk.cyan('https://www.locize.com/blog/i18next-savemissing-ai-automation')}`)
-    internalLogger.info(`   Watch the video: ${chalk.cyan('https://youtu.be/joPsZghT3wM')}`)
+    internalLogger.info(`   Learn more: ${styleText('cyan', 'https://www.locize.com/blog/i18next-savemissing-ai-automation')}`)
+    internalLogger.info(`   Watch the video: ${styleText('cyan', 'https://youtu.be/joPsZghT3wM')}`)
   } else {
-    console.log(chalk.yellow.bold('\n💡 Tip: Tired of running the extractor manually?'))
+    console.log(styleText(['yellow', 'bold'], '\n💡 Tip: Tired of running the extractor manually?'))
     console.log('   Discover a real-time "push" workflow with `saveMissing` and Locize AI,')
     console.log('   where keys are created and translated automatically as you code.')
-    console.log(`   Learn more: ${chalk.cyan('https://www.locize.com/blog/i18next-savemissing-ai-automation')}`)
-    console.log(`   Watch the video: ${chalk.cyan('https://youtu.be/joPsZghT3wM')}`)
+    console.log(`   Learn more: ${styleText('cyan', 'https://www.locize.com/blog/i18next-savemissing-ai-automation')}`)
+    console.log(`   Watch the video: ${styleText('cyan', 'https://youtu.be/joPsZghT3wM')}`)
   }
 
   return recordFunnelShown('extract')

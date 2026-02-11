@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { parse } from '@swc/core'
 import { extname } from 'node:path'
 import { EventEmitter } from 'node:events'
-import chalk from 'chalk'
+import { styleText } from 'node:util'
 import { ConsoleLogger } from './utils/logger'
 import { createSpinnerLike } from './utils/wrap-ora'
 import type { I18nextToolkitConfig, Logger } from './types'
@@ -329,21 +329,21 @@ export async function runLinterCli (
   try {
     const { success, message, files } = await linter.run()
     if (!success) {
-      spinner.fail(chalk.red.bold(message))
+      spinner.fail(styleText(['red', 'bold'], message))
 
       // Print detailed report after spinner fails
       for (const [file, issues] of Object.entries(files)) {
-        if (internalLogger.info) internalLogger.info(chalk.yellow(`\n${file}`))
-        else console.log(chalk.yellow(`\n${file}`))
+        if (internalLogger.info) internalLogger.info(styleText('yellow', `\n${file}`))
+        else console.log(styleText('yellow', `\n${file}`))
         issues.forEach(({ text, line, type }) => {
           const label = type === 'interpolation' ? 'Interpolation issue' : 'Found hardcoded string'
-          if (typeof internalLogger.info === 'function') internalLogger.info(`  ${chalk.gray(`${line}:`)} ${chalk.red('Error:')} ${label}: "${text}"`)
-          else console.log(`  ${chalk.gray(`${line}:`)} ${chalk.red('Error:')} ${label}: "${text}"`)
+          if (typeof internalLogger.info === 'function') internalLogger.info(`  ${styleText('gray', `${line}:`)} ${styleText('red', 'Error:')} ${label}: "${text}"`)
+          else console.log(`  ${styleText('gray', `${line}:`)} ${styleText('red', 'Error:')} ${label}: "${text}"`)
         })
       }
       process.exit(1)
     } else {
-      spinner.succeed(chalk.green.bold(message))
+      spinner.succeed(styleText(['green', 'bold'], message))
     }
   } catch (error) {
     const wrappedError = linter.wrapError(error)
