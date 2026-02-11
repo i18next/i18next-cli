@@ -930,6 +930,11 @@ export async function getTranslations (
         ? new Set<string>([...keysByNS.keys(), ...existingKeys])
         : new Set<string>([...keysByNS.keys(), NO_NS_TOKEN])
 
+      // Remove ignored namespaces so their section is never modified
+      for (const ns of ignoreNamespaces) {
+        namespacesToProcess.delete(ns)
+      }
+
       for (const nsKey of namespacesToProcess) {
         const nsKeys = keysByNS.get(nsKey) || []
         if (nsKey === NO_NS_TOKEN) {
@@ -939,6 +944,13 @@ export async function getTranslations (
         } else {
           const existingTranslations = existingMergedFile[nsKey] || {}
           newMergedTranslations[nsKey] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, nsKey, preservePatterns, objectKeys, syncPrimaryWithDefaults)
+        }
+      }
+
+      // Preserve ignored namespaces as-is from the existing merged file
+      for (const ns of ignoreNamespaces) {
+        if (ns in existingMergedFile) {
+          newMergedTranslations[ns] = existingMergedFile[ns]
         }
       }
 
@@ -966,6 +978,11 @@ export async function getTranslations (
         if (ns) {
           namespacesToProcess.add(ns)
         }
+      }
+
+      // Remove ignored namespaces so their files are never modified
+      for (const ns of ignoreNamespaces) {
+        namespacesToProcess.delete(ns)
       }
 
       // Process each namespace individually and create a result for each one

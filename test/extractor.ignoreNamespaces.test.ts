@@ -274,4 +274,73 @@ describe('extractor: ignoreNamespaces', () => {
     const enSharedJson = JSON.parse(enSharedContent as string)
     expect(enSharedJson).toEqual(existingSharedContent)
   })
+
+  it('should not clear ignored namespace files when removeUnusedKeys is true (#171)', async () => {
+    // Regression: when removeUnusedKeys is true the extractor discovers
+    // existing namespace files via glob and rebuilds them from scratch.
+    // Ignored namespaces must be skipped entirely so their files are
+    // never emptied.
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+
+      function App() {
+        const { t } = useTranslation();
+        return (
+          <div>
+            <h1>{t('hello')}</h1>
+            <p>{t('ns2:key')}</p>
+          </div>
+        );
+      }
+    `
+
+    const existingNs2Content = { key: 'value' }
+
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      '/locales/en/ns2.json': JSON.stringify(existingNs2Content),
+      '/locales/de/ns2.json': JSON.stringify(existingNs2Content),
+    })
+
+    // Override glob to also return existing locale files so the
+    // extractor discovers them (simulating real file-system glob).
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async (pattern: any) => {
+      const allFiles = Object.keys(vol.toJSON())
+      const pat = Array.isArray(pattern) ? pattern.join(',') : String(pattern)
+      if (pat.includes('src/')) {
+        return allFiles.filter(p => p.includes('/src/'))
+      }
+      // For namespace-discovery glob, return matching locale files
+      return allFiles.filter(p => p.startsWith('/locales/'))
+    })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        defaultNS: 'ns1',
+        ignoreNamespaces: ['ns2'],
+        removeUnusedKeys: true,
+      },
+    }
+
+    await runExtractor(config)
+
+    // ns2.json must be completely untouched
+    const enNs2Path = resolve(process.cwd(), 'locales/en/ns2.json')
+    const deNs2Path = resolve(process.cwd(), 'locales/de/ns2.json')
+
+    const enNs2Content = await vol.promises.readFile(enNs2Path, 'utf-8')
+    expect(JSON.parse(enNs2Content as string)).toEqual(existingNs2Content)
+
+    const deNs2Content = await vol.promises.readFile(deNs2Path, 'utf-8')
+    expect(JSON.parse(deNs2Content as string)).toEqual(existingNs2Content)
+
+    // ns1 should still be created with the 'hello' key
+    const enNs1Path = resolve(process.cwd(), 'locales/en/ns1.json')
+    const enNs1Content = await vol.promises.readFile(enNs1Path, 'utf-8')
+    const enNs1Json = JSON.parse(enNs1Content as string)
+    expect(enNs1Json).toHaveProperty('hello')
+  })
 })
