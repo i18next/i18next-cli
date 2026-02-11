@@ -390,9 +390,7 @@ async function displayOverallSummaryReport (report: StatusReport, config: I18nex
   console.log(`🔑 Keys Found:         ${styleText('bold', `${report.totalBaseKeys}`)}`)
   console.log(`📚 Namespaces Found:   ${styleText('bold', `${report.keysByNs.size}`)}`)
   console.log(`🌍 Locales:            ${styleText('bold', config.locales.join(', '))}`)
-  if (primaryLanguage) {
-    console.log(`✅ Primary Language:   ${styleText('bold', primaryLanguage)}`)
-  }
+  if (primaryLanguage) console.log(`✅ Primary Language:   ${styleText('bold', primaryLanguage)}`)
   console.log('\nTranslation Progress:')
 
   for (const [locale, localeData] of report.locales.entries()) {
