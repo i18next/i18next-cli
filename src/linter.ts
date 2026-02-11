@@ -25,6 +25,21 @@ function extractInterpolationKeys (str: string, config: I18nextToolkitConfig): s
   return keys
 }
 
+// Known i18next t() option keys that are NOT interpolation parameters.
+// These should not be flagged as "unused" in the translation string.
+const i18nextOptionKeys = new Set([
+  'defaultValue', 'count', 'context', 'ns', 'lng', 'lngs',
+  'fallbackLng', 'returnDetails', 'returnObjects', 'joinArrays',
+  'postProcess', 'interpolation', 'skipInterpolation', 'replace',
+  'ordinal', 'keySeparator', 'nsSeparator', 'tDescription',
+])
+function isI18nextOptionKey (key: string): boolean {
+  if (i18nextOptionKeys.has(key)) return true
+  // defaultValue_one, defaultValue_other, defaultValue_many, etc.
+  if (key.startsWith('defaultValue_')) return true
+  return false
+}
+
 // Helper to lint interpolation parameter errors in t() calls
 function lintInterpolationParams (ast: any, code: string, config: I18nextToolkitConfig): HardcodedString[] {
   const issues: HardcodedString[] = []
@@ -125,7 +140,9 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
             }
           }
           // For each provided param, check if it is used either directly or as the root of a dotted key.
+          // Skip known i18next t() option keys that are not interpolation parameters.
           for (const pk of paramKeys) {
+            if (isI18nextOptionKey(pk)) continue
             const isUsed = keys.some(k => k === pk || k.split('.')[0] === pk)
             if (!isUsed) {
               issues.push({

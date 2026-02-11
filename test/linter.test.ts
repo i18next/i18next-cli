@@ -1194,4 +1194,90 @@ describe('Linter (core logic)', () => {
     expect(texts).not.toContain('Parameter "name" is not used in translation string')
     expect(texts).not.toContain('Parameter "config" is not used in translation string')
   })
+
+  it('should not flag i18next reserved option keys (defaultValue, count, context, etc.) as unused parameters', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    // Natural language key with {{count}} plus defaultValue plural variants
+    const sampleCode = `
+      t("Delete {{count}} observations?", {
+        count: observations.length,
+        defaultValue: "Delete {{count}} observations?",
+        defaultValue_one: "Delete {{count}} observation?",
+        defaultValue_many: "Delete {{count}} observations?",
+        defaultValue_other: "Delete {{count}} observations?",
+      })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    // count is used in the string, and defaultValue/defaultValue_* are i18next options — nothing to flag
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
+  it('should not flag context, ns, lng, ordinal, and other i18next t() options as unused', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    const sampleCode = `
+      t("You have {{count}} items", {
+        count: 5,
+        context: "cart",
+        ns: "shop",
+        lng: "en",
+        ordinal: true,
+        returnObjects: false,
+        defaultValue: "You have {{count}} items",
+      })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
+  it('should still flag genuinely unused params even when i18next options are present', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    const sampleCode = `
+      t("Hello {{name}}", {
+        name: "World",
+        defaultValue: "Hello {{name}}",
+        bogus: "should be flagged",
+      })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('Parameter "bogus" is not used in translation string')
+  })
 })
