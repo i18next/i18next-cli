@@ -794,8 +794,7 @@ describe('extractor: runExtractor', () => {
         return []
       }
       // For translation-manager looking for 'en' locale files, return the one we created.
-      // The glob uses '**' to support multi-segment namespaces (namespaces with '/').
-      if (typeof pattern === 'string' && pattern.startsWith('locales/en/') && pattern.endsWith('.json')) {
+      if (typeof pattern === 'string' && pattern === 'locales/en/*.json') {
         return ['/locales/en/translation.json']
       }
       // For other locales, return empty.

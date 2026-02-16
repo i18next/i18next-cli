@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.9](https://github.com/i18next/i18next-cli/compare/v1.42.8...v1.42.9) - 2026-02-11
+
+- revert: multi-segment namespace glob change caused regression — `**` glob was too greedy and matched unrelated locale files, writing empty `{}` over existing translations [#182](https://github.com/i18next/i18next-cli/issues/182)
+
 ## [1.42.8](https://github.com/i18next/i18next-cli/compare/v1.42.7...v1.42.8) - 2026-02-11
 
 - linter: improve `checkInterpolationParams` (ignore i18next variables) [#178](https://github.com/i18next/i18next-cli/issues/178)
