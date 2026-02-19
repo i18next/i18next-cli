@@ -120,7 +120,8 @@ export async function loadConfig (configPath?: string, logger: Logger = new Cons
   } catch (error) {
     logger.error(`Error loading configuration from ${configPathFound}`)
     logger.error(error)
-    return null
+    // Returning null causes ensureConfig to prompt "would you like to create one?"
+    throw new Error(`Error loading configuration from ${configPathFound}: ${(error as any)?.message || (error as any)?.name}`)
   }
 }
 
