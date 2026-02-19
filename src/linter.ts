@@ -1,12 +1,74 @@
 import { glob } from 'glob'
 import { readFile } from 'node:fs/promises'
 import { parse } from '@swc/core'
-import { extname } from 'node:path'
+import { extname, resolve } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { styleText } from 'node:util'
 import { ConsoleLogger } from './utils/logger'
 import { createSpinnerLike } from './utils/wrap-ora'
 import type { I18nextToolkitConfig, Logger } from './types'
+
+/**
+ * Loads all translation values from the primary locale's JSON files and returns
+ * a flat Map of key -> translated string. Used by the interpolation linter so it
+ * can resolve a lookup key (e.g. "ABC") to its actual value ("hello {{name}}")
+ * and check interpolation parameters against the real string, not the key.
+ */
+async function loadPrimaryTranslationValues (config: I18nextToolkitConfig): Promise<Map<string, string>> {
+  const result = new Map<string, string>()
+  const output = config.extract?.output
+  if (!output || typeof output !== 'string') return result
+
+  const primaryLang = config.extract?.primaryLanguage ?? config.locales?.[0] ?? 'en'
+
+  // Candidate paths: substitute language + try common namespace names (including no namespace).
+  // This covers patterns like:
+  //   locales/{{language}}.json              -> no namespace token
+  //   locales/{{language}}/{{namespace}}.json -> substitute 'translation' (i18next default)
+  // Deliberately uses readFile directly (not glob) so it works correctly in test
+  // environments that mock fs/promises via memfs.
+  const candidatePaths: string[] = []
+  if (!output.includes('{{namespace}}')) {
+    candidatePaths.push(output.replace(/\{\{language\}\}/g, primaryLang))
+  } else {
+    for (const ns of ['translation', 'common', 'default']) {
+      candidatePaths.push(
+        output
+          .replace(/\{\{language\}\}/g, primaryLang)
+          .replace(/\{\{namespace\}\}/g, ns)
+      )
+    }
+  }
+
+  // For each candidate, try: (1) the path as-is resolved from cwd, and
+  // (2) an absolute path with a leading '/' — the latter ensures we hit
+  // memfs in test environments where vol.fromJSON uses absolute paths like
+  // '/locales/en.json' but the output template is relative ('locales/...').
+  const seen = new Set<string>()
+  const resolvedPaths: string[] = []
+  for (const p of candidatePaths) {
+    const abs = resolve(p)
+    const leadingSlash = '/' + p.replace(/^\//, '')
+    for (const candidate of [abs, leadingSlash]) {
+      if (!seen.has(candidate)) { seen.add(candidate); resolvedPaths.push(candidate) }
+    }
+  }
+
+  for (const filePath of resolvedPaths) {
+    try {
+      const raw = await readFile(filePath, 'utf-8')
+      const json = JSON.parse(raw)
+      for (const [k, v] of Object.entries(json)) {
+        if (typeof v === 'string') result.set(k, v)
+      }
+      break // stop after first successful read
+    } catch {
+      // file doesn't exist or is malformed — try next candidate
+    }
+  }
+
+  return result
+}
 
 // Helper to extract interpolation keys from a translation string
 function extractInterpolationKeys (str: string, config: I18nextToolkitConfig): string[] {
@@ -41,11 +103,25 @@ function isI18nextOptionKey (key: string): boolean {
 }
 
 // Helper to lint interpolation parameter errors in t() calls
-function lintInterpolationParams (ast: any, code: string, config: I18nextToolkitConfig): HardcodedString[] {
+function lintInterpolationParams (ast: any, code: string, config: I18nextToolkitConfig, translationValues?: Map<string, string>): HardcodedString[] {
   const issues: HardcodedString[] = []
   // Only run if enabled (default true)
   const enabled = config.lint?.checkInterpolationParams !== false
   if (!enabled) return issues
+
+  // Helper for line number
+  const getLineNumber = (pos: number): number => {
+    return code.substring(0, pos).split('\n').length
+  }
+
+  // Collect call sites first so we can advance the search position sequentially,
+  // fixing where duplicate keys all resolved to the first occurrence's line.
+  interface CallSite {
+    translationStr: string
+    searchText: string
+    paramKeys: string[]
+  }
+  const callSites: CallSite[] = []
 
   // Traverse AST for CallExpressions matching t() or i18n.t()
   function walk (node: any, ancestors: any[]) {
@@ -98,10 +174,9 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
       const arg1raw = node.arguments?.[1]
       const arg0 = arg0raw?.expression ?? arg0raw
       const arg1 = arg1raw?.expression ?? arg1raw
-      // Only check interpolation params if the first argument is a string literal (translation string)
+      // Only check interpolation params if the first argument is a string literal (translation key or string)
       if (arg0?.type === 'StringLiteral') {
-        const str = arg0.value
-        const keys = extractInterpolationKeys(str, config)
+        const keyOrStr = arg0.value
         let paramKeys: string[] = []
         if (arg1?.type === 'ObjectExpression') {
           paramKeys = arg1.properties
@@ -121,46 +196,61 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
             .filter((k: any) => typeof k === 'string')
         }
         if (!Array.isArray(paramKeys)) paramKeys = []
-        // Use text search for accurate line numbers (SWC spans use global byte offsets, not per-file)
+
+        // Resolve the actual translation string to check against:
+        // fix — if the first arg is a lookup key (no interpolation markers of its own)
+        // and we have a loaded translation map, use the translated value instead.
+        const resolvedStr = translationValues?.get(keyOrStr) ?? keyOrStr
+
         const searchText = arg0.raw ?? `"${arg0.value}"`
-        const position = code.indexOf(searchText)
-        const issueLineNumber = position > -1 ? getLineNumber(position) : 1
-        // Only check for unused parameters if there is at least one interpolation key in the string
-        if (keys.length > 0) {
-          // i18next supports nested object access via dot notation (e.g. {{author.name}} with { author }).
-          // For each interpolation key, check if the root (part before the first dot) matches a provided param.
-          for (const k of keys) {
-            const root = k.split('.')[0]
-            if (!paramKeys.includes(k) && !paramKeys.includes(root)) {
-              issues.push({
-                text: `Interpolation parameter "${k}" was not provided`,
-                line: issueLineNumber,
-                type: 'interpolation',
-              })
-            }
-          }
-          // For each provided param, check if it is used either directly or as the root of a dotted key.
-          // Skip known i18next t() option keys that are not interpolation parameters.
-          for (const pk of paramKeys) {
-            if (isI18nextOptionKey(pk)) continue
-            const isUsed = keys.some(k => k === pk || k.split('.')[0] === pk)
-            if (!isUsed) {
-              issues.push({
-                text: `Parameter "${pk}" is not used in translation string`,
-                line: issueLineNumber,
-                type: 'interpolation',
-              })
-            }
-          }
+        callSites.push({ translationStr: resolvedStr, searchText, paramKeys })
+      }
+    }
+  }
+
+  walk(ast, [])
+
+  // 187 fix — process call sites in source order, advancing lastSearchIndex so that
+  // each occurrence of the same string literal finds its own line, not always the first.
+  let lastSearchIndex = 0
+  for (const { translationStr, searchText, paramKeys } of callSites) {
+    const position = code.indexOf(searchText, lastSearchIndex)
+    if (position === -1) continue
+    lastSearchIndex = position + searchText.length
+
+    const issueLineNumber = getLineNumber(position)
+    const keys = extractInterpolationKeys(translationStr, config)
+
+    // Only check for unused parameters if there is at least one interpolation key in the string
+    if (keys.length > 0) {
+      // i18next supports nested object access via dot notation (e.g. {{author.name}} with { author }).
+      // For each interpolation key, check if the root (part before the first dot) matches a provided param.
+      for (const k of keys) {
+        const root = k.split('.')[0]
+        if (!paramKeys.includes(k) && !paramKeys.includes(root)) {
+          issues.push({
+            text: `Interpolation parameter "${k}" was not provided`,
+            line: issueLineNumber,
+            type: 'interpolation',
+          })
+        }
+      }
+      // For each provided param, check if it is used either directly or as the root of a dotted key.
+      // Skip known i18next t() option keys that are not interpolation parameters.
+      for (const pk of paramKeys) {
+        if (isI18nextOptionKey(pk)) continue
+        const isUsed = keys.some(k => k === pk || k.split('.')[0] === pk)
+        if (!isUsed) {
+          issues.push({
+            text: `Parameter "${pk}" is not used in translation string`,
+            line: issueLineNumber,
+            type: 'interpolation',
+          })
         }
       }
     }
   }
-  // Helper for line number
-  const getLineNumber = (pos: number): number => {
-    return code.substring(0, pos).split('\n').length
-  }
-  walk(ast, [])
+
   return issues
 }
 
@@ -221,6 +311,9 @@ export class Linter extends EventEmitter<LinterEventMap> {
         ignore: [...defaultIgnore, ...extractIgnore, ...lintIgnore]
       })
       this.emit('progress', { message: `Analyzing ${sourceFiles.length} source files...` })
+      // Load translation values once so the interpolation linter can resolve lookup keys
+      // to their translated strings (fixes: key != value interpolation not detected)
+      const translationValues = await loadPrimaryTranslationValues(config)
       let totalIssues = 0
       const issuesByFile = new Map<string, HardcodedString[]>()
 
@@ -280,7 +373,7 @@ export class Linter extends EventEmitter<LinterEventMap> {
         // Collect hardcoded string issues
         const hardcodedStrings = findHardcodedStrings(ast, code, config)
         // Collect interpolation parameter issues
-        const interpolationIssues = lintInterpolationParams(ast, code, config)
+        const interpolationIssues = lintInterpolationParams(ast, code, config, translationValues)
         const allIssues = [...hardcodedStrings, ...interpolationIssues]
         if (allIssues.length > 0) {
           totalIssues += allIssues.length

@@ -1280,4 +1280,87 @@ describe('Linter (core logic)', () => {
     expect(result.files['/src/App.tsx']).toHaveLength(1)
     expect(result.files['/src/App.tsx'][0].text).toBe('Parameter "bogus" is not used in translation string')
   })
+
+  it('should detect interpolation errors when key and JSON value differ (value has interpolation, key does not)', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+        output: 'locales/{{language}}.json',
+      },
+      lint: {},
+    }
+
+    // The translation key is "ABC" (no interpolation markers),
+    // but the JSON value is "hello {{name}}" (requires {{name}}).
+    // The linter must resolve the key against the translation file and
+    // check the *value*, not the key string.
+    vol.fromJSON({
+      '/src/App.tsx': [
+        'import { useTranslation } from "react-i18next"',
+        'function MyComponent() {',
+        '  const { t } = useTranslation()',
+        '  t("ABC", { A: "abc" })',  // line 4: wrong param, missing {{name}}
+        '  t("ABC")',                 // line 5: missing {{name}}
+        '}',
+      ].join('\n'),
+      '/locales/en.json': JSON.stringify({ ABC: 'hello {{name}}' }),
+    })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    const issues = result.files['/src/App.tsx']
+    expect(issues).toBeDefined()
+
+    const texts = issues.map(i => i.text)
+
+    // Line 4: "name" is missing, "A" is unused
+    expect(texts).toContain('Interpolation parameter "name" was not provided')
+    expect(texts).toContain('Parameter "A" is not used in translation string')
+
+    // Line 5: "name" is missing (no params passed at all)
+    // There should be two separate "name was not provided" errors (one per call site)
+    expect(issues.filter(i => i.text === 'Interpolation parameter "name" was not provided')).toHaveLength(2)
+  })
+
+  it('should report correct line numbers for duplicate t() calls with interpolation errors', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+
+    // Three identical t() calls, each on its own line.
+    // Each should report its own correct line number, not all pointing to line 5.
+    const sampleCode = [
+      'import { useTranslation } from "react-i18next"',  // line 1
+      'function MyComponent() {',                          // line 2
+      '  const { t } = useTranslation()',                 // line 3
+      '  t("Hello {{name}}")',                            // line 4
+      '  t("Hello {{name}}")',                            // line 5
+      '  t("Hello {{name}}")',                            // line 6
+      '}',                                                // line 7
+    ].join('\n')
+
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    const issues = result.files['/src/App.tsx']
+    expect(issues).toBeDefined()
+    expect(issues).toHaveLength(3)
+
+    const lines = issues.map(i => i.line).sort((a, b) => a - b)
+
+    // Each call site must have its own distinct line number
+    expect(lines).toEqual([4, 5, 6])
+  })
 })

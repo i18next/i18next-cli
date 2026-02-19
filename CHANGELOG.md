@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.42.10](https://github.com/i18next/i18next-cli/compare/v1.42.9...v1.42.10) - 2026-02-19
 
-- fix: If config file has an error, i18next-cli extract should not ask to create a new one, it should exit [#185](https://github.com/i18next/i18next-cli/issues/185)
+- fix: exit with a non-zero code when a config file exists but fails to load, instead of prompting to create a new one [#185](https://github.com/i18next/i18next-cli/issues/185)
+- fix: interpolation lint now checks the translated value (not just the key) when key and value differ [#186](https://github.com/i18next/i18next-cli/issues/186)
+- fix: interpolation lint now reports the correct line number for each duplicate `t()` call [#187](https://github.com/i18next/i18next-cli/issues/187)
 
 ## [1.42.9](https://github.com/i18next/i18next-cli/compare/v1.42.8...v1.42.9) - 2026-02-11
 
