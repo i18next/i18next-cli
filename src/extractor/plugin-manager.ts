@@ -1,4 +1,4 @@
-import type { ExtractedKey, PluginContext, I18nextToolkitConfig, Logger, Plugin } from '../types'
+import type { ExtractedKey, PluginContext, I18nextToolkitConfig, Logger, Plugin, ScopeInfo } from '../types'
 
 /**
  * Initializes an array of plugins by calling their setup hooks.
@@ -112,5 +112,7 @@ export function createPluginContext (
     logger,
     // This will be attached later, so we provide a placeholder
     getVarFromScope: () => undefined,
+    // This will be attached later, so we provide a placeholder
+    setVarInScope: (_name: string, _info: ScopeInfo) => undefined,
   }
 }

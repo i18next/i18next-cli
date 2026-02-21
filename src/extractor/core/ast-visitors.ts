@@ -37,7 +37,7 @@ export class ASTVisitors {
     return this.callExpressionHandler.objectKeys
   }
 
-  private readonly scopeManager: ScopeManager
+  public readonly scopeManager: ScopeManager
   private readonly expressionResolver: ExpressionResolver
   private readonly callExpressionHandler: CallExpressionHandler
   private readonly jsxHandler: JSXHandler
@@ -193,6 +193,11 @@ export class ASTVisitors {
 
         const extractStringLiteralValue = (node: any): string | undefined => {
           if (!node) return undefined
+          // Handle: typeof SomeConst  → TsTypeQuery { exprName: { value: 'SomeConst' } }
+          if (node?.type === 'TsTypeQuery') {
+            const name = node.exprName?.value ?? node.exprName?.name
+            if (name) return this.scopeManager.resolveSimpleStringIdentifier(name)
+          }
           // shapes: TsLiteralType -> { literal: { type: 'StringLiteral', value: 'x' } }
           if (node.type === 'TsLiteralType' && node.literal) return node.literal.value ?? node.literal.raw
           if (node.type === 'StringLiteral' || node.type === 'Str' || node.type === 'Literal') return node.value ?? node.raw ?? node.value
@@ -233,8 +238,25 @@ export class ASTVisitors {
               if (c) { tp = c; break }
             }
             const ns = extractStringLiteralValue(tp)
-            if (ns) {
-              this.scopeManager.setVarInScope(paramKey, { defaultNs: ns })
+
+            // Extract the second type parameter for KPrefix
+            // We need to find the second element from the same type parameter list
+            const typeParams =
+              typeAnn.typeParameters?.params ??
+              typeAnn.typeArguments?.params ??
+              typeAnn.typeParams?.params ??
+              undefined
+
+            let kpFromType: string | undefined
+            if (typeParams && typeParams.length >= 2) {
+              kpFromType = extractStringLiteralValue(typeParams[1])
+            }
+
+            if (ns || kpFromType) {
+              this.scopeManager.setVarInScope(paramKey, {
+                defaultNs: ns,
+                keyPrefix: kpFromType // honour TFunction<Ns, KPrefix>
+              })
             }
           }
         }

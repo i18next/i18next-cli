@@ -553,6 +553,36 @@ export interface PluginContext {
    * @returns Scope information if found, otherwise undefined.
    */
   getVarFromScope: (name: string) => ScopeInfo | undefined;
+
+  /**
+   * Injects or overrides variable scope information in the innermost active scope.
+   *
+   * Use this inside an `onVisitNode` hook to teach the extractor about translation
+   * functions whose namespace or key prefix cannot be determined by static analysis
+   * alone — for example, when the namespace is derived from an external constant,
+   * a config file, or a naming convention that the built-in resolver does not cover.
+   *
+   * The injected scope will be picked up by subsequent `t()` call resolution for
+   * any variable matching `name` in the current scope chain, exactly as if the
+   * extractor had found it through a `useTranslation` or `getFixedT` call.
+   *
+   * @param name - The variable name to register (e.g., `'t'`, `'myT'`).
+   * @param info - The scope information to associate: `defaultNs` and/or `keyPrefix`.
+   *
+   * @example
+   * ```typescript
+   * // Plugin that resolves namespace from a well-known module-level constant
+   * onVisitNode(node, context) {
+   *   if (node.type === 'VariableDeclarator' && isMyHookCall(node)) {
+   *     context.setVarInScope('t', {
+   *       defaultNs: 'users',
+   *       keyPrefix: 'login',
+   *     })
+   *   }
+   * }
+   * ```
+   */
+  setVarInScope: (name: string, info: ScopeInfo) => void
 }
 
 /**

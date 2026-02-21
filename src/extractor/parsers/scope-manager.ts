@@ -108,7 +108,7 @@ export class ScopeManager {
   /**
    * Resolve simple identifier declared in-file to its string literal value, if known.
    */
-  private resolveSimpleStringIdentifier (name: string): string | undefined {
+  public resolveSimpleStringIdentifier (name: string): string | undefined {
     return this.simpleConstants.get(name)
   }
 
@@ -252,8 +252,13 @@ export class ScopeManager {
         const nsNode = callExpr.arguments?.[nsArgIndex]?.expression
         if (nsNode?.type === 'StringLiteral') {
           defaultNs = nsNode.value
-        } else if (nsNode?.type === 'ArrayExpression' && nsNode.elements[0]?.expression?.type === 'StringLiteral') {
-          defaultNs = nsNode.elements[0].expression.value
+        } else if (nsNode?.type === 'Identifier') {
+          // ← FIX A: resolve const I18N_NS = 'users'
+          defaultNs = this.resolveSimpleStringIdentifier(nsNode.value)
+        } else if (nsNode?.type === 'ArrayExpression') {
+          const first = nsNode.elements[0]?.expression
+          if (first?.type === 'StringLiteral') defaultNs = first.value
+          else if (first?.type === 'Identifier') defaultNs = this.resolveSimpleStringIdentifier(first.value)
         }
       }
       kpArg = kpArgIndex === -1 ? undefined : callExpr.arguments?.[kpArgIndex]?.expression
@@ -261,7 +266,12 @@ export class ScopeManager {
 
     if (kpArg?.type === 'ObjectExpression') {
       const kp = getObjectPropValue(kpArg, 'keyPrefix')
-      keyPrefix = typeof kp === 'string' ? kp : undefined
+      if (typeof kp === 'string') {
+        keyPrefix = kp
+      } else if (kp && typeof kp === 'object' && (kp as any).type === 'Identifier') {
+        // ← FIX B: resolve { keyPrefix: I18N_PREFIX } where the value is an Identifier
+        keyPrefix = this.resolveSimpleStringIdentifier((kp as any).value)
+      }
     } else if (kpArg?.type === 'StringLiteral') {
       keyPrefix = kpArg.value
     } else if (kpArg?.type === 'Identifier') {
@@ -318,9 +328,15 @@ export class ScopeManager {
     } else {
       if (nsArgIndex !== -1) {
         const nsNode = callExpr.arguments?.[nsArgIndex]?.expression
-        if (nsNode?.type === 'StringLiteral') defaultNs = nsNode.value
-        else if (nsNode?.type === 'ArrayExpression' && nsNode.elements[0]?.expression?.type === 'StringLiteral') {
-          defaultNs = nsNode.elements[0].expression.value
+        if (nsNode?.type === 'StringLiteral') {
+          defaultNs = nsNode.value
+        } else if (nsNode?.type === 'Identifier') {
+          // ← FIX A: resolve const I18N_NS = 'users'
+          defaultNs = this.resolveSimpleStringIdentifier(nsNode.value)
+        } else if (nsNode?.type === 'ArrayExpression') {
+          const first = nsNode.elements[0]?.expression
+          if (first?.type === 'StringLiteral') defaultNs = first.value
+          else if (first?.type === 'Identifier') defaultNs = this.resolveSimpleStringIdentifier(first.value)
         }
       }
       kpArg = kpArgIndex === -1 ? undefined : callExpr.arguments?.[kpArgIndex]?.expression
@@ -328,7 +344,12 @@ export class ScopeManager {
 
     if (kpArg?.type === 'ObjectExpression') {
       const kp = getObjectPropValue(kpArg, 'keyPrefix')
-      keyPrefix = typeof kp === 'string' ? kp : undefined
+      if (typeof kp === 'string') {
+        keyPrefix = kp
+      } else if (kp && typeof kp === 'object' && (kp as any).type === 'Identifier') {
+        // ← FIX B: resolve { keyPrefix: I18N_PREFIX } where the value is an Identifier
+        keyPrefix = this.resolveSimpleStringIdentifier((kp as any).value)
+      }
     } else if (kpArg?.type === 'StringLiteral') {
       keyPrefix = kpArg.value
     } else if (kpArg?.type === 'Identifier') {

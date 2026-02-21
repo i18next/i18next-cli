@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.11](https://github.com/i18next/i18next-cli/compare/v1.42.10...v1.42.11) - 2026-02-21
+
+- fix: Insufficient namespace and keyPrefix scope evaluation [#188](https://github.com/i18next/i18next-cli/issues/188)
+
 ## [1.42.10](https://github.com/i18next/i18next-cli/compare/v1.42.9...v1.42.10) - 2026-02-19
 
 - fix: exit with a non-zero code when a config file exists but fails to load, instead of prompting to create a new one [#185](https://github.com/i18next/i18next-cli/issues/185)

@@ -39,6 +39,9 @@ describe('processFile', () => {
       getCurrentFile: vi.fn().mockReturnValue(''),
       getCurrentCode: vi.fn().mockReturnValue(''),
       objectKeys: new Set(),
+      scopeManager: {
+        setVarInScope: vi.fn(),
+      },
     } as any
   })
 
