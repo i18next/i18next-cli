@@ -343,12 +343,13 @@ export class ScopeManager {
     }
 
     if (kpArg?.type === 'ObjectExpression') {
-      const kp = getObjectPropValue(kpArg, 'keyPrefix')
+      const kp = getObjectPropValue(
+        kpArg,
+        'keyPrefix',
+        this.resolveSimpleStringIdentifier.bind(this)
+      )
       if (typeof kp === 'string') {
         keyPrefix = kp
-      } else if (kp && typeof kp === 'object' && (kp as any).type === 'Identifier') {
-        // ← FIX B: resolve { keyPrefix: I18N_PREFIX } where the value is an Identifier
-        keyPrefix = this.resolveSimpleStringIdentifier((kp as any).value)
       }
     } else if (kpArg?.type === 'StringLiteral') {
       keyPrefix = kpArg.value
