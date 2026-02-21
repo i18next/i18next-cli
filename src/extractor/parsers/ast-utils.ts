@@ -158,6 +158,8 @@ export function isSimpleTemplateLiteral (literal: TemplateLiteral): boolean {
   return literal.quasis.length === 1 && literal.expressions.length === 0 && literal.quasis[0].cooked != null
 }
 
+type IdentifierResolver = (name: string) => string | boolean | number | undefined
+
 /**
  * Extracts string value from object property.
  *
@@ -166,16 +168,23 @@ export function isSimpleTemplateLiteral (literal: TemplateLiteral): boolean {
  *
  * @param object - Object expression to search
  * @param propName - Property name to find
+ * @param identifierResolver - callback to resolve Identifier type values when needed
  * @returns String value if found, empty string if property exists but isn't a string, undefined if not found
  *
  * @private
  */
-export function getObjectPropValue (object: ObjectExpression, propName: string): string | boolean | number | undefined {
+export function getObjectPropValue (object: ObjectExpression, propName: string, identifierResolver?: IdentifierResolver): string | boolean | number | undefined {
   const prop = getObjectProperty(object, propName)
 
   if (prop?.type === 'KeyValueProperty') {
     const val = prop.value
     if (val.type === 'StringLiteral') return val.value
+    if (val.type === 'Identifier') {
+      if (identifierResolver) {
+        return identifierResolver(val.value)
+      }
+      return ''
+    }
     if (val.type === 'TemplateLiteral' && isSimpleTemplateLiteral(val)) return val.quasis[0].cooked
     if (val.type === 'BooleanLiteral') return val.value
     if (val.type === 'NumericLiteral') return val.value

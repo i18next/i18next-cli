@@ -201,6 +201,30 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should handle keyPrefix as simple string Identifier', async () => {
+      const sampleCode = `
+        const MY_PREFIX = 'very.deeply.nested'
+
+        const { t } = useTranslation('translation', { keyPrefix: MY_PREFIX });
+        const text = t('key'); // Should be extracted as 'very.deeply.nested.key'
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        very: {
+          deeply: {
+            nested: {
+              key: 'key', // The default value is the unprefixed key
+            },
+          },
+        },
+      })
+    })
+
     it('should handle keyPrefix override in t() options', async () => {
       const sampleCode = `
         const { t } = useTranslation('translation', { keyPrefix: 'very.deeply.nested' });
@@ -227,6 +251,24 @@ describe('extractor: advanced t features', () => {
             },
           },
         },
+      })
+    })
+
+    it('should handle namespace as simple string Identifier', async () => {
+      const sampleCode = `
+        const MY_NS = 'custom_namespace'
+
+        const { t } = useTranslation(MY_NS);
+        const text = t('key');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/custom_namespace.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        key: 'key',
       })
     })
 
