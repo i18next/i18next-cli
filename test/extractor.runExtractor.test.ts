@@ -1523,7 +1523,7 @@ describe('extractor: runExtractor', () => {
           <div>
             {
               // t('test1', { ordinal: true }) - ordinal without count
-              // t('test2', { count: 1, ordinal: "true" }) - string ordinal value  
+              // t('test2', { count: 1, ordinal: "true" }) - string ordinal value
               // t('test3', { count: 1, ordinal: false }) - explicit false
               // t('test4_ordinal') - ordinal suffix without count
               // t('test5_ordinal', { count: 1, ordinal: false }) - suffix overrides option
@@ -1574,7 +1574,7 @@ describe('extractor: runExtractor', () => {
     const sampleCode = `
       export const Calculator = ({ term }) => {
         const { t } = useTranslation('/widgets/calculator/ui/calculator-form');
-        
+
         return (
           <div>
             {t(\`options.option\`, {
@@ -1625,7 +1625,7 @@ describe('extractor: runExtractor', () => {
     const sampleCode = `
       export const Calculator = ({ term }) => {
         const { t } = useTranslation('/widgets/calculator/ui/calculator-form');
-        
+
         return (
           <div>
             {
@@ -1768,15 +1768,15 @@ describe('extractor: runExtractor', () => {
         // These keys should be extracted normally
         t('app.title', 'My App Title');
         t('common.button.save', 'Save');
-        
+
         // These keys match preservePatterns and should NOT be extracted
         // (they already exist in other files like assets.json)
         t('BUILDINGS.ACADEMY.NAME');
-        t('BUILDINGS.BREWERY.NAME'); 
+        t('BUILDINGS.BREWERY.NAME');
         t('BUILDINGS.HEROS_MANSION.NAME');
         t('QUESTS.ADVENTURE-COUNT.DESCRIPTION');
         t('QUESTS.EVERY.NAME');
-        
+
         // Dynamic usage of preserved patterns (also shouldn't be extracted)
         const buildingId = 'SMITHY';
         t(\`BUILDINGS.\${buildingId}.NAME\`);
@@ -1839,12 +1839,12 @@ describe('extractor: runExtractor', () => {
       function App() {
         // This key will be extracted (doesn't match preservePatterns)
         t('static.key', 'Static Value');
-        
+
         // These commented keys match preservePatterns and should NOT be extracted
         // t('dynamic.status.base')
         // t('dynamic.status.another', 'OTHER')
         // t('dynamic.status.next', { defaultValue: 'NEXT' })
-        
+
         // This dynamic key also matches preservePatterns and should NOT be extracted
         const status = 'active';
         return <div>{t(\`dynamic.status.\${status}\`)}</div>;
@@ -2031,12 +2031,12 @@ describe('extractor: runExtractor', () => {
       function App() {
         // This key should be extracted normally (different namespace)
         t('app.title', 'My App Title');
-        
+
         // These keys match the assets namespace pattern and should NOT be extracted
         t('assets:image.logo', 'Logo Image');
         t('icon.home', { ns: 'assets', defaultValue: 'Home Icon'});
         t('completely.different', { ns: 'other', defaultValue: 'OTHER'});
-        
+
         // Dynamic usage that also shouldn't be extracted
         const assetId = 'banner';
         t(\`assets:image.\${assetId}\`);
@@ -2241,7 +2241,7 @@ describe('extractor: runExtractor', () => {
           if (err) return console.error(err);
           // Fallback string should be extracted (second parameter as string)
           console.log(t('translation:SomeKey', 'fallback:'));
-          
+
           // Or using defaultValue in options object
           console.log(t('translation:AnotherKey','default fallback'));
         });
@@ -2287,13 +2287,13 @@ describe('extractor: runExtractor', () => {
       const sampleCode = `
         // Colon at the end
         t('translation:key1', 'fallback:');
-        
-        // Colon in the middle  
+
+        // Colon in the middle
         t('translation:key2', 'fall:back');
-        
+
         // Multiple colons
         t('translation:key3', 'a:b:c');
-        
+
         // URL as fallback
         t('translation:key4', 'https://example.com');
       `
@@ -2641,6 +2641,87 @@ describe('extractor: runExtractor', () => {
       expect(translationJson).not.toHaveProperty('Unknown Error')
       expect(translationJson).not.toHaveProperty('Email is required')
     } catch (err) {
+      if ((err as any)?.code !== 'ENOENT') throw err
+    }
+  })
+
+  it('should extract namespace and key prefix when using TFunction<"my-custom-namespace", "deep.nested"> and create namespace file', async () => {
+    const sampleCode = `
+      import { TFunction } from "@/i18n";
+
+      export const getErrorString = (
+        t: TFunction<"my-custom-namespace", "deep.nested">,
+      ) => {
+        return t("error_code", "Email is required");
+      };
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    await runExtractor(mockConfig)
+
+    const nsPath = resolve(process.cwd(), 'locales/en/my-custom-namespace.json')
+    const nsContent = await vol.promises.readFile(nsPath, 'utf-8')
+    const nsJson = JSON.parse(nsContent as string)
+
+    // Expect that at least some keys from the file were extracted into the namespace file
+    expect(nsJson).toHaveProperty('deep')
+    expect(nsJson['deep']).toHaveProperty('nested')
+    expect(nsJson['deep']['nested']).toHaveProperty('error_code')
+    expect(nsJson['deep']['nested']['error_code']).toBe('Email is required')
+
+    // Ensure keys did not accidentally go to the default translation.json
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    try {
+      const translationContent = await vol.promises.readFile(translationPath, 'utf-8')
+      const translationJson = JSON.parse(translationContent as string)
+      expect(translationJson).not.toHaveProperty('error_code')
+      expect(translationJson).not.toHaveProperty('deep.nested.error_code')
+    } catch (err) {
+      // translation.json may not exist — that's fine
+      if ((err as any)?.code !== 'ENOENT') throw err
+    }
+  })
+
+  it('should extract namespace and key prefix when using TFunction<"my-custom-namespace", "deep.nested"> using simple string Identifier', async () => {
+    const sampleCode = `
+      import { TFunction } from "@/i18n";
+
+      const I18N_NS = 'my-custom-namespace'
+      const I18N_PREFIX = 'deep.nested'
+
+      export const getErrorString = (
+        t: TFunction<typeof I18N_NS, typeof I18N_PREFIX>,
+      ) => {
+        return t("error_code", "Email is required");
+      };
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+    })
+
+    await runExtractor(mockConfig)
+
+    const nsPath = resolve(process.cwd(), 'locales/en/my-custom-namespace.json')
+    const nsContent = await vol.promises.readFile(nsPath, 'utf-8')
+    const nsJson = JSON.parse(nsContent as string)
+
+    // Expect that at least some keys from the file were extracted into the namespace file
+    expect(nsJson).toHaveProperty('deep')
+    expect(nsJson['deep']).toHaveProperty('nested')
+    expect(nsJson['deep']['nested']).toHaveProperty('error_code')
+    expect(nsJson['deep']['nested']['error_code']).toBe('Email is required')
+
+    // Ensure keys did not accidentally go to the default translation.json
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    try {
+      const translationContent = await vol.promises.readFile(translationPath, 'utf-8')
+      const translationJson = JSON.parse(translationContent as string)
+      expect(translationJson).not.toHaveProperty('error_code')
+      expect(translationJson).not.toHaveProperty('deep.nested.error_code')
+    } catch (err) {
+      // translation.json may not exist — that's fine
       if ((err as any)?.code !== 'ENOENT') throw err
     }
   })
