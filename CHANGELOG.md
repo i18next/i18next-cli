@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.46.2](https://github.com/i18next/i18next-cli/compare/v1.46.1...v1.46.2) - 2026-02-27
 
 - fix: Extraction with keySeparator can create empty string segments [#200](https://github.com/i18next/i18next-cli/issues/200)
+- fix: expanded plurals lose location information [#201](https://github.com/i18next/i18next-cli/issues/201)
 
 ## [1.46.1](https://github.com/i18next/i18next-cli/compare/v1.46.0...v1.46.1) - 2026-02-27
 

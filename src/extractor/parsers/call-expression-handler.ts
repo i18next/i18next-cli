@@ -238,6 +238,12 @@ export class CallExpressionHandler {
         : key
 
       // Handle plurals, context, and returnObjects
+      // Compute location once here so it is available to ALL paths below
+      // (plural, context, single-other fast paths, and the default leaf path).
+      const location = this.getLocationFromNode(node)
+      const locationEntry = location
+        ? [{ file: this.getCurrentFile(), line: location.line, column: location.column }]
+        : undefined
       if (options) {
         const contextPropValue = getObjectPropValueExpression(options, 'context')
 
@@ -366,7 +372,8 @@ export class CallExpressionHandler {
                     ns: k.ns,
                     defaultValue: k.defaultValue,
                     hasCount: true,
-                    isOrdinal: isOrdinalByKey
+                    isOrdinal: isOrdinalByKey,
+                    locations: locationEntry
                   })
                 }
               } else {
@@ -375,7 +382,8 @@ export class CallExpressionHandler {
                   ns,
                   defaultValue: dv,
                   hasCount: true,
-                  isOrdinal: isOrdinalByKey
+                  isOrdinal: isOrdinalByKey,
+                  locations: locationEntry
                 })
               }
               continue
@@ -398,7 +406,7 @@ export class CallExpressionHandler {
             // Pass explicitDefaultForBase so that when a call-site provided an explicit
             // base default (e.g. t('key', 'Default', { count })), plural variant keys
             // are treated as explicit and may be synced to that default.
-            this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey, finalDefaultValue, explicitPluralForVariants)
+            this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey, finalDefaultValue, explicitPluralForVariants, locationEntry)
           }
 
           continue // This key is fully handled
@@ -424,22 +432,14 @@ export class CallExpressionHandler {
       }
 
       // 5. Default case: Add the simple key
+      // eslint-disable-next-line no-lone-blocks
       {
-        // ✅ Use the helper method to find location by searching the code
-        const location = this.getLocationFromNode(node)
-
         this.pluginContext.addKey({
           key: finalKey,
           ns,
           defaultValue: dv,
           explicitDefault: explicitDefaultForBase,
-          locations: location
-            ? [{
-                file: this.getCurrentFile(),
-                line: location.line,
-                column: location.column
-              }]
-            : undefined
+          locations: locationEntry
         })
 
         // Check for nested translations in the key itself
@@ -740,7 +740,7 @@ export class CallExpressionHandler {
    * @param options - object expression options
    * @param isOrdinal - isOrdinal flag
    */
-  private handlePluralKeys (key: string, ns: string | false | undefined, options: ObjectExpression, isOrdinal: boolean, defaultValueFromCall?: string, explicitDefaultFromSource?: boolean): void {
+  private handlePluralKeys (key: string, ns: string | false | undefined, options: ObjectExpression, isOrdinal: boolean, defaultValueFromCall?: string, explicitDefaultFromSource?: boolean, locations?: Array<{ file: string; line: number; column: number }>): void {
     try {
       const type = isOrdinal ? 'ordinal' : 'cardinal'
 
@@ -851,7 +851,8 @@ export class CallExpressionHandler {
             defaultValue: finalDefaultValue,
             hasCount: true,
             isOrdinal,
-            explicitDefault: Boolean(explicitDefaultFromSource || typeof specificOther === 'string')
+            explicitDefault: Boolean(explicitDefaultFromSource || typeof specificOther === 'string'),
+            locations
           })
         }
         return
@@ -917,7 +918,8 @@ export class CallExpressionHandler {
             // Do NOT treat the presence of a general base defaultValueFromCall as making variants explicit.
             explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string'),
             // If this is a context variant, track the base key (without context or plural suffixes)
-            keyAcceptingContext: context !== undefined ? key : undefined
+            keyAcceptingContext: context !== undefined ? key : undefined,
+            locations
           })
         }
       }
@@ -925,7 +927,7 @@ export class CallExpressionHandler {
       this.logger.warn(`Could not determine plural rules for language "${this.config.extract?.primaryLanguage}". Falling back to simple key extraction.`)
       // Fallback to a simple key if Intl API fails
       const defaultValue = defaultValueFromCall || getObjectPropValue(options, 'defaultValue')
-      this.pluginContext.addKey({ key, ns, defaultValue: typeof defaultValue === 'string' ? defaultValue : key })
+      this.pluginContext.addKey({ key, ns, defaultValue: typeof defaultValue === 'string' ? defaultValue : key, locations })
     }
   }
 
