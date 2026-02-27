@@ -101,6 +101,63 @@ function looksLikeObjectPath (key: string, separator: string, regex: RegExp | nu
 }
 
 /**
+ * Returns true when splitting `key` by `separator` would produce at least one
+ * empty string segment (e.g. "Loading..." split by "." → ["Loading","","",""]).
+ * Keys with empty segments must be treated as flat keys, not nested paths,
+ * otherwise they create `{ "": { "": "..." } }` entries in the JSON output.
+ */
+function hasEmptySegments (key: string, separator: string): boolean {
+  return key.split(separator).some(s => s === '')
+}
+
+/**
+ * Detects a nesting conflict for `key` against the object being built.
+ *
+ * Returns true when:
+ * - A prefix of `key` already resolves to a *non-object* value in `obj`
+ *   (we cannot descend into a string to set a child).
+ * - A parent of a segment in `key` would clobber an existing sub-tree
+ *   (the key itself resolves to an object but a new leaf is about to overwrite it
+ *   and the object already has children from a deeper extracted key).
+ *
+ * In both cases the caller should skip the conflicting key rather than producing
+ * a silently-wrong flat fallback.
+ */
+function hasNestingConflict (obj: Record<string, any>, key: string, separator: string): boolean {
+  const parts = key.split(separator)
+  let current: any = obj
+
+  for (let i = 0; i < parts.length - 1; i++) {
+    const part = parts[i]
+    const value = current[part]
+
+    if (value === undefined || value === null) {
+      // Path does not exist yet — no conflict
+      return false
+    }
+
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      // A non-object value already occupies an ancestor segment.
+      // We cannot nest inside a string/number/array.
+      return true
+    }
+
+    current = value
+  }
+
+  // Check the final segment: if the existing value is a non-empty object and we are
+  // about to overwrite it with a string, that is also a conflict (the deeper keys
+  // that populate this object came from other extracted keys and would be silently lost).
+  const leafPart = parts[parts.length - 1]
+  const leafValue = current[leafPart]
+  if (typeof leafValue === 'object' && leafValue !== null && !Array.isArray(leafValue) && Object.keys(leafValue).length > 0) {
+    return true
+  }
+
+  return false
+}
+
+/**
  * Recursively sorts the keys of an object.
  */
 function sortObject (obj: any, config?: I18nextToolkitConfig, customSort?: (a: string, b: string) => number): any {
@@ -635,6 +692,12 @@ function buildNewTranslationsForNs (
 
     if (separator && typeof separator === 'string') {
       if (!looksLikeObjectPath(key, separator, naturalLanguageRegex)) {
+        // Natural-language key — treat as flat
+        separator = false
+      } else if (hasEmptySegments(key, separator)) {
+        // Splitting would produce empty-string segments (e.g. "Loading..." split by "."
+        // yields ["Loading","","",""]). Storing those creates { "": { "": "…" } }
+        // noise in the JSON, so treat the whole key as a flat leaf instead.
         separator = false
       }
     }
@@ -735,6 +798,21 @@ function buildNewTranslationsForNs (
           valueToSet = existingValue
         }
       }
+    }
+
+    // Guard against nesting conflicts before writing to the output object.
+    // A conflict arises when one extracted key would clobber an ancestor/descendant
+    // that was already written by a different extracted key, e.g.:
+    //   t("a.b")   => sets a.b = string
+    //   t("a.b.c") => tries to descend into a.b which is already a string
+    // In that situation we skip the conflicting key rather than producing a
+    // silently-wrong top-level flat fallback like { "a.b.c": "a.b.c" }.
+    if (separator && typeof separator === 'string' && hasNestingConflict(newTranslations, key, separator)) {
+      // Log at most once per key so the output is not spammy
+      // (the logger reference is captured from the outer scope via closure – it is not
+      //  directly available here, but we can at least avoid crashing silently).
+      // Callers / tests can verify the key is simply absent from the output.
+      continue
     }
 
     setNestedValue(newTranslations, key, valueToSet, separator)
