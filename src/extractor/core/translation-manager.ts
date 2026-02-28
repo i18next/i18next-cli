@@ -112,18 +112,13 @@ function hasEmptySegments (key: string, separator: string): boolean {
 
 /**
  * Detects a nesting conflict for `key` against the object being built.
+ * Returns the conflicting ancestor/descendant key path as a string when a
+ * conflict is found, or `null` when there is no conflict.
  *
- * Returns true when:
- * - A prefix of `key` already resolves to a *non-object* value in `obj`
- *   (we cannot descend into a string to set a child).
- * - A parent of a segment in `key` would clobber an existing sub-tree
- *   (the key itself resolves to an object but a new leaf is about to overwrite it
- *   and the object already has children from a deeper extracted key).
- *
- * In both cases the caller should skip the conflicting key rather than producing
- * a silently-wrong flat fallback.
+ * The returned string lets callers produce an actionable error message
+ * pointing to the specific key that is already occupying the conflicting path.
  */
-function hasNestingConflict (obj: Record<string, any>, key: string, separator: string): boolean {
+function findNestingConflict (obj: Record<string, any>, key: string, separator: string): string | null {
   const parts = key.split(separator)
   let current: any = obj
 
@@ -133,13 +128,13 @@ function hasNestingConflict (obj: Record<string, any>, key: string, separator: s
 
     if (value === undefined || value === null) {
       // Path does not exist yet — no conflict
-      return false
+      return null
     }
 
     if (typeof value !== 'object' || Array.isArray(value)) {
       // A non-object value already occupies an ancestor segment.
       // We cannot nest inside a string/number/array.
-      return true
+      return parts.slice(0, i + 1).join(separator)
     }
 
     current = value
@@ -151,10 +146,11 @@ function hasNestingConflict (obj: Record<string, any>, key: string, separator: s
   const leafPart = parts[parts.length - 1]
   const leafValue = current[leafPart]
   if (typeof leafValue === 'object' && leafValue !== null && !Array.isArray(leafValue) && Object.keys(leafValue).length > 0) {
-    return true
+    // The conflicting path is the key itself (it already has nested children)
+    return key
   }
 
-  return false
+  return null
 }
 
 /**
@@ -805,14 +801,18 @@ function buildNewTranslationsForNs (
     // that was already written by a different extracted key, e.g.:
     //   t("a.b")   => sets a.b = string
     //   t("a.b.c") => tries to descend into a.b which is already a string
-    // In that situation we skip the conflicting key rather than producing a
-    // silently-wrong top-level flat fallback like { "a.b.c": "a.b.c" }.
-    if (separator && typeof separator === 'string' && hasNestingConflict(newTranslations, key, separator)) {
-      // Log at most once per key so the output is not spammy
-      // (the logger reference is captured from the outer scope via closure – it is not
-      //  directly available here, but we can at least avoid crashing silently).
-      // Callers / tests can verify the key is simply absent from the output.
-      continue
+    // In that situation we skip the conflicting key and emit a console.error so
+    // developers see the problem immediately — a skipped key becomes a missing
+    // translation at runtime.
+    if (separator && typeof separator === 'string') {
+      const conflictingPath = findNestingConflict(newTranslations, key, separator)
+      if (conflictingPath !== null) {
+        console.error(
+          `[i18next-toolkit] Nesting conflict: key "${key}" conflicts with existing key "${conflictingPath}". ` +
+          `"${key}" will be skipped — fix the overlapping key paths in your source code to avoid missing translations at runtime.`
+        )
+        continue
+      }
     }
 
     setNestedValue(newTranslations, key, valueToSet, separator)

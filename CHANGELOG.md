@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.3](https://github.com/i18next/i18next-cli/compare/v1.46.2...v1.46.3) - 2026-02-28
+
+- fix: nesting conflicts are now reported as errors instead of silently skipping the key [#200](https://github.com/i18next/i18next-cli/issues/200)
+
 ## [1.46.2](https://github.com/i18next/i18next-cli/compare/v1.46.1...v1.46.2) - 2026-02-27
 
 - fix: Extraction with keySeparator can create empty string segments [#200](https://github.com/i18next/i18next-cli/issues/200)

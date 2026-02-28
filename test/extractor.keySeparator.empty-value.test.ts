@@ -1,5 +1,5 @@
 import { vol } from 'memfs'
-import { vi, describe, it, expect, beforeEach } from 'vitest'
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { extract } from '../src/index'
 import type { I18nextToolkitConfig } from '../src/index'
 import { pathEndsWith } from './utils/path'
@@ -24,11 +24,18 @@ const mockConfig: I18nextToolkitConfig = {
 }
 
 describe('extractor: keySeparator issue #200', () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>
+
   beforeEach(async () => {
     vol.reset()
     vi.clearAllMocks()
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { glob } = await import('glob')
     ;(glob as any).mockResolvedValue(['/src/App.tsx'])
+  })
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore()
   })
 
   // --- t() tests ---
@@ -53,6 +60,9 @@ describe('extractor: keySeparator issue #200', () => {
       // Explicitly assert no empty-string keys exist anywhere in the output
       const json = JSON.stringify(translationFile!.newTranslations)
       expect(json).not.toContain('""')
+
+      // No conflict — must not produce any error output
+      expect(consoleErrorSpy).not.toHaveBeenCalled()
     })
 
     it('should extract keys with trailing dots as flat keys (e.g. "Hello.")', async () => {
@@ -131,6 +141,15 @@ describe('extractor: keySeparator issue #200', () => {
       // detect the conflict rather than silently falling back to the key string.
       // It must NOT produce { "a.b.c": "a.b.c" } (key-as-value fallback).
       expect((translationFile!.newTranslations as any)?.['a.b.c']).toBeUndefined()
+
+      // The conflict must be reported visibly as an error so the developer knows
+      // a key will be missing at runtime — silent drops are not acceptable.
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('a.b.c')
+      )
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('a.b')
+      )
     })
 
     it('should detect conflict when deeper key is extracted first', async () => {
@@ -154,6 +173,11 @@ describe('extractor: keySeparator issue #200', () => {
       // "a.b" cannot be both a leaf and a parent — conflict must be detected,
       // not silently fall back to storing the key as its own value.
       expect((translationFile!.newTranslations as any)?.['a.b']).toBeUndefined()
+
+      // Conflict must be reported as an error.
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('a.b')
+      )
     })
 
     it('should not silently convert a previously-flat key into a nested object', async () => {
@@ -176,6 +200,11 @@ describe('extractor: keySeparator issue #200', () => {
 
       // "a.b" must not have been silently turned into an object
       expect(typeof translations?.a?.b).not.toBe('object')
+
+      // Conflict must be reported as an error regardless of key order.
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('a.b')
+      )
     })
   })
 
@@ -237,6 +266,11 @@ describe('extractor: keySeparator issue #200', () => {
 
       // Must not silently fall back to key-as-value for the conflicting entry
       expect(translations?.['a.b.c']).toBeUndefined()
+
+      // The conflict must be reported as a visible error.
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('a.b.c')
+      )
     })
   })
 })
