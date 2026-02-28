@@ -73,7 +73,8 @@ export async function runExtractor (
 
     const results = await getTranslations(allKeys, objectKeys, config, {
       syncPrimaryWithDefaults: options.syncPrimaryWithDefaults,
-      syncAll: options.syncAll
+      syncAll: options.syncAll,
+      logger: options.logger
     })
 
     let anyFileUpdated = false

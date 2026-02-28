@@ -1,9 +1,10 @@
-import { TranslationResult, ExtractedKey, I18nextToolkitConfig } from '../../types'
+import { TranslationResult, ExtractedKey, I18nextToolkitConfig, Logger } from '../../types'
 import { basename, extname, resolve } from 'node:path'
 import { glob } from 'glob'
 import { getNestedValue, setNestedValue, getNestedKeys } from '../../utils/nested-object'
 import { getOutputPath, loadTranslationFile } from '../../utils/file-utils'
 import { resolveDefaultValue } from '../../utils/default-value'
+import { ConsoleLogger } from '../../utils/logger'
 
 // used for natural language check
 const chars = [' ', ',', '?', '!', ';']
@@ -252,7 +253,8 @@ function buildNewTranslationsForNs (
   preservePatterns: RegExp[] = [],
   objectKeys: Set<string> = new Set(),
   syncPrimaryWithDefaults: boolean = false,
-  syncAll: boolean = false
+  syncAll: boolean = false,
+  logger: Logger = new ConsoleLogger()
 ): Record<string, any> {
   const {
     keySeparator = '.',
@@ -801,14 +803,14 @@ function buildNewTranslationsForNs (
     // that was already written by a different extracted key, e.g.:
     //   t("a.b")   => sets a.b = string
     //   t("a.b.c") => tries to descend into a.b which is already a string
-    // In that situation we skip the conflicting key and emit a console.error so
+    // In that situation we skip the conflicting key and emit a log error so
     // developers see the problem immediately — a skipped key becomes a missing
     // translation at runtime.
     if (separator && typeof separator === 'string') {
       const conflictingPath = findNestingConflict(newTranslations, key, separator)
       if (conflictingPath !== null) {
-        console.error(
-          `[i18next-toolkit] Nesting conflict: key "${key}" conflicts with existing key "${conflictingPath}". ` +
+        logger.error(
+          `Nesting conflict: key "${key}" conflicts with existing key "${conflictingPath}". ` +
           `"${key}" will be skipped — fix the overlapping key paths in your source code to avoid missing translations at runtime.`
         )
         continue
@@ -911,10 +913,12 @@ export async function getTranslations (
   config: I18nextToolkitConfig,
   {
     syncPrimaryWithDefaults = false,
-    syncAll = false
+    syncAll = false,
+    logger = new ConsoleLogger()
   }: {
     syncPrimaryWithDefaults?: boolean,
-    syncAll?: boolean
+    syncAll?: boolean,
+    logger?: Logger
   } = {}
 ): Promise<TranslationResult[]> {
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
@@ -1017,11 +1021,11 @@ export async function getTranslations (
         const nsKeys = keysByNS.get(nsKey) || []
         if (nsKey === NO_NS_TOKEN) {
           // keys without namespace -> merged into top-level of the merged file
-          const built = buildNewTranslationsForNs(nsKeys, existingMergedFile, config, locale, undefined, preservePatterns, objectKeys, syncPrimaryWithDefaults)
+          const built = buildNewTranslationsForNs(nsKeys, existingMergedFile, config, locale, undefined, preservePatterns, objectKeys, syncPrimaryWithDefaults, undefined, logger)
           Object.assign(newMergedTranslations, built)
         } else {
           const existingTranslations = existingMergedFile[nsKey] || {}
-          newMergedTranslations[nsKey] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, nsKey, preservePatterns, objectKeys, syncPrimaryWithDefaults)
+          newMergedTranslations[nsKey] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, nsKey, preservePatterns, objectKeys, syncPrimaryWithDefaults, undefined, logger)
         }
       }
 
@@ -1063,7 +1067,7 @@ export async function getTranslations (
         const outputPath = getOutputPath(config.extract.output, locale, ns)
         const fullPath = resolve(process.cwd(), outputPath)
         const existingTranslations = await loadTranslationFile(fullPath) || {}
-        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, ns, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll)
+        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, ns, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, logger)
 
         const oldContent = JSON.stringify(existingTranslations, null, indentation)
         const newContent = JSON.stringify(newTranslations, null, indentation)
