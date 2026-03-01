@@ -198,6 +198,17 @@ export interface I18nextToolkitConfig {
      * Example: '}}' (default)
      */
     interpolationSuffix?: string;
+
+    /**
+     * Custom scorer function for the `instrument` command.
+     * When provided, this function is called for every candidate string during
+     * instrumentation. It can override the built-in heuristic confidence score.
+     *
+     * Return a number between 0 and 1 to override the confidence score,
+     * or `null` to skip the candidate entirely.
+     * Return `undefined` to fall back to the built-in heuristic.
+     */
+    instrumentScorer?: CustomCandidateScorer;
   };
 
   /** Configuration options for linter */
@@ -309,6 +320,17 @@ export interface LintPluginContext {
 }
 
 /**
+ * Context object provided to instrument plugin hooks.
+ */
+export interface InstrumentPluginContext {
+  /** The fully resolved i18next-cli configuration. */
+  config: I18nextToolkitConfig;
+
+  /** The logger instance used by the instrument run. */
+  logger: Logger;
+}
+
+/**
  * Linter-specific plugin hooks.
  *
  * This interface is kept separate so lint capabilities can evolve
@@ -352,6 +374,51 @@ export interface LinterPlugin {
 }
 
 /**
+ * Instrumenter-specific plugin hooks.
+ *
+ * This interface is kept separate so instrument capabilities can evolve
+ * without coupling linter or extractor hook definitions.
+ */
+export interface InstrumenterPlugin {
+  /** Unique name for the plugin */
+  name: string;
+
+  /**
+   * Optional file-extension hint for instrument hooks.
+   * When set, instrument hooks are only invoked for files matching these extensions.
+   *
+   * Examples: ['.vue'], ['.svelte']
+   */
+  instrumentExtensions?: string[];
+
+  /**
+   * Hook called once at the beginning of the instrument process.
+   * Use for initialization required by instrument hooks.
+   */
+  instrumentSetup?: (context: InstrumentPluginContext) => MaybePromise<void>;
+
+  /**
+   * Hook called for each source file before string detection.
+   *
+   * Return semantics:
+   * - string: use transformed code for detection
+   * - undefined: pass through unchanged
+   * - null: skip instrumenting this file entirely
+   */
+  instrumentOnLoad?: (code: string, filePath: string) => MaybePromise<string | null | undefined>;
+
+  /**
+   * Hook called after candidate detection for one file, allowing
+   * post-processing of candidate strings.
+   *
+   * Return semantics:
+   * - CandidateString[]: replace candidates for this file
+   * - undefined: keep candidates unchanged
+   */
+  instrumentOnResult?: (filePath: string, candidates: CandidateString[]) => MaybePromise<CandidateString[] | undefined>;
+}
+
+/**
  * Plugin interface for extending the i18next toolkit functionality.
  * Plugins can hook into various stages of the extraction process.
  *
@@ -382,7 +449,7 @@ export interface LinterPlugin {
  * })
  * ```
  */
-export interface Plugin extends LinterPlugin {
+export interface Plugin extends LinterPlugin, InstrumenterPlugin {
   /** Unique name for the plugin */
   name: string;
 
@@ -772,3 +839,261 @@ export interface RenameKeyResult {
   conflicts?: string[]
   error?: string
 }
+
+/**
+ * Options for the instrument command
+ */
+export interface InstrumenterOptions {
+  isDryRun?: boolean
+  isInteractive?: boolean
+  namespace?: string
+  quiet?: boolean
+}
+
+/**
+ * Represents a candidate string found in source code for instrumentation
+ */
+export interface CandidateString {
+  /**
+   * The string content
+   */
+  content: string
+
+  /**
+   * Confidence score (0-1) indicating likelihood this should be translated
+   */
+  confidence: number
+
+  /**
+   * Byte offset in the source file (from normalizeASTSpans)
+   */
+  offset: number
+
+  /**
+   * End byte offset in the source file
+   */
+  endOffset: number
+
+  /**
+   * Type of transformation needed
+   */
+  type: 'string-literal' | 'jsx-text' | 'jsx-attribute' | 'jsx-mixed' | 'template-literal'
+
+  /**
+   * File path where candidate was found
+   */
+  file: string
+
+  /**
+   * Line number (1-based)
+   */
+  line: number
+
+  /**
+   * Column number (0-based)
+   */
+  column: number
+
+  /**
+   * Optional key to use (if provided by user or generated)
+   */
+  key?: string
+
+  /**
+   * For JSX, the JSXElement node information
+   */
+  jsxNode?: {
+    selfClosing: boolean
+    openingTagEnd: number
+    closingTagStart: number
+  }
+
+  /**
+   * Reason for skipping (if candidate was filtered out)
+   */
+  skipReason?: string
+
+  /**
+   * Name of the enclosing React function component, if any.
+   * When set, the candidate will use t() instead of i18next.t()
+   * and a useTranslation() hook will be injected into the component.
+   */
+  insideComponent?: string
+
+  /**
+   * Interpolation variables for template literals with expressions or merged
+   * JSX text-plus-expression runs.  When present the replacement will use
+   * i18next interpolation syntax (`{{name}}`) and pass a variables object.
+   */
+  interpolations?: Array<{
+    /** Variable name used in the i18next interpolation string */
+    name: string
+    /** Source-code expression (e.g. `count`, `profile.name`) */
+    expression: string
+  }>
+
+  /**
+   * Plural forms detected from a conditional (ternary) pattern.
+   * When present the transformer emits `t(key, { count: expr })` and the
+   * JSON writer creates `key_zero`, `key_one` and `key_other` entries.
+   */
+  pluralForms?: {
+    /** Source expression used as `count` (e.g. `activeTasks`) */
+    countExpression: string
+    /** Text for the zero case (may be undefined when only one/other detected) */
+    zero?: string
+    /** Text for the singular case */
+    one?: string
+    /** Text for the plural ("other") case; uses `{{count}}` for the variable */
+    other: string
+  }
+}
+
+/**
+ * Result of a file transformation during instrumentation
+ */
+export interface TransformResult {
+  /**
+   * Whether the file was modified
+   */
+  modified: boolean
+
+  /**
+   * The new file content after transformation
+   */
+  newContent?: string
+
+  /**
+   * Unified diff showing what changed
+   */
+  diff?: string
+
+  /**
+   * Errors that occurred during transformation
+   */
+  errors: string[]
+
+  /**
+   * Warnings about potential runtime issues (e.g. i18next.t() in React files)
+   */
+  warnings: string[]
+
+  /**
+   * Number of strings transformed
+   */
+  transformCount: number
+
+  /**
+   * Number of language-change sites instrumented
+   */
+  languageChangeCount: number
+
+  /**
+   * Injections made (imports, hooks)
+   */
+  injections: {
+    importAdded?: boolean
+    hookInjected?: boolean
+  }
+}
+
+/**
+ * Instrumentation result for a single file
+ */
+export interface FileInstrumentationResult {
+  file: string
+  candidates: CandidateString[]
+  result: TransformResult
+}
+
+/**
+ * Overall instrumentation results
+ */
+export interface InstrumentationResults {
+  files: FileInstrumentationResult[]
+  totalCandidates: number
+  totalTransformed: number
+  totalSkipped: number
+  totalLanguageChanges: number
+  extractedKeys: Map<string, { namespace?: string | false; defaultValue: string }>
+}
+
+/**
+ * Represents a detected React function component boundary in source code.
+ * Used to determine where to inject useTranslation() hooks.
+ */
+export interface ComponentBoundary {
+  /** Component function name (e.g. 'Greeting', 'Dashboard') */
+  name: string
+  /** Byte offset of the opening { of the function body */
+  bodyStart: number
+  /** Byte offset of the closing } of the function body */
+  bodyEnd: number
+  /** Whether the component already calls useTranslation() */
+  hasUseTranslation: boolean
+}
+
+/**
+ * Represents a detected language-change call site in source code.
+ * The instrumenter injects `i18n.changeLanguage(expr)` alongside the
+ * existing application-level language setter.
+ */
+export interface LanguageChangeSite {
+  /**
+   * The source-code expression that represents the chosen language code.
+   * Example: `lang.code`, `lng`, `selectedLocale`.
+   */
+  languageExpression: string
+
+  /**
+   * Byte offset where the injection should happen.
+   * This is the start of the call expression that sets the language.
+   */
+  callStart: number
+
+  /**
+   * End byte offset of the call expression.
+   */
+  callEnd: number
+
+  /**
+   * Name of the enclosing React component, if any.
+   * When set, `i18n` from useTranslation() hook will be used;
+   * otherwise `i18next.changeLanguage()` is used directly.
+   */
+  insideComponent?: string
+
+  /** 1-based line number */
+  line: number
+  /** 0-based column */
+  column: number
+}
+
+/**
+ * Result of scanning a file for candidates and component boundaries.
+ */
+export interface FileScanResult {
+  candidates: CandidateString[]
+  components: ComponentBoundary[]
+  /** Detected language-change call sites */
+  languageChangeSites: LanguageChangeSite[]
+}
+
+/**
+ * Custom scorer function for the instrument command.
+ * Allows overriding the built-in heuristic with domain-specific logic.
+ *
+ * @param content - The string content being evaluated
+ * @param context - Contextual information about the string's location
+ * @returns A confidence score (0-1), `null` to skip the candidate, or `undefined` to use the built-in heuristic
+ */
+export type CustomCandidateScorer = (
+  content: string,
+  context: {
+    file: string
+    offset: number
+    code: string
+    beforeContext: string
+    afterContext: string
+  }
+) => number | null | undefined

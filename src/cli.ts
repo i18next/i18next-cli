@@ -16,6 +16,7 @@ import { runLinterCli } from './linter'
 import { runStatus } from './status'
 import { runLocizeSync, runLocizeDownload, runLocizeMigrate } from './locize'
 import { runRenameKey } from './rename-key'
+import { runInstrumenter } from './instrumenter'
 import type { I18nextToolkitConfig } from './types'
 
 const program = new Command()
@@ -216,6 +217,56 @@ program
           loadAndRunLinter() // Re-run on change
         })
       }
+    }
+  })
+
+program
+  .command('instrument')
+  .description('Scan for hardcoded strings and instrument your code with i18next calls.')
+  .option('--dry-run', 'Preview changes without writing files to disk.')
+  .option('--interactive', 'Prompt for approval of each candidate string.')
+  .option('--namespace <ns>', 'Target a specific namespace for extracted keys.')
+  .option('-q, --quiet', 'Suppress spinner and output')
+  .action(async (options) => {
+    try {
+      const cfgPath = program.opts().config
+      const config = await ensureConfig(cfgPath)
+
+      const results = await runInstrumenter(config, {
+        isDryRun: !!options.dryRun,
+        isInteractive: !!options.interactive,
+        namespace: options.namespace,
+        quiet: !!options.quiet
+      })
+
+      // Display results
+      if (!options.quiet) {
+        console.log(styleText('bold', '\nInstrumentation Summary:'))
+        console.log(`  Total candidates: ${results.totalCandidates}`)
+        console.log(`  Approved: ${results.totalTransformed}`)
+        console.log(`  Skipped: ${results.totalSkipped}`)
+        if (results.totalLanguageChanges > 0) {
+          console.log(`  Language-change sites: ${results.totalLanguageChanges}`)
+        }
+
+        if (options.dryRun) {
+          console.log(styleText('blue', '\n📋 Dry-run mode enabled. No files were modified.'))
+          console.log('Run again without --dry-run to apply changes.')
+        }
+
+        if (results.files.length > 0) {
+          console.log(styleText('green', `\n✅ ${results.files.length} file(s) ready for instrumentation`))
+        } else {
+          console.log(styleText('yellow', '\n⚠️  No files required instrumentation'))
+        }
+
+        if (results.totalTransformed > 0 && !options.dryRun) {
+          console.log(styleText('cyan', '\n💡 Next step: run `i18next-cli extract` to extract the translation keys into your locale files.'))
+        }
+      }
+    } catch (error) {
+      console.error(styleText('red', 'Error running instrument command:'), error)
+      process.exit(1)
     }
   })
 

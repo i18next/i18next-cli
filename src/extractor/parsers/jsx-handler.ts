@@ -414,8 +414,19 @@ export class JSXHandler {
         }
       }
 
-      const pluralCategories = Array.from(allPluralCategories).sort()
       const pluralSeparator = this.config.extract.pluralSeparator ?? '_'
+
+      // i18next supports a special _zero form (not part of CLDR plural rules).
+      // When defaultValue_zero is present in tOptions, include 'zero' in the
+      // categories so that key_zero is generated with the correct default value.
+      if (optionsNode) {
+        const zeroDefault = getObjectPropValue(optionsNode, `defaultValue${pluralSeparator}zero`)
+        if (typeof zeroDefault === 'string' && !allPluralCategories.has('zero')) {
+          allPluralCategories.add('zero')
+        }
+      }
+
+      const pluralCategories = Array.from(allPluralCategories).sort()
 
       // Get plural-specific default values from tOptions if available
       let otherDefault: string | undefined

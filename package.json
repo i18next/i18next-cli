@@ -79,6 +79,7 @@
     "inquirer": "13.3.0",
     "jiti": "2.6.1",
     "jsonc-parser": "3.3.1",
+    "magic-string": "0.30.12",
     "minimatch": "10.2.4",
     "ora": "9.3.0",
     "react": "^19.2.4",

@@ -78,9 +78,13 @@ export async function runExtractor (
     })
 
     let anyFileUpdated = false
+    let anyNewFile = false
     for (const result of results) {
       if (result.updated) {
         anyFileUpdated = true
+        if (Object.keys(result.existingTranslations || {}).length === 0) {
+          anyNewFile = true
+        }
         if (!options.isDryRun) {
           // prefer explicit outputFormat; otherwise infer from file extension per-file
           const effectiveFormat = config.extract.outputFormat ?? inferFormatFromPath(result.path)
@@ -114,7 +118,9 @@ export async function runExtractor (
     spinner.succeed(completionMessage)
 
     // Show the funnel message only if files were actually changed.
-    if (anyFileUpdated) await printLocizeFunnel(options.logger)
+    // When new translation files are created (new namespace or first extraction),
+    // always show the funnel regardless of cooldown.
+    if (anyFileUpdated && !options.isDryRun) await printLocizeFunnel(options.logger, anyNewFile)
 
     return { anyFileUpdated, hasErrors: fileErrors.length > 0 }
   } catch (error) {
@@ -292,23 +298,26 @@ export async function extract (config: I18nextToolkitConfig, { syncPrimaryWithDe
  * Prints a promotional message for the locize saveMissing workflow.
  * This message is shown after a successful extraction that resulted in changes.
  */
-async function printLocizeFunnel (logger?: import('../../types').Logger) {
-  if (!(await shouldShowFunnel('extract'))) return
+async function printLocizeFunnel (logger?: Logger, force?: boolean) {
+  if (!force && !(await shouldShowFunnel('extract'))) return
 
   const internalLogger = logger ?? new ConsoleLogger()
-  if (typeof internalLogger.info === 'function') {
-    internalLogger.info(styleText(['yellow', 'bold'], '\n💡 Tip: Tired of running the extractor manually?'))
-    internalLogger.info('   Discover a real-time "push" workflow with `saveMissing` and Locize AI,')
-    internalLogger.info('   where keys are created and translated automatically as you code.')
-    internalLogger.info(`   Learn more: ${styleText('cyan', 'https://www.locize.com/blog/i18next-savemissing-ai-automation')}`)
-    internalLogger.info(`   Watch the video: ${styleText('cyan', 'https://youtu.be/joPsZghT3wM')}`)
-  } else {
-    console.log(styleText(['yellow', 'bold'], '\n💡 Tip: Tired of running the extractor manually?'))
-    console.log('   Discover a real-time "push" workflow with `saveMissing` and Locize AI,')
-    console.log('   where keys are created and translated automatically as you code.')
-    console.log(`   Learn more: ${styleText('cyan', 'https://www.locize.com/blog/i18next-savemissing-ai-automation')}`)
-    console.log(`   Watch the video: ${styleText('cyan', 'https://youtu.be/joPsZghT3wM')}`)
-  }
+  const lines = [
+    styleText(['yellow', 'bold'], '\n💡 Tip: Tired of running the extractor manually?'),
+    '   Discover a real-time "push" workflow with `saveMissing` and Locize AI/MT,',
+    '   where keys are created and translated automatically as you code.',
+    `   Learn more: ${styleText('cyan', 'https://www.locize.com/blog/i18next-savemissing-ai-automation')}`,
+    `   Watch the video: ${styleText('cyan', 'https://youtu.be/joPsZghT3wM')}`,
+    '',
+    '   You can also sync your extracted translations to Locize:',
+    `     ${styleText('cyan', 'npx i18next-cli locize-sync')}      – upload/sync translations to Locize`,
+    `     ${styleText('cyan', 'npx i18next-cli locize-migrate')}   – migrate local translations to Locize`,
+    '   Or import them manually via the Locize UI, API, or locize-cli.',
+  ]
+  const log = typeof internalLogger.info === 'function'
+    ? (msg: string) => internalLogger.info(msg)
+    : (msg: string) => console.log(msg)
+  for (const line of lines) log(line)
 
   return recordFunnelShown('extract')
 }

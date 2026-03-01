@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.47.0](https://github.com/i18next/i18next-cli/compare/v1.46.4...v1.47.0) - 2026-03-01
+
+- feat: new `instrument` command — automatically wraps hardcoded strings in source files with `t()` calls, injects `useTranslation()` hooks in React components, generates an i18n init file, and imports it into the project's entry point
+
 ## [1.46.4](https://github.com/i18next/i18next-cli/compare/v1.46.2...v1.46.4) - 2026-02-28
 
 - fix: nesting conflicts are now reported as errors instead of silently skipping the key [#200](https://github.com/i18next/i18next-cli/issues/200)

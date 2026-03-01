@@ -760,8 +760,18 @@ export class CallExpressionHandler {
         }
       }
 
-      const pluralCategories = Array.from(allPluralCategories).sort()
       const pluralSeparator = this.config.extract.pluralSeparator ?? '_'
+
+      // i18next supports a special _zero form (not part of CLDR plural rules).
+      // When defaultValue_zero is present in the options, include 'zero' in the
+      // categories so that key_zero is generated with the correct default value.
+      // See: https://www.i18next.com/translation-function/plurals#special-zero
+      const zeroDefault = getObjectPropValue(options, `defaultValue${pluralSeparator}zero`)
+      if (typeof zeroDefault === 'string' && !allPluralCategories.has('zero')) {
+        allPluralCategories.add('zero')
+      }
+
+      const pluralCategories = Array.from(allPluralCategories).sort()
 
       // Get all possible default values once at the start
       const defaultValue = getObjectPropValue(options, 'defaultValue')

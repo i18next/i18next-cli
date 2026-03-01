@@ -405,7 +405,7 @@ function buildNewTranslationsForNs (
   }
 
   // Filter nsKeys to only include keys relevant to this language
-  const filteredKeys = nsKeys.filter(({ key, hasCount, isOrdinal }) => {
+  const filteredKeys = nsKeys.filter(({ key, hasCount, isOrdinal, explicitDefault }) => {
     // FIRST: Check if key matches preservePatterns and should be excluded
     if (shouldFilterKey(key)) {
       return false
@@ -435,13 +435,21 @@ function buildNewTranslationsForNs (
       // Otherwise fall through and check the explicit suffix as before.
     }
 
+    // i18next supports a special _zero form that is NOT part of CLDR plural
+    // rules. When the key was explicitly extracted (e.g. from a t() call with
+    // `defaultValue_zero`), always include it regardless of the target
+    // language's Intl.PluralRules categories.
+    // See: https://www.i18next.com/translation-function/plurals#special-zero
+    const lastPart = keyParts[keyParts.length - 1]
+    if (lastPart === 'zero' && explicitDefault) {
+      return true
+    }
+
     if (isOrdinal && keyParts.includes('ordinal')) {
       // For ordinal plurals: key_context_ordinal_category or key_ordinal_category
-      const lastPart = keyParts[keyParts.length - 1]
       return targetLanguagePluralCategories.has(`ordinal_${lastPart}`)
     } else if (hasCount) {
       // For cardinal plurals: key_context_category or key_category
-      const lastPart = keyParts[keyParts.length - 1]
       return targetLanguagePluralCategories.has(lastPart)
     }
 

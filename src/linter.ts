@@ -6,6 +6,7 @@ import { EventEmitter } from 'node:events'
 import { styleText } from 'node:util'
 import { ConsoleLogger } from './utils/logger'
 import { createSpinnerLike } from './utils/wrap-ora'
+import { translatableAttributes, ignoredAttributeLowerSet, ignoredTags as sharedIgnoredTags, acceptedTags as sharedAcceptedTags } from './utils/jsx-attributes'
 import type { I18nextToolkitConfig, Logger, LintIssue, Plugin, LintPluginContext } from './types'
 
 /**
@@ -266,13 +267,11 @@ type LinterEventMap = {
   error: [error: Error];
 }
 
-export const recommendedAcceptedTags = [
-  'a', 'abbr', 'address', 'article', 'aside', 'bdi', 'bdo', 'blockquote', 'button', 'caption', 'cite', 'code', 'data', 'dd', 'del', 'details', 'dfn', 'dialog', 'div', 'dt', 'em', 'figcaption', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'img', 'ins', 'kbd', 'label', 'legend', 'li', 'main', 'mark', 'nav', 'option', 'output', 'p', 'pre', 'q', 's', 'samp', 'section', 'small', 'span', 'strong', 'sub', 'summary', 'sup', 'td', 'textarea', 'th', 'time', 'title', 'var'
-].map(s => s.toLowerCase())
-export const recommendedAcceptedAttributes = ['abbr', 'accesskey', 'alt', 'aria-description', 'aria-label', 'aria-placeholder', 'aria-roledescription', 'aria-valuetext', 'content', 'label', 'placeholder', 'summary', 'title'].map(s => s.toLowerCase())
+export const recommendedAcceptedTags: string[] = sharedAcceptedTags.map(s => s.toLowerCase())
+export const recommendedAcceptedAttributes: string[] = translatableAttributes.map(s => s.toLowerCase())
 
-const defaultIgnoredAttributes = ['className', 'key', 'id', 'style', 'href', 'i18nKey', 'defaults', 'type', 'target'].map(s => s.toLowerCase())
-const defaultIgnoredTags = ['script', 'style', 'code']
+const defaultIgnoredAttributes = ignoredAttributeLowerSet
+const defaultIgnoredTags = sharedIgnoredTags
 
 export class Linter extends EventEmitter<LinterEventMap> {
   private config: I18nextToolkitConfig
@@ -588,7 +587,7 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
 
   const transComponents = (config.extract.transComponents || ['Trans']).map((s: string) => s.toLowerCase())
   const customIgnoredTags = (config?.lint?.ignoredTags || config.extract.ignoredTags || []).map((s: string) => s.toLowerCase())
-  const allIgnoredTags = new Set([...transComponents, ...defaultIgnoredTags.map(s => s.toLowerCase()), ...customIgnoredTags])
+  const allIgnoredTags = new Set([...transComponents, ...defaultIgnoredTags.map((s: string) => s.toLowerCase()), ...customIgnoredTags])
   const customIgnoredAttributes = (config?.lint?.ignoredAttributes || config.extract.ignoredAttributes || []).map((s: string) => s.toLowerCase())
   const ignoredAttributes = new Set([...defaultIgnoredAttributes, ...customIgnoredAttributes])
   const lintAcceptedTags = config?.lint?.acceptedTags ? config.lint.acceptedTags : null

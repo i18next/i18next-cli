@@ -247,6 +247,163 @@ Analyzes your source code for internationalization issues like hardcoded strings
 npx i18next-cli lint
 ```
 
+### `instrument`
+
+Scans your source code for hardcoded user-facing strings and instruments them with i18next translation calls. This is useful for adding i18next instrumentation to an existing codebase that wasn't built with internationalization in mind.
+
+> **⚠️ First-Step Tool:** The `instrument` command uses heuristic-based detection and is designed as a **first pass** to identify and suggest transformation candidates. It will **not catch 100% of cases**, and you should expect both false positives and false negatives. Always review the suggested transformations carefully before committing them to your codebase. Think of it as an intelligent code assistant, not an automated compiler.
+
+```bash
+npx i18next-cli instrument
+```
+
+**Options:**
+- `--dry-run`: Preview changes without writing files to disk
+- `--interactive`: Prompt for approval of each candidate string
+- `--namespace <ns>`: Target a specific namespace for extracted keys
+- `-q, --quiet`: Suppress spinner and output
+
+**What it transforms:**
+
+The `instrument` command detects four types of transformations:
+
+1. **Simple string → `t()` call:**
+   ```javascript
+   // Before
+   const msg = 'Welcome back';
+   
+   // After
+   const msg = t('welcomeBack', 'Welcome back');
+   ```
+
+2. **Template literal (static only) → `t()` call:**
+   ```javascript
+   // Before
+   const msg = `Welcome back`;
+   
+   // After
+   const msg = t('welcomeBack', 'Welcome back');
+   ```
+   > Template literals with interpolation (e.g. `` `Hello ${name}` ``) are skipped — they require manual wrapping.
+
+3. **JSX text → JSX expression with `t()`:**
+   ```jsx
+   // Before
+   <h1>Welcome back</h1>
+   
+   // After
+   <h1>{t('welcomeBack', 'Welcome back')}</h1>
+   ```
+
+4. **JSX mixed content → `<Trans>` component:**
+   ```jsx
+   // Before
+   <p>Click <a href="/docs">here</a> to continue</p>
+   
+   // After
+   <p><Trans i18nKey="clickHereLabel">Click <a href="/docs">here</a> to continue</Trans></p>
+   ```
+
+**Namespace targeting:**
+
+Use `--namespace <ns>` to direct extracted keys into a specific namespace. When a non-default namespace is specified:
+- React components use `useTranslation('<ns>')` with clean keys
+- Non-component code uses `i18next.t('key', 'default', { ns: '<ns>' })`
+- In `--interactive` mode you are prompted for the target namespace
+
+```bash
+npx i18next-cli instrument --namespace common
+```
+
+**Custom scorer hook:**
+
+Override the built-in confidence heuristic via `extract.instrumentScorer` in your config. The function receives each candidate string and its context, and can:
+- Return a number (0–1) to override the confidence score
+- Return `null` to force-skip the candidate
+- Return `undefined` to fall back to the built-in heuristic
+
+```typescript
+export default defineConfig({
+  // ...
+  extract: {
+    // ...
+    instrumentScorer: (content, { file, code, beforeContext, afterContext }) => {
+      // Skip strings that belong to your analytics domain
+      if (content.startsWith('track_')) return null;
+      // Boost strings in your UI layer
+      if (file.includes('/components/')) return 0.95;
+      // Fall back to built-in detection for everything else
+      return undefined;
+    }
+  }
+});
+```
+
+**What it skips (by design):**
+
+The instrumenter uses confidence heuristics to avoid transforming:
+- Test files (`*.test.*`, `*.spec.*`)
+- Empty strings and single characters
+- Pure numbers and numeric IDs
+- URL strings and file paths
+- CSS class names and technical identifiers
+- Developer-facing error codes (all-caps patterns like `ERROR_NOT_FOUND`)
+- `console.log/warn/error` arguments
+- HTML attribute values that appear technical
+- Template literals with only expressions (no static text)
+- Strings already inside `t()` calls or `<Trans>` components
+
+**Auto-injection:**
+
+When transformations are applied, the command automatically:
+- Injects `import { useTranslation } from 'react-i18next'` in React files (or `import i18next from 'i18next'` for non-React files)
+- Injects `const { t } = useTranslation()` into each React function component that contains transformed strings
+- Detects the project's framework from `package.json` dependencies (React, Next.js, Vue, etc.)
+- Uses `useTranslation()` hook style `t()` inside React components, or `i18next.t()` for utility / non-component code
+- Generates an `i18n.ts` (or `i18n.js` for JS-only projects) initialization file if none exists, pre-configured with [`i18next-resources-to-backend`](https://github.com/i18next/i18next-resources-to-backend) to lazy-load your translation files via dynamic imports
+
+**Recommended workflow:**
+
+1. **Preview first:** Always run with `--dry-run` to see what will change:
+   ```bash
+   npx i18next-cli instrument --dry-run
+   ```
+
+2. **Interactive mode for initial migration:** Use `--interactive` to approve each candidate:
+   ```bash
+   npx i18next-cli instrument --interactive
+   ```
+
+3. **Review and commit:** Check the changes, then commit to git before proceeding
+
+4. **Run extraction:** After instrumentation, run `extract` to sync with translation files:
+   ```bash
+   npx i18next-cli extract
+   ```
+
+**Limitations:**
+
+The `instrument` command uses heuristic-based detection and has the following limitations:
+
+- **Heuristic-based:** Detection is based on pattern matching and heuristics, not semantic understanding. Expect false positives (marking non-translatable strings for translation) and false negatives (missing translatable strings).
+- **Requires Manual Review:** Every suggested transformation should be carefully reviewed. The command makes a best-effort guess but cannot understand context like a human developer can.
+- **Plurals & Interpolations:** Strings requiring pluralization or variable interpolation need manual cleanup (the command generates basic `t()` calls without plural handling).
+- **Very Dynamic Strings:** Strings built from concatenation, template operations, or computed values may not be detected correctly.
+- **Framework-specific Patterns:** Some framework-specific translation patterns (e.g., decorators, custom hooks, directives) may not be recognized.
+- **Test Files:** Test files are deliberately excluded to avoid instrumenting mock or test data.
+- **Object Keys & Edge Cases:** Complex usage patterns (strings as object keys, switch cases, etc.) may be incorrectly flagged or missed.
+- **Context Loss:** The heuristics can't understand your domain or application context, so legitimate false positives are expected in specialized codebases.
+
+**Expected Workflow:**
+
+The intended usage pattern is:
+1. Run `--dry-run` to preview all suggestions
+2. Use `--interactive` and **carefully review each suggestion** — consider using `edit-key` or `skip` liberally
+3. Commit the instrumented code to version control
+4. Run the full test suite to catch any issues
+5. Manually fix any false positives or false negatives
+6. Run `extract` to finalize translation files
+
 ### `migrate-config`
 Automatically migrates a legacy `i18next-parser.config.js` file to the new `i18next.config.ts` format.
 
@@ -582,7 +739,7 @@ export default defineConfig({
 
 ### Plugin System
 
-Create custom plugins to extend the capabilities of `i18next-cli`. The plugin system provides hooks for both extraction and linting, with a single unified `plugins` array.
+Create custom plugins to extend the capabilities of `i18next-cli`. The plugin system provides hooks for extraction, linting, and instrumentation, with a single unified `plugins` array.
 
 **Available Hooks:**
 
@@ -604,6 +761,16 @@ Create custom plugins to extend the capabilities of `i18next-cli`. The plugin sy
   - Return `null` to skip linting the file entirely.
 - `lintOnResult(filePath, issues)`: Runs after each file is linted. Return a new issues array to filter/augment results, or `undefined` to keep as-is.
 
+**Instrument Plugin Hooks:**
+
+- `instrumentSetup(context)`: Runs once before instrumentation starts. Receives `InstrumentPluginContext` with `config` and `logger`.
+- `instrumentExtensions`: Optional extension hint (for example `['.vue']`). Used as a skip hint/optimization.
+- `instrumentOnLoad(code, filePath)`: Runs before scanning each file for hardcoded strings.
+  - Return `string` to replace source code before scanning.
+  - Return `undefined` to pass through unchanged.
+  - Return `null` to skip instrumenting the file entirely.
+- `instrumentOnResult(filePath, candidates)`: Runs after candidates are detected. Return a new `CandidateString[]` to filter/augment results, or `undefined` to keep as-is.
+
 ### Lint Plugin API
 
 ```typescript
@@ -614,7 +781,8 @@ import type {
   LintIssue,
 } from 'i18next-cli';
 
-// You can type your plugin as Plugin (full surface) or LinterPlugin (lint-focused)
+// You can type your plugin as Plugin (full surface), LinterPlugin (lint-focused),
+// or InstrumenterPlugin (instrument-focused)
 export const vueLintPlugin = (): LinterPlugin => ({
   name: 'vue-lint-plugin',
   lintExtensions: ['.vue'],
@@ -633,7 +801,34 @@ export const vueLintPlugin = (): LinterPlugin => ({
 });
 ```
 
-**Config usage (same plugins list for extract + lint):**
+### Instrument Plugin API
+
+```typescript
+import type {
+  InstrumenterPlugin,
+  InstrumentPluginContext,
+  CandidateString,
+} from 'i18next-cli';
+
+export const vueInstrumentPlugin = (): InstrumenterPlugin => ({
+  name: 'vue-instrument-plugin',
+  instrumentExtensions: ['.vue'],
+  instrumentSetup: async (context: InstrumentPluginContext) => {
+    context.logger.info('vue instrument plugin initialized');
+  },
+  instrumentOnLoad: async (code, filePath) => {
+    if (!filePath.endsWith('.vue')) return undefined;
+    // Extract template block from SFC and return as JSX-like code
+    return code;
+  },
+  instrumentOnResult: async (_filePath, candidates: CandidateString[]) => {
+    // Example: only keep high-confidence candidates
+    return candidates.filter(c => c.confidence >= 0.5);
+  }
+});
+```
+
+**Config usage (same plugins list for extract + lint + instrument):**
 
 ```typescript
 import { defineConfig } from 'i18next-cli';

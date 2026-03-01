@@ -33,7 +33,7 @@ describe('init', () => {
     vi.restoreAllMocks()
   })
 
-  it('should create a TypeScript config file', async () => {
+  it('should create a TypeScript config file (without local i18next-cli)', async () => {
     vi.mocked(inquirer.prompt).mockResolvedValue(mockAnswers)
 
     await runInit()
@@ -41,7 +41,25 @@ describe('init', () => {
     const configPath = resolve('/', 'i18next.config.ts')
     const content = await vol.promises.readFile(configPath, 'utf-8')
 
-    expect(content).toContain('import { defineConfig } from')
+    // No local i18next-cli → plain export, no defineConfig
+    expect(content).not.toContain('defineConfig')
+    expect(content).toContain('export default')
+    expect(content).toContain('locales: [\n    "en",\n    "de"\n  ]')
+    expect(content).toContain('input: "src/**/*.tsx"')
+  })
+
+  it('should create a TypeScript config file with defineConfig when locally installed', async () => {
+    vol.fromJSON({
+      '/package.json': JSON.stringify({ devDependencies: { 'i18next-cli': '^1.0.0' } }),
+    })
+    vi.mocked(inquirer.prompt).mockResolvedValue(mockAnswers)
+
+    await runInit()
+
+    const configPath = resolve('/', 'i18next.config.ts')
+    const content = await vol.promises.readFile(configPath, 'utf-8')
+
+    expect(content).toContain("import { defineConfig } from 'i18next-cli'")
     expect(content).toContain('export default defineConfig')
     expect(content).toContain('locales: [\n    "en",\n    "de"\n  ]')
     expect(content).toContain('input: "src/**/*.tsx"')
@@ -53,7 +71,7 @@ describe('init', () => {
       fileType: 'JavaScript (i18next.config.js)',
     })
 
-    // FIX: To test CJS, create a package.json *without* type: "module"
+    // CJS project without local i18next-cli
     vol.fromJSON({
       '/package.json': JSON.stringify({ name: 'my-cjs-project' }),
     })
@@ -66,6 +84,28 @@ describe('init', () => {
     expect(content).toContain('/** @type {import(\'i18next-cli\').I18nextToolkitConfig} */')
     expect(content).toContain('module.exports =')
     expect(content).not.toContain('export default')
+    // No local install → no defineConfig / require
+    expect(content).not.toContain('defineConfig')
+    expect(content).not.toContain('require')
+  })
+
+  it('should create a JavaScript (CJS) config file with defineConfig when locally installed', async () => {
+    vi.mocked(inquirer.prompt).mockResolvedValue({
+      ...mockAnswers,
+      fileType: 'JavaScript (i18next.config.js)',
+    })
+
+    vol.fromJSON({
+      '/package.json': JSON.stringify({ name: 'my-cjs-project', devDependencies: { 'i18next-cli': '^1.0.0' } }),
+    })
+
+    await runInit()
+
+    const configPath = resolve('/', 'i18next.config.js')
+    const content = await vol.promises.readFile(configPath, 'utf-8')
+
+    expect(content).toContain("const { defineConfig } = require('i18next-cli')")
+    expect(content).toContain('module.exports = defineConfig')
   })
 
   it('should create a JavaScript (ESM) config file', async () => {
@@ -74,7 +114,7 @@ describe('init', () => {
       fileType: 'JavaScript (i18next.config.js)',
     })
 
-    // To test ESM, create a package.json with type: "module"
+    // ESM project without local i18next-cli
     vol.fromJSON({
       '/package.json': JSON.stringify({ type: 'module' }),
     })
@@ -87,6 +127,27 @@ describe('init', () => {
     expect(content).toContain('/** @type {import(\'i18next-cli\').I18nextToolkitConfig} */')
     expect(content).toContain('export default')
     expect(content).not.toContain('module.exports')
+    // No local install → no defineConfig / import
+    expect(content).not.toContain('defineConfig')
+  })
+
+  it('should create a JavaScript (ESM) config file with defineConfig when locally installed', async () => {
+    vi.mocked(inquirer.prompt).mockResolvedValue({
+      ...mockAnswers,
+      fileType: 'JavaScript (i18next.config.js)',
+    })
+
+    vol.fromJSON({
+      '/package.json': JSON.stringify({ type: 'module', dependencies: { 'i18next-cli': '^1.0.0' } }),
+    })
+
+    await runInit()
+
+    const configPath = resolve('/', 'i18next.config.js')
+    const content = await vol.promises.readFile(configPath, 'utf-8')
+
+    expect(content).toContain("import { defineConfig } from 'i18next-cli'")
+    expect(content).toContain('export default defineConfig')
   })
 
   it('should suggest defaults from the heuristic scan if a structure is detected', async () => {

@@ -31,6 +31,39 @@ async function isEsmProject (): Promise<boolean> {
 }
 
 /**
+ * Checks whether i18next-cli is listed as a local dependency of the current project.
+ * When running via `npx` without a local install, `defineConfig` would not be available
+ * at runtime, so the generated config should fall back to a plain object export.
+ *
+ * @returns Promise resolving to true if i18next-cli is in dependencies or devDependencies
+ */
+async function isCliLocallyInstalled (): Promise<boolean> {
+  try {
+    const packageJsonPath = resolve(process.cwd(), 'package.json')
+    const content = await readFile(packageJsonPath, 'utf-8')
+    const packageJson = JSON.parse(content)
+    const deps = { ...packageJson.dependencies, ...packageJson.devDependencies }
+    return !!deps['i18next-cli']
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Checks whether the project uses TypeScript by looking for a tsconfig.json.
+ *
+ * @returns Promise resolving to true if tsconfig.json exists in the project root
+ */
+async function isTypeScriptProject (): Promise<boolean> {
+  try {
+    await readFile(resolve(process.cwd(), 'tsconfig.json'))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * Interactive setup wizard for creating a new i18next-cli configuration file.
  *
  * This function provides a guided setup experience that:
@@ -75,12 +108,18 @@ export async function runInit () {
     delete (detectedConfig.extract as any).output
   }
 
+  // Detect whether the project uses TypeScript to set the preferred default
+  const projectUsesTs = await isTypeScriptProject()
+  const tsChoice = 'TypeScript (i18next.config.ts)'
+  const jsChoice = 'JavaScript (i18next.config.js)'
+  const fileTypeChoices = projectUsesTs ? [tsChoice, jsChoice] : [jsChoice, tsChoice]
+
   const answers = await inquirer.prompt([
     {
       type: 'select',
       name: 'fileType',
       message: 'What kind of configuration file do you want?',
-      choices: ['TypeScript (i18next.config.ts)', 'JavaScript (i18next.config.js)'],
+      choices: fileTypeChoices,
     },
     {
       type: 'input',
@@ -151,21 +190,37 @@ export async function runInit () {
     return JSON.stringify(value)
   }
 
+  const isLocallyInstalled = await isCliLocallyInstalled()
+
   let fileContent = ''
-  if (isTypeScript) {
-    fileContent = `import { defineConfig } from 'i18next-cli';
+  if (isLocallyInstalled) {
+    // i18next-cli is a local dependency — use defineConfig for type-safety
+    if (isTypeScript) {
+      fileContent = `import { defineConfig } from 'i18next-cli'
 
-export default defineConfig(${toJs(configObject)});`
-  } else if (isEsm) {
-    fileContent = `import { defineConfig } from 'i18next-cli';
-
-/** @type {import('i18next-cli').I18nextToolkitConfig} */
-export default defineConfig(${toJs(configObject)});`
-  } else { // CJS
-    fileContent = `const { defineConfig } = require('i18next-cli');
+export default defineConfig(${toJs(configObject)})`
+    } else if (isEsm) {
+      fileContent = `import { defineConfig } from 'i18next-cli'
 
 /** @type {import('i18next-cli').I18nextToolkitConfig} */
-module.exports = defineConfig(${toJs(configObject)});`
+export default defineConfig(${toJs(configObject)})`
+    } else { // CJS
+      fileContent = `const { defineConfig } = require('i18next-cli')
+
+/** @type {import('i18next-cli').I18nextToolkitConfig} */
+module.exports = defineConfig(${toJs(configObject)})`
+    }
+  } else {
+    // i18next-cli is not locally installed (e.g. npx) — plain config object
+    if (isTypeScript) {
+      fileContent = `export default ${toJs(configObject)}`
+    } else if (isEsm) {
+      fileContent = `/** @type {import('i18next-cli').I18nextToolkitConfig} */
+export default ${toJs(configObject)}`
+    } else { // CJS
+      fileContent = `/** @type {import('i18next-cli').I18nextToolkitConfig} */
+module.exports = ${toJs(configObject)}`
+    }
   }
 
   const outputPath = resolve(process.cwd(), fileName)

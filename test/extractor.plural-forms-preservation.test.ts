@@ -515,4 +515,84 @@ describe('plural form preservation across locales with --sync-primary', () => {
     expect(ru.translation.status.active_few).toEqual('{{count}} активных')
     expect(ru.translation.status.active_many).toEqual('{{count}} активных')
   })
+
+  it('should extract _zero key when defaultValue_zero is provided in t() options', async () => {
+    // i18next supports a special _zero form: "We provide the ability to have
+    // special translation for {count: 0}". This is NOT part of standard CLDR
+    // plural rules but is an i18next-specific feature.
+    const component = `
+      import { useTranslation } from 'react-i18next';
+
+      export const TaskCounter = () => {
+        const { t } = useTranslation();
+        const activeTasks = 3;
+        return (
+          <p>{t('tasks.remaining', {
+            defaultValue_zero: 'You have no tasks left — enjoy your day!',
+            defaultValue_one: 'You have 1 task left to complete.',
+            defaultValue_other: 'You have {{count}} tasks left to complete.',
+            count: activeTasks
+          })}</p>
+        );
+      };
+    `
+
+    await fs.writeFile(join(tempDir, 'src', 'TaskCounter.tsx'), component)
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: normalizePath(join(tempDir, 'src/*.{ts,tsx,cts,mts}')),
+        output: normalizePath(join(tempDir, 'locales/{{language}}.json')),
+        sort: true,
+        keySeparator: false,
+      },
+    }
+
+    await runExtractor(config, { isDryRun: false })
+
+    const enPath = join(tempDir, 'locales', 'en.json')
+    const en = JSON.parse(await fs.readFile(enPath, 'utf-8'))
+
+    // Should extract all three forms including special _zero
+    expect(en.translation['tasks.remaining_zero']).toBe('You have no tasks left — enjoy your day!')
+    expect(en.translation['tasks.remaining_one']).toBe('You have 1 task left to complete.')
+    expect(en.translation['tasks.remaining_other']).toBe('You have {{count}} tasks left to complete.')
+  })
+
+  it('should NOT extract _zero key when defaultValue_zero is absent', async () => {
+    // When no defaultValue_zero is provided, the extractor should NOT add _zero
+    // (English CLDR rules only have 'one' and 'other')
+    const component = `
+      import { useTranslation } from 'react-i18next';
+
+      export const ItemCount = () => {
+        const { t } = useTranslation();
+        return <p>{t('items.count', { defaultValue_one: '{{count}} item', defaultValue_other: '{{count}} items', count: 5 })}</p>;
+      };
+    `
+
+    await fs.writeFile(join(tempDir, 'src', 'ItemCount.tsx'), component)
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: normalizePath(join(tempDir, 'src/*.{ts,tsx,cts,mts}')),
+        output: normalizePath(join(tempDir, 'locales/{{language}}.json')),
+        sort: true,
+        keySeparator: false,
+      },
+    }
+
+    await runExtractor(config, { isDryRun: false })
+
+    const enPath = join(tempDir, 'locales', 'en.json')
+    const en = JSON.parse(await fs.readFile(enPath, 'utf-8'))
+
+    // Should extract only _one and _other (English CLDR rules)
+    expect(en.translation['items.count_one']).toBe('{{count}} item')
+    expect(en.translation['items.count_other']).toBe('{{count}} items')
+    // _zero should NOT be present since no defaultValue_zero was provided
+    expect(en.translation['items.count_zero']).toBeUndefined()
+  })
 })
