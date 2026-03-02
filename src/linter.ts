@@ -75,9 +75,9 @@ async function loadPrimaryTranslationValues (config: I18nextToolkitConfig): Prom
 function extractInterpolationKeys (str: string, config: I18nextToolkitConfig): string[] {
   const prefix = config.extract.interpolationPrefix ?? '{{'
   const suffix = config.extract.interpolationSuffix ?? '}}'
-  // Regex to match {{key}}
+  // Regex to match {{key}} or {{key, format}} (i18next formatting syntax)
   const regex = new RegExp(
-    `${prefix.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*([\\w.-]+)\\s*${suffix.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}`,
+    `${prefix.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*([\\w.-]+)\\s*(?:,[^}]*)?${suffix.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}`,
     'g'
   )
   const keys: string[] = []

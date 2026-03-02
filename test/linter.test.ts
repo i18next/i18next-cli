@@ -1363,4 +1363,59 @@ describe('Linter (core logic)', () => {
     // Each call site must have its own distinct line number
     expect(lines).toEqual([4, 5, 6])
   })
+
+  it('should not flag params as unused when using i18next {{param, format}} formatting syntax', async () => {
+    // Reproduces issue #202: checkInterpolationParams produces false positives for {{param, format}} syntax
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+
+    // All of these are valid i18next formatting syntax and should produce no errors
+    const sampleCode = `
+      t('Hello {{name, uppercase}}!', { name: 'world' })
+      t('Price: {{amount, currency}}', { amount: 42 })
+      t('Date: {{date, datetime}}', { date: new Date() })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    // None of the params should be flagged — the ", format" suffix is valid i18next syntax
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
+  it('should still flag genuinely missing params when {{param, format}} syntax is used', async () => {
+    // Ensures the fix for #202 doesn't suppress real errors
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+
+    const sampleCode = `
+      t('Hello {{name, uppercase}}!', { wrong: 'world' })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    const texts = result.files['/src/App.tsx'].map(i => i.text)
+    // "name" is required by the string but not provided
+    expect(texts).toContain('Interpolation parameter "name" was not provided')
+    // "wrong" is provided but not used in the string
+    expect(texts).toContain('Parameter "wrong" is not used in translation string')
+  })
 })
