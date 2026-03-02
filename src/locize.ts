@@ -117,6 +117,28 @@ LOCIZE_API_KEY=${answers.apiKey}
 }
 
 /**
+ * Masks an API key for safe console output, preserving only the first
+ * and last 3 characters while replacing everything in between.
+ */
+function maskApiKey (apiKey: string): string {
+  if (!apiKey || apiKey.length <= 6) return apiKey
+  const first3 = apiKey.substring(0, 3)
+  const last3 = apiKey.substring(apiKey.length - 3)
+  const middle = apiKey.substring(3, apiKey.length - 3)
+  return `${first3}${middle.replace(/[0-9a-zA-Z]/g, '*')}${last3}`
+}
+
+/**
+ * Returns a display-safe copy of args with the `--api-key` value masked.
+ */
+function maskArgs (args: string[]): string[] {
+  return args.map((arg, i) => {
+    if (i > 0 && args[i - 1] === '--api-key') return maskApiKey(arg)
+    return arg
+  })
+}
+
+/**
  * Helper function to build the array of arguments for the execa call.
  * This ensures the logic is consistent for both the initial run and the retry.
  */
@@ -221,7 +243,7 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
   try {
     // 1. First attempt
     const initialArgs = buildArgs(command, effectiveConfig, cliOptions)
-    console.log(styleText('cyan', `\nRunning 'locize ${initialArgs.join(' ')}'...`))
+    console.log(styleText('cyan', `\nRunning 'locize ${maskArgs(initialArgs).join(' ')}'...`))
     const result = await execa('locize', initialArgs, { stdio: 'pipe' })
 
     spinner.succeed(styleText('green', `'locize ${command}' completed successfully.`))
@@ -239,7 +261,7 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
         try {
           // 3. Retry attempt, rebuilding args with the NOW-UPDATED currentConfig object
           const retryArgs = buildArgs(command, effectiveConfig, cliOptions)
-          console.log(styleText('cyan', `\nRunning 'locize ${retryArgs.join(' ')}'...`))
+          console.log(styleText('cyan', `\nRunning 'locize ${maskArgs(retryArgs).join(' ')}'...`))
           const result = await execa('locize', retryArgs, { stdio: 'pipe' })
 
           spinner.succeed(styleText('green', 'Retry successful!'))
