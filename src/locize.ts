@@ -230,6 +230,7 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
     const stderr = error.stderr || ''
     if (stderr.includes('missing required argument')) {
       // 2. Auth failure, trigger interactive setup
+      spinner.stop()
       const newCredentials = await interactiveCredentialSetup(effectiveConfig)
       if (newCredentials) {
         effectiveConfig = { ...effectiveConfig, locize: newCredentials }
