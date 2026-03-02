@@ -1392,6 +1392,63 @@ describe('Linter (core logic)', () => {
     expect(Object.keys(result.files)).toHaveLength(0)
   })
 
+  it('should not produce false positives when t() second argument is a variable (issue #203)', async () => {
+    // checkInterpolationParams falsely reports missing params when
+    // the options argument is a variable (not an object literal), because the linter cannot
+    // statically determine the variable's keys.
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+
+    const sampleCode = `
+      // opts is a variable — linter cannot know its keys, so should skip the check
+      const getWarning = (opts) => t('Use {{FunctionA}} or {{FunctionB}} to handle this case', opts)
+      // params passed via a named variable too
+      const params = { name: 'world' }
+      const msg = t('Hello {{name}}!', params)
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    // Should NOT report any interpolation errors — the params are a variable, not a literal
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
+  it('should still flag interpolation errors when t() second argument is an object literal (issue #203 regression)', async () => {
+    // Ensures the fix for above does not suppress real errors for object literal params
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+
+    const sampleCode = `
+      t('Use {{FunctionA}} or {{FunctionB}} to handle this case', { wrong: 'value' })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    const texts = result.files['/src/App.tsx'].map(i => i.text)
+    expect(texts).toContain('Interpolation parameter "FunctionA" was not provided')
+    expect(texts).toContain('Interpolation parameter "FunctionB" was not provided')
+    expect(texts).toContain('Parameter "wrong" is not used in translation string')
+  })
+
   it('should still flag genuinely missing params when {{param, format}} syntax is used', async () => {
     // Ensures the fix for #202 doesn't suppress real errors
     const config: I18nextToolkitConfig = {
@@ -1417,5 +1474,121 @@ describe('Linter (core logic)', () => {
     expect(texts).toContain('Interpolation parameter "name" was not provided')
     // "wrong" is provided but not used in the string
     expect(texts).toContain('Parameter "wrong" is not used in translation string')
+  })
+
+  // ── 3-argument t() form ────────────────────────────────────────────────────
+
+  it('should not produce false positives for 3-arg t() calls with correct params', async () => {
+    // Reproduces: t('key', 'Default string {{color}}', { color }) should not error
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract, functions: ['t'] },
+      lint: {},
+    }
+    const sampleCode = `
+      t('selectColorColor', 'Select color {{color}}', { color })
+      t('greetUser', 'Hello {{name}}, you have {{count}} messages', { name, count })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
+  it('should detect missing params in 3-arg t() calls', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract, functions: ['t'] },
+      lint: {},
+    }
+    const sampleCode = `
+      t('selectColorColor', 'Select color {{color}}', { wrong: 'red' })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    const texts = result.files['/src/App.tsx'].map(i => i.text)
+    expect(texts).toContain('Interpolation parameter "color" was not provided')
+    expect(texts).toContain('Parameter "wrong" is not used in translation string')
+  })
+
+  it('should skip interpolation check when 3rd arg to t() is a variable (not an object literal)', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract, functions: ['t'] },
+      lint: {},
+    }
+    const sampleCode = `
+      const opts = { color }
+      t('selectColorColor', 'Select color {{color}}', opts)
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+  })
+
+  // ── i18next-instrument-ignore directive ────────────────────────────────────
+
+  it('should suppress hardcoded-string issues on lines following an ignore directive', async () => {
+    const config: I18nextToolkitConfig = { ...mockConfig, lint: {} }
+    const sampleCode = [
+      '<>',
+      '{/* i18next-instrument-ignore-next-line */}',
+      '<p>This hardcoded string should be ignored</p>',
+      '<p>This hardcoded string should still be flagged</p>',
+      '</>',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('This hardcoded string should still be flagged')
+  })
+
+  it('should suppress interpolation issues on lines following an ignore directive', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract, functions: ['t'] },
+      lint: {},
+    }
+    const sampleCode = [
+      '// i18next-instrument-ignore',
+      "const msg = t('Hello {{name}}!', { wrong: 'world' })",
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
+  it('should only suppress the line immediately after the ignore directive', async () => {
+    const config: I18nextToolkitConfig = { ...mockConfig, lint: {} }
+    const sampleCode = [
+      '<>',
+      '{/* i18next-instrument-ignore-next-line */}',
+      '<p>Ignored line</p>',
+      '<p>This line is NOT ignored and should be flagged</p>',
+      '</>',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('This line is NOT ignored and should be flagged')
   })
 })

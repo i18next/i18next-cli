@@ -771,6 +771,13 @@ function detectJSXInterpolation (
         currentRun.push(child)
       } else if (child.type === 'JSXExpressionContainer' && isSimpleJSXExpression(child.expression)) {
         currentRun.push(child)
+      } else if (
+        child.type === 'JSXExpressionContainer' &&
+        child.expression?.type === 'ConditionalExpression' &&
+        tryParsePluralTernary(child.expression, content)
+      ) {
+        // Plural ternary expression — include in the run for merged handling
+        currentRun.push(child)
       } else {
         // JSXElement, complex expression, etc. — break the run
         if (currentRun.length > 0) {
@@ -788,47 +795,152 @@ function detectJSXInterpolation (
       const hasExpr = run.some(c => c.type === 'JSXExpressionContainer')
       if (!hasText || !hasExpr || run.length < 2) continue
 
-      // Build the interpolated text from the run
-      const usedNames = new Set<string>()
-      const interpolations: Array<{ name: string, expression: string }> = []
-      let text = ''
-      let valid = true
-
+      // Check if any expression container in this run is a plural ternary
+      let pluralChild: any = null
+      let pluralData: ReturnType<typeof tryParsePluralTernary> = null
       for (const child of run) {
-        if (child.type === 'JSXText') {
-          text += content.slice(child.span.start, child.span.end)
-        } else {
-          const info = resolveExpressionName(child.expression, content, usedNames)
-          if (!info) { valid = false; break }
-          text += `{{${info.name}}}`
-          interpolations.push(info)
+        if (
+          child.type === 'JSXExpressionContainer' &&
+          child.expression?.type === 'ConditionalExpression'
+        ) {
+          const p = tryParsePluralTernary(child.expression, content)
+          if (p) {
+            pluralChild = child
+            pluralData = p
+            break // only one plural ternary per run
+          }
         }
       }
 
-      if (!valid) continue
+      if (pluralChild && pluralData) {
+        // ── JSX sibling run with embedded plural ternary ──
+        const countExpr = pluralData.countExpression
 
-      const trimmed = text.trim()
-      if (!trimmed || interpolations.length === 0) continue
+        // Resolve names for non-count, non-plural expressions
+        const usedNames = new Set<string>()
+        const extraInterpolations: Array<{ name: string, expression: string }> = []
+        const exprNameMap = new Map<any, string>()
+        let valid = true
 
-      const spanStart = run[0].span.start
-      const spanEnd = run[run.length - 1].span.end
-
-      const candidate = detectCandidate(trimmed, spanStart, spanEnd, file, content, config)
-      if (candidate) {
-        candidate.type = 'jsx-text'
-        candidate.content = trimmed
-        candidate.interpolations = interpolations
-        // Mixed text + expressions in JSX is almost always user-facing
-        candidate.confidence = Math.min(1, candidate.confidence + 0.2)
-
-        if (candidate.confidence >= 0.7) {
-          // Remove individual candidates that overlap with the merged span
-          for (let i = candidates.length - 1; i >= 0; i--) {
-            if (candidates[i].offset >= spanStart && candidates[i].endOffset <= spanEnd) {
-              candidates.splice(i, 1)
+        for (const child of run) {
+          if (child.type === 'JSXExpressionContainer' && child !== pluralChild) {
+            const exprText = content.slice(child.expression.span.start, child.expression.span.end)
+            if (exprText === countExpr) {
+              exprNameMap.set(child, 'count')
+            } else {
+              const info = resolveExpressionName(child.expression, content, usedNames)
+              if (!info) { valid = false; break }
+              exprNameMap.set(child, info.name)
+              extraInterpolations.push(info)
             }
           }
-          candidates.push(candidate)
+        }
+
+        if (!valid) continue
+
+        // Build merged text for each plural form
+        const forms = [
+          ...(pluralData.zero !== undefined ? ['zero' as const] : []),
+          ...(pluralData.one !== undefined ? ['one' as const] : []),
+          'other' as const
+        ]
+        const formTexts: Record<string, string> = {}
+
+        for (const form of forms) {
+          let text = ''
+          for (const child of run) {
+            if (child.type === 'JSXText') {
+              text += content.slice(child.span.start, child.span.end)
+            } else if (child === pluralChild) {
+              const formText = form === 'zero'
+                ? pluralData.zero!
+                : form === 'one'
+                  ? pluralData.one!
+                  : pluralData.other
+              text += formText
+            } else {
+              const name = exprNameMap.get(child)!
+              text += `{{${name}}}`
+            }
+          }
+          formTexts[form] = text.trim()
+        }
+
+        const spanStart = run[0].span.start
+        const spanEnd = run[run.length - 1].span.end
+        const otherText = formTexts.other
+        if (!otherText) continue
+
+        const candidate = detectCandidate(otherText, spanStart, spanEnd, file, content, config)
+        if (candidate) {
+          candidate.type = 'jsx-text'
+          candidate.content = otherText
+          candidate.pluralForms = {
+            countExpression: countExpr,
+            zero: formTexts.zero,
+            one: formTexts.one,
+            other: otherText
+          }
+          if (extraInterpolations.length > 0) {
+            candidate.interpolations = extraInterpolations
+          }
+          // Plural + JSX merge is always user-facing
+          candidate.confidence = Math.min(1, candidate.confidence + 0.3)
+
+          if (candidate.confidence >= 0.7) {
+            // Remove individual candidates that overlap with the merged span
+            for (let i = candidates.length - 1; i >= 0; i--) {
+              if (candidates[i].offset >= spanStart && candidates[i].endOffset <= spanEnd) {
+                candidates.splice(i, 1)
+              }
+            }
+            candidates.push(candidate)
+          }
+        }
+      } else {
+        // ── Original JSX sibling merging (no plural) ──
+        // Build the interpolated text from the run
+        const usedNames = new Set<string>()
+        const interpolations: Array<{ name: string, expression: string }> = []
+        let text = ''
+        let valid = true
+
+        for (const child of run) {
+          if (child.type === 'JSXText') {
+            text += content.slice(child.span.start, child.span.end)
+          } else {
+            const info = resolveExpressionName(child.expression, content, usedNames)
+            if (!info) { valid = false; break }
+            text += `{{${info.name}}}`
+            interpolations.push(info)
+          }
+        }
+
+        if (!valid) continue
+
+        const trimmed = text.trim()
+        if (!trimmed || interpolations.length === 0) continue
+
+        const spanStart = run[0].span.start
+        const spanEnd = run[run.length - 1].span.end
+
+        const candidate = detectCandidate(trimmed, spanStart, spanEnd, file, content, config)
+        if (candidate) {
+          candidate.type = 'jsx-text'
+          candidate.content = trimmed
+          candidate.interpolations = interpolations
+          // Mixed text + expressions in JSX is almost always user-facing
+          candidate.confidence = Math.min(1, candidate.confidence + 0.2)
+
+          if (candidate.confidence >= 0.7) {
+            // Remove individual candidates that overlap with the merged span
+            for (let i = candidates.length - 1; i >= 0; i--) {
+              if (candidates[i].offset >= spanStart && candidates[i].endOffset <= spanEnd) {
+                candidates.splice(i, 1)
+              }
+            }
+            candidates.push(candidate)
+          }
         }
       }
     }
@@ -971,6 +1083,14 @@ function detectPluralPatterns (
       // Use the "other" form as the candidate content (with {{count}})
       const spanStart = node.span.start
       const spanEnd = node.span.end
+
+      // Skip if this ternary is already covered by a wider candidate
+      // (e.g. a JSX sibling run that merged surrounding text with this plural)
+      const alreadyHandled = candidates.some(c =>
+        c.pluralForms && c.offset <= spanStart && c.endOffset >= spanEnd
+      )
+      if (alreadyHandled) return
+
       const candidate = detectCandidate(
         plural.other,
         spanStart,

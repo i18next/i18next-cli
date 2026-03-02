@@ -103,6 +103,37 @@ function isI18nextOptionKey (key: string): boolean {
   return false
 }
 
+// ─── Ignore-comment helpers ──────────────────────────────────────────────────
+
+/**
+ * Regex matching the shared ignore directive used by both the instrumenter and
+ * the linter.  Supports both `-next-line` and inline variants, in line or block
+ * comment form.
+ *
+ *   // i18next-instrument-ignore-next-line   → suppresses the following line
+ *   // i18next-instrument-ignore             → suppresses the following line
+ *   { /* i18next-instrument-ignore * / }     → same, block-comment form
+ */
+const LINT_IGNORE_RE = /i18next-instrument-ignore(?:-next-line)?/
+
+/**
+ * Scans `code` for ignore-directive comments and returns a Set of 1-based
+ * line numbers whose issues should be suppressed.
+ *
+ * The directive always suppresses the **next** line (line N+1), matching the
+ * behaviour of the instrumenter's `collectIgnoredLines`.
+ */
+function collectLintIgnoredLines (code: string): Set<number> {
+  const ignored = new Set<number>()
+  const lines = code.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    if (LINT_IGNORE_RE.test(lines[i])) {
+      ignored.add(i + 2) // 1-based: directive is on line i+1, suppressed line is i+2
+    }
+  }
+  return ignored
+}
+
 // Helper to lint interpolation parameter errors in t() calls
 function lintInterpolationParams (ast: any, code: string, config: I18nextToolkitConfig, translationValues?: Map<string, string>): LintIssue[] {
   const issues: LintIssue[] = []
@@ -173,14 +204,31 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
       // Support both .expression and direct node for arguments
       const arg0raw = node.arguments?.[0]
       const arg1raw = node.arguments?.[1]
+      const arg2raw = node.arguments?.[2]
       const arg0 = arg0raw?.expression ?? arg0raw
       const arg1 = arg1raw?.expression ?? arg1raw
-      // Only check interpolation params if the first argument is a string literal (translation key or string)
+      const arg2 = arg2raw?.expression ?? arg2raw
+
+      // Only check interpolation params if the first argument is a string literal
       if (arg0?.type === 'StringLiteral') {
         const keyOrStr = arg0.value
+
+        // Detect 3-argument form: t('key', 'Default string {{foo}}', { foo })
+        // In this form arg1 is the default string and arg2 is the params object.
+        const isThreeArgForm = arg1?.type === 'StringLiteral' && arg2 !== undefined
+        const translationArg = isThreeArgForm ? arg1 : arg0
+        const paramsArg = isThreeArgForm ? arg2 : arg1
+
+        // If a params argument exists but is NOT an object literal (e.g. it's a variable),
+        // we cannot statically determine its keys — skip the interpolation check to avoid
+        // false positives.
+        if (paramsArg && paramsArg.type !== 'ObjectExpression') {
+          return
+        }
+
         let paramKeys: string[] = []
-        if (arg1?.type === 'ObjectExpression') {
-          paramKeys = arg1.properties
+        if (paramsArg?.type === 'ObjectExpression') {
+          paramKeys = paramsArg.properties
             .map((p: any) => {
               // Standard key:value property like { name: "value" }
               if (p.type === 'KeyValueProperty' && p.key) {
@@ -198,10 +246,16 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
         }
         if (!Array.isArray(paramKeys)) paramKeys = []
 
-        // Resolve the actual translation string to check against:
-        // fix — if the first arg is a lookup key (no interpolation markers of its own)
-        // and we have a loaded translation map, use the translated value instead.
-        const resolvedStr = translationValues?.get(keyOrStr) ?? keyOrStr
+        // Resolve the actual translation string:
+        // - For 3-arg form: the default string is always arg1 (use it directly)
+        // - For 2-arg / 1-arg form: if arg0 is a lookup key (no interpolation markers),
+        //   try to resolve it from the loaded translation map.
+        let resolvedStr: string
+        if (isThreeArgForm) {
+          resolvedStr = (translationArg as any).value
+        } else {
+          resolvedStr = translationValues?.get(keyOrStr) ?? keyOrStr
+        }
 
         const searchText = arg0.raw ?? `"${arg0.value}"`
         callSites.push({ translationStr: resolvedStr, searchText, paramKeys })
@@ -385,6 +439,14 @@ export class Linter extends EventEmitter<LinterEventMap> {
         // Collect interpolation parameter issues
         const interpolationIssues = lintInterpolationParams(ast, code, config, translationValues)
         let allIssues: LintIssue[] = [...hardcodedStrings, ...interpolationIssues]
+
+        // Filter issues suppressed by ignore-directive comments.
+        // The directive on line N suppresses all issues reported on line N+1.
+        const ignoredLines = collectLintIgnoredLines(code)
+        if (ignoredLines.size > 0) {
+          allIssues = allIssues.filter(issue => !ignoredLines.has(issue.line))
+        }
+
         allIssues = await this.runLintOnResultPipeline(file, allIssues, plugins)
         if (allIssues.length > 0) {
           totalIssues += allIssues.length

@@ -1370,4 +1370,135 @@ console.log('Hello')
     // Should be the very first line
     expect(mainSrc.startsWith("import './i18n'")).toBe(true)
   })
+
+  // ─────────────────────────────────────────────────────────────────────
+  // JSX sibling merging + plural ternary: merged into a single plural t()
+  // ─────────────────────────────────────────────────────────────────────
+  it('merges JSX siblings containing a plural ternary into a single plural t() call', async () => {
+    await fs.writeFile(
+      join(tempDir, 'src', 'components', 'TaskBadge.tsx'),
+      [
+        "import React from 'react'",
+        '',
+        'export function TaskBadge({ activeCount }: { activeCount: number }) {',
+        '  return (',
+        '    <span>',
+        "      {activeCount} {activeCount === 1 ? 'task' : 'tasks'} remaining",
+        '    </span>',
+        '  )',
+        '}',
+        ''
+      ].join('\n')
+    )
+
+    const config = makeConfig()
+    const results = await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+
+    // Write the translation JSON
+    const allCandidates = results.files.flatMap(f => f.candidates)
+    await writeExtractedKeys(allCandidates, config, 'translation', silentLogger)
+
+    const src = await readFile(join(tempDir, 'src', 'components', 'TaskBadge.tsx'), 'utf-8')
+
+    // The entire JSX sibling run should be replaced by a single t() with plural forms
+    expect(src).toContain('count: activeCount')
+    expect(src).toContain("defaultValue_one: '{{count}} task remaining'")
+    expect(src).toContain("defaultValue_other: '{{count}} tasks remaining'")
+    // Should NOT contain the original ternary or separate expressions
+    expect(src).not.toContain("activeCount === 1 ? 'task' : 'tasks'")
+
+    // The translation JSON should contain plural-form keys
+    const translationPath = join(tempDir, 'locales', 'en', 'translation.json')
+    const translations = JSON.parse(await readFile(translationPath, 'utf-8'))
+
+    const oneKeys = Object.keys(translations).filter(k => k.endsWith('_one'))
+    const otherKeys = Object.keys(translations).filter(k => k.endsWith('_other'))
+    expect(oneKeys.length).toBeGreaterThanOrEqual(1)
+    expect(otherKeys.length).toBeGreaterThanOrEqual(1)
+
+    const baseKey = oneKeys[0].replace(/_one$/, '')
+    expect(translations[`${baseKey}_one`]).toBe('{{count}} task remaining')
+    expect(translations[`${baseKey}_other`]).toBe('{{count}} tasks remaining')
+
+    // File must remain syntactically valid
+    const { parse } = await import('@swc/core')
+    await expect(
+      parse(src, { syntax: 'typescript', tsx: true })
+    ).resolves.toBeDefined()
+  })
+
+  it('merges JSX siblings with plural ternary and extra expressions', async () => {
+    await fs.writeFile(
+      join(tempDir, 'src', 'components', 'UserTasks.tsx'),
+      [
+        "import React from 'react'",
+        '',
+        'export function UserTasks({ userName, count }: { userName: string; count: number }) {',
+        '  return (',
+        '    <p>',
+        "      {userName}, {count} {count === 1 ? 'item' : 'items'} left",
+        '    </p>',
+        '  )',
+        '}',
+        ''
+      ].join('\n')
+    )
+
+    const config = makeConfig()
+    const results = await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+
+    const allCandidates = results.files.flatMap(f => f.candidates)
+    await writeExtractedKeys(allCandidates, config, 'translation', silentLogger)
+
+    const src = await readFile(join(tempDir, 'src', 'components', 'UserTasks.tsx'), 'utf-8')
+
+    // Should have plural forms with both {{userName}} and {{count}}
+    expect(src).toContain('count: count')
+    expect(src).toContain('userName')
+    expect(src).toContain('defaultValue_one:')
+    expect(src).toContain('defaultValue_other:')
+    // Should NOT contain the original ternary
+    expect(src).not.toContain("count === 1 ? 'item' : 'items'")
+
+    // File must remain syntactically valid
+    const { parse } = await import('@swc/core')
+    await expect(
+      parse(src, { syntax: 'typescript', tsx: true })
+    ).resolves.toBeDefined()
+  })
+
+  it('merges JSX siblings with 3-way plural ternary (zero/one/other)', async () => {
+    await fs.writeFile(
+      join(tempDir, 'src', 'components', 'NotificationBadge.tsx'),
+      [
+        "import React from 'react'",
+        '',
+        'export function NotificationBadge({ n }: { n: number }) {',
+        '  return (',
+        '    <span>',
+        // eslint-disable-next-line no-template-curly-in-string
+        "      {n === 0 ? 'No' : n === 1 ? 'One' : `${n}`} notification{n === 1 ? '' : 's'} pending",
+        '    </span>',
+        '  )',
+        '}',
+        ''
+      ].join('\n')
+    )
+
+    const config = makeConfig()
+    await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+
+    const src = await readFile(join(tempDir, 'src', 'components', 'NotificationBadge.tsx'), 'utf-8')
+
+    // Should contain a t() call with count
+    expect(src).toContain('count: n')
+    // Should NOT contain the original ternary chains
+    expect(src).not.toContain('n === 0 ?')
+
+    // File must remain syntactically valid
+    const { parse } = await import('@swc/core')
+    await expect(
+      parse(src, { syntax: 'typescript', tsx: true })
+    ).resolves.toBeDefined()
+  })
 })

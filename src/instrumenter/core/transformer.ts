@@ -235,6 +235,14 @@ function buildReplacement (
     }
     optionEntries.push(`defaultValue_other: '${escapeString(pf.other)}'`)
     optionEntries.push(`count: ${pf.countExpression}`)
+    // Add extra interpolation variables (e.g. from JSX sibling merging with plurals)
+    if (candidate.interpolations?.length) {
+      for (const interp of candidate.interpolations) {
+        optionEntries.push(
+          interp.name === interp.expression ? interp.name : `${interp.name}: ${interp.expression}`
+        )
+      }
+    }
     if (!useHookStyle && namespace) {
       optionEntries.push(`ns: '${namespace}'`)
     }
