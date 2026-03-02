@@ -48,6 +48,7 @@ export function transformFile (
   const transformedComponents = new Set<string>()
   let hasComponentCandidates = false
   let hasNonComponentCandidates = false
+  let hasTransCandidates = false
 
   // ── Language-change site injections ────────────────────────────────────
   const languageChangeSites = options.languageChangeSites || []
@@ -108,9 +109,16 @@ export function transformFile (
         s.overwrite(candidate.offset, candidate.endOffset, replacement)
         transformCount++
 
+        if (candidate.type === 'jsx-mixed') {
+          hasTransCandidates = true
+        }
+
         if (candidate.insideComponent) {
-          transformedComponents.add(candidate.insideComponent)
-          hasComponentCandidates = true
+          // jsx-mixed candidates use <Trans>, not t(), so they don't need useTranslation
+          if (candidate.type !== 'jsx-mixed') {
+            transformedComponents.add(candidate.insideComponent)
+            hasComponentCandidates = true
+          }
         } else {
           hasNonComponentCandidates = true
         }
@@ -135,14 +143,17 @@ export function transformFile (
         const indent = detectIndent(content, comp.bodyStart)
         const defaultNS = options.config.extract?.defaultNS ?? 'translation'
         const nsArg = (options.namespace && options.namespace !== defaultNS) ? `'${options.namespace}'` : ''
-        // Build destructuring: include `t` if the component has string candidates,
+        // Build destructuring: include `t` if the component has string candidates
+        // (but not jsx-mixed which use <Trans>),
         // include `i18n` if the component has language-change sites.
-        const needsT = highConfidenceCandidates.some(c => c.insideComponent === comp.name)
+        const needsT = highConfidenceCandidates.some(c => c.insideComponent === comp.name && c.type !== 'jsx-mixed')
         const needsI18n = componentsNeedingI18n.has(comp.name)
         const parts: string[] = []
         if (needsT) parts.push('t')
         if (needsI18n) parts.push('i18n')
-        if (parts.length === 0) parts.push('t') // fallback
+        // Skip if component needs neither t nor i18n
+        // (e.g. component only has jsx-mixed / <Trans> candidates)
+        if (!needsT && !needsI18n) continue
         const destructured = `{ ${parts.join(', ')} }`
         s.appendRight(comp.bodyStart + 1, `\n${indent}const ${destructured} = useTranslation(${nsArg})`)
         injections.hookInjected = true
@@ -175,7 +186,8 @@ export function transformFile (
     // Add import statements
     addImportStatements(s, content, {
       needsUseTranslation: hasComponentCandidates && options.hasReact,
-      needsI18next: hasNonComponentCandidates || !options.hasReact
+      needsI18next: hasNonComponentCandidates || !options.hasReact,
+      needsTrans: hasTransCandidates && options.hasReact
     })
     injections.importAdded = true
   }
@@ -280,7 +292,8 @@ function buildReplacement (
 
     case 'jsx-mixed':
       if (useHookStyle) {
-        return `<Trans i18nKey="${key}">${candidate.content}</Trans>`
+        const nsAttr = namespace ? ` ns="${namespace}"` : ''
+        return `<Trans i18nKey="${key}"${nsAttr}>${candidate.content}</Trans>`
       }
       return candidate.content
 
@@ -340,17 +353,27 @@ function detectIndent (content: string, braceOffset: number): string {
 }
 
 /**
- * Adds necessary import statements (useTranslation and/or i18next).
+ * Adds necessary import statements (useTranslation, Trans, and/or i18next).
  */
 function addImportStatements (
   s: MagicString,
   content: string,
-  needs: { needsUseTranslation: boolean; needsI18next: boolean }
+  needs: { needsUseTranslation: boolean; needsI18next: boolean; needsTrans: boolean }
 ): void {
   let importStatement = ''
 
-  if (needs.needsUseTranslation && !hasImport(content, 'react-i18next')) {
-    importStatement += "import { useTranslation } from 'react-i18next'\n"
+  // Build a combined react-i18next import
+  const reactI18nextImports: string[] = []
+  if (needs.needsUseTranslation) reactI18nextImports.push('useTranslation')
+  if (needs.needsTrans) reactI18nextImports.push('Trans')
+
+  if (reactI18nextImports.length > 0) {
+    if (!hasImport(content, 'react-i18next')) {
+      importStatement += `import { ${reactI18nextImports.join(', ')} } from 'react-i18next'\n`
+    } else {
+      // react-i18next is already imported — augment with any missing named exports
+      augmentReactI18nextImport(s, content, reactI18nextImports)
+    }
   }
 
   if (needs.needsI18next && !hasImport(content, 'i18next')) {
@@ -379,6 +402,29 @@ function addImportStatements (
   }
 
   s.appendRight(insertPos, importStatement)
+}
+
+/**
+ * Augments an existing `import { ... } from 'react-i18next'` with any missing
+ * named exports (e.g. adds `Trans` when only `useTranslation` is imported).
+ */
+function augmentReactI18nextImport (
+  s: MagicString,
+  content: string,
+  needed: string[]
+): void {
+  const importMatch = /import\s*\{([^}]*)\}\s*from\s*['"]react-i18next['"]/.exec(content)
+  if (!importMatch) return
+
+  const existingImports = importMatch[1].split(',').map(x => x.trim()).filter(Boolean)
+  const toAdd = needed.filter(n => !existingImports.includes(n))
+  if (toAdd.length === 0) return
+
+  const newImports = [...existingImports, ...toAdd].join(', ')
+  const newImportStatement = `import { ${newImports} } from 'react-i18next'`
+  const matchStart = importMatch.index
+  const matchEnd = matchStart + importMatch[0].length
+  s.overwrite(matchStart, matchEnd, newImportStatement)
 }
 
 /**

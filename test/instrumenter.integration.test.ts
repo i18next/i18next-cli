@@ -1501,4 +1501,228 @@ console.log('Hello')
       parse(src, { syntax: 'typescript', tsx: true })
     ).resolves.toBeDefined()
   })
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Idempotency: second run must not double-instrument plural JSX patterns
+  // ─────────────────────────────────────────────────────────────────────
+  it('does not double-instrument merged JSX plural ternary on second run', async () => {
+    await fs.writeFile(
+      join(tempDir, 'src', 'components', 'IdempotentBadge.tsx'),
+      [
+        "import React from 'react'",
+        '',
+        'export function IdempotentBadge({ activeCount }: { activeCount: number }) {',
+        '  return (',
+        '    <span>',
+        "      {activeCount} {activeCount === 1 ? 'task' : 'tasks'} remaining",
+        '    </span>',
+        '  )',
+        '}',
+        ''
+      ].join('\n')
+    )
+
+    const config = makeConfig()
+
+    // First pass
+    await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+    const firstSrc = await readFile(join(tempDir, 'src', 'components', 'IdempotentBadge.tsx'), 'utf-8')
+    expect(firstSrc).toContain('count: activeCount')
+    expect(firstSrc).toContain('defaultValue_one:')
+    expect(firstSrc).toContain('defaultValue_other:')
+
+    // Second pass on the already-instrumented file
+    const secondResults = await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+    const secondSrc = await readFile(join(tempDir, 'src', 'components', 'IdempotentBadge.tsx'), 'utf-8')
+
+    // Content must be unchanged after the second run
+    expect(secondSrc).toBe(firstSrc)
+    // No nested t() calls inside defaultValue options
+    expect(secondSrc).not.toContain('defaultValue_one: t(')
+    expect(secondSrc).not.toContain('defaultValue_other: t(')
+
+    // The second pass should not produce new transformations for this file
+    const badgeResult = secondResults.files.find(f => f.file?.includes('IdempotentBadge'))
+    if (badgeResult) {
+      expect(badgeResult.result.transformCount).toBe(0)
+    }
+  })
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Trans component: JSX siblings with inline HTML elements
+  // ─────────────────────────────────────────────────────────────────────
+  it('wraps mixed JSX text + elements with <Trans> and generates indexed-tag translation', async () => {
+    await fs.writeFile(
+      join(tempDir, 'src', 'components', 'Terms.tsx'),
+      [
+        "import React from 'react'",
+        '',
+        'export function Terms() {',
+        '  return (',
+        '    <p>',
+        '      Click <a href="/terms">here</a> to accept our terms',
+        '    </p>',
+        '  )',
+        '}',
+        ''
+      ].join('\n')
+    )
+
+    const config = makeConfig()
+    const results = await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+
+    const allCandidates = results.files.flatMap(f => f.candidates)
+    await writeExtractedKeys(allCandidates, config, 'translation', silentLogger)
+
+    const src = await readFile(join(tempDir, 'src', 'components', 'Terms.tsx'), 'utf-8')
+
+    // Should contain a <Trans> wrapper
+    expect(src).toContain('<Trans')
+    expect(src).toContain('i18nKey=')
+    // The original <a> element must still be inside the Trans children
+    expect(src).toContain('<a href="/terms">here</a>')
+    // Should NOT still have the unwrapped plain text siblings
+    // (the entire children should be wrapped in a single <Trans>)
+
+    // Should import Trans from react-i18next
+    expect(src).toContain('Trans')
+    expect(src).toContain("from 'react-i18next'")
+
+    // The translation JSON should have the indexed-tag format
+    const translationPath = join(tempDir, 'locales', 'en', 'translation.json')
+    const translations = JSON.parse(await readFile(translationPath, 'utf-8'))
+    const values = Object.values(translations) as string[]
+    // Should contain a value like "Click <1>here</1> to accept our terms"
+    const transValue = values.find(v => typeof v === 'string' && /<\d+>/.test(v))
+    expect(transValue).toBeDefined()
+    expect(transValue).toContain('here')
+    expect(transValue).toContain('accept our terms')
+
+    // File must remain syntactically valid
+    const { parse } = await import('@swc/core')
+    await expect(
+      parse(src, { syntax: 'typescript', tsx: true })
+    ).resolves.toBeDefined()
+  })
+
+  it('wraps mixed JSX with expressions and elements using <Trans> with {{ }} syntax', async () => {
+    await fs.writeFile(
+      join(tempDir, 'src', 'components', 'ProfileLink.tsx'),
+      [
+        "import React from 'react'",
+        '',
+        'export function ProfileLink({ name }: { name: string }) {',
+        '  return (',
+        '    <p>',
+        '      Hello {name}, visit <a href="/profile">your profile</a> page',
+        '    </p>',
+        '  )',
+        '}',
+        ''
+      ].join('\n')
+    )
+
+    const config = makeConfig()
+    const results = await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+
+    const allCandidates = results.files.flatMap(f => f.candidates)
+    await writeExtractedKeys(allCandidates, config, 'translation', silentLogger)
+
+    const src = await readFile(join(tempDir, 'src', 'components', 'ProfileLink.tsx'), 'utf-8')
+
+    // Should contain <Trans> with the original anchor element
+    expect(src).toContain('<Trans')
+    expect(src).toContain('<a href="/profile">your profile</a>')
+    // The expression should be converted to {{ obj }} syntax for react-i18next
+    expect(src).toContain('{{ name }}')
+    // Should NOT have the raw {name} expression (it should be {{ name }})
+    // (we can't easily test this without regex since {{ name }} contains {name})
+
+    // Translation JSON should have both interpolation and indexed tags
+    const translationPath = join(tempDir, 'locales', 'en', 'translation.json')
+    const translations = JSON.parse(await readFile(translationPath, 'utf-8'))
+    const values = Object.values(translations) as string[]
+    const transValue = values.find(v => typeof v === 'string' && /\{\{name\}\}/.test(v) && /<\d+>/.test(v))
+    expect(transValue).toBeDefined()
+
+    // File must remain syntactically valid
+    const { parse } = await import('@swc/core')
+    await expect(
+      parse(src, { syntax: 'typescript', tsx: true })
+    ).resolves.toBeDefined()
+  })
+
+  it('does not double-instrument <Trans> wrapped content on second run', async () => {
+    await fs.writeFile(
+      join(tempDir, 'src', 'components', 'TransIdempotent.tsx'),
+      [
+        "import React from 'react'",
+        '',
+        'export function TransIdempotent() {',
+        '  return (',
+        '    <p>',
+        '      Click <a href="/terms">here</a> to accept our terms',
+        '    </p>',
+        '  )',
+        '}',
+        ''
+      ].join('\n')
+    )
+
+    const config = makeConfig()
+
+    // First pass
+    await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+    const firstSrc = await readFile(join(tempDir, 'src', 'components', 'TransIdempotent.tsx'), 'utf-8')
+    expect(firstSrc).toContain('<Trans')
+
+    // Second pass
+    const secondResults = await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+    const secondSrc = await readFile(join(tempDir, 'src', 'components', 'TransIdempotent.tsx'), 'utf-8')
+
+    // Content must be identical after the second run
+    expect(secondSrc).toBe(firstSrc)
+
+    // The second pass should have 0 transformations for this file
+    const transResult = secondResults.files.find(f => f.file?.includes('TransIdempotent'))
+    if (transResult) {
+      expect(transResult.result.transformCount).toBe(0)
+    }
+  })
+
+  it('component with both t() and <Trans> gets useTranslation + Trans import', async () => {
+    await fs.writeFile(
+      join(tempDir, 'src', 'components', 'MixedUsage.tsx'),
+      [
+        "import React from 'react'",
+        '',
+        'export function MixedUsage() {',
+        '  return (',
+        '    <div>',
+        '      <h1>Welcome to your personal dashboard</h1>',
+        '      <p>Click <a href="/help">here</a> for help</p>',
+        '    </div>',
+        '  )',
+        '}',
+        ''
+      ].join('\n')
+    )
+
+    const config = makeConfig()
+    await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+
+    const src = await readFile(join(tempDir, 'src', 'components', 'MixedUsage.tsx'), 'utf-8')
+
+    // Should have both useTranslation (for the title) and Trans (for the mixed JSX)
+    expect(src).toContain('useTranslation')
+    expect(src).toContain('<Trans')
+    // The import should include both
+    expect(src).toMatch(/import\s*\{[^}]*useTranslation[^}]*Trans[^}]*\}|import\s*\{[^}]*Trans[^}]*useTranslation[^}]*\}/)
+
+    // File must remain syntactically valid
+    const { parse } = await import('@swc/core')
+    await expect(
+      parse(src, { syntax: 'typescript', tsx: true })
+    ).resolves.toBeDefined()
+  })
 })

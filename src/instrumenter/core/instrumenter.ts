@@ -525,6 +525,27 @@ function addComponentFromFunctionNode (
 // to skip recursing into non-translatable attribute values.
 
 /**
+ * Returns true when the AST node is a `t(...)` or `i18next.t(...)` call
+ * expression — i.e. code that was already instrumented.
+ */
+function isTranslationCall (node: any): boolean {
+  const callee = node.callee
+  if (!callee) return false
+  // t(...)
+  if (callee.type === 'Identifier' && callee.value === 't') return true
+  // i18next.t(...)
+  if (
+    callee.type === 'MemberExpression' &&
+    !callee.computed &&
+    callee.property?.type === 'Identifier' &&
+    callee.property.value === 't' &&
+    callee.object?.type === 'Identifier' &&
+    callee.object.value === 'i18next'
+  ) return true
+  return false
+}
+
+/**
  * Recursively visits AST nodes to find string literals.
  */
 function visitNodeForStrings (
@@ -535,6 +556,14 @@ function visitNodeForStrings (
   candidates: CandidateString[]
 ): void {
   if (!node) return
+
+  // Skip already-instrumented t() / i18next.t() calls entirely so that
+  // strings inside the options object (defaultValue_one, etc.) are not
+  // picked up as new candidates on a second run.
+  if (node.type === 'CallExpression' && isTranslationCall(node)) return
+
+  // Skip <Trans> elements (already instrumented)
+  if (node.type === 'JSXElement' && isTransComponent(node)) return
 
   // Skip non-translatable JSX attributes entirely (e.g. className={...})
   if (node.type === 'JSXAttribute') {
@@ -759,6 +788,9 @@ function detectJSXInterpolation (
 ): void {
   if (!node) return
 
+  // Skip <Trans> elements (already instrumented)
+  if (node.type === 'JSXElement' && isTransComponent(node)) return
+
   const children = (node.type === 'JSXElement' || node.type === 'JSXFragment') ? node.children : null
 
   if (children?.length > 1) {
@@ -778,6 +810,9 @@ function detectJSXInterpolation (
       ) {
         // Plural ternary expression — include in the run for merged handling
         currentRun.push(child)
+      } else if (child.type === 'JSXElement' && isSimpleJSXElement(child)) {
+        // Simple HTML element — include in the run for Trans detection
+        currentRun.push(child)
       } else {
         // JSXElement, complex expression, etc. — break the run
         if (currentRun.length > 0) {
@@ -793,7 +828,10 @@ function detectJSXInterpolation (
     for (const run of runs) {
       const hasText = run.some(c => c.type === 'JSXText' && c.value?.trim())
       const hasExpr = run.some(c => c.type === 'JSXExpressionContainer')
-      if (!hasText || !hasExpr || run.length < 2) continue
+      const hasElement = run.some(c => c.type === 'JSXElement')
+      // Require at least one text node plus either an expression or element
+      if (!hasText || run.length < 2) continue
+      if (!hasExpr && !hasElement) continue
 
       // Check if any expression container in this run is a plural ternary
       let pluralChild: any = null
@@ -812,7 +850,75 @@ function detectJSXInterpolation (
         }
       }
 
-      if (pluralChild && pluralData) {
+      if (hasElement) {
+        // ── JSX sibling run with nested HTML elements → <Trans> ──
+        const spanStart = run[0].span.start
+        const spanEnd = run[run.length - 1].span.end
+
+        // Build the translation string (with indexed tags) and text-only version (for scoring)
+        const usedNames = new Set<string>()
+        const interpolations: Array<{ name: string, expression: string }> = []
+        let transValue = ''
+        let textOnly = ''
+        let transContent = ''
+        let childIndex = 0
+        let valid = true
+
+        for (const child of run) {
+          if (child.type === 'JSXText') {
+            const raw = content.slice(child.span.start, child.span.end)
+            transValue += raw
+            textOnly += raw
+            transContent += raw
+            childIndex++
+          } else if (child.type === 'JSXExpressionContainer') {
+            const info = resolveExpressionName(child.expression, content, usedNames)
+            if (!info) { valid = false; break }
+            transValue += `{{${info.name}}}`
+            textOnly += info.name
+            // In <Trans> children, simple expressions become {{ obj }} syntax
+            const objExpr = info.name === info.expression ? info.name : `${info.name}: ${info.expression}`
+            transContent += `{{ ${objExpr} }}`
+            interpolations.push(info)
+            childIndex++
+          } else if (child.type === 'JSXElement') {
+            const innerText = getJSXElementTextContent(child, content)
+            transValue += `<${childIndex}>${innerText}</${childIndex}>`
+            textOnly += innerText
+            // Keep the original JSX element source for the <Trans> children
+            transContent += content.slice(child.span.start, child.span.end)
+            childIndex++
+          }
+        }
+
+        if (!valid) continue
+
+        const trimmedText = textOnly.trim()
+        const trimmedTransValue = transValue.trim()
+        if (!trimmedText || !trimmedTransValue) continue
+
+        const candidate = detectCandidate(trimmedText, spanStart, spanEnd, file, content, config)
+        if (candidate) {
+          candidate.type = 'jsx-mixed'
+          candidate.content = transContent.trim()
+          candidate.transValue = trimmedTransValue
+          if (interpolations.length > 0) {
+            candidate.interpolations = interpolations
+          }
+          // Mixed text + elements in JSX is almost always user-facing
+          candidate.confidence = Math.min(1, candidate.confidence + 0.25)
+
+          if (candidate.confidence >= 0.7) {
+            // Remove individual candidates that overlap with the merged span
+            for (let i = candidates.length - 1; i >= 0; i--) {
+              if (candidates[i].offset >= spanStart && candidates[i].endOffset <= spanEnd) {
+                candidates.splice(i, 1)
+              }
+            }
+            candidates.push(candidate)
+          }
+        }
+      } else if (pluralChild && pluralData) {
         // ── JSX sibling run with embedded plural ternary ──
         const countExpr = pluralData.countExpression
 
@@ -898,7 +1004,7 @@ function detectJSXInterpolation (
           }
         }
       } else {
-        // ── Original JSX sibling merging (no plural) ──
+        // ── Original JSX sibling merging (text + expressions, no elements) ──
         // Build the interpolated text from the run
         const usedNames = new Set<string>()
         const interpolations: Array<{ name: string, expression: string }> = []
@@ -967,6 +1073,55 @@ function isSimpleJSXExpression (expr: any): boolean {
   if (!expr) return false
   if (expr.type === 'Identifier') return true
   if (expr.type === 'MemberExpression' && !expr.computed && expr.property?.type === 'Identifier') return true
+  return false
+}
+
+/**
+ * Returns true when a JSXElement is "simple" enough to be included in a
+ * `<Trans>` JSX sibling run.  Accepts:
+ * - Self-closing elements (`<br />`, `<img />`)
+ * - Elements whose only children are `JSXText` nodes
+ * Only HTML-like elements (lowercase tag name) are accepted; React
+ * components (uppercase, e.g. `<Button />`) break the run.
+ */
+function isSimpleJSXElement (node: any): boolean {
+  if (node.type !== 'JSXElement') return false
+  const namePart = node.opening?.name
+  if (!namePart) return false
+  // Only include HTML-like elements (lowercase first char)
+  let tagName: string | null = null
+  if (namePart.type === 'Identifier') {
+    tagName = namePart.value
+  }
+  if (!tagName || tagName[0] !== tagName[0].toLowerCase()) return false
+  // Self-closing elements are simple
+  if (node.opening?.selfClosing) return true
+  // Elements with only text children (or empty) are simple
+  const children = node.children || []
+  return children.length === 0 || children.every((c: any) => c.type === 'JSXText')
+}
+
+/**
+ * Returns the text content of a simple JSXElement's children.
+ */
+function getJSXElementTextContent (node: any, content: string): string {
+  const children = node.children || []
+  return children
+    .filter((c: any) => c.type === 'JSXText')
+    .map((c: any) => content.slice(c.span.start, c.span.end))
+    .join('')
+}
+
+/**
+ * Returns true when a JSXElement is a `<Trans>` component
+ * (already instrumented content).
+ */
+function isTransComponent (node: any): boolean {
+  const opening = node.opening
+  if (!opening) return false
+  const name = opening.name
+  if (name?.type === 'Identifier' && name.value === 'Trans') return true
+  if (name?.type === 'JSXMemberExpression' && name.property?.type === 'Identifier' && name.property.value === 'Trans') return true
   return false
 }
 
@@ -1758,7 +1913,7 @@ export async function writeExtractedKeys (
         }
         translations[`${candidate.key}_other`] = pf.other
       } else {
-        translations[candidate.key] = candidate.content
+        translations[candidate.key] = candidate.transValue ?? candidate.content
       }
     }
   }

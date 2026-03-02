@@ -933,6 +933,13 @@ export interface CandidateString {
   }>
 
   /**
+   * For `jsx-mixed` candidates: the translation value with indexed tags
+   * (e.g. `Click <1>here</1> to accept`).  Used by `writeExtractedKeys` for
+   * the JSON output instead of `content`.
+   */
+  transValue?: string
+
+  /**
    * Plural forms detected from a conditional (ternary) pattern.
    * When present the transformer emits `t(key, { count: expr })` and the
    * JSON writer creates `key_zero`, `key_one` and `key_other` entries.
