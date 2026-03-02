@@ -201,6 +201,10 @@ function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: a
     basePath = resolve(process.cwd(), '.')
   }
 
+  if (command === 'migrate') {
+    commandArgs.push('--download', 'true')
+  }
+
   commandArgs.push('--path', basePath)
 
   return commandArgs
