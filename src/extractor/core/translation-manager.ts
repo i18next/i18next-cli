@@ -818,7 +818,7 @@ function buildNewTranslationsForNs (
       const conflictingPath = findNestingConflict(newTranslations, key, separator)
       if (conflictingPath !== null) {
         logger.error(
-          `Nesting conflict: key "${key}" conflicts with existing key "${conflictingPath}". ` +
+          `Error: Nesting conflict: key "${key}" conflicts with existing key "${conflictingPath}". ` +
           `"${key}" will be skipped — fix the overlapping key paths in your source code to avoid missing translations at runtime.`
         )
         continue
