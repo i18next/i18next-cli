@@ -272,6 +272,79 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should handle namespace variable with `as const` assertion', async () => {
+      const sampleCode = `
+        const MY_NS = 'custom_namespace' as const
+
+        const { t } = useTranslation(MY_NS);
+        const text = t('key');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/custom_namespace.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        key: 'key',
+      })
+    })
+
+    it('should handle namespace variable with `satisfies` expression', async () => {
+      const sampleCode = `
+        const MY_NS = 'custom_namespace' satisfies string
+
+        const { t } = useTranslation(MY_NS);
+        const text = t('key');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/custom_namespace.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        key: 'key',
+      })
+    })
+
+    it('should handle namespace variable with `as` type assertion', async () => {
+      const sampleCode = `
+        const MY_NS = 'custom_namespace' as 'custom_namespace'
+
+        const { t } = useTranslation(MY_NS);
+        const text = t('key');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/custom_namespace.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        key: 'key',
+      })
+    })
+
+    it('should resolve namespace from type annotation when init is not a string literal', async () => {
+      const sampleCode = `
+        function getNamespace(): 'custom_namespace' { return 'custom_namespace' }
+        const MY_NS: 'custom_namespace' = getNamespace()
+
+        const { t } = useTranslation(MY_NS);
+        const text = t('key');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/custom_namespace.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        key: 'key',
+      })
+    })
+
     it('should handle aliased t functions from useTranslation', async () => {
       const sampleCode = `
         const { t: myTr } = useTranslation('ns1');

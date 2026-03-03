@@ -1,4 +1,12 @@
-import type { VariableDeclarator, CallExpression, TemplateLiteral } from '@swc/core'
+import type {
+  Expression,
+  VariableDeclarator,
+  CallExpression,
+  TemplateLiteral,
+  TsAsExpression,
+  TsConstAssertion,
+  TsSatisfiesExpression
+} from '@swc/core'
 import type { ScopeInfo, UseTranslationHookConfig, I18nextToolkitConfig } from '../../types'
 import { getObjectPropValue } from './ast-utils'
 
@@ -12,6 +20,44 @@ export class ScopeManager {
 
   constructor (config: Omit<I18nextToolkitConfig, 'plugins'>) {
     this.config = config
+  }
+
+  /**
+   * Recursively unwraps TypeScript type assertion wrappers to reach the
+   * underlying expression node.
+   */
+  private static unwrapTsExpression (
+    node: TsConstAssertion | TsAsExpression | TsSatisfiesExpression | Expression
+  ): Expression {
+    if (!node) return node
+    switch (node.type) {
+      case 'TsConstAssertion':
+      case 'TsAsExpression':
+      case 'TsSatisfiesExpression':
+        return ScopeManager.unwrapTsExpression(node.expression)
+      default:
+        return node
+    }
+  }
+
+  /**
+   * Extracts a string value from a variable declarator's TypeScript type
+   * annotation when it is a literal string type (e.g., `const ns: 'users'`).
+   */
+  private static extractStringFromTypeAnnotation (node: VariableDeclarator): string | undefined {
+    if (!node?.id || node.id.type !== 'Identifier') return undefined
+    if ('typeAnnotation' in node.id) {
+      const rawTypeAnn = node.id.typeAnnotation
+      if (!rawTypeAnn) return undefined
+
+      const tsType = rawTypeAnn.typeAnnotation
+
+      if (tsType?.type === 'TsLiteralType' && tsType.literal?.type === 'StringLiteral') {
+        return tsType.literal.value
+      }
+    }
+
+    return undefined
   }
 
   /**
@@ -127,9 +173,19 @@ export class ScopeManager {
     const init = node.init
     if (!init) return
 
-    // Record simple const/let string initializers for later resolution
-    if (node.id.type === 'Identifier' && init.type === 'StringLiteral') {
-      this.simpleConstants.set(node.id.value, init.value)
+    // Record simple const/let string initializers for later resolution.
+    // Unwrap TS type assertion wrappers (as const, satisfies, as 'x') and fall
+    // back to the variable's type annotation when the init is not a string literal.
+    if (node.id.type === 'Identifier') {
+      const unwrapped = ScopeManager.unwrapTsExpression(init)
+      if (unwrapped?.type === 'StringLiteral') {
+        this.simpleConstants.set(node.id.value, unwrapped.value)
+      } else {
+        const fromType = ScopeManager.extractStringFromTypeAnnotation(node)
+        if (fromType !== undefined) {
+          this.simpleConstants.set(node.id.value, fromType)
+        }
+      }
       // continue processing; still may be a useTranslation/getFixedT call below
     }
 
