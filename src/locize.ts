@@ -6,28 +6,37 @@ import { resolve, sep } from 'node:path'
 import type { I18nextToolkitConfig } from './types'
 
 /**
- * Verifies that the locize-cli tool is installed and accessible.
+ * Resolves the locize-cli executable to use.
  *
- * @throws Exits the process with error code 1 if locize-cli is not found
+ * Tries, in order:
+ * 1. A locally / globally installed `locize` binary
+ * 2. Falls back to `npx locize-cli` so it can be fetched on demand
  *
- * @example
- * ```typescript
- * await checkLocizeCliExists()
- * // Continues execution if locize-cli is available
- * // Otherwise exits with installation instructions
- * ```
+ * If neither works the process exits with an error.
+ *
+ * @returns An object with `cmd` (the executable) and `prefixArgs` (extra args
+ *          to prepend before the locize sub-command, e.g. `['locize-cli']`
+ *          when running through npx).
  */
-async function checkLocizeCliExists (): Promise<void> {
+async function resolveLocizeBin (): Promise<{ cmd: string, prefixArgs: string[] } | null> {
+  // 1. Try a locally / globally installed binary
   try {
     await execa('locize', ['--version'])
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
-      console.error(styleText('red', 'Error: `locize-cli` command not found.'))
-      console.log(styleText('yellow', 'Please install it globally to use the Locize integration:'))
-      console.log(styleText('cyan', 'npm install -g locize-cli'))
-      process.exit(1)
-    }
+    return { cmd: 'locize', prefixArgs: [] }
+  } catch {
+    // not found – continue
   }
+
+  // 2. Fall back to npx
+  try {
+    console.log(styleText('yellow', '`locize` command not found – trying npx...'))
+    await execa('npx', ['locize-cli', '--version'])
+    return { cmd: 'npx', prefixArgs: ['locize-cli'] }
+  } catch {
+    // npx also failed
+  }
+
+  return null
 }
 
 /**
@@ -238,7 +247,16 @@ function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: a
  * ```
  */
 async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', config: I18nextToolkitConfig, cliOptions: any = {}) {
-  await checkLocizeCliExists()
+  const resolved = await resolveLocizeBin()
+  if (!resolved) {
+    console.error(styleText('red', 'Error: `locize-cli` command not found.'))
+    console.log(styleText('yellow', 'Please install it to use the Locize integration:'))
+    console.log(styleText('cyan', '  npm install -g locize-cli'))
+    console.log(styleText('yellow', 'Or make sure npx is available so it can be fetched on demand.'))
+    process.exit(1)
+    return
+  }
+  const { cmd, prefixArgs } = resolved
 
   const spinner = ora(`Running 'locize ${command}'...\n`).start()
 
@@ -246,9 +264,9 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
 
   try {
     // 1. First attempt
-    const initialArgs = buildArgs(command, effectiveConfig, cliOptions)
-    console.log(styleText('cyan', `\nRunning 'locize ${maskArgs(initialArgs).join(' ')}'...`))
-    const result = await execa('locize', initialArgs, { stdio: 'pipe' })
+    const initialArgs = [...prefixArgs, ...buildArgs(command, effectiveConfig, cliOptions)]
+    console.log(styleText('cyan', `\nRunning 'locize ${maskArgs(initialArgs.slice(prefixArgs.length)).join(' ')}'...`))
+    const result = await execa(cmd, initialArgs, { stdio: 'pipe' })
 
     spinner.succeed(styleText('green', `'locize ${command}' completed successfully.`))
     if (result?.stdout) console.log(result.stdout) // Print captured output on success
@@ -264,9 +282,9 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
         spinner.start('Retrying with new credentials...')
         try {
           // 3. Retry attempt, rebuilding args with the NOW-UPDATED currentConfig object
-          const retryArgs = buildArgs(command, effectiveConfig, cliOptions)
-          console.log(styleText('cyan', `\nRunning 'locize ${maskArgs(retryArgs).join(' ')}'...`))
-          const result = await execa('locize', retryArgs, { stdio: 'pipe' })
+          const retryArgs = [...prefixArgs, ...buildArgs(command, effectiveConfig, cliOptions)]
+          console.log(styleText('cyan', `\nRunning 'locize ${maskArgs(retryArgs.slice(prefixArgs.length)).join(' ')}'...`))
+          const result = await execa(cmd, retryArgs, { stdio: 'pipe' })
 
           spinner.succeed(styleText('green', 'Retry successful!'))
           if (result?.stdout) console.log(result.stdout)

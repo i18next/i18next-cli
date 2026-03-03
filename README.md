@@ -249,7 +249,7 @@ npx i18next-cli lint
 
 ### `instrument`
 
-Scans your source code for hardcoded user-facing strings and instruments them with i18next translation calls. This is useful for adding i18next instrumentation to an existing codebase that wasn't built with internationalization in mind.
+Scans your source code for hardcoded user-facing strings and instruments them with i18next translation calls. This is useful for adding i18next instrumentation to an existing codebase that wasn't built with internationalization in mind. You can see this in action in [this video](https://youtu.be/aWZnZXwGg34) or in [this blog post](https://www.locize.com/blog/i18next-cli-instrument).
 
 > **⚠️ First-Step Tool:** The `instrument` command uses heuristic-based detection and is designed as a **first pass** to identify and suggest transformation candidates. It will **not catch 100% of cases**, and you should expect both false positives and false negatives. Always review the suggested transformations carefully before committing them to your codebase. Think of it as an intelligent code assistant, not an automated compiler.
 
