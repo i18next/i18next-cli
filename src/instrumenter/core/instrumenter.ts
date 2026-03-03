@@ -47,6 +47,7 @@ export async function runInstrumenter (
     let totalTransformed = 0
     let totalSkipped = 0
     let totalLanguageChanges = 0
+    let usesI18nextT = false
 
     // Detect framework and language
     const hasReact = await isProjectUsingReact()
@@ -189,6 +190,11 @@ export async function runInstrumenter (
           totalLanguageChanges += transformResult.languageChangeCount
           totalSkipped += candidates.length - approvedCandidates.length
 
+          // Track whether any non-component candidate was transformed (i.e. i18next.t() was used)
+          if (!usesI18nextT && approvedCandidates.some(c => !c.insideComponent && c.confidence >= 0.7)) {
+            usesI18nextT = true
+          }
+
           // Log any warnings (e.g. i18next.t() in React files)
           if (transformResult.warnings?.length) {
             for (const warning of transformResult.warnings) {
@@ -216,7 +222,7 @@ export async function runInstrumenter (
 
     // Generate i18n init file if needed and any transformations were made
     if ((totalTransformed > 0 || totalLanguageChanges > 0) && !options.isDryRun) {
-      const initFilePath = await ensureI18nInitFile(hasReact, hasTypeScript, config, logger)
+      const initFilePath = await ensureI18nInitFile(hasReact, hasTypeScript, config, logger, usesI18nextT)
       if (initFilePath) {
         await injectI18nImportIntoEntryFile(initFilePath, logger)
       }
@@ -1542,6 +1548,79 @@ async function isProjectUsingReact (): Promise<boolean> {
   }
 }
 
+// ── Project environment detection ───────────────────────────────────────
+
+type ProjectEnvironment = 'browser' | 'node-server' | 'edge' | 'unknown'
+
+/** Well-known frontend framework packages (presence → browser environment). */
+const FRONTEND_FRAMEWORKS = [
+  'react', 'react-i18next', 'vue', 'vue-i18next',
+  '@angular/core', 'angular-i18next',
+  'svelte', 'svelte-i18next',
+  'preact', 'solid-js', 'jquery', 'lit', 'ember-source', 'stimulus',
+  'next', 'nuxt', 'gatsby', '@remix-run/react', 'astro'
+]
+
+/** Well-known bundlers whose presence implies a browser build target. */
+const BUNDLERS = [
+  'webpack', 'vite', '@vitejs/plugin-react', 'rollup', 'parcel',
+  'esbuild', 'turbopack', 'snowpack'
+]
+
+/** Edge/serverless markers (no filesystem access). */
+const EDGE_MARKERS = [
+  '@cloudflare/workers-types', 'wrangler', '@cloudflare/next-on-pages',
+  '@vercel/edge', '@netlify/edge-functions', '@deno/kv'
+]
+
+/** Well-known Node.js server frameworks. */
+const SERVER_FRAMEWORKS = [
+  'express', 'fastify', 'koa', 'hapi', '@hapi/hapi',
+  '@nestjs/core', 'restify', 'micro', 'polka', 'h3'
+]
+
+/**
+ * Analyses `package.json` dependencies (and a few project-root files) to
+ * classify the project's runtime environment.
+ *
+ * Priority order:
+ *   1. Edge / serverless markers  → `'edge'`   (no filesystem)
+ *   2. Frontend framework or bundler → `'browser'`
+ *   3. Node.js server framework   → `'node-server'`
+ *   4. Fallback                   → `'unknown'`
+ */
+async function detectProjectEnvironment (): Promise<ProjectEnvironment> {
+  try {
+    const packageJsonPath = process.cwd() + '/package.json'
+    const raw = await readFile(packageJsonPath, 'utf-8')
+    const packageJson = JSON.parse(raw)
+    const allDeps: Record<string, string> = {
+      ...packageJson.dependencies,
+      ...packageJson.devDependencies
+    }
+    const has = (list: string[]) => list.some(dep => !!allDeps[dep])
+
+    // 1. Edge / serverless (check first — these projects may also list a
+    //    bundler or even a framework, but they have no filesystem)
+    if (has(EDGE_MARKERS)) return 'edge'
+    // Also check for wrangler.toml / wrangler.json
+    const cwd = process.cwd()
+    if (await fileExists(join(cwd, 'wrangler.toml')) || await fileExists(join(cwd, 'wrangler.json'))) {
+      return 'edge'
+    }
+
+    // 2. Browser / frontend
+    if (has(FRONTEND_FRAMEWORKS) || has(BUNDLERS)) return 'browser'
+
+    // 3. Node.js server
+    if (has(SERVER_FRAMEWORKS)) return 'node-server'
+
+    return 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
 /**
  * Checks if the project uses TypeScript (looks for tsconfig.json).
  */
@@ -1594,18 +1673,17 @@ function buildDynamicImportPath (outputTemplate: string, initDir: string): strin
  * Ensures that an i18n initialization file exists in the project.
  * If no existing init file is found, generates a sensible default.
  *
- * When extract.output is a string template, the generated file uses
- * i18next-resources-to-backend with a dynamic import derived from the
- * output path — making i18next ready to load translations out of the box.
- *
- * For React projects: creates i18n.ts with react-i18next integration.
- * For non-React projects: creates i18n.ts with basic i18next init.
+ * The generated file's backend strategy depends on the project context:
+ * - React app without i18next.t() → `i18next-resources-to-backend` (async dynamic imports)
+ * - React app with i18next.t()    → bundled resources (static imports, synchronous)
+ * - Server-side (no React)        → `i18next-fs-backend` (filesystem, initImmediate: false + preload)
  */
 async function ensureI18nInitFile (
   hasReact: boolean,
   hasTypeScript: boolean,
   config: I18nextToolkitConfig,
-  logger: Logger
+  logger: Logger,
+  usesI18nextT: boolean
 ): Promise<string | null> {
   const cwd = process.cwd()
 
@@ -1642,127 +1720,18 @@ async function ensureI18nInitFile (
   const initFileExt = hasTypeScript ? '.ts' : '.js'
   const initFilePath = join(initDir, 'i18n' + initFileExt)
 
-  const primaryLang = config.extract.primaryLanguage ?? config.locales[0] ?? 'en'
-  const defaultNS = config.extract.defaultNS !== false ? (config.extract.defaultNS || 'translation') : null
+  const environment = await detectProjectEnvironment()
+  const strategy = determineBackendStrategy(environment, usesI18nextT)
+  const outputTemplate = typeof config.extract.output === 'string' ? config.extract.output : null
 
-  // Build the .init({...}) options block
-  const initOptions: string[] = [
-    '    returnEmptyString: false, // allows empty string as valid translation',
-    `    // lng: ${config.locales.at(-1)}, // or add a language detector to detect the preferred language of your user`,
-    `    fallbackLng: '${primaryLang}'`,
-  ]
-  if (defaultNS) {
-    initOptions.push(`    defaultNS: '${defaultNS}'`)
-  }
-  const initBlock = initOptions.join(',\n')
-
-  let initContent: string
-
-  if (typeof config.extract.output === 'string') {
-    // Derive a dynamic import path so the generated init file loads translations automatically
-    const dynamicImportPath = buildDynamicImportPath(config.extract.output, initDir)
-    const importPathTemplate = dynamicImportPath
-      // eslint-disable-next-line no-template-curly-in-string
-      .replace(/\{\{language\}\}|\{\{lng\}\}/g, '${language}')
-      // eslint-disable-next-line no-template-curly-in-string
-      .replace(/\{\{namespace\}\}/g, '${namespace}')
-
-    const hasNamespace = config.extract.output.includes('{{namespace}}')
-    const callbackParams = hasNamespace ? hasTypeScript ? 'language: string, namespace: string' : 'language, namespace' : hasTypeScript ? 'language: string' : 'language'
-    const backendUseLine = '  .use(resourcesToBackend((' + callbackParams + ') => import(`' + importPathTemplate + '`)))'
-
-    if (hasReact) {
-      initContent = `// Generated by i18next-cli — review and adapt to your project's needs.
-// You may need to install dependencies: npm install i18next react-i18next i18next-resources-to-backend
-//
-// Other translation loading approaches:
-//   • Static imports or bundled JSON: https://www.i18next.com/how-to/add-or-load-translations
-//   • Lazy-load from a server: https://github.com/i18next/i18next-http-backend
-//   • Manage translations with your team via Locize: https://www.locize.com
-//     (see i18next-locize-backend: https://github.com/locize/i18next-locize-backend)
-import i18next from 'i18next'
-import { initReactI18next } from 'react-i18next'
-import resourcesToBackend from 'i18next-resources-to-backend'
-
-i18next
-  .use(initReactI18next)
-${backendUseLine}
-  .init({
-${initBlock}
+  const initContent = buildInitFileContent({
+    strategy,
+    hasReact,
+    hasTypeScript,
+    config,
+    initDir,
+    outputTemplate
   })
-
-export default i18next
-`
-    } else {
-      initContent = `// Generated by i18next-cli — review and adapt to your project's needs.
-// You may need to install the dependency: npm install i18next i18next-resources-to-backend
-//
-// Other translation loading approaches:
-//   • Static imports or bundled JSON: https://www.i18next.com/how-to/add-or-load-translations
-//   • Lazy-load from a server: https://github.com/i18next/i18next-http-backend
-//   • Manage translations with your team via Locize: https://www.locize.com
-//     (see i18next-locize-backend: https://github.com/locize/i18next-locize-backend)
-import i18next from 'i18next'
-import resourcesToBackend from 'i18next-resources-to-backend'
-
-i18next
-${backendUseLine}
-  .init({
-${initBlock}
-  })
-
-export default i18next
-`
-    }
-  } else {
-    // Output is a function — can't derive import path, fall back to comments only
-    if (hasReact) {
-      initContent = `// Generated by i18next-cli — review and adapt to your project's needs.
-// You may need to install dependencies: npm install i18next react-i18next
-//
-// Loading translations:
-//   • Static imports or bundled JSON: https://www.i18next.com/how-to/add-or-load-translations
-//   • Lazy-load in memory with dynamic imports: https://github.com/i18next/i18next-resources-to-backend
-//   • Lazy-load from a backend: https://github.com/i18next/i18next-http-backend
-//   • Manage translations with your team via Locize: https://www.locize.com
-//     (see i18next-locize-backend: https://github.com/locize/i18next-locize-backend)
-import i18next from 'i18next'
-import { initReactI18next } from 'react-i18next'
-
-i18next
-  .use(initReactI18next)
-  .init({
-    returnEmptyString: false, // allows empty string as valid translation
-    // lng: ${config.locales.at(-1)}, // or add a language detector to detect the preferred language of your user
-    fallbackLng: '${primaryLang}'
-    // resources: { ... }  — or use a backend plugin to load translations
-  })
-
-export default i18next
-`
-    } else {
-      initContent = `// Generated by i18next-cli — review and adapt to your project's needs.
-// You may need to install the dependency: npm install i18next
-//
-// Loading translations:
-//   • Static imports or bundled JSON: https://www.i18next.com/how-to/add-or-load-translations
-//   • Lazy-load in memory with dynamic imports: https://github.com/i18next/i18next-resources-to-backend
-//   • Lazy-load from a backend: https://github.com/i18next/i18next-http-backend
-//   • Manage translations with your team via Locize: https://www.locize.com
-//     (see i18next-locize-backend: https://github.com/locize/i18next-locize-backend)
-import i18next from 'i18next'
-
-i18next.init({
-  returnEmptyString: false, // allows empty string as valid translation
-  // lng: ${config.locales.at(-1)}, // or add a language detector to detect the preferred language of your user
-  fallbackLng: '${primaryLang}'
-  // resources: { ... }  — or use a backend plugin to load translations
-})
-
-export default i18next
-`
-    }
-  }
 
   try {
     await mkdir(initDir, { recursive: true })
@@ -1773,6 +1742,198 @@ export default i18next
     logger.warn(`Failed to generate i18n init file: ${err}`)
     return null
   }
+}
+
+// ── Backend strategy helpers ─────────────────────────────────────────────
+
+type BackendStrategy = 'resources-to-backend' | 'bundled-resources' | 'fs-backend'
+
+/**
+ * Determines which backend strategy to use for the i18n init file.
+ *
+ * Decision logic:
+ *   1. Node.js server with filesystem → `fs-backend`
+ *      (synchronous with `initImmediate: false` + `preload`)
+ *   2. Browser / edge / unknown with `i18next.t()` outside React components →
+ *      `bundled-resources` (static imports so resources are available synchronously)
+ *   3. Otherwise → `resources-to-backend` (async dynamic imports, lazy-loaded)
+ */
+function determineBackendStrategy (environment: ProjectEnvironment, usesI18nextT: boolean): BackendStrategy {
+  if (environment === 'node-server') return 'fs-backend'
+  if (usesI18nextT) return 'bundled-resources'
+  return 'resources-to-backend'
+}
+
+/**
+ * Builds the full i18n init file content from composable parts,
+ * avoiding repetition across different strategies.
+ */
+function buildInitFileContent (opts: {
+  strategy: BackendStrategy
+  hasReact: boolean
+  hasTypeScript: boolean
+  config: I18nextToolkitConfig
+  initDir: string
+  outputTemplate: string | null
+}): string {
+  const { strategy, hasReact, hasTypeScript, config, initDir, outputTemplate } = opts
+  const primaryLang = config.extract.primaryLanguage ?? config.locales[0] ?? 'en'
+  const defaultNS = config.extract.defaultNS !== false ? (config.extract.defaultNS || 'translation') : null
+  const ns = defaultNS || 'translation'
+
+  // ── Dependencies for the install hint ──
+  const deps: string[] = ['i18next']
+  if (hasReact) deps.push('react-i18next')
+  if (strategy === 'resources-to-backend' && outputTemplate) deps.push('i18next-resources-to-backend')
+  if (strategy === 'fs-backend' && outputTemplate) deps.push('i18next-fs-backend')
+
+  const lines: string[] = []
+
+  // ── Header comment ──
+  lines.push(
+    "// Generated by i18next-cli — review and adapt to your project's needs.",
+    `// You may need to install dependencies: npm install ${deps.join(' ')}`,
+    '//',
+    '// Other translation loading approaches:',
+    '//   • Static imports or bundled JSON: https://www.i18next.com/how-to/add-or-load-translations',
+    '//   • Lazy-load from a server: https://github.com/i18next/i18next-http-backend',
+    '//   • Manage translations with your team via Locize: https://www.locize.com',
+    '//     (see i18next-locize-backend: https://github.com/locize/i18next-locize-backend)'
+  )
+
+  // ── Import declarations ──
+  lines.push("import i18next from 'i18next'")
+  if (hasReact) lines.push("import { initReactI18next } from 'react-i18next'")
+
+  if (outputTemplate) {
+    switch (strategy) {
+      case 'resources-to-backend':
+        lines.push("import resourcesToBackend from 'i18next-resources-to-backend'")
+        break
+      case 'bundled-resources':
+        for (const locale of config.locales) {
+          const importPath = buildResourceImportPath(outputTemplate, initDir, locale, ns)
+          lines.push(`import ${toResourceVarName(locale, ns)} from '${importPath}'`)
+        }
+        break
+      case 'fs-backend':
+        lines.push("import Backend from 'i18next-fs-backend'")
+        lines.push("import { resolve, dirname } from 'node:path'")
+        lines.push("import { fileURLToPath } from 'node:url'")
+        break
+    }
+  }
+
+  // ── Pre-init statements ──
+  lines.push('')
+  if (strategy === 'fs-backend' && outputTemplate) {
+    lines.push('const __dirname = dirname(fileURLToPath(import.meta.url))')
+    lines.push('')
+  }
+
+  // ── .use() chain entries ──
+  const useEntries: string[] = []
+  if (hasReact) useEntries.push('  .use(initReactI18next)')
+  if (outputTemplate) {
+    if (strategy === 'resources-to-backend') {
+      const dynamicPath = buildDynamicImportPath(outputTemplate, initDir)
+      const importPathTemplate = dynamicPath
+        // eslint-disable-next-line no-template-curly-in-string
+        .replace(/\{\{language\}\}|\{\{lng\}\}/g, '${language}')
+        // eslint-disable-next-line no-template-curly-in-string
+        .replace(/\{\{namespace\}\}/g, '${namespace}')
+      const hasNamespace = outputTemplate.includes('{{namespace}}')
+      const cbParams = hasNamespace
+        ? (hasTypeScript ? 'language: string, namespace: string' : 'language, namespace')
+        : (hasTypeScript ? 'language: string' : 'language')
+      useEntries.push(`  .use(resourcesToBackend((${cbParams}) => import(\`${importPathTemplate}\`)))`)
+    } else if (strategy === 'fs-backend') {
+      useEntries.push('  .use(Backend)')
+    }
+  }
+
+  // Emit the i18next chain — use compact form if no .use() calls
+  const awaitPrefix = (strategy === 'fs-backend' && outputTemplate) ? 'await ' : ''
+  if (useEntries.length > 0) {
+    lines.push(`${awaitPrefix}i18next`)
+    lines.push(...useEntries)
+    lines.push('  .init({')
+  } else {
+    lines.push(`${awaitPrefix}i18next.init({`)
+  }
+
+  // ── .init() options ──
+  const initOpts: string[] = []
+
+  if (strategy === 'fs-backend' && outputTemplate) {
+    initOpts.push('    initImmediate: false,')
+  }
+  initOpts.push('    returnEmptyString: false, // allows empty string as valid translation')
+  initOpts.push(`    // lng: '${config.locales.at(-1)}', // or add a language detector to detect the preferred language of your user`)
+  initOpts.push(`    fallbackLng: '${primaryLang}',`)
+  if (defaultNS) {
+    initOpts.push(`    defaultNS: '${ns}',`)
+  }
+
+  // Strategy-specific init options
+  if (outputTemplate) {
+    if (strategy === 'bundled-resources') {
+      initOpts.push('    resources: {')
+      for (const locale of config.locales) {
+        const key = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(locale) ? locale : `'${locale}'`
+        initOpts.push(`      ${key}: { ${ns}: ${toResourceVarName(locale, ns)} },`)
+      }
+      initOpts.push('    },')
+    } else if (strategy === 'fs-backend') {
+      const loadPath = buildFsBackendLoadPath(outputTemplate, initDir)
+      initOpts.push(`    preload: [${config.locales.map(l => `'${l}'`).join(', ')}],`)
+      initOpts.push('    backend: {')
+      initOpts.push(`      loadPath: resolve(__dirname, '${loadPath}'),`)
+      initOpts.push('    },')
+    }
+  } else {
+    // No concrete output path — user needs to configure loading manually
+    initOpts.push('    // resources: { ... }  — or use a backend plugin to load translations')
+  }
+
+  lines.push(initOpts.join('\n'))
+  lines.push('  })')
+  lines.push('')
+  lines.push('export default i18next')
+  lines.push('')
+
+  return lines.join('\n')
+}
+
+/**
+ * Resolves the import path for a specific locale/namespace resource file
+ * (used by the bundled-resources strategy).
+ */
+function buildResourceImportPath (outputTemplate: string, initDir: string, locale: string, namespace: string): string {
+  const rel = buildDynamicImportPath(outputTemplate, initDir)
+  return rel
+    .replace(/\{\{language\}\}|\{\{lng\}\}/g, locale)
+    .replace(/\{\{namespace\}\}|\{\{ns\}\}/g, namespace)
+}
+
+/**
+ * Resolves the loadPath for i18next-fs-backend, using i18next's `{{lng}}`
+ * and `{{ns}}` interpolation syntax.
+ */
+function buildFsBackendLoadPath (outputTemplate: string, initDir: string): string {
+  const rel = buildDynamicImportPath(outputTemplate, initDir)
+  return rel
+    .replace(/\{\{language\}\}/g, '{{lng}}')
+    .replace(/\{\{namespace\}\}/g, '{{ns}}')
+}
+
+/**
+ * Converts a locale + namespace pair to a valid JS variable name.
+ * E.g. ('en', 'translation') → 'enTranslation', ('zh-CN', 'common') → 'zhCNCommon'
+ */
+function toResourceVarName (locale: string, namespace: string): string {
+  const sanitizedLocale = locale.replace(/[^a-zA-Z0-9]/g, '')
+  return sanitizedLocale + namespace.charAt(0).toUpperCase() + namespace.slice(1)
 }
 
 /**

@@ -352,27 +352,180 @@ export function Notices () {
   // ─────────────────────────────────────────────────────────────────────
   // i18n init file is auto-generated when missing
   // ─────────────────────────────────────────────────────────────────────
-  it('generates i18n init file if not already present', async () => {
+  it('generates bundled-resources init file when i18next.t() is used (React + sync)', async () => {
+    // The default project has messages.ts (utility file → i18next.t()) plus React components,
+    // so the strategy should be 'bundled-resources' (synchronous).
     const config = makeConfig()
     await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
 
-    // A src/i18n.ts should have been generated
     const initFilePath = join(tempDir, 'src', 'i18n.ts')
     const initContent = await readFile(initFilePath, 'utf-8')
 
-    // React project should get react-i18next + resources-to-backend integration
+    // Should have core imports
     expect(initContent).toContain("import i18next from 'i18next'")
     expect(initContent).toContain('initReactI18next')
-    expect(initContent).toContain("import resourcesToBackend from 'i18next-resources-to-backend'")
-    expect(initContent).toContain('.use(resourcesToBackend(')
-    expect(initContent).toContain('import(`')
     expect(initContent).toContain('.init(')
     expect(initContent).toContain("fallbackLng: 'en'")
     expect(initContent).toContain("defaultNS: 'translation'")
     expect(initContent).toContain('locize.com')
 
+    // Bundled-resources: static imports of locale JSON files + resources option
+    expect(initContent).toMatch(/import enTranslation from ['"].*locales\/en\/translation\.json['"]/)
+    expect(initContent).toMatch(/import deTranslation from ['"].*locales\/de\/translation\.json['"]/)
+    expect(initContent).toContain('resources: {')
+    expect(initContent).toContain('en: { translation: enTranslation }')
+    expect(initContent).toContain('de: { translation: deTranslation }')
+
+    // Should NOT use resources-to-backend (async) since i18next.t() needs sync resources
+    expect(initContent).not.toContain('resourcesToBackend')
+    expect(initContent).not.toContain('import(`')
+  })
+
+  it('generates resources-to-backend init file for React-only project (no i18next.t())', async () => {
+    // Remove the utility file so only React components remain (all use t() from hook)
+    const { unlink } = await import('node:fs/promises')
+    try { await unlink(join(tempDir, 'src', 'utils', 'messages.ts')) } catch { /* ignore */ }
+
+    const config = makeConfig()
+    await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+
+    const initFilePath = join(tempDir, 'src', 'i18n.ts')
+    const initContent = await readFile(initFilePath, 'utf-8')
+
+    // React project with no i18next.t() → async resources-to-backend
+    expect(initContent).toContain("import i18next from 'i18next'")
+    expect(initContent).toContain('initReactI18next')
+    expect(initContent).toContain("import resourcesToBackend from 'i18next-resources-to-backend'")
+    expect(initContent).toContain('.use(resourcesToBackend(')
+    expect(initContent).toContain('import(`')
+    expect(initContent).toContain("fallbackLng: 'en'")
+    expect(initContent).toContain("defaultNS: 'translation'")
+
     // Dynamic import path should be relative from src/ to locales/
     expect(initContent).toMatch(/import\(`\.\.\/.*locales\/\$\{language\}\/\$\{namespace\}\.json`\)/)
+
+    // Should NOT have bundled resources
+    expect(initContent).not.toContain('resources: {')
+  })
+
+  it('generates fs-backend init file for non-React (server-side) project', async () => {
+    // Rewrite package.json WITHOUT React but WITH a server framework
+    await fs.writeFile(
+      join(tempDir, 'package.json'),
+      JSON.stringify({
+        name: 'test-server-project',
+        dependencies: { i18next: '^23.0.0', express: '^4.0.0' }
+      }, null, 2)
+    )
+
+    // Remove React components, keep only a plain TS utility with strings
+    const { unlink } = await import('node:fs/promises')
+    for (const f of ['Greeting.tsx', 'Notices.tsx']) {
+      try { await unlink(join(tempDir, 'src', 'components', f)) } catch { /* ignore */ }
+    }
+    try { await unlink(join(tempDir, 'src', 'pages', 'Dashboard.tsx')) } catch { /* ignore */ }
+
+    const config = makeConfig()
+    await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+
+    const initFilePath = join(tempDir, 'src', 'i18n.ts')
+    const initContent = await readFile(initFilePath, 'utf-8')
+
+    // Server-side → fs-backend
+    expect(initContent).toContain("import i18next from 'i18next'")
+    expect(initContent).toContain("import Backend from 'i18next-fs-backend'")
+    expect(initContent).toContain('.use(Backend)')
+    expect(initContent).toContain('initImmediate: false,')
+    expect(initContent).toContain("preload: ['en', 'de']")
+    expect(initContent).toContain('backend: {')
+    expect(initContent).toContain('loadPath:')
+    expect(initContent).toContain('{{lng}}')
+    expect(initContent).toContain('{{ns}}')
+    expect(initContent).toContain("fallbackLng: 'en'")
+    expect(initContent).toContain('await i18next')
+
+    // Should import path utilities for __dirname
+    expect(initContent).toContain("from 'node:path'")
+    expect(initContent).toContain("from 'node:url'")
+    expect(initContent).toContain('import.meta.url')
+
+    // Should NOT have React-specific imports
+    expect(initContent).not.toContain('initReactI18next')
+    expect(initContent).not.toContain('resourcesToBackend')
+  })
+
+  it('generates bundled-resources init for unknown environment (no React, no server framework)', async () => {
+    // Package.json with only i18next — no React, no server framework, no bundler.
+    // The utility file (messages.ts) causes i18next.t() to be emitted, so
+    // usesI18nextT=true → bundled-resources (works everywhere, synchronous).
+    // Crucially, it should NOT default to fs-backend since we can't assume
+    // filesystem access in an unknown environment.
+    await fs.writeFile(
+      join(tempDir, 'package.json'),
+      JSON.stringify({
+        name: 'test-unknown-project',
+        dependencies: { i18next: '^23.0.0' }
+      }, null, 2)
+    )
+
+    // Remove React components, keep only the plain TS utility with strings
+    const { unlink } = await import('node:fs/promises')
+    for (const f of ['Greeting.tsx', 'Notices.tsx']) {
+      try { await unlink(join(tempDir, 'src', 'components', f)) } catch { /* ignore */ }
+    }
+    try { await unlink(join(tempDir, 'src', 'pages', 'Dashboard.tsx')) } catch { /* ignore */ }
+
+    const config = makeConfig()
+    await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+
+    const initFilePath = join(tempDir, 'src', 'i18n.ts')
+    const initContent = await readFile(initFilePath, 'utf-8')
+
+    // Unknown environment with i18next.t() → bundled-resources (synchronous, portable)
+    expect(initContent).toContain("import i18next from 'i18next'")
+    expect(initContent).toContain('resources: {')
+    expect(initContent).toMatch(/import \w+Translation from ['"]/)
+    expect(initContent).toContain("fallbackLng: 'en'")
+
+    // Should NOT use fs-backend (can't assume filesystem) or React imports
+    expect(initContent).not.toContain('i18next-fs-backend')
+    expect(initContent).not.toContain('initReactI18next')
+    expect(initContent).not.toContain('initImmediate')
+  })
+
+  it('generates bundled-resources init for edge runtime project', async () => {
+    // Package.json with Cloudflare Workers types (edge environment)
+    await fs.writeFile(
+      join(tempDir, 'package.json'),
+      JSON.stringify({
+        name: 'test-edge-project',
+        dependencies: { i18next: '^23.0.0' },
+        devDependencies: { '@cloudflare/workers-types': '^4.0.0', wrangler: '^3.0.0' }
+      }, null, 2)
+    )
+
+    // Write a plain utility file so i18next.t() is used
+    const { unlink } = await import('node:fs/promises')
+    for (const f of ['Greeting.tsx', 'Notices.tsx']) {
+      try { await unlink(join(tempDir, 'src', 'components', f)) } catch { /* ignore */ }
+    }
+    try { await unlink(join(tempDir, 'src', 'pages', 'Dashboard.tsx')) } catch { /* ignore */ }
+
+    const config = makeConfig()
+    await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+
+    const initFilePath = join(tempDir, 'src', 'i18n.ts')
+    const initContent = await readFile(initFilePath, 'utf-8')
+
+    // Edge with i18next.t() → bundled-resources (no filesystem on edge)
+    expect(initContent).toContain("import i18next from 'i18next'")
+    expect(initContent).toContain('resources: {')
+    expect(initContent).toMatch(/import \w+Translation from ['"]/)
+
+    // Should NOT have fs-backend or React-specific imports
+    expect(initContent).not.toContain('i18next-fs-backend')
+    expect(initContent).not.toContain('initReactI18next')
+    expect(initContent).not.toContain('initImmediate')
   })
 
   // ─────────────────────────────────────────────────────────────────────
