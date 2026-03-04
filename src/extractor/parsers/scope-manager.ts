@@ -1,5 +1,6 @@
 import type {
   Expression,
+  MemberExpression,
   VariableDeclarator,
   CallExpression,
   TemplateLiteral,
@@ -17,6 +18,9 @@ export class ScopeManager {
 
   // Track simple local constants with string literal values to resolve identifier args
   private simpleConstants: Map<string, string> = new Map()
+
+  // Track simple local constant objects with string literal property values
+  private simpleConstantObjects: Map<string, Record<string, string>> = new Map()
 
   constructor (config: Omit<I18nextToolkitConfig, 'plugins'>) {
     this.config = config
@@ -71,6 +75,7 @@ export class ScopeManager {
     this.scopeStack = []
     this.scope = new Map()
     this.simpleConstants.clear()
+    this.simpleConstantObjects.clear()
   }
 
   /**
@@ -159,6 +164,31 @@ export class ScopeManager {
   }
 
   /**
+   * Resolve a MemberExpression node (e.g., `ns.custom`) to its string value
+   * by looking up the object in `simpleConstantObjects`.
+   */
+  private resolveSimpleMemberExpression (node: MemberExpression): string | undefined {
+    if (node.object.type !== 'Identifier') {
+      return undefined
+    }
+
+    const map = this.simpleConstantObjects.get(node.object.value)
+    if (!map) {
+      return undefined
+    }
+
+    const prop = node.property
+    if (prop.type === 'Identifier') {
+      return map[prop.value]
+    }
+    if (prop.type === 'Computed' && prop.expression.type === 'StringLiteral') {
+      return map[prop.expression.value]
+    }
+
+    return undefined
+  }
+
+  /**
    * Handles variable declarations that might define translation functions.
    *
    * Processes two patterns:
@@ -180,6 +210,28 @@ export class ScopeManager {
       const unwrapped = ScopeManager.unwrapTsExpression(init)
       if (unwrapped?.type === 'StringLiteral') {
         this.simpleConstants.set(node.id.value, unwrapped.value)
+      } else if (unwrapped?.type === 'ObjectExpression' && Array.isArray(unwrapped.properties)) {
+        const map: Record<string, string> = {}
+        for (const p of unwrapped.properties) {
+          if (p.type !== 'KeyValueProperty') {
+            continue
+          }
+          const keyName = p.key.type === 'Identifier'
+            ? p.key.value
+            : p.key.type === 'StringLiteral'
+              ? p.key.value
+              : undefined
+          if (!keyName) {
+            continue
+          }
+          const val = ScopeManager.unwrapTsExpression(p.value)
+          if (val?.type === 'StringLiteral') {
+            map[keyName] = val.value
+          }
+        }
+        if (Object.keys(map).length > 0) {
+          this.simpleConstantObjects.set(node.id.value, map)
+        }
       } else {
         const fromType = ScopeManager.extractStringFromTypeAnnotation(node)
         if (fromType !== undefined) {
@@ -309,12 +361,16 @@ export class ScopeManager {
         if (nsNode?.type === 'StringLiteral') {
           defaultNs = nsNode.value
         } else if (nsNode?.type === 'Identifier') {
-          // ← FIX A: resolve const I18N_NS = 'users'
           defaultNs = this.resolveSimpleStringIdentifier(nsNode.value)
+        } else if (nsNode?.type === 'MemberExpression') {
+          defaultNs = this.resolveSimpleMemberExpression(nsNode)
         } else if (nsNode?.type === 'ArrayExpression') {
           const first = nsNode.elements[0]?.expression
-          if (first?.type === 'StringLiteral') defaultNs = first.value
-          else if (first?.type === 'Identifier') defaultNs = this.resolveSimpleStringIdentifier(first.value)
+          if (first?.type === 'StringLiteral') {
+            defaultNs = first.value
+          } else if (first?.type === 'Identifier') {
+            defaultNs = this.resolveSimpleStringIdentifier(first.value)
+          }
         }
       }
       kpArg = kpArgIndex === -1 ? undefined : callExpr.arguments?.[kpArgIndex]?.expression
@@ -387,12 +443,16 @@ export class ScopeManager {
         if (nsNode?.type === 'StringLiteral') {
           defaultNs = nsNode.value
         } else if (nsNode?.type === 'Identifier') {
-          // ← FIX A: resolve const I18N_NS = 'users'
           defaultNs = this.resolveSimpleStringIdentifier(nsNode.value)
+        } else if (nsNode?.type === 'MemberExpression') {
+          defaultNs = this.resolveSimpleMemberExpression(nsNode)
         } else if (nsNode?.type === 'ArrayExpression') {
           const first = nsNode.elements[0]?.expression
-          if (first?.type === 'StringLiteral') defaultNs = first.value
-          else if (first?.type === 'Identifier') defaultNs = this.resolveSimpleStringIdentifier(first.value)
+          if (first?.type === 'StringLiteral') {
+            defaultNs = first.value
+          } else if (first?.type === 'Identifier') {
+            defaultNs = this.resolveSimpleStringIdentifier(first.value)
+          }
         }
       }
       kpArg = kpArgIndex === -1 ? undefined : callExpr.arguments?.[kpArgIndex]?.expression
