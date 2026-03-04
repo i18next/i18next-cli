@@ -114,4 +114,58 @@ describe('extractor: scope tests', () => {
       await fs.rm(tmp, { recursive: true, force: true })
     }
   })
+
+  it('should resolve imported string constants as useTranslation namespace', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'i18next-cli-test-'))
+    const originalCwd = process.cwd()
+    try {
+      const srcDir = path.join(tmp, 'src')
+      await fs.mkdir(srcDir, { recursive: true })
+
+      const constantsPath = path.join(srcDir, 'constants.ts')
+      const componentPath = path.join(srcDir, 'Component.tsx')
+
+      await fs.writeFile(
+        constantsPath,
+        `
+        export const I18N_NS = 'my-feature' as const
+        `
+      )
+
+      await fs.writeFile(
+        componentPath,
+        `
+        import { useTranslation } from 'react-i18next';
+        import { I18N_NS } from './constants';
+        export const Component = () => {
+          const { t } = useTranslation(I18N_NS);
+          return <div>{t('title')}</div>;
+        };
+        `
+      )
+
+      process.chdir(tmp)
+
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [constantsPath, componentPath],
+          output: 'locales/{{language}}/{{namespace}}.json',
+          functions: ['t'],
+          transComponents: [],
+          defaultNS: 'translation',
+        },
+      } as any
+
+      await runExtractor(config)
+
+      const nsPath = path.join(tmp, 'locales/en/my-feature.json')
+      const nsJson = JSON.parse(await fs.readFile(nsPath, 'utf-8'))
+
+      expect(nsJson).toHaveProperty('title')
+    } finally {
+      process.chdir(originalCwd)
+      await fs.rm(tmp, { recursive: true, force: true })
+    }
+  })
 })

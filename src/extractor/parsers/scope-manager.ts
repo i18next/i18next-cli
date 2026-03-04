@@ -22,6 +22,11 @@ export class ScopeManager {
   // Track simple local constant objects with string literal property values
   private simpleConstantObjects: Map<string, Record<string, string>> = new Map()
 
+  // Shared (cross-file) tables so that exported constants from one file can be
+  // resolved when imported in another. These are NOT cleared by reset().
+  private sharedConstants: Map<string, string> = new Map()
+  private sharedConstantObjects: Map<string, Record<string, string>> = new Map()
+
   constructor (config: Omit<I18nextToolkitConfig, 'plugins'>) {
     this.config = config
   }
@@ -160,7 +165,7 @@ export class ScopeManager {
    * Resolve simple identifier declared in-file to its string literal value, if known.
    */
   public resolveSimpleStringIdentifier (name: string): string | undefined {
-    return this.simpleConstants.get(name)
+    return this.simpleConstants.get(name) ?? this.sharedConstants.get(name)
   }
 
   /**
@@ -172,7 +177,7 @@ export class ScopeManager {
       return undefined
     }
 
-    const map = this.simpleConstantObjects.get(node.object.value)
+    const map = this.simpleConstantObjects.get(node.object.value) ?? this.sharedConstantObjects.get(node.object.value)
     if (!map) {
       return undefined
     }
@@ -210,6 +215,7 @@ export class ScopeManager {
       const unwrapped = ScopeManager.unwrapTsExpression(init)
       if (unwrapped?.type === 'StringLiteral') {
         this.simpleConstants.set(node.id.value, unwrapped.value)
+        this.sharedConstants.set(node.id.value, unwrapped.value)
       } else if (unwrapped?.type === 'ObjectExpression' && Array.isArray(unwrapped.properties)) {
         const map: Record<string, string> = {}
         for (const p of unwrapped.properties) {
@@ -231,11 +237,13 @@ export class ScopeManager {
         }
         if (Object.keys(map).length > 0) {
           this.simpleConstantObjects.set(node.id.value, map)
+          this.sharedConstantObjects.set(node.id.value, map)
         }
       } else {
         const fromType = ScopeManager.extractStringFromTypeAnnotation(node)
         if (fromType !== undefined) {
           this.simpleConstants.set(node.id.value, fromType)
+          this.sharedConstants.set(node.id.value, fromType)
         }
       }
       // continue processing; still may be a useTranslation/getFixedT call below
