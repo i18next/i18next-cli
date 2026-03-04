@@ -345,6 +345,24 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should resolve namespace from type annotation in nested object', async () => {
+      const sampleCode = `
+        const ns = { custom: 'custom_namespace' as const } as const
+
+        const { t } = useTranslation(ns.custom);
+        const text = t('key');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/custom_namespace.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        key: 'key',
+      })
+    })
+
     it('should handle aliased t functions from useTranslation', async () => {
       const sampleCode = `
         const { t: myTr } = useTranslation('ns1');
