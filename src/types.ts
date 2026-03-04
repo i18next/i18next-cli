@@ -209,6 +209,14 @@ export interface I18nextToolkitConfig {
      * Return `undefined` to fall back to the built-in heuristic.
      */
     instrumentScorer?: CustomCandidateScorer;
+
+    /**
+     * Warn (or error) when the same ns:key is extracted with different default values.
+     * - `true` or `'warn'`: log a warning for each conflict
+     * - `'error'`: throw an error on the first conflict, aborting extraction
+     * - `false` or omitted: silent (default)
+     */
+    warnOnConflicts?: boolean | 'warn' | 'error';
   };
 
   /** Configuration options for linter */
@@ -503,6 +511,17 @@ export interface Plugin extends LinterPlugin, InstrumenterPlugin {
    * @param context - Context object with helper methods
    */
   onVisitNode?: (node: Node, context: PluginContext) => void;
+
+  /**
+   * Hook called synchronously for every translation key submitted to the extractor,
+   * including duplicates, before the deduplication decision is made.
+   * Receives a frozen, fully-normalized ExtractedKey snapshot (namespace resolved,
+   * defaultValue guaranteed non-null). The hook is purely observational — returning
+   * void — and does not alter what is stored.
+   *
+   * @param key - A frozen snapshot of the extracted key
+   */
+  onKeySubmitted?: (key: Readonly<ExtractedKey>) => void;
 
   /**
    * Hook called after all files have been processed.

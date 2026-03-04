@@ -1,6 +1,17 @@
 import type { ExtractedKey, PluginContext, I18nextToolkitConfig, Logger, Plugin, ScopeInfo } from '../types'
 
 /**
+ * Error thrown when warnOnConflicts is set to 'error' and a key conflict is detected.
+ * This error is intentionally not caught by the per-file error handler in the extractor.
+ */
+export class ConflictError extends Error {
+  constructor (message: string) {
+    super(message)
+    this.name = 'ConflictError'
+  }
+}
+
+/**
  * Initializes an array of plugins by calling their setup hooks.
  * This function should be called before starting the extraction process.
  *
@@ -50,6 +61,10 @@ export function createPluginContext (
     plugins: [...plugins],
   })
 
+  // Internal tracker for warnOnConflicts — maps uniqueKey → first defaultValue
+  const seenDefaults = new Map<string, string>()
+  const warnOnConflicts = config.extract?.warnOnConflicts
+
   return {
     addKey: (keyInfo: ExtractedKey) => {
       // Normalize boolean `false` namespace -> undefined (meaning "no explicit ns")
@@ -63,6 +78,44 @@ export function createPluginContext (
 
       const uniqueKey = `${nsForKey}:${keyInfo.key}`
       const defaultValue = keyInfo.defaultValue ?? keyInfo.key
+
+      // Fire onKeySubmitted hook for every submission (before deduplication)
+      const frozenKey: Readonly<ExtractedKey> = Object.freeze({
+        ...keyInfo,
+        ns: storedNs || config.extract?.defaultNS || 'translation',
+        nsIsImplicit,
+        defaultValue
+      })
+      for (const plugin of plugins) {
+        try {
+          plugin.onKeySubmitted?.(frozenKey)
+        } catch (err) {
+          logger.warn(`Plugin ${plugin.name} onKeySubmitted failed:`, err)
+        }
+      }
+
+      // Built-in warnOnConflicts check
+      if (warnOnConflicts) {
+        // Skip generic fallbacks (defaultValue === key) — these are the normal
+        // "override generic with specific" path handled by deduplication and
+        // should not trigger a conflict warning.
+        const isGenericFallback = defaultValue === keyInfo.key
+        const prev = seenDefaults.get(uniqueKey)
+        if (prev !== undefined && prev !== defaultValue && !isGenericFallback) {
+          const msg =
+            `Key "${uniqueKey}" has conflicting default values:\n` +
+            `  "${prev}" (first seen)\n` +
+            `  "${defaultValue}" (duplicate)`
+          if (warnOnConflicts === 'error') {
+            throw new ConflictError(msg)
+          } else {
+            logger.warn(msg)
+          }
+        }
+        if (prev === undefined && !isGenericFallback) {
+          seenDefaults.set(uniqueKey, defaultValue)
+        }
+      }
 
       // Check if key already exists
       const existingKey = allKeys.get(uniqueKey)

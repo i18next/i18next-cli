@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.48.0](https://github.com/i18next/i18next-cli/compare/v1.47.12...v1.48.10) - 2026-03-04
+
+- feat(plugin): add `onKeySubmitted` hook to observe every key extraction before deduplication [#206](https://github.com/i18next/i18next-cli/issues/206)
+- feat(extract): add `warnOnConflicts` option to detect conflicting default values for the same key (`true` / `'warn'` to log, `'error'` to throw)
+
 ## [1.47.12](https://github.com/i18next/i18next-cli/compare/v1.47.11...v1.47.12) - 2026-03-04
 
 - Extractor: Handle object props as namespace [#205](https://github.com/i18next/i18next-cli/pull/205)

@@ -8,6 +8,7 @@ import type { Logger, I18nextToolkitConfig, Plugin, PluginContext } from '../../
 import { findKeys } from './key-finder'
 import { getTranslations } from './translation-manager'
 import { validateExtractorConfig, ExtractorError } from '../../utils/validation'
+import { ConflictError } from '../plugin-manager'
 import { extractKeysFromComments } from '../parsers/comment-parser'
 import { normalizeASTSpans, findFirstTokenIndex } from '../parsers/ast-utils'
 import { ASTVisitors } from './ast-visitors'
@@ -250,6 +251,10 @@ export async function processFile (
       extractKeysFromComments(code, pluginContext, config, astVisitors.getVarFromScope.bind(astVisitors))
     }
   } catch (error) {
+    // Re-throw ConflictError so warnOnConflicts: 'error' aborts extraction
+    if (error instanceof ConflictError) {
+      throw error
+    }
     logger.warn(`${styleText('yellow', 'Skipping file due to error:')} ${file}`)
 
     const err = error as any
