@@ -281,6 +281,17 @@ export class ASTVisitors {
         // capture enums into resolver symbol table
         this.expressionResolver.captureEnumDeclaration(node)
         break
+      // pattern 2: capture type aliases so `declare const x: Alias` can be resolved
+      case 'TsTypeAliasDeclaration':
+      case 'TSTypeAliasDeclaration':
+      case 'TsTypeAliasDecl':
+        this.expressionResolver.captureTypeAliasDeclaration(node)
+        break
+      // pattern 3: capture function return types so `t(fn())` can be resolved
+      case 'FunctionDeclaration':
+      case 'FnDecl':
+        this.expressionResolver.captureFunctionDeclaration(node)
+        break
       case 'CallExpression':
         this.callExpressionHandler.handleCallExpression(node, this.scopeManager.getVarFromScope.bind(this.scopeManager))
         break
@@ -329,6 +340,23 @@ export class ASTVisitors {
           if (item && item.id && Array.isArray(item.members)) {
             this.expressionResolver.captureEnumDeclaration(item)
             // continue to allow further traversal
+          }
+          // pre-scan type alias declarations and function declarations
+          if (item.type === 'TsTypeAliasDeclaration' || item.type === 'TSTypeAliasDeclaration' || item.type === 'TsTypeAliasDecl') {
+            this.expressionResolver.captureTypeAliasDeclaration(item)
+          }
+          if (item.type === 'FunctionDeclaration' || item.type === 'FnDecl') {
+            this.expressionResolver.captureFunctionDeclaration(item)
+          }
+          // Also handle ExportDeclaration wrapping either of the above
+          if ((item.type === 'ExportDeclaration' || item.type === 'ExportNamedDeclaration') && item.declaration) {
+            const decl = item.declaration
+            if (decl.type === 'TsTypeAliasDeclaration' || decl.type === 'TSTypeAliasDeclaration' || decl.type === 'TsTypeAliasDecl') {
+              this.expressionResolver.captureTypeAliasDeclaration(decl)
+            }
+            if (decl.type === 'FunctionDeclaration' || decl.type === 'FnDecl') {
+              this.expressionResolver.captureFunctionDeclaration(decl)
+            }
           }
           // Common case: VariableDeclaration which contains .declarations (VariableDeclarator[])
           if (item.type === 'VariableDeclaration' && Array.isArray(item.declarations)) {

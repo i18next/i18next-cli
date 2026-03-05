@@ -12,6 +12,10 @@ export class ExpressionResolver {
   // Shared (cross-file) table for enums / exported object maps that should persist
   private sharedEnumTable: Map<string, Record<string, string>> = new Map()
 
+  // Per-file table for type aliases: Maps typeName -> string[]
+  // e.g. `type ChangeType = 'all' | 'next' | 'this'` -> { ChangeType: ['all', 'next', 'this'] }
+  private typeAliasTable: Map<string, string[]> = new Map()
+
   constructor (hooks: ASTVisitorHooks) {
     this.hooks = hooks
   }
@@ -21,6 +25,7 @@ export class ExpressionResolver {
    */
   public resetFileSymbols (): void {
     this.variableTable.clear()
+    this.typeAliasTable.clear()
   }
 
   /**
@@ -35,16 +40,43 @@ export class ExpressionResolver {
    */
   captureVariableDeclarator (node: any): void {
     try {
-      if (!node || !node.id || !node.init) return
+      if (!node || !node.id) return
       // only handle simple identifier bindings like `const x = ...`
       if (node.id.type !== 'Identifier') return
       const name = node.id.value
+
+      // pattern 1:
+      // Handle `declare const x: 'a' | 'b'` and `declare const x: SomeUnion`
+      // where there is no initializer but a TypeScript type annotation.
+      if (!node.init) {
+        const typeAnnotation = this.extractTypeAnnotation(node.id)
+        if (typeAnnotation) {
+          const vals = this.resolvePossibleStringValuesFromType(typeAnnotation)
+          if (vals.length > 0) {
+            this.variableTable.set(name, vals)
+          }
+        }
+        return
+      }
+
       const init = node.init
 
+      // Unwrap TS type assertion wrappers before inspecting the shape of the initializer.
+      // `{ ... } as const` → TsConstAssertion; `x as Type` → TsAsExpression; etc.
+      // We need the raw expression to detect ObjectExpression and ArrowFunctionExpression.
+      let unwrappedInit = init
+      while (
+        unwrappedInit?.type === 'TsConstAssertion' ||
+        unwrappedInit?.type === 'TsAsExpression' ||
+        unwrappedInit?.type === 'TsSatisfiesExpression'
+      ) {
+        unwrappedInit = unwrappedInit.expression
+      }
+
       // ObjectExpression -> map of string props
-      if (init.type === 'ObjectExpression' && Array.isArray(init.properties)) {
+      if (unwrappedInit.type === 'ObjectExpression' && Array.isArray(unwrappedInit.properties)) {
         const map: Record<string, string> = {}
-        for (const p of init.properties as any[]) {
+        for (const p of unwrappedInit.properties as any[]) {
           if (!p || p.type !== 'KeyValueProperty') continue
           const keyNode = p.key
           const keyName = keyNode?.type === 'Identifier' ? keyNode.value : keyNode?.type === 'StringLiteral' ? keyNode.value : undefined
@@ -67,10 +99,90 @@ export class ExpressionResolver {
       const vals = this.resolvePossibleStringValuesFromExpression(init)
       if (vals.length > 0) {
         this.variableTable.set(name, vals)
+        return
+      }
+
+      // pattern 3 (arrow function variant):
+      // `const fn = (): 'a' | 'b' => ...` — capture the explicit return type annotation.
+      if (unwrappedInit.type === 'ArrowFunctionExpression' || unwrappedInit.type === 'FunctionExpression') {
+        const rawReturnType = unwrappedInit.returnType ?? unwrappedInit.typeAnnotation
+        if (rawReturnType) {
+          const tsType = rawReturnType.typeAnnotation ?? rawReturnType
+          const returnVals = this.resolvePossibleStringValuesFromType(tsType)
+          if (returnVals.length > 0) {
+            this.variableTable.set(name, returnVals)
+          }
+        }
       }
     } catch {
       // be silent - conservative only
     }
+  }
+
+  /**
+   * Capture a TypeScript type alias so that `declare const x: AliasName` can
+   * be resolved to its string union members later.
+   *
+   * Handles: `type Foo = 'a' | 'b' | 'c'`
+   *
+   * SWC node shapes: `TsTypeAliasDeclaration` / `TsTypeAliasDecl`
+   */
+  captureTypeAliasDeclaration (node: any): void {
+    try {
+      const name: string | undefined = node?.id?.type === 'Identifier' ? node.id.value : undefined
+      if (!name) return
+      // SWC puts the actual type in `.typeAnnotation`
+      const tsType = node.typeAnnotation ?? node.typeAnn
+      if (!tsType) return
+      const vals = this.resolvePossibleStringValuesFromType(tsType)
+      if (vals.length > 0) {
+        this.typeAliasTable.set(name, vals)
+      }
+    } catch {
+      // noop
+    }
+  }
+
+  /**
+   * Capture the return-type annotation of a function declaration so that
+   * `t(fn())` calls can be expanded to all union members.
+   *
+   * Handles both `function f(): 'a' | 'b' { ... }` and
+   * `const f = (): 'a' | 'b' => ...` (the arrow-function form is captured
+   * via captureVariableDeclarator when the init is an ArrowFunctionExpression).
+   *
+   * SWC node shapes: `FunctionDeclaration` / `FnDecl`
+   */
+  captureFunctionDeclaration (node: any): void {
+    try {
+      const name: string | undefined = node?.identifier?.value ?? node?.id?.value
+      if (!name) return
+      // SWC places the return type annotation in `.function.returnType` (FunctionDeclaration)
+      // or directly in `.returnType` (FunctionExpression / ArrowFunctionExpression).
+      const fn = node.function ?? node
+      const rawReturnType = fn.returnType ?? fn.typeAnnotation
+      if (!rawReturnType) return
+      // Unwrap TsTypeAnnotation wrapper if present
+      const tsType = rawReturnType.typeAnnotation ?? rawReturnType
+      const vals = this.resolvePossibleStringValuesFromType(tsType)
+      if (vals.length > 0) {
+        this.variableTable.set(name, vals)
+      }
+    } catch {
+      // noop
+    }
+  }
+
+  /**
+   * Extract a raw TsType node from an identifier's type annotation.
+   * SWC may wrap it in a `TsTypeAnnotation` node — this unwraps it.
+   */
+  private extractTypeAnnotation (idNode: any): any | undefined {
+    const raw = idNode?.typeAnnotation
+    if (!raw) return undefined
+    // TsTypeAnnotation wrapper -> .typeAnnotation holds the actual TsType
+    if (raw.type === 'TsTypeAnnotation') return raw.typeAnnotation
+    return raw
   }
 
   /**
@@ -223,7 +335,32 @@ export class ExpressionResolver {
             if (propName && base[propName] !== undefined) {
               return [base[propName]]
             }
+
+            // pattern 4:
+            // `map[identifierVar]` where identifierVar resolves to a known set of keys.
+            // Try to enumerate which map values are reachable.
+            if (prop.type === 'Computed' && prop.expression) {
+              const keyVals = this.resolvePossibleStringValuesFromExpression(prop.expression, returnEmptyStrings)
+              if (keyVals.length > 0) {
+                // Return only the map values for the known keys (subset access)
+                return keyVals.map(k => (base as Record<string, string>)[k]).filter((v): v is string => v !== undefined)
+              }
+              // Cannot narrow the key at all — return all map values as a conservative fallback
+              return Object.values(base) as string[]
+            }
           }
+        }
+      } catch {}
+    }
+
+    // pattern 3:
+    // `t(fn())` — resolve to the function's known return-type union when captured.
+    if (expression.type === 'CallExpression') {
+      try {
+        const callee = (expression as any).callee
+        if (callee?.type === 'Identifier') {
+          const v = this.variableTable.get(callee.value)
+          if (Array.isArray(v) && v.length > 0) return v
         }
       } catch {}
     }
@@ -288,6 +425,12 @@ export class ExpressionResolver {
       return this.resolvePossibleStringValuesFromType(annotation, returnEmptyStrings)
     }
 
+    // `expr as const` — delegate to the underlying expression (the type annotation is
+    // just `const`, which carries no union information, so we want the value side).
+    if (expression.type === 'TsConstAssertion') {
+      return this.resolvePossibleStringValuesFromExpression(expression.expression, returnEmptyStrings)
+    }
+
     // Identifier resolution via captured per-file variable table only
     if (expression.type === 'Identifier') {
       const v = this.variableTable.get(expression.value)
@@ -318,6 +461,20 @@ export class ExpressionResolver {
 
       if (type.literal.type === 'NumericLiteral' || type.literal.type === 'BooleanLiteral') {
         return [`${type.literal.value}`] // Handle literals like 5 or true
+      }
+    }
+
+    // pattern 2:
+    // Resolve a named type alias reference: `declare const x: ChangeType`
+    // where `type ChangeType = 'all' | 'next' | 'this'` was captured earlier.
+    if (type.type === 'TsTypeReference') {
+      const typeName: string | undefined =
+        (type as any).typeName?.type === 'Identifier'
+          ? (type as any).typeName.value
+          : undefined
+      if (typeName) {
+        const aliasVals = this.typeAliasTable.get(typeName)
+        if (aliasVals && aliasVals.length > 0) return aliasVals
       }
     }
 
