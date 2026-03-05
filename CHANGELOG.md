@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.49.2](https://github.com/i18next/i18next-cli/compare/v1.49.1...v1.49.2) - 2026-03-05
+
+- Fixed: add file extensions to all imports (for d.ts files) ([#137](https://github.com/i18next/i18next-cli/issues/137)) [#211](https://github.com/i18next/i18next-cli/pull/211)
+
 ## [1.49.1](https://github.com/i18next/i18next-cli/compare/v1.49.0...v1.49.1) - 2026-03-05
 
 -  **Extractor ([#209](https://github.com/i18next/i18next-cli/issues/209)):** `t('key', { ns: IDENTIFIER })` now correctly resolves the namespace when `ns` is a `const` variable, matching the already-supported `useTranslation(IDENTIFIER)` pattern
