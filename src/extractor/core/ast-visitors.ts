@@ -77,7 +77,8 @@ export class ASTVisitors {
       logger,
       this.expressionResolver,
       () => this.getCurrentFile(),
-      () => this.getCurrentCode()
+      () => this.getCurrentCode(),
+      (name: string) => this.scopeManager.resolveSimpleStringIdentifier(name)
     )
     this.jsxHandler = new JSXHandler(
       config,

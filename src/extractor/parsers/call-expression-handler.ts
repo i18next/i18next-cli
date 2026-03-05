@@ -14,6 +14,7 @@ export class CallExpressionHandler {
   public objectKeys = new Set<string>()
   private getCurrentFile: () => string
   private getCurrentCode: () => string
+  private resolveIdentifier: (name: string) => string | undefined
 
   constructor (
     config: Omit<I18nextToolkitConfig, 'plugins'>,
@@ -21,7 +22,8 @@ export class CallExpressionHandler {
     logger: Logger,
     expressionResolver: ExpressionResolver,
     getCurrentFile: () => string,
-    getCurrentCode: () => string
+    getCurrentCode: () => string,
+    resolveIdentifier: (name: string) => string | undefined = () => undefined
   ) {
     this.config = config
     this.pluginContext = pluginContext
@@ -29,6 +31,7 @@ export class CallExpressionHandler {
     this.expressionResolver = expressionResolver
     this.getCurrentFile = getCurrentFile
     this.getCurrentCode = getCurrentCode
+    this.resolveIdentifier = resolveIdentifier
   }
 
   /**
@@ -170,8 +173,8 @@ export class CallExpressionHandler {
       // Determine namespace (explicit ns > ns:key > scope ns > default)
       // See https://www.i18next.com/overview/api#getfixedt
       if (options) {
-        const nsVal = getObjectPropValue(options, 'ns')
-        if (typeof nsVal === 'string') ns = nsVal
+        const nsVal = getObjectPropValue(options, 'ns', this.resolveIdentifier)
+        if (typeof nsVal === 'string' && nsVal !== '') ns = nsVal
       }
 
       const nsSeparator = this.config.extract.nsSeparator ?? ':'

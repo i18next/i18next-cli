@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.48.2](https://github.com/i18next/i18next-cli/compare/v1.48.1...v1.48.2) - 2026-03-05
+
+- Extractor: resolve namespace from const/identifier expressions without custom plugins [#209](https://github.com/i18next/i18next-cli/issues/209)
+
 ## [1.48.1](https://github.com/i18next/i18next-cli/compare/v1.48.0...v1.48.1) - 2026-03-04
 
 - Extractor: Resolve and safe constants cross-files [#207](https://github.com/i18next/i18next-cli/pull/207)
