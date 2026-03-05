@@ -594,7 +594,8 @@ function buildNewTranslationsForNs (
     // For non-primary locales, we generate forms for that specific locale from CLDR.
     // Additionally, we generate empty placeholders for ALL other CLDR forms not in the target locale
     // (so translators can add them manually if needed).
-    if (hasCount && !isExpandedPlural) {
+    // When disablePlurals is true, skip plural expansion entirely and fall through to normal key handling.
+    if (hasCount && !isExpandedPlural && !config.extract.disablePlurals) {
       const parts = String(key).split(pluralSeparator)
       const isBaseKey = parts.length === 1
       if (isBaseKey) {

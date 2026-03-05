@@ -1643,6 +1643,83 @@ describe('extractor: advanced t features', () => {
         // No item_one, item_other because generateBasePluralForms is false
         })
       })
+
+      it('should not generate plural keys when disablePlurals is true and first locale is single-other language (issue #212)', async () => {
+        const sampleCode = `
+          t('validation.warningsPresentBanner {{count}}', { found: 0, count: 0 })
+        `
+
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+        // The bug: when many locales are configured and the first one is a single-"other"
+        // language (like zh-CN), the QUICK PATH optimization triggers before the
+        // disablePlurals check, adding hasCount: true and bypassing disablePlurals.
+        const configWithManyLocales: I18nextToolkitConfig = {
+          locales: ['zh-CN', 'zh-TW', 'cs', 'de', 'en-GB', 'en', 'es', 'fr', 'hu', 'it', 'ja', 'ko', 'pl', 'pt', 'ru'],
+          extract: {
+            ...mockConfig.extract,
+            keySeparator: false,
+            nsSeparator: false,
+            disablePlurals: true,
+            generateBasePluralForms: false,
+          },
+        }
+
+        const results = await extract(configWithManyLocales)
+
+        // Check Polish locale — it has multiple plural categories (one, few, many, other)
+        // so it's the most likely to incorrectly generate plural suffixes
+        const plFile = results.find(r => pathEndsWith(r.path, '/locales/pl/translation.json'))
+        expect(plFile).toBeDefined()
+        // Should only have the base key, NO plural suffixes
+        expect(Object.keys(plFile!.newTranslations)).toEqual([
+          'validation.warningsPresentBanner {{count}}',
+        ])
+        // No plural form keys should exist
+        expect(Object.keys(plFile!.newTranslations).some(k => k.endsWith('_one') || k.endsWith('_few') || k.endsWith('_many') || k.endsWith('_other'))).toBe(false)
+
+        // Also check zh-CN locale — should also not have plural suffixes
+        const zhFile = results.find(r => pathEndsWith(r.path, '/locales/zh-CN/translation.json'))
+        expect(zhFile).toBeDefined()
+        expect(Object.keys(zhFile!.newTranslations)).toEqual([
+          'validation.warningsPresentBanner {{count}}',
+        ])
+
+        // Check English locale too
+        const enFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+        expect(enFile).toBeDefined()
+        expect(Object.keys(enFile!.newTranslations)).toEqual([
+          'validation.warningsPresentBanner {{count}}',
+        ])
+      })
+
+      it('should not generate plural keys when disablePlurals is true even with fewer locales starting with single-other language', async () => {
+        const sampleCode = `
+          t('item', { count: 5, defaultValue: 'Item' })
+        `
+
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+        // Test with zh-CN as first locale but fewer languages
+        const configWithZhFirst: I18nextToolkitConfig = {
+          locales: ['zh-CN', 'en', 'pl'],
+          extract: {
+            ...mockConfig.extract,
+            disablePlurals: true,
+          },
+        }
+
+        const results = await extract(configWithZhFirst)
+
+        // All locales should have just the base key with no plural forms
+        for (const locale of ['zh-CN', 'en', 'pl']) {
+          const file = results.find(r => pathEndsWith(r.path, `/locales/${locale}/translation.json`))
+          expect(file).toBeDefined()
+          expect(Object.keys(file!.newTranslations)).toEqual(['item'])
+          // No plural form keys should exist
+          expect(Object.keys(file!.newTranslations).some(k => k.endsWith('_one') || k.endsWith('_other'))).toBe(false)
+        }
+      })
     })
   })
 

@@ -331,6 +331,19 @@ export class CallExpressionHandler {
           return false
         })()
         if (hasCount || isOrdinalByKey) {
+          // Check if plurals are disabled FIRST, before any plural optimization paths
+          if (this.config.extract.disablePlurals) {
+            // When plurals are disabled, treat count as a regular option (for interpolation only)
+            // Still handle context normally
+            if (keysWithContext.length > 0) {
+              keysWithContext.forEach(this.pluginContext.addKey)
+            } else {
+              this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
+            }
+
+            continue // This key is fully handled
+          }
+
           // QUICK PATH: If ALL target locales only have the "other" category,
           // emit base/context keys directly (avoid generating *_other). This
           // mirrors the special-case in handlePluralKeys but is placed here as a
@@ -394,23 +407,13 @@ export class CallExpressionHandler {
           } catch (e) {
             // Ignore Intl failures here and fall through to normal logic
           }
-          // Check if plurals are disabled
-          if (this.config.extract.disablePlurals) {
-            // When plurals are disabled, treat count as a regular option (for interpolation only)
-            // Still handle context normally
-            if (keysWithContext.length > 0) {
-              keysWithContext.forEach(this.pluginContext.addKey)
-            } else {
-              this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
-            }
-          } else {
-            // Original plural handling logic when plurals are enabled
-            // Always pass the base key to handlePluralKeys - it will handle context internally.
-            // Pass explicitDefaultForBase so that when a call-site provided an explicit
-            // base default (e.g. t('key', 'Default', { count })), plural variant keys
-            // are treated as explicit and may be synced to that default.
-            this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey, finalDefaultValue, explicitPluralForVariants, locationEntry)
-          }
+
+          // Original plural handling logic when plurals are enabled
+          // Always pass the base key to handlePluralKeys - it will handle context internally.
+          // Pass explicitDefaultForBase so that when a call-site provided an explicit
+          // base default (e.g. t('key', 'Default', { count })), plural variant keys
+          // are treated as explicit and may be synced to that default.
+          this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey, finalDefaultValue, explicitPluralForVariants, locationEntry)
 
           continue // This key is fully handled
         }
@@ -557,8 +560,8 @@ export class CallExpressionHandler {
       }
     }
 
-    if (hasCount || context !== undefined) {
-      this.generateNestedPluralKeys(key, nestedNs, hasCount, context)
+    if ((hasCount && !this.config.extract.disablePlurals) || context !== undefined) {
+      this.generateNestedPluralKeys(key, nestedNs, hasCount && !this.config.extract.disablePlurals, context)
     } else {
       this.pluginContext.addKey({ key, ns: nestedNs })
     }
