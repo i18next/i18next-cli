@@ -1,7 +1,7 @@
 import type { CallExpression, ArrowFunctionExpression, ObjectExpression } from '@swc/core'
-import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey, ScopeInfo } from '../../types'
-import { ExpressionResolver } from './expression-resolver'
-import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset } from './ast-utils'
+import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey, ScopeInfo } from '../../types.js'
+import { ExpressionResolver } from './expression-resolver.js'
+import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset } from './ast-utils.js'
 
 // Helper to escape regex characters
 const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

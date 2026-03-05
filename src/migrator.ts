@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 import { writeFile, access } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { createJiti } from 'jiti'
-import { getTsConfigAliases } from './config'
+import { getTsConfigAliases } from './config.js'
 
 /**
  * Path where the new configuration file will be created

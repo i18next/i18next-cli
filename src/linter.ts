@@ -4,10 +4,10 @@ import { parse } from '@swc/core'
 import { extname, resolve } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { styleText } from 'node:util'
-import { ConsoleLogger } from './utils/logger'
-import { createSpinnerLike } from './utils/wrap-ora'
-import { translatableAttributes, ignoredAttributeLowerSet, ignoredTags as sharedIgnoredTags, acceptedTags as sharedAcceptedTags } from './utils/jsx-attributes'
-import type { I18nextToolkitConfig, Logger, LintIssue, Plugin, LintPluginContext } from './types'
+import { ConsoleLogger } from './utils/logger.js'
+import { createSpinnerLike } from './utils/wrap-ora.js'
+import { translatableAttributes, ignoredAttributeLowerSet, ignoredTags as sharedIgnoredTags, acceptedTags as sharedAcceptedTags } from './utils/jsx-attributes.js'
+import type { I18nextToolkitConfig, Logger, LintIssue, Plugin, LintPluginContext } from './types.js'
 
 /**
  * Loads all translation values from the primary locale's JSON files and returns

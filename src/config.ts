@@ -5,9 +5,9 @@ import { createJiti } from 'jiti'
 import { parse } from 'jsonc-parser'
 import inquirer from 'inquirer'
 import { styleText } from 'node:util'
-import type { I18nextToolkitConfig, Logger } from './types'
-import { runInit } from './init'
-import { ConsoleLogger } from './utils/logger'
+import type { I18nextToolkitConfig, Logger } from './types.js'
+import { runInit } from './init.js'
+import { ConsoleLogger } from './utils/logger.js'
 
 /**
  * List of supported configuration file names in order of precedence

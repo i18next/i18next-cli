@@ -1,10 +1,10 @@
-import { TranslationResult, ExtractedKey, I18nextToolkitConfig, Logger } from '../../types'
+import { TranslationResult, ExtractedKey, I18nextToolkitConfig, Logger } from '../../types.js'
 import { basename, extname, resolve } from 'node:path'
 import { glob } from 'glob'
-import { getNestedValue, setNestedValue, getNestedKeys } from '../../utils/nested-object'
-import { getOutputPath, loadTranslationFile } from '../../utils/file-utils'
-import { resolveDefaultValue } from '../../utils/default-value'
-import { ConsoleLogger } from '../../utils/logger'
+import { getNestedValue, setNestedValue, getNestedKeys } from '../../utils/nested-object.js'
+import { getOutputPath, loadTranslationFile } from '../../utils/file-utils.js'
+import { resolveDefaultValue } from '../../utils/default-value.js'
+import { ConsoleLogger } from '../../utils/logger.js'
 
 // used for natural language check
 const chars = [' ', ',', '?', '!', ';']

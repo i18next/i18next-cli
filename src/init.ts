@@ -1,7 +1,7 @@
 import inquirer from 'inquirer'
 import { writeFile, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { detectConfig } from './heuristic-config'
+import { detectConfig } from './heuristic-config.js'
 
 /**
  * Determines if the current project is configured as an ESM project.

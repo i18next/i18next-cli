@@ -1,6 +1,6 @@
 import type { Expression, JSXAttribute, JSXAttributeOrSpread, JSXElement, JSXElementChild, JSXElementName, JSXExpression, ObjectExpression } from '@swc/core'
-import type { I18nextToolkitConfig } from '../../types'
-import { getObjectPropValue, getObjectPropValueExpression, isSimpleTemplateLiteral } from './ast-utils'
+import type { I18nextToolkitConfig } from '../../types.js'
+import { getObjectPropValue, getObjectPropValueExpression, isSimpleTemplateLiteral } from './ast-utils.js'
 import type { JSXElementConstructor, ReactElement } from 'react'
 import { getDefaults, nodesToString } from 'react-i18next'
 

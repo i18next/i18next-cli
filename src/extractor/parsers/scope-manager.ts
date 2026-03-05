@@ -8,8 +8,8 @@ import type {
   TsConstAssertion,
   TsSatisfiesExpression
 } from '@swc/core'
-import type { ScopeInfo, UseTranslationHookConfig, I18nextToolkitConfig } from '../../types'
-import { getObjectPropValue } from './ast-utils'
+import type { ScopeInfo, UseTranslationHookConfig, I18nextToolkitConfig } from '../../types.js'
+import { getObjectPropValue } from './ast-utils.js'
 
 export class ScopeManager {
   private scopeStack: Array<Map<string, ScopeInfo>> = []

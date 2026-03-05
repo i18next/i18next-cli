@@ -1,4 +1,4 @@
-import type { PluginContext, I18nextToolkitConfig } from '../../types'
+import type { PluginContext, I18nextToolkitConfig } from '../../types.js'
 
 /**
  * Extracts translation keys from comments in source code using regex patterns.

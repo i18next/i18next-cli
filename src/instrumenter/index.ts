@@ -10,8 +10,8 @@ export type {
   CustomCandidateScorer,
   InstrumentPluginContext,
   InstrumenterPlugin
-} from '../types'
-export { runInstrumenter, writeExtractedKeys } from './core/instrumenter'
-export { detectCandidate } from './core/string-detector'
-export { generateKeyFromContent, createKeyRegistry } from './core/key-generator'
-export { transformFile, generateDiff } from './core/transformer'
+} from '../types.js'
+export { runInstrumenter, writeExtractedKeys } from './core/instrumenter.js'
+export { detectCandidate } from './core/string-detector.js'
+export { generateKeyFromContent, createKeyRegistry } from './core/key-generator.js'
+export { transformFile, generateDiff } from './core/transformer.js'

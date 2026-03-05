@@ -1,8 +1,8 @@
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
 import { dirname, extname, resolve, normalize } from 'node:path'
 import { createJiti } from 'jiti'
-import type { I18nextToolkitConfig } from '../types'
-import { getTsConfigAliases } from '../config'
+import type { I18nextToolkitConfig } from '../types.js'
+import { getTsConfigAliases } from '../config.js'
 import { JsonParser, JsonObjectNode } from '@croct/json5-parser'
 import yaml from 'yaml'
 

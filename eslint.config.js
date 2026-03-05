@@ -20,11 +20,8 @@ export default [
 
     settings: {
       'import/resolver': {
-        node: {
-          extensions: ['.js', '.jsx', '.ts', '.tsx'], // any extensions you use
-          moduleDirectory: ['node_modules'] // adjust if you alias
-        }
-        // If you use webpack or TypeScript paths, you can swap in those resolvers here
+        typescript: true,
+        node: true
       }
     },
 

@@ -1,5 +1,5 @@
 import type { Expression, TsType, TemplateLiteral, TsTemplateLiteralType } from '@swc/core'
-import type { ASTVisitorHooks } from '../../types'
+import type { ASTVisitorHooks } from '../../types.js'
 
 export class ExpressionResolver {
   private hooks: ASTVisitorHooks

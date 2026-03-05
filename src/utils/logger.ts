@@ -1,4 +1,4 @@
-import type { Logger } from '../types'
+import type { Logger } from '../types.js'
 
 /**
  * Default console-based logger implementation for the i18next toolkit.

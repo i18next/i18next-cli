@@ -1,4 +1,4 @@
-import type { ExtractedKey, PluginContext, I18nextToolkitConfig, Logger, Plugin, ScopeInfo } from '../types'
+import type { ExtractedKey, PluginContext, I18nextToolkitConfig, Logger, Plugin, ScopeInfo } from '../types.js'
 
 /**
  * Error thrown when warnOnConflicts is set to 'error' and a key conflict is detected.

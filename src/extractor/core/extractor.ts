@@ -1,20 +1,20 @@
-import { createSpinnerLike } from '../../utils/wrap-ora'
+import { createSpinnerLike } from '../../utils/wrap-ora.js'
 import { styleText } from 'node:util'
 import { parse } from '@swc/core'
 import type { Module } from '@swc/types'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, extname } from 'node:path'
-import type { Logger, I18nextToolkitConfig, Plugin, PluginContext } from '../../types'
-import { findKeys } from './key-finder'
-import { getTranslations } from './translation-manager'
-import { validateExtractorConfig, ExtractorError } from '../../utils/validation'
-import { ConflictError } from '../plugin-manager'
-import { extractKeysFromComments } from '../parsers/comment-parser'
-import { normalizeASTSpans, findFirstTokenIndex } from '../parsers/ast-utils'
-import { ASTVisitors } from './ast-visitors'
-import { ConsoleLogger } from '../../utils/logger'
-import { serializeTranslationFile, loadRawJson5Content, inferFormatFromPath } from '../../utils/file-utils'
-import { shouldShowFunnel, recordFunnelShown } from '../../utils/funnel-msg-tracker'
+import type { Logger, I18nextToolkitConfig, Plugin, PluginContext, TranslationResult } from '../../types.js'
+import { findKeys } from './key-finder.js'
+import { getTranslations } from './translation-manager.js'
+import { validateExtractorConfig, ExtractorError } from '../../utils/validation.js'
+import { ConflictError } from '../plugin-manager.js'
+import { extractKeysFromComments } from '../parsers/comment-parser.js'
+import { normalizeASTSpans, findFirstTokenIndex } from '../parsers/ast-utils.js'
+import { ASTVisitors } from './ast-visitors.js'
+import { ConsoleLogger } from '../../utils/logger.js'
+import { serializeTranslationFile, loadRawJson5Content, inferFormatFromPath } from '../../utils/file-utils.js'
+import { shouldShowFunnel, recordFunnelShown } from '../../utils/funnel-msg-tracker.js'
 
 /**
  * Main extractor function that runs the complete key extraction and file generation process.
@@ -290,7 +290,7 @@ export async function processFile (
  * }
  * ```
  */
-export async function extract (config: I18nextToolkitConfig, { syncPrimaryWithDefaults = false }: { syncPrimaryWithDefaults?: boolean } = {}) {
+export async function extract (config: I18nextToolkitConfig, { syncPrimaryWithDefaults = false }: { syncPrimaryWithDefaults?: boolean } = {}): Promise<TranslationResult[]> {
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
   config.extract.functions ||= ['t', '*.t']
