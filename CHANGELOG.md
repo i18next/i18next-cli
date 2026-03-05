@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.49.1](https://github.com/i18next/i18next-cli/compare/v1.49.0...v1.49.1) - 2026-03-05
+
+-  **Extractor ([#209](https://github.com/i18next/i18next-cli/issues/209)):** `t('key', { ns: IDENTIFIER })` now correctly resolves the namespace when `ns` is a `const` variable, matching the already-supported `useTranslation(IDENTIFIER)` pattern
+- **Extractor ([#210](https://github.com/i18next/i18next-cli/issues/210)):** `as const` array literals (`['a', 'b'] as const`) are now captured and their values expanded when used in `.map()` / `.forEach()` callbacks
+- **Extractor ([#210](https://github.com/i18next/i18next-cli/issues/210)):** `(typeof ARRAY)[number]` indexed access types now resolve correctly through `TsParenthesizedType` wrappers emitted by SWC
+- **Extractor ([#210](https://github.com/i18next/i18next-cli/issues/210)):** `declare const x: TypeAlias` and `useState<TypeAlias>()` destructuring patterns now resolve after their referenced type alias is captured, fixing ordering-dependent failures
+- **Extractor ([#210](https://github.com/i18next/i18next-cli/issues/210)):** Exported `as const` arrays and type aliases are now shared across files, enabling cross-file resolution of imported constants and type aliases
+
+
 ## [1.49.0](https://github.com/i18next/i18next-cli/compare/v1.48.1...v1.49.0) - 2026-03-05
 
 - Extractor: resolve namespace from const/identifier expressions without custom plugins [#209](https://github.com/i18next/i18next-cli/issues/209)

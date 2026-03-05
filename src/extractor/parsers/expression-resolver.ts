@@ -16,6 +16,18 @@ export class ExpressionResolver {
   // e.g. `type ChangeType = 'all' | 'next' | 'this'` -> { ChangeType: ['all', 'next', 'this'] }
   private typeAliasTable: Map<string, string[]> = new Map()
 
+  // Shared (cross-file) table for string-array constants (e.g. `as const` arrays).
+  // Persists across resetFileSymbols() so exported arrays are visible to importers.
+  private sharedVariableTable: Map<string, string[]> = new Map()
+
+  // Shared (cross-file) table for type aliases — populated alongside typeAliasTable.
+  // Persists across resetFileSymbols() so exported type aliases are visible to importers.
+  private sharedTypeAliasTable: Map<string, string[]> = new Map()
+
+  // Temporary per-scope variable overrides, used to inject .map() / .forEach()
+  // callback parameters while the callback body is being walked.
+  private temporaryVariables: Map<string, string[]> = new Map()
+
   constructor (hooks: ASTVisitorHooks) {
     this.hooks = hooks
   }
@@ -26,6 +38,7 @@ export class ExpressionResolver {
   public resetFileSymbols (): void {
     this.variableTable.clear()
     this.typeAliasTable.clear()
+    this.temporaryVariables.clear()
   }
 
   /**
@@ -41,6 +54,44 @@ export class ExpressionResolver {
   captureVariableDeclarator (node: any): void {
     try {
       if (!node || !node.id) return
+
+      // ── ArrayPattern id: `const [x, y] = fn<T>(...)` ────────────────────────
+      // Handles `const [state] = useState<'a'|'b'>('a')` or similar generic calls
+      // where the type argument is a finite string-literal union.
+      if (node.id.type === 'ArrayPattern' && node.init) {
+        const init = node.init
+        // Unwrap await / as-expressions
+        let callExpr: any = init
+        while (callExpr?.type === 'AwaitExpression') callExpr = callExpr.argument
+        while (
+          callExpr?.type === 'TsConstAssertion' ||
+          callExpr?.type === 'TsAsExpression' ||
+          callExpr?.type === 'TsSatisfiesExpression'
+        ) callExpr = callExpr.expression
+
+        if (callExpr?.type === 'CallExpression') {
+          const typeArgs =
+            callExpr.typeArguments?.params ??
+            callExpr.typeParameters?.params ??
+            []
+          if (typeArgs.length > 0) {
+            const vals = this.resolvePossibleStringValuesFromType(typeArgs[0])
+            if (vals.length > 0) {
+              // Bind each array-pattern element: first element is the state variable
+              for (const el of node.id.elements) {
+                if (!el) continue
+                const ident = el.type === 'Identifier' ? el : (el.type === 'AssignmentPattern' && el.left?.type === 'Identifier' ? el.left : null)
+                if (ident) {
+                  this.variableTable.set(ident.value, vals)
+                }
+                break // only bind the first element (the state value, not the setter)
+              }
+            }
+          }
+        }
+        return
+      }
+
       // only handle simple identifier bindings like `const x = ...`
       if (node.id.type !== 'Identifier') return
       const name = node.id.value
@@ -95,6 +146,23 @@ export class ExpressionResolver {
         }
       }
 
+      // ArrayExpression -> list of string values
+      // Handles `const OPTS = ['a', 'b', 'c'] as const`
+      if (unwrappedInit.type === 'ArrayExpression' && Array.isArray(unwrappedInit.elements)) {
+        const vals: string[] = []
+        for (const elem of unwrappedInit.elements as any[]) {
+          if (!elem || !elem.expression) continue
+          const resolved = this.resolvePossibleStringValuesFromExpression(elem.expression)
+          if (resolved.length === 1) vals.push(resolved[0])
+        }
+        if (vals.length > 0) {
+          this.variableTable.set(name, vals)
+          // Also share so importing files can see this array
+          this.sharedVariableTable.set(name, vals)
+          return
+        }
+      }
+
       // For other initializers, try to resolve to one-or-more strings
       const vals = this.resolvePossibleStringValuesFromExpression(init)
       if (vals.length > 0) {
@@ -137,6 +205,8 @@ export class ExpressionResolver {
       const vals = this.resolvePossibleStringValuesFromType(tsType)
       if (vals.length > 0) {
         this.typeAliasTable.set(name, vals)
+        // Also share so importing files can resolve this alias by name
+        this.sharedTypeAliasTable.set(name, vals)
       }
     } catch {
       // noop
@@ -183,6 +253,34 @@ export class ExpressionResolver {
     // TsTypeAnnotation wrapper -> .typeAnnotation holds the actual TsType
     if (raw.type === 'TsTypeAnnotation') return raw.typeAnnotation
     return raw
+  }
+
+  /**
+   * Temporarily bind a variable name to a set of string values.
+   * Used by ast-visitors to inject .map()/.forEach() callback parameters.
+   * Call deleteTemporaryVariable() after walking the callback body.
+   */
+  public setTemporaryVariable (name: string, values: string[]): void {
+    this.temporaryVariables.set(name, values)
+  }
+
+  /**
+   * Remove a previously-injected temporary variable binding.
+   */
+  public deleteTemporaryVariable (name: string): void {
+    this.temporaryVariables.delete(name)
+  }
+
+  /**
+   * Return the array values stored for a variable name, checking all tables.
+   * Returns undefined if the name is not a known string array.
+   */
+  public getVariableValues (name: string): string[] | undefined {
+    const tmp = this.temporaryVariables.get(name)
+    if (tmp) return tmp
+    const v = this.variableTable.get(name)
+    if (Array.isArray(v)) return v
+    return this.sharedVariableTable.get(name)
   }
 
   /**
@@ -433,8 +531,16 @@ export class ExpressionResolver {
 
     // Identifier resolution via captured per-file variable table only
     if (expression.type === 'Identifier') {
+      // Check temporary (callback param) overrides first
+      const tmp = this.temporaryVariables.get(expression.value)
+      if (tmp) return tmp
       const v = this.variableTable.get(expression.value)
-      if (!v) return []
+      if (!v) {
+        // Fall back to shared cross-file array table
+        const sv = this.sharedVariableTable.get(expression.value)
+        if (sv) return sv
+        return []
+      }
       if (Array.isArray(v)) return v
       // object map - cannot be used directly as key, so return empty
       return []
@@ -445,6 +551,12 @@ export class ExpressionResolver {
   }
 
   private resolvePossibleStringValuesFromType (type: TsType, returnEmptyStrings = false): string[] {
+    // Unwrap TsParenthesizedType — SWC explicitly emits these for grouped types like
+    // `(typeof X)[number]` where `(typeof X)` becomes TsParenthesizedType { typeAnnotation: TsTypeQuery }
+    if ((type as any).type === 'TsParenthesizedType') {
+      return this.resolvePossibleStringValuesFromType((type as any).typeAnnotation, returnEmptyStrings)
+    }
+
     if (type.type === 'TsUnionType') {
       return type.types.flatMap((t) => this.resolvePossibleStringValuesFromType(t, returnEmptyStrings))
     }
@@ -473,9 +585,35 @@ export class ExpressionResolver {
           ? (type as any).typeName.value
           : undefined
       if (typeName) {
-        const aliasVals = this.typeAliasTable.get(typeName)
+        const aliasVals = this.typeAliasTable.get(typeName) ?? this.sharedTypeAliasTable.get(typeName)
         if (aliasVals && aliasVals.length > 0) return aliasVals
       }
+    }
+
+    // `(typeof ACCESS_OPTIONS)[number]` — resolve through the shared array variable table.
+    // SWC emits: TsIndexedAccessType {
+    //   objectType: TsParenthesizedType { typeAnnotation: TsTypeQuery { exprName: Identifier } }
+    //   indexType: TsKeywordType
+    // }
+    // The parens around `typeof X` produce a TsParenthesizedType wrapper that we must unwrap.
+    if (type.type === 'TsIndexedAccessType') {
+      try {
+        let objType = (type as any).objectType
+        // Unwrap TsParenthesizedType wrapper (SWC preserves explicit parens in type positions)
+        while (objType?.type === 'TsParenthesizedType') {
+          objType = objType.typeAnnotation
+        }
+        if (objType?.type === 'TsTypeQuery' || objType?.type === 'TSTypeQuery') {
+          // SWC: TsTypeQuery.exprName is TsEntityName (Identifier | TsQualifiedName)
+          const exprName = objType.exprName ?? objType.expr ?? objType.entityName
+          // access .value (Identifier) or fall back to .name for alternate SWC builds
+          const varName: string | undefined = exprName?.value ?? exprName?.name
+          if (varName) {
+            const vals = this.getVariableValues(varName)
+            if (vals && vals.length > 0) return vals
+          }
+        }
+      } catch {}
     }
 
     // We can't statically determine the value of other expressions (e.g., variables, function calls)

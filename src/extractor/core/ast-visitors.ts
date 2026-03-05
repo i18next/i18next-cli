@@ -315,6 +315,19 @@ export class ASTVisitors {
 
     // --- END VISIT LOGIC ---
 
+    // Detect array iteration calls (.map / .forEach / .flatMap etc.) on a known
+    // as-const array so the callback parameter is bound to the array values while
+    // the callback body is walked.  We inject the binding BEFORE generic recursion
+    // and remove it AFTER, so the whole subtree sees the correct value.
+    let arrayCallbackCleanup: (() => void) | undefined
+    if (node.type === 'CallExpression') {
+      const info = this.tryGetArrayIterationCallbackInfo(node)
+      if (info) {
+        this.expressionResolver.setTemporaryVariable(info.paramName, info.values)
+        arrayCallbackCleanup = () => this.expressionResolver.deleteTemporaryVariable(info.paramName)
+      }
+    }
+
     // --- RECURSION ---
     // Recurse into the children of the current node
     for (const key in node) {
@@ -322,48 +335,112 @@ export class ASTVisitors {
 
       const child = node[key]
       if (Array.isArray(child)) {
-        // Pre-scan array children to register VariableDeclarator-based scopes
-        // (e.g., `const { t } = useTranslation(...)`) before walking the rest
-        // of the items. This ensures that functions/arrow-functions defined
-        // earlier in the same block that reference t will resolve to the
-        // correct scope even if the `useTranslation` declarator appears later.
+        // Pre-scan array children in THREE passes:
+        //   Pass 1 — variables WITH init (arrays, objects, strings, fns) + enums
+        //   Pass 2 — type aliases + functions (may depend on pass-1 arrays)
+        //   Pass 3 — `declare const x: Type` (no init; depends on pass-2 type aliases)
+        // This ordering ensures e.g.:
+        //   const OPTS = ['a','b'] as const          → pass 1
+        //   type T = (typeof OPTS)[number]            → pass 2 (resolves OPTS)
+        //   declare const v: T                        → pass 3 (resolves T)
+
+        // ── Pass 1: variables with init ──────────────────────────────────────
         for (const item of child) {
           if (!item || typeof item !== 'object') continue
 
-          // Direct declarator present in arrays (rare)
-          if (item.type === 'VariableDeclarator') {
+          // Direct declarator (rare)
+          if (item.type === 'VariableDeclarator' && item.init) {
             this.scopeManager.handleVariableDeclarator(item)
             this.expressionResolver.captureVariableDeclarator(item)
             continue
           }
-          // enum declarations can appear as ExportDeclaration.declaration earlier; be permissive
-          if (item && item.id && Array.isArray(item.members)) {
+          // enum declarations
+          if (item.id && Array.isArray(item.members)) {
             this.expressionResolver.captureEnumDeclaration(item)
-            // continue to allow further traversal
           }
-          // pre-scan type alias declarations and function declarations
+          // Bare VariableDeclaration — only declarators that have an init
+          if (item.type === 'VariableDeclaration' && Array.isArray(item.declarations)) {
+            for (const decl of item.declarations) {
+              if (decl?.type === 'VariableDeclarator' && decl.init) {
+                this.scopeManager.handleVariableDeclarator(decl)
+                this.expressionResolver.captureVariableDeclarator(decl)
+              }
+            }
+          }
+          // ExportDeclaration wrapping VariableDeclaration — only inited declarators
+          if ((item.type === 'ExportDeclaration' || item.type === 'ExportNamedDeclaration') && item.declaration) {
+            const inner = item.declaration
+            if (inner.type === 'VariableDeclaration' && Array.isArray(inner.declarations)) {
+              for (const vd of inner.declarations) {
+                if (vd?.type === 'VariableDeclarator' && vd.init) {
+                  this.scopeManager.handleVariableDeclarator(vd)
+                  this.expressionResolver.captureVariableDeclarator(vd)
+                }
+              }
+            }
+          }
+        }
+
+        // ── Pass 2: type aliases + functions ─────────────────────────────────
+        for (const item of child) {
+          if (!item || typeof item !== 'object') continue
+
           if (item.type === 'TsTypeAliasDeclaration' || item.type === 'TSTypeAliasDeclaration' || item.type === 'TsTypeAliasDecl') {
             this.expressionResolver.captureTypeAliasDeclaration(item)
           }
           if (item.type === 'FunctionDeclaration' || item.type === 'FnDecl') {
             this.expressionResolver.captureFunctionDeclaration(item)
           }
-          // Also handle ExportDeclaration wrapping either of the above
           if ((item.type === 'ExportDeclaration' || item.type === 'ExportNamedDeclaration') && item.declaration) {
-            const decl = item.declaration
-            if (decl.type === 'TsTypeAliasDeclaration' || decl.type === 'TSTypeAliasDeclaration' || decl.type === 'TsTypeAliasDecl') {
-              this.expressionResolver.captureTypeAliasDeclaration(decl)
+            const inner = item.declaration
+            if (inner.type === 'TsTypeAliasDeclaration' || inner.type === 'TSTypeAliasDeclaration' || inner.type === 'TsTypeAliasDecl') {
+              this.expressionResolver.captureTypeAliasDeclaration(inner)
             }
-            if (decl.type === 'FunctionDeclaration' || decl.type === 'FnDecl') {
-              this.expressionResolver.captureFunctionDeclaration(decl)
+            if (inner.type === 'FunctionDeclaration' || inner.type === 'FnDecl') {
+              this.expressionResolver.captureFunctionDeclaration(inner)
             }
           }
-          // Common case: VariableDeclaration which contains .declarations (VariableDeclarator[])
+        }
+
+        // ── Pass 3: `declare const x: Type` — no init, depends on type aliases ─
+        // Also re-processes ArrayPattern destructuring (e.g. useState<T>) whose
+        // type argument resolution failed in Pass 1 because typeAliasTable was empty.
+        for (const item of child) {
+          if (!item || typeof item !== 'object') continue
+
+          // Direct declarator with no init
+          if (item.type === 'VariableDeclarator' && !item.init) {
+            this.scopeManager.handleVariableDeclarator(item)
+            this.expressionResolver.captureVariableDeclarator(item)
+            continue
+          }
+          // ArrayPattern destructuring with init — re-run now that type aliases are populated
+          if (item.type === 'VariableDeclarator' && item.init && item.id?.type === 'ArrayPattern') {
+            this.expressionResolver.captureVariableDeclarator(item)
+            continue
+          }
+          // VariableDeclaration — process no-init declarators and re-process ArrayPattern ones
           if (item.type === 'VariableDeclaration' && Array.isArray(item.declarations)) {
             for (const decl of item.declarations) {
-              if (decl && typeof decl === 'object' && decl.type === 'VariableDeclarator') {
+              if (!decl.init) {
                 this.scopeManager.handleVariableDeclarator(decl)
                 this.expressionResolver.captureVariableDeclarator(decl)
+              } else if (decl.id?.type === 'ArrayPattern') {
+                this.expressionResolver.captureVariableDeclarator(decl)
+              }
+            }
+          }
+          // ExportDeclaration wrapping — same logic
+          if ((item.type === 'ExportDeclaration' || item.type === 'ExportNamedDeclaration') && item.declaration) {
+            const inner = item.declaration
+            if (inner.type === 'VariableDeclaration' && Array.isArray(inner.declarations)) {
+              for (const vd of inner.declarations) {
+                if (!vd.init) {
+                  this.scopeManager.handleVariableDeclarator(vd)
+                  this.expressionResolver.captureVariableDeclarator(vd)
+                } else if (vd.id?.type === 'ArrayPattern') {
+                  this.expressionResolver.captureVariableDeclarator(vd)
+                }
               }
             }
           }
@@ -384,9 +461,57 @@ export class ASTVisitors {
     }
     // --- END RECURSION ---
 
+    // Remove temporary callback param binding if one was injected for this node
+    arrayCallbackCleanup?.()
+
     // LEAVE SCOPE for functions
     if (isNewScope) {
       this.scopeManager.exitScope()
+    }
+  }
+
+  /**
+   * If `node` is a call like `ARRAY.map(param => ...)` where ARRAY is a known
+   * string-array constant, returns the callback's first parameter name and the
+   * array values so the caller can inject a temporary variable binding.
+   */
+  private tryGetArrayIterationCallbackInfo (node: any): { paramName: string; values: string[] } | undefined {
+    try {
+      const callee = node.callee
+      if (callee?.type !== 'MemberExpression') return undefined
+      const prop = callee.property
+      if (prop?.type !== 'Identifier') return undefined
+      if (!['map', 'forEach', 'flatMap', 'filter', 'find', 'some', 'every'].includes(prop.value)) return undefined
+
+      // The object must be an identifier whose value is a known string array
+      const obj = callee.object
+      if (obj?.type !== 'Identifier') return undefined
+      const values = this.expressionResolver.getVariableValues(obj.value)
+      if (!values || values.length === 0) return undefined
+
+      // First argument must be a callback with at least one parameter
+      const callbackArg = node.arguments?.[0]?.expression
+      if (!callbackArg) return undefined
+
+      // Normalise param across SWC shapes: ArrowFunctionExpression / FunctionExpression
+      const params: any[] = callbackArg.params ?? callbackArg.parameters ?? []
+      const firstParam = params[0]
+      if (!firstParam) return undefined
+
+      // SWC wraps params in `Param { pat: Identifier }` or exposes them directly
+      const ident: any =
+        firstParam.type === 'Identifier'
+          ? firstParam
+          : firstParam.type === 'Param' && firstParam.pat?.type === 'Identifier'
+            ? firstParam.pat
+            : firstParam.type === 'AssignmentPattern' && firstParam.left?.type === 'Identifier'
+              ? firstParam.left
+              : null
+
+      if (!ident) return undefined
+      return { paramName: ident.value, values }
+    } catch {
+      return undefined
     }
   }
 
