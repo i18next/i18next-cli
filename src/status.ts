@@ -1,11 +1,11 @@
 import { styleText } from 'node:util'
 import ora from 'ora'
 import { resolve } from 'node:path'
-import { findKeys } from './extractor'
-import { getNestedValue } from './utils/nested-object'
-import type { I18nextToolkitConfig, ExtractedKey } from './types'
-import { getOutputPath, loadTranslationFile } from './utils/file-utils'
-import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker'
+import { findKeys } from './extractor.js'
+import { getNestedValue } from './utils/nested-object.js'
+import type { I18nextToolkitConfig, ExtractedKey } from './types.js'
+import { getOutputPath, loadTranslationFile } from './utils/file-utils.js'
+import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 
 /**
  * Options for configuring the status report display.

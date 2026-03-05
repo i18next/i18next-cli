@@ -1,4 +1,4 @@
-import type { I18nextToolkitConfig } from '../types'
+import type { I18nextToolkitConfig } from '../types.js'
 
 /**
  * Validates the extractor configuration to ensure required fields are present and properly formatted.

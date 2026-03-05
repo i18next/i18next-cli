@@ -1,11 +1,11 @@
 import { glob } from 'glob'
 import type { Expression } from '@swc/core'
-import type { ExtractedKey, Logger, I18nextToolkitConfig, ASTVisitorHooks } from '../../types'
-import { processFile } from './extractor'
-import { ConsoleLogger } from '../../utils/logger'
-import { initializePlugins, createPluginContext } from '../plugin-manager'
-import { ASTVisitors } from './ast-visitors'
-import { ExpressionResolver } from '../parsers/expression-resolver'
+import type { ExtractedKey, Logger, I18nextToolkitConfig, ASTVisitorHooks } from '../../types.js'
+import { processFile } from './extractor.js'
+import { ConsoleLogger } from '../../utils/logger.js'
+import { initializePlugins, createPluginContext } from '../plugin-manager.js'
+import { ASTVisitors } from './ast-visitors.js'
+import { ExpressionResolver } from '../parsers/expression-resolver.js'
 
 /**
  * Main function for finding translation keys across all source files in a project.

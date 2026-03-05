@@ -1,7 +1,7 @@
 import { glob } from 'glob'
 import { readdir } from 'node:fs/promises'
 import { dirname, join, extname } from 'node:path'
-import type { I18nextToolkitConfig } from './types'
+import type { I18nextToolkitConfig } from './types.js'
 
 // A list of common glob patterns for the primary language ('en') or ('dev') translation files.
 const HEURISTIC_PATTERNS = [

@@ -1,4 +1,3 @@
-// eslint-disable-next-line import/no-unresolved
 import swc from 'unplugin-swc'
 import { defineConfig } from 'vitest/config'
 

@@ -1,6 +1,6 @@
 import MagicString from 'magic-string'
-import type { I18nextToolkitConfig, CandidateString, TransformResult, ComponentBoundary, LanguageChangeSite } from '../../types'
-import { generateKeyFromContent } from './key-generator'
+import type { I18nextToolkitConfig, CandidateString, TransformResult, ComponentBoundary, LanguageChangeSite } from '../../types.js'
+import { generateKeyFromContent } from './key-generator.js'
 
 interface TransformerOptions {
   isDryRun?: boolean

@@ -1,8 +1,8 @@
 import type { JSXElement, ObjectExpression } from '@swc/core'
-import type { PluginContext, I18nextToolkitConfig, ExtractedKey } from '../../types'
-import { ExpressionResolver } from './expression-resolver'
-import { extractFromTransComponent } from './jsx-parser'
-import { getObjectPropValue, lineColumnFromOffset } from './ast-utils'
+import type { PluginContext, I18nextToolkitConfig, ExtractedKey } from '../../types.js'
+import { ExpressionResolver } from './expression-resolver.js'
+import { extractFromTransComponent } from './jsx-parser.js'
+import { getObjectPropValue, lineColumnFromOffset } from './ast-utils.js'
 
 export class JSXHandler {
   private config: Omit<I18nextToolkitConfig, 'plugins'>

@@ -1,13 +1,13 @@
-import { ConsoleLogger } from './utils/logger'
+import { ConsoleLogger } from './utils/logger.js'
 import { mergeResourcesAsInterface } from 'i18next-resources-for-ts'
 import { glob } from 'glob'
-import { createSpinnerLike } from './utils/wrap-ora'
+import { createSpinnerLike } from './utils/wrap-ora.js'
 import { styleText } from 'node:util'
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
 import { basename, extname, resolve, dirname, join, relative } from 'node:path'
 import { transform } from '@swc/core'
-import type { I18nextToolkitConfig, Logger } from './types'
-import { getOutputPath } from './utils/file-utils'
+import type { I18nextToolkitConfig, Logger } from './types.js'
+import { getOutputPath } from './utils/file-utils.js'
 import vm from 'node:vm'
 
 /**

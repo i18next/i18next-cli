@@ -1,9 +1,9 @@
 import type { Module, Node } from '@swc/core'
-import type { PluginContext, I18nextToolkitConfig, Logger, ASTVisitorHooks, ScopeInfo } from '../../types'
-import { ScopeManager } from '../parsers/scope-manager'
-import { ExpressionResolver } from '../parsers/expression-resolver'
-import { CallExpressionHandler } from '../parsers/call-expression-handler'
-import { JSXHandler } from '../parsers/jsx-handler'
+import type { PluginContext, I18nextToolkitConfig, Logger, ASTVisitorHooks, ScopeInfo } from '../../types.js'
+import { ScopeManager } from '../parsers/scope-manager.js'
+import { ExpressionResolver } from '../parsers/expression-resolver.js'
+import { CallExpressionHandler } from '../parsers/call-expression-handler.js'
+import { JSXHandler } from '../parsers/jsx-handler.js'
 
 /**
  * AST visitor class that traverses JavaScript/TypeScript syntax trees to extract translation keys.

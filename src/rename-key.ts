@@ -1,11 +1,11 @@
 import { glob } from 'glob'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve, basename } from 'node:path'
-import type { I18nextToolkitConfig, Logger, RenameKeyResult } from './types'
-import { ConsoleLogger } from './utils/logger'
-import { loadTranslationFile, serializeTranslationFile, getOutputPath } from './utils/file-utils'
-import { getNestedValue, setNestedValue } from './utils/nested-object'
-import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker'
+import type { I18nextToolkitConfig, Logger, RenameKeyResult } from './types.js'
+import { ConsoleLogger } from './utils/logger.js'
+import { loadTranslationFile, serializeTranslationFile, getOutputPath } from './utils/file-utils.js'
+import { getNestedValue, setNestedValue } from './utils/nested-object.js'
+import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 import { styleText } from 'node:util'
 
 const pluralSuffixes = ['zero', 'one', 'two', 'few', 'many', 'other']

@@ -3,7 +3,7 @@ import { styleText } from 'node:util'
 import ora from 'ora'
 import inquirer from 'inquirer'
 import { resolve, sep } from 'node:path'
-import type { I18nextToolkitConfig } from './types'
+import type { I18nextToolkitConfig } from './types.js'
 
 /**
  * Resolves the locize-cli executable to use.

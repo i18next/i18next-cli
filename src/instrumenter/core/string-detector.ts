@@ -1,6 +1,6 @@
-import type { I18nextToolkitConfig, CandidateString } from '../../types'
-import { lineColumnFromOffset } from '../../extractor/parsers/ast-utils'
-import { translatableAttributeSet, translatablePropertySet } from '../../utils/jsx-attributes'
+import type { I18nextToolkitConfig, CandidateString } from '../../types.js'
+import { lineColumnFromOffset } from '../../extractor/parsers/ast-utils.js'
+import { translatableAttributeSet, translatablePropertySet } from '../../utils/jsx-attributes.js'
 
 /**
  * Detects if a string is a candidate for translation based on confidence heuristics.
