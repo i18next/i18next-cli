@@ -17,7 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Extractor ([#210](https://github.com/i18next/i18next-cli/issues/210)):** `declare const x: TypeAlias` and `useState<TypeAlias>()` destructuring patterns now resolve after their referenced type alias is captured, fixing ordering-dependent failures
 - **Extractor ([#210](https://github.com/i18next/i18next-cli/issues/210)):** Exported `as const` arrays and type aliases are now shared across files, enabling cross-file resolution of imported constants and type aliases
 
-
 ## [1.49.0](https://github.com/i18next/i18next-cli/compare/v1.48.1...v1.49.0) - 2026-03-05
 
 - Extractor: resolve namespace from const/identifier expressions without custom plugins [#209](https://github.com/i18next/i18next-cli/issues/209)
