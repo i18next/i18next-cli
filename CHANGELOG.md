@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.48.2](https://github.com/i18next/i18next-cli/compare/v1.48.1...v1.48.2) - 2026-03-05
+## [1.49.0](https://github.com/i18next/i18next-cli/compare/v1.48.1...v1.49.0) - 2026-03-05
 
 - Extractor: resolve namespace from const/identifier expressions without custom plugins [#209](https://github.com/i18next/i18next-cli/issues/209)
 - Extractor: support TS type-aware resolution for finite dynamic keys (template unions, const maps, helper returns) [#210](https://github.com/i18next/i18next-cli/issues/210)
