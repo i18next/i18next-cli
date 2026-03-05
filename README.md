@@ -1443,6 +1443,10 @@ This programmatic API gives you the same power as the CLI but with full control 
 - [rsbuild-plugin-i18next-extractor](https://github.com/rspack-contrib/rsbuild-plugin-i18next-extractor) &mdash; A Rsbuild plugin that leverages the Rspack module graph to extract only the i18n translations that are actually imported and used in your code, preventing unused translations from being bundled.
 - [i18next-cli-vue](https://github.com/PBK-B/i18next-cli-vue) &mdash; i18next-cli plugin for extracting i18n keys from Vue SFC files, applicable to vue2 and vue3 
 
+## Other resources
+
+- [i18next-plugin-eslint](https://github.com/PBK-B/i18next-plugin-eslint) &mdash; The same set of eslint rules as i18next-cli lint, driven by the community
+
 ---
 
 <h3 align="center">Gold Sponsors</h3>
