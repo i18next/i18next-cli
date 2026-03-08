@@ -292,4 +292,149 @@ describe('extractor: as-const array and cross-file patterns', () => {
       expect(translationFile!.newTranslations).toHaveProperty('restrictedAccess')
     })
   })
+
+  // ─── hazem3500 bug report ────────────────────────────────────────────────────
+  // https://github.com/i18next/i18next-cli/issues/XXX (reported 2026-03-08)
+  //
+  // All three cases share the same root cause: the constants file
+  // (`@core/translations/ns`) was processed AFTER the component files, so
+  // `NS_SETTINGS` / `NS_CALENDAR` were not in `sharedConstants` yet when the
+  // `useTranslation` / `t()` calls were walked.  The fix (two-pass extraction
+  // in key-finder.ts) pre-scans every file for constants before extracting.
+
+  describe('hazem3500: cross-file namespace constants (regression)', () => {
+    // ── Bug 1 ──────────────────────────────────────────────────────────────────
+    // useTranslation([NS_SETTINGS, NS_TOASTS, NS_TRANSLATION]) — array form.
+    // The first element should become the default namespace for `t`.
+    it('should use first element of a cross-file identifier array as the default namespace', async () => {
+      await setupMultiFile({
+        // ns constants file processed AFTER the component (worst-case order)
+        '/src/z_ns.ts': `
+          export const NS_SETTINGS = 'settings';
+          export const NS_TOASTS = 'toasts';
+          export const NS_TRANSLATION = 'translation';
+        `,
+        '/src/Component.tsx': `
+          import { NS_SETTINGS, NS_TOASTS, NS_TRANSLATION } from './z_ns';
+          const { t } = useTranslation([NS_SETTINGS, NS_TOASTS, NS_TRANSLATION]);
+          t('settingsTitle');
+        `,
+      })
+
+      const results = await extract(mockConfig)
+      const settingsFile = results.find(r => pathEndsWith(r.path, '/locales/en/settings.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      // 'settingsTitle' must land in 'settings' — not in the default namespace
+      expect(settingsFile, 'settings.json should be created').toBeDefined()
+      expect(settingsFile!.newTranslations).toHaveProperty('settingsTitle')
+      expect(translationFile?.newTranslations ?? {}).not.toHaveProperty('settingsTitle')
+    })
+
+    // ── Bug 2 ──────────────────────────────────────────────────────────────────
+    // useTranslation(NS_CALENDAR) where NS_CALENDAR is imported from another file
+    // AND the key itself is dynamic (DAY_NAMES[dayIndex]).
+    it('should resolve cross-file useTranslation identifier and scoped dynamic key correctly', async () => {
+      await setupMultiFile({
+        '/src/z_ns.ts': `
+          export const NS_CALENDAR = 'calendar';
+        `,
+        '/src/Component.tsx': `
+          import { NS_CALENDAR } from './z_ns';
+
+          const DAY_NAMES = [
+            'sunday', 'monday', 'tuesday', 'wednesday',
+            'thursday', 'friday', 'saturday',
+          ] as const;
+
+          const { t } = useTranslation(NS_CALENDAR);
+
+          DAY_NAMES.map((day) => t(day));
+        `,
+      })
+
+      const results = await extract(mockConfig)
+      const calendarFile = results.find(r => pathEndsWith(r.path, '/locales/en/calendar.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      // All day keys must be in 'calendar', not in the default namespace
+      expect(calendarFile, 'calendar.json should be created').toBeDefined()
+      expect(calendarFile!.newTranslations).toHaveProperty('sunday')
+      expect(calendarFile!.newTranslations).toHaveProperty('saturday')
+      expect(translationFile?.newTranslations ?? {}).not.toHaveProperty('sunday')
+    })
+
+    // ── Bug 3 ──────────────────────────────────────────────────────────────────
+    // t('startWeekOn', { ns: NS_SETTINGS }) — explicit ns option from a cross-file
+    // identifier.  The key must appear ONLY in 'settings', never in 'translation'.
+    it('should not duplicate a key into default ns when explicit ns option is a cross-file identifier', async () => {
+      await setupMultiFile({
+        '/src/z_ns.ts': `
+          export const NS_SETTINGS = 'settings';
+        `,
+        '/src/Component.tsx': `
+          import { NS_SETTINGS } from './z_ns';
+          t('startWeekOn', { ns: NS_SETTINGS });
+        `,
+      })
+
+      const results = await extract(mockConfig)
+      const settingsFile = results.find(r => pathEndsWith(r.path, '/locales/en/settings.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(settingsFile, 'settings.json should be created').toBeDefined()
+      expect(settingsFile!.newTranslations).toHaveProperty('startWeekOn')
+
+      // Must NOT appear in default namespace as well
+      expect(translationFile?.newTranslations ?? {}).not.toHaveProperty('startWeekOn')
+    })
+
+    // ── Combined ───────────────────────────────────────────────────────────────
+    // All three patterns in a single realistic project layout where the constants
+    // file sorts AFTER all component files alphabetically.
+    it('should handle all three hazem3500 patterns together in a realistic project', async () => {
+      await setupMultiFile({
+        '/src/z_translations_ns.ts': `
+          export const NS_SETTINGS = 'settings';
+          export const NS_TOASTS   = 'toasts';
+          export const NS_CALENDAR = 'calendar';
+        `,
+        '/src/CalendarWidget.tsx': `
+          import { NS_CALENDAR } from './z_translations_ns';
+
+          const DAY_NAMES = ['sunday', 'monday', 'tuesday'] as const;
+          const { t } = useTranslation(NS_CALENDAR);
+          DAY_NAMES.map((day) => t(day));
+        `,
+        '/src/SettingsPage.tsx': `
+          import { NS_SETTINGS, NS_TOASTS } from './z_translations_ns';
+
+          const { t } = useTranslation([NS_SETTINGS, NS_TOASTS]);
+          t('settingsTitle');
+          t('startWeekOn', { ns: NS_SETTINGS });
+        `,
+      })
+
+      const results = await extract(mockConfig)
+      const calendarFile = results.find(r => pathEndsWith(r.path, '/locales/en/calendar.json'))
+      const settingsFile = results.find(r => pathEndsWith(r.path, '/locales/en/settings.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      // Calendar keys in correct namespace
+      expect(calendarFile, 'calendar.json should be created').toBeDefined()
+      expect(calendarFile!.newTranslations).toHaveProperty('sunday')
+      expect(calendarFile!.newTranslations).toHaveProperty('monday')
+
+      // Settings keys in correct namespace
+      expect(settingsFile, 'settings.json should be created').toBeDefined()
+      expect(settingsFile!.newTranslations).toHaveProperty('settingsTitle')
+      expect(settingsFile!.newTranslations).toHaveProperty('startWeekOn')
+
+      // Nothing should bleed into the default namespace
+      const defaultKeys = Object.keys(translationFile?.newTranslations ?? {})
+      expect(defaultKeys).not.toContain('sunday')
+      expect(defaultKeys).not.toContain('settingsTitle')
+      expect(defaultKeys).not.toContain('startWeekOn')
+    })
+  })
 })

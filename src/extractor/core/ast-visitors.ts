@@ -90,6 +90,65 @@ export class ASTVisitors {
   }
 
   /**
+   * Lightweight pre-scan pass: populates the shared constant / type-alias / array tables
+   * (`sharedConstants` in ScopeManager; `sharedVariableTable` and `sharedTypeAliasTable`
+   * in ExpressionResolver) WITHOUT performing any key extraction.
+   *
+   * Callers should invoke this for ALL source files before calling `visit()` for any file,
+   * so that cross-file identifier references — e.g. `useTranslation(NS_CALENDAR)` where
+   * `NS_CALENDAR` is exported from a separate constants file — are already resolved when
+   * the hook call is encountered during the extraction pass.
+   *
+   * The per-file tables (variableTable, typeAliasTable) are reset on each call so that
+   * local bindings from one file do not bleed into another; the shared tables accumulate
+   * across all calls and are intentionally NOT cleared here.
+   */
+  public preScanForConstants (node: Module): void {
+    this.expressionResolver.resetFileSymbols()
+    this._walkForConstants(node)
+  }
+
+  /**
+   * Recursive walker used exclusively by `preScanForConstants`.
+   * Dispatches only to constant-capturing handlers; never extracts translation keys.
+   */
+  private _walkForConstants (node: any): void {
+    if (!node || typeof node !== 'object') return
+
+    switch (node.type) {
+      case 'VariableDeclarator':
+        // String constants  → ScopeManager.sharedConstants
+        // as-const arrays/objects → ExpressionResolver.sharedVariableTable
+        this.scopeManager.handleVariableDeclarator(node)
+        this.expressionResolver.captureVariableDeclarator(node)
+        break
+      case 'TsTypeAliasDeclaration':
+      case 'TSTypeAliasDeclaration':
+      case 'TsTypeAliasDecl':
+        // Type aliases → ExpressionResolver.sharedTypeAliasTable
+        this.expressionResolver.captureTypeAliasDeclaration(node)
+        break
+      case 'FunctionDeclaration':
+      case 'FnDecl':
+        // Return-type annotations for t(fn()) patterns
+        this.expressionResolver.captureFunctionDeclaration(node)
+        break
+    }
+
+    for (const key in node) {
+      if (key === 'span') continue
+      const child = node[key]
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (item && typeof item === 'object') this._walkForConstants(item)
+        }
+      } else if (child && typeof child === 'object') {
+        this._walkForConstants(child)
+      }
+    }
+  }
+
+  /**
    * Main entry point for AST traversal.
    * Creates a root scope and begins the recursive walk through the syntax tree.
    *

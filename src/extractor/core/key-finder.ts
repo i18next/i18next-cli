@@ -1,7 +1,7 @@
 import { glob } from 'glob'
 import type { Expression } from '@swc/core'
 import type { ExtractedKey, Logger, I18nextToolkitConfig, ASTVisitorHooks } from '../../types.js'
-import { processFile } from './extractor.js'
+import { processFile, preScanFile } from './extractor.js'
 import { ConsoleLogger } from '../../utils/logger.js'
 import { initializePlugins, createPluginContext } from '../plugin-manager.js'
 import { ASTVisitors } from './ast-visitors.js'
@@ -94,7 +94,17 @@ export async function findKeys (
   // 5. Initialize plugins
   await initializePlugins(plugins)
 
-  // 6. Process each file
+  // 6. Pre-scan all files to populate cross-file shared constant tables BEFORE any
+  //    key extraction begins. This ensures that identifier-based namespace references
+  //    such as `useTranslation(NS_CALENDAR)` or `t('key', { ns: NS_SETTINGS })` resolve
+  //    correctly even when the defining constants file is processed after the file that
+  //    uses the identifier.
+  for (const file of sourceFiles) {
+    await preScanFile(file, astVisitors, otherConfig, logger, fileErrors)
+  }
+
+  // 7. Extraction pass: all shared tables are now fully populated, so every
+  //    identifier reference can be resolved regardless of file order.
   for (const file of sourceFiles) {
     await processFile(file, plugins, astVisitors, pluginContext, otherConfig, logger, fileErrors)
   }

@@ -276,7 +276,82 @@ export async function processFile (
 }
 
 /**
- * Simplified extraction function that returns translation results without file writing.
+ * Lightweight pre-scan pass for a single file.
+ *
+ * Parses the file and calls `astVisitors.preScanForConstants()` to populate
+ * cross-file shared constant / type-alias / array tables WITHOUT extracting
+ * any translation keys or running plugin hooks.
+ *
+ * Intended to be called for ALL files in a first pass before `processFile` is
+ * called for any file, ensuring that exported identifier references such as
+ * `NS_CALENDAR` from `@core/translations/ns` are resolved in all files
+ * regardless of processing order.
+ *
+ * @param file   - Absolute or CWD-relative path of the source file to pre-scan
+ * @param astVisitors - Shared visitor instance (holds the shared constant tables)
+ * @param config - Extractor configuration (without plugins)
+ * @param logger - Logger for warnings/errors
+ * @param fileErrors - Optional array to collect per-file error messages
+ */
+export async function preScanFile (
+  file: string,
+  astVisitors: ASTVisitors,
+  config: Omit<I18nextToolkitConfig, 'plugins'>,
+  logger: Logger = new ConsoleLogger(),
+  fileErrors?: string[]
+): Promise<void> {
+  try {
+    const code = await readFile(file, 'utf-8')
+    const fileExt = extname(file).toLowerCase()
+    const isTypeScriptFile = fileExt === '.ts' || fileExt === '.tsx' || fileExt === '.mts' || fileExt === '.cts'
+    const isTSX = fileExt === '.tsx'
+    const isJSX = fileExt === '.jsx'
+
+    let ast: Module
+    try {
+      ast = await parse(code, {
+        syntax: isTypeScriptFile ? 'typescript' : 'ecmascript',
+        tsx: isTSX,
+        jsx: isJSX,
+        decorators: true,
+        dynamicImport: true,
+        comments: true,
+      })
+    } catch (err) {
+      if (fileExt === '.ts' && !isTSX) {
+        try {
+          ast = await parse(code, { syntax: 'typescript', tsx: true, decorators: true, dynamicImport: true, comments: true })
+        } catch (err2) {
+          throw new ExtractorError('Failed to pre-scan file', file, err2 as Error)
+        }
+      } else if (fileExt === '.js' && !isJSX) {
+        try {
+          ast = await parse(code, { syntax: 'ecmascript', jsx: true, decorators: true, dynamicImport: true, comments: true })
+        } catch (err2) {
+          throw new ExtractorError('Failed to pre-scan file', file, err2 as Error)
+        }
+      } else {
+        throw new ExtractorError('Failed to pre-scan file', file, err as Error)
+      }
+    }
+
+    const firstTokenIdx = findFirstTokenIndex(code)
+    normalizeASTSpans(ast, ast.span.start - firstTokenIdx)
+
+    astVisitors.setCurrentFile(file, code)
+    astVisitors.preScanForConstants(ast)
+  } catch (error) {
+    if (error instanceof ConflictError) throw error
+    logger.warn(`${styleText('yellow', 'Skipping file in constants pre-scan due to error:')} ${file}`)
+    const err = error as any
+    const msg = typeof err?.message === 'string' && err.message.trim().length > 0
+      ? err.message
+      : (typeof err === 'string' ? err : '') || err?.toString?.() || 'Unknown error'
+    if (fileErrors) fileErrors.push(`${file}: ${msg}`)
+  }
+}
+
+/**
  * Used primarily for testing and programmatic access.
  *
  * @param config - The i18next toolkit configuration object

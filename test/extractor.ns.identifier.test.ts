@@ -22,6 +22,13 @@ const mockConfig: I18nextToolkitConfig = {
   },
 }
 
+// Helper for multi-file tests
+async function setupMultiFile (files: Record<string, string>) {
+  vol.fromJSON(files)
+  const { glob } = await import('glob')
+  ;(glob as any).mockResolvedValue(Object.keys(files))
+}
+
 // "extract: resolve namespace from const/identifier expressions without custom plugins"
 describe('extractor: namespace resolution from identifier expressions (issue)', () => {
   beforeEach(async () => {
@@ -207,6 +214,76 @@ describe('extractor: namespace resolution from identifier expressions (issue)', 
 
       expect(featureFile, 'feature.json should exist').toBeDefined()
       expect(featureFile!.newTranslations).toHaveProperty('featureTitle')
+    })
+  })
+
+  // ─── Cross-file identifier resolution (hazem3500 regression) ────────────────
+  // All three patterns share the same root: the constants file (`@core/translations/ns`)
+  // was processed AFTER the component, so identifiers were unresolved during extraction.
+  // The fix (two-pass: pre-scan then extract) must make these pass regardless of file order.
+
+  describe('cross-file: NS constants defined in a separate file', () => {
+    it('should resolve useTranslation(NS_IDENTIFIER) when constant is in another file', async () => {
+      await setupMultiFile({
+        // "z_" prefix forces this file to sort after the component alphabetically
+        '/src/z_ns.ts': 'export const NS_SETTINGS = \'settings\';',
+        '/src/Component.tsx': `
+          import { NS_SETTINGS } from './z_ns';
+          const { t } = useTranslation(NS_SETTINGS);
+          t('settingsTitle');
+        `,
+      })
+
+      const results = await extract(mockConfig)
+      const settingsFile = results.find(r => pathEndsWith(r.path, '/locales/en/settings.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(settingsFile, 'settings.json should be created').toBeDefined()
+      expect(settingsFile!.newTranslations).toHaveProperty('settingsTitle')
+      // Must not bleed into the default namespace
+      expect(translationFile?.newTranslations ?? {}).not.toHaveProperty('settingsTitle')
+    })
+
+    it('should resolve t(key, { ns: NS_IDENTIFIER }) and not duplicate into default namespace', async () => {
+      await setupMultiFile({
+        '/src/z_ns.ts': 'export const NS_SETTINGS = \'settings\';',
+        '/src/Component.tsx': `
+          import { NS_SETTINGS } from './z_ns';
+          t('startWeekOn', { ns: NS_SETTINGS });
+        `,
+      })
+
+      const results = await extract(mockConfig)
+      const settingsFile = results.find(r => pathEndsWith(r.path, '/locales/en/settings.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(settingsFile, 'settings.json should be created').toBeDefined()
+      expect(settingsFile!.newTranslations).toHaveProperty('startWeekOn')
+      // Bug 3: key must NOT also appear in translation.json
+      expect(translationFile?.newTranslations ?? {}).not.toHaveProperty('startWeekOn')
+    })
+
+    it('should use the first array element as namespace for useTranslation([NS_A, NS_B])', async () => {
+      await setupMultiFile({
+        '/src/z_ns.ts': `
+          export const NS_SETTINGS   = 'settings';
+          export const NS_TOASTS     = 'toasts';
+          export const NS_TRANSLATION = 'translation';
+        `,
+        '/src/Component.tsx': `
+          import { NS_SETTINGS, NS_TOASTS, NS_TRANSLATION } from './z_ns';
+          const { t } = useTranslation([NS_SETTINGS, NS_TOASTS, NS_TRANSLATION]);
+          t('settingsTitle');
+        `,
+      })
+
+      const results = await extract(mockConfig)
+      const settingsFile = results.find(r => pathEndsWith(r.path, '/locales/en/settings.json'))
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(settingsFile, 'settings.json should be created').toBeDefined()
+      expect(settingsFile!.newTranslations).toHaveProperty('settingsTitle')
+      expect(translationFile?.newTranslations ?? {}).not.toHaveProperty('settingsTitle')
     })
   })
 })
