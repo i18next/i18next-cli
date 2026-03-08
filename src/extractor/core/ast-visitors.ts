@@ -533,6 +533,10 @@ export class ASTVisitors {
    * If `node` is a call like `ARRAY.map(param => ...)` where ARRAY is a known
    * string-array constant, returns the callback's first parameter name and the
    * array values so the caller can inject a temporary variable binding.
+   *
+   * Also handles:
+   *   `Object.keys(MAP).map/forEach(k => ...)`  → param bound to MAP's keys
+   *   `Object.values(MAP).map/forEach(v => ...)` → param bound to MAP's values
    */
   private tryGetArrayIterationCallbackInfo (node: any): { paramName: string; values: string[] } | undefined {
     try {
@@ -544,34 +548,72 @@ export class ASTVisitors {
 
       // The object must be an identifier whose value is a known string array
       const obj = callee.object
-      if (obj?.type !== 'Identifier') return undefined
-      const values = this.expressionResolver.getVariableValues(obj.value)
-      if (!values || values.length === 0) return undefined
 
-      // First argument must be a callback with at least one parameter
-      const callbackArg = node.arguments?.[0]?.expression
-      if (!callbackArg) return undefined
+      // ── Case 1: KNOWN_ARRAY.map(x => ...) ─────────────────────────────────
+      if (obj?.type === 'Identifier') {
+        const values = this.expressionResolver.getVariableValues(obj.value)
+        if (values && values.length > 0) {
+          return this.extractCallbackParam(node, values)
+        }
+      }
 
-      // Normalise param across SWC shapes: ArrowFunctionExpression / FunctionExpression
-      const params: any[] = callbackArg.params ?? callbackArg.parameters ?? []
-      const firstParam = params[0]
-      if (!firstParam) return undefined
+      // ── Case 2: Object.keys(MAP).map(k => ...) ────────────────────────────
+      //            Object.values(MAP).map(v => ...)
+      // callee.object is a CallExpression: Object.keys(...) / Object.values(...)
+      if (obj?.type === 'CallExpression') {
+        const innerCallee = obj.callee
+        // Must be `Object.keys` or `Object.values`
+        if (
+          innerCallee?.type === 'MemberExpression' &&
+          innerCallee.object?.type === 'Identifier' &&
+          innerCallee.object.value === 'Object' &&
+          innerCallee.property?.type === 'Identifier' &&
+          (innerCallee.property.value === 'keys' || innerCallee.property.value === 'values')
+        ) {
+          const isKeys = innerCallee.property.value === 'keys'
+          // The single argument to Object.keys/values must be a known identifier
+          const mapArg = obj.arguments?.[0]?.expression
+          if (mapArg?.type === 'Identifier') {
+            const mapEntry = this.expressionResolver.getObjectMap(mapArg.value)
+            if (mapEntry) {
+              const values = isKeys ? Object.keys(mapEntry) : Object.values(mapEntry)
+              if (values.length > 0) {
+                return this.extractCallbackParam(node, values)
+              }
+            }
+          }
+        }
+      }
 
-      // SWC wraps params in `Param { pat: Identifier }` or exposes them directly
-      const ident: any =
-        firstParam.type === 'Identifier'
-          ? firstParam
-          : firstParam.type === 'Param' && firstParam.pat?.type === 'Identifier'
-            ? firstParam.pat
-            : firstParam.type === 'AssignmentPattern' && firstParam.left?.type === 'Identifier'
-              ? firstParam.left
-              : null
-
-      if (!ident) return undefined
-      return { paramName: ident.value, values }
+      return undefined
     } catch {
       return undefined
     }
+  }
+
+  /**
+   * Extracts the first callback parameter identifier from an iteration call node
+   * and pairs it with the provided values array.
+   */
+  private extractCallbackParam (node: any, values: string[]): { paramName: string; values: string[] } | undefined {
+    const callbackArg = node.arguments?.[0]?.expression
+    if (!callbackArg) return undefined
+
+    const params: any[] = callbackArg.params ?? callbackArg.parameters ?? []
+    const firstParam = params[0]
+    if (!firstParam) return undefined
+
+    const ident: any =
+      firstParam.type === 'Identifier'
+        ? firstParam
+        : firstParam.type === 'Param' && firstParam.pat?.type === 'Identifier'
+          ? firstParam.pat
+          : firstParam.type === 'AssignmentPattern' && firstParam.left?.type === 'Identifier'
+            ? firstParam.left
+            : null
+
+    if (!ident) return undefined
+    return { paramName: ident.value, values }
   }
 
   /**

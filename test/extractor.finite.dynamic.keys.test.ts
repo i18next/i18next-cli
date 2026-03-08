@@ -270,4 +270,175 @@ describe('extractor: finite dynamic key resolution (issue #210)', () => {
       expect(translationFile!.newTranslations).toHaveProperty('nextAccess')
     })
   })
+
+  // ─── Pattern 5: enum as type annotation ──────────────────────────────────────
+
+  describe('TypeScript enum used as type annotation for a variable', () => {
+    it('should expand all string-valued enum members for declare const typed as an enum', async () => {
+      // enum Direction { Up = 'up', Down = 'down' }
+      // declare const dir: Direction;
+      // t(`move.${dir}`)  →  move.up, move.down
+      const sampleCode = `
+        enum Direction {
+          Up = 'up',
+          Down = 'down',
+          Left = 'left',
+          Right = 'right',
+        }
+        declare const dir: Direction;
+        t(\`move.\${dir}\`);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile, 'translation.json should be created').toBeDefined()
+      expect(translationFile!.newTranslations).toHaveProperty('move.up')
+      expect(translationFile!.newTranslations).toHaveProperty('move.down')
+      expect(translationFile!.newTranslations).toHaveProperty('move.left')
+      expect(translationFile!.newTranslations).toHaveProperty('move.right')
+    })
+
+    it('should expand enum values when used as a direct t() argument', async () => {
+      const sampleCode = `
+        enum Status {
+          Active = 'status.active',
+          Inactive = 'status.inactive',
+        }
+        declare const s: Status;
+        t(s);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toHaveProperty('status.active')
+      expect(translationFile!.newTranslations).toHaveProperty('status.inactive')
+    })
+
+    it('should NOT produce keys for numeric enums (only string-valued enums are finite keys)', async () => {
+      const sampleCode = `
+        enum Count { One = 1, Two = 2 }
+        declare const c: Count;
+        t(\`num.\${c}\`);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      // Numeric enums produce no extractable string keys
+      const keys = Object.keys(results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))?.newTranslations ?? {})
+      expect(keys).toHaveLength(0)
+    })
+  })
+
+  // ─── Pattern 6: keyof typeof MAP ─────────────────────────────────────────────
+
+  describe('keyof typeof MAP as type annotation for a key variable', () => {
+    it('should expand all map keys when a variable is typed as keyof typeof MAP', async () => {
+      // const LABELS = { save: 'actions.save', cancel: 'actions.cancel' } as const;
+      // declare const k: keyof typeof LABELS;
+      // t(LABELS[k])  →  actions.save, actions.cancel
+      const sampleCode = `
+        const LABELS = {
+          save: 'actions.save',
+          cancel: 'actions.cancel',
+          delete: 'actions.delete',
+        } as const;
+        declare const k: keyof typeof LABELS;
+        t(LABELS[k]);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile, 'translation.json should be created').toBeDefined()
+      expect(translationFile!.newTranslations).toHaveProperty('actions.save')
+      expect(translationFile!.newTranslations).toHaveProperty('actions.cancel')
+      expect(translationFile!.newTranslations).toHaveProperty('actions.delete')
+    })
+
+    it('should use keyof typeof to restrict which map values are extracted', async () => {
+      // Only the keys present in the keyof union should produce values
+      const sampleCode = `
+        const ICONS = { info: 'icon.info', warn: 'icon.warn', error: 'icon.error' } as const;
+        type VisibleIcon = keyof typeof ICONS;
+        declare const icon: VisibleIcon;
+        t(ICONS[icon]);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toHaveProperty('icon.info')
+      expect(translationFile!.newTranslations).toHaveProperty('icon.warn')
+      expect(translationFile!.newTranslations).toHaveProperty('icon.error')
+    })
+  })
+
+  // ─── Pattern 7: Object.keys / Object.values iteration ─────────────────────
+
+  describe('Object.keys(MAP) and Object.values(MAP) iteration callbacks', () => {
+    it('should expand all map values when Object.keys is used to iterate and key is used to index', async () => {
+      // Object.keys(MAP).forEach(k => t(MAP[k]))  →  all MAP values
+      const sampleCode = `
+        const SECTION_KEYS = {
+          intro: 'page.intro',
+          body: 'page.body',
+          footer: 'page.footer',
+        } as const;
+        Object.keys(SECTION_KEYS).forEach((k) => {
+          t(SECTION_KEYS[k]);
+        });
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile, 'translation.json should be created').toBeDefined()
+      expect(translationFile!.newTranslations).toHaveProperty('page.intro')
+      expect(translationFile!.newTranslations).toHaveProperty('page.body')
+      expect(translationFile!.newTranslations).toHaveProperty('page.footer')
+    })
+
+    it('should expand all map values when Object.values is iterated directly in t()', async () => {
+      // Object.values(MAP).map(v => t(v))  →  all MAP values
+      const sampleCode = `
+        const MESSAGES = {
+          welcome: 'msg.welcome',
+          bye: 'msg.bye',
+        } as const;
+        Object.values(MESSAGES).map((msg) => t(msg));
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toHaveProperty('msg.welcome')
+      expect(translationFile!.newTranslations).toHaveProperty('msg.bye')
+    })
+
+    it('should work with Object.keys in a .map() returning a JSX-like element', async () => {
+      const sampleCode = `
+        const TABS = { overview: 'tabs.overview', billing: 'tabs.billing' } as const;
+        Object.keys(TABS).map((key) => ({ label: t(TABS[key]) }));
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toHaveProperty('tabs.overview')
+      expect(translationFile!.newTranslations).toHaveProperty('tabs.billing')
+    })
+  })
 })

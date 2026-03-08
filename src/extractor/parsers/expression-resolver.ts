@@ -284,6 +284,19 @@ export class ExpressionResolver {
   }
 
   /**
+   * Return the as-const object map stored for a variable name.
+   * Returns undefined if the name is not a known object map.
+   * Checks per-file variableTable first, then sharedEnumTable (for enums).
+   */
+  public getObjectMap (name: string): Record<string, string> | undefined {
+    const v = this.variableTable.get(name)
+    if (v && !Array.isArray(v) && typeof v === 'object') return v as Record<string, string>
+    const ev = this.sharedEnumTable.get(name)
+    if (ev) return ev
+    return undefined
+  }
+
+  /**
    * Capture a TypeScript enum declaration so members can be resolved later.
    * Accepts SWC node shapes like `TsEnumDeclaration` / `TSEnumDeclaration`.
    *
@@ -579,14 +592,25 @@ export class ExpressionResolver {
     // pattern 2:
     // Resolve a named type alias reference: `declare const x: ChangeType`
     // where `type ChangeType = 'all' | 'next' | 'this'` was captured earlier.
+    // Also handles `declare const d: SomeEnum` where SomeEnum is a TS enum with string values.
     if (type.type === 'TsTypeReference') {
       const typeName: string | undefined =
         (type as any).typeName?.type === 'Identifier'
           ? (type as any).typeName.value
           : undefined
       if (typeName) {
+        // 1. Check type alias table first (exact match for string-literal unions)
         const aliasVals = this.typeAliasTable.get(typeName) ?? this.sharedTypeAliasTable.get(typeName)
         if (aliasVals && aliasVals.length > 0) return aliasVals
+
+        // 2. Fall back to enum: `declare const d: Direction` where Direction is a string enum.
+        //    sharedEnumTable maps enum-name → { MemberName: value }.
+        //    A variable typed as the enum can take any of the enum's string values.
+        const enumMap = this.sharedEnumTable.get(typeName)
+        if (enumMap) {
+          const enumVals = Object.values(enumMap) as string[]
+          if (enumVals.length > 0) return enumVals
+        }
       }
     }
 
@@ -611,6 +635,38 @@ export class ExpressionResolver {
           if (varName) {
             const vals = this.getVariableValues(varName)
             if (vals && vals.length > 0) return vals
+          }
+        }
+      } catch {}
+    }
+
+    // `keyof typeof MAP` — resolve to the keys of a known as-const object map.
+    // SWC emits: TsTypeOperator {
+    //   operator: 'keyof',
+    //   typeAnnotation: TsTypeQuery { exprName: Identifier }
+    // }
+    // This is the type of a variable that iterates over map keys:
+    //   declare const k: keyof typeof LABELS; t(LABELS[k])
+    //   Object.keys(MAP).forEach(k => t(MAP[k]))
+    if ((type as any).type === 'TsTypeOperator') {
+      try {
+        const op = (type as any).operator
+        if (op === 'keyof') {
+          let inner = (type as any).typeAnnotation
+          while (inner?.type === 'TsParenthesizedType') inner = inner.typeAnnotation
+          if (inner?.type === 'TsTypeQuery' || inner?.type === 'TSTypeQuery') {
+            const exprName = inner.exprName ?? inner.expr ?? inner.entityName
+            const varName: string | undefined = exprName?.value ?? exprName?.name
+            if (varName) {
+              // Look up in variableTable (local) or sharedVariableTable (cross-file) for object maps
+              const v = this.variableTable.get(varName) ?? this.sharedVariableTable.get(varName)
+              if (v && !Array.isArray(v) && typeof v === 'object') {
+                return Object.keys(v as Record<string, string>)
+              }
+              // Also check sharedEnumTable (enum keys)
+              const ev = this.sharedEnumTable.get(varName)
+              if (ev) return Object.keys(ev)
+            }
           }
         }
       } catch {}

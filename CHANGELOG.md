@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.49.4](https://github.com/i18next/i18next-cli/compare/v1.49.3...v1.49.4) - 2026-03-08
 
 -  improve extractor regarding "resolve namespace from const/identifier expressions" [#209](https://github.com/i18next/i18next-cli/issues/209)
+- improve extractor regarding "support TS type-aware resolution for finite dynamic keys (template unions, const maps, helper returns)" [#210](https://github.com/i18next/i18next-cli/issues/210)
 
 ## [1.49.3](https://github.com/i18next/i18next-cli/compare/v1.49.2...v1.49.3) - 2026-03-05
 
