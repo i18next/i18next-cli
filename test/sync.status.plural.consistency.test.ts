@@ -2,6 +2,7 @@ import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { resolve } from 'path'
 import type { I18nextToolkitConfig } from '../src/index'
+import { normalizePath, pathEndsWith } from './utils/path'
 
 /**
  * Bug reproduction tests for:
@@ -35,6 +36,13 @@ vi.mock('glob', () => ({ glob: vi.fn() }))
 // Import after mocks are registered
 const { runStatus } = await import('../src/index')
 const { runSyncer } = await import('../src/syncer')
+
+/** Look up a file in the memfs volume by normalized path suffix. */
+function findVolFile (suffix: string): string | undefined {
+  const json = vol.toJSON() as Record<string, string>
+  const key = Object.keys(json).find(p => pathEndsWith(p, suffix))
+  return key ? json[key] : undefined
+}
 
 // ---------------------------------------------------------------------------
 // Helper: build the config used throughout these tests
@@ -117,7 +125,7 @@ describe('sync + status plural consistency (bug report reproduction)', () => {
     vi.mocked(glob).mockImplementation(async (pattern: any) => {
       // The syncer uses glob to discover primary-language namespace files.
       // Return any memfs path that matches the primary locale directory.
-      return Object.keys(vol.toJSON()).filter(p => p.includes('/en/'))
+      return Object.keys(vol.toJSON()).filter(p => normalizePath(p).includes('/en/'))
     })
 
     // consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -168,8 +176,8 @@ describe('sync + status plural consistency (bug report reproduction)', () => {
     await runSyncer(config, { quiet: true })
 
     // Read the post-sync locale files
-    const frRaw = vol.toJSON()[resolve(process.cwd(), 'locales/fr/common.json')]
-    const esRaw = vol.toJSON()[resolve(process.cwd(), 'locales/es/common.json')]
+    const frRaw = findVolFile('locales/fr/common.json')
+    const esRaw = findVolFile('locales/es/common.json')
 
     expect(frRaw).toBeDefined()
     expect(esRaw).toBeDefined()
@@ -236,7 +244,7 @@ describe('sync + status plural consistency (bug report reproduction)', () => {
     // status re-uses glob to find source files for key extraction
     const { glob } = await import('glob')
     vi.mocked(glob).mockImplementation(async (pattern: any) => {
-      return Object.keys(vol.toJSON()).filter(p => p.includes('/src/'))
+      return Object.keys(vol.toJSON()).filter(p => normalizePath(p).includes('/src/'))
     })
 
     // Run status (equivalent to `i18next-cli status`)
@@ -280,7 +288,7 @@ describe('sync + status plural consistency (bug report reproduction)', () => {
     // Step 2: status — re-point glob to source files for key extraction
     const { glob } = await import('glob')
     vi.mocked(glob).mockImplementation(async (pattern: any) => {
-      return Object.keys(vol.toJSON()).filter(p => p.includes('/src/'))
+      return Object.keys(vol.toJSON()).filter(p => normalizePath(p).includes('/src/'))
     })
 
     try {
@@ -319,8 +327,8 @@ describe('sync + status plural consistency (bug report reproduction)', () => {
 
     await runSyncer(config, { quiet: true })
 
-    const frRaw = vol.toJSON()[resolve(process.cwd(), 'locales/fr/common.json')]
-    const esRaw = vol.toJSON()[resolve(process.cwd(), 'locales/es/common.json')]
+    const frRaw = findVolFile('locales/fr/common.json')
+    const esRaw = findVolFile('locales/es/common.json')
 
     const frAfterSync = JSON.parse(frRaw!)
     const esAfterSync = JSON.parse(esRaw!)
@@ -377,7 +385,7 @@ describe('sync + status plural consistency (bug report reproduction)', () => {
 
     await runSyncer(config, { quiet: true })
 
-    const frRaw = vol.toJSON()[resolve(process.cwd(), 'locales/fr/common.json')]
+    const frRaw = findVolFile('locales/fr/common.json')
     const frAfterSync = JSON.parse(frRaw!)
 
     // `subtitle` was not in primary — it should be removed
