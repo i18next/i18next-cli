@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.49.6](https://github.com/i18next/i18next-cli/compare/v1.49.5...v1.49.6) - 2026-03-10
+
+- fix: sync clears locale-specific plural forms like _many in secondary locales, causing status to report missing translations [#215](https://github.com/i18next/i18next-cli/issues/215)
+
 ## [1.49.5](https://github.com/i18next/i18next-cli/compare/v1.49.4...v1.49.5) - 2026-03-10
 
 - updated dependencies

@@ -91,6 +91,7 @@ export async function runSyncer (
       }
 
       const primaryKeys = getNestedKeys(primaryTranslations, keySeparator ?? '.')
+      const primaryKeySet = new Set(primaryKeys)
 
       // 3. For each secondary language, sync the current namespace
       for (const lang of secondaryLanguages) {
@@ -99,6 +100,59 @@ export async function runSyncer (
         const existingSecondaryTranslations = await loadTranslationFile(fullSecondaryPath) || {}
         const newSecondaryTranslations: Record<string, any> = {}
 
+        // Determine CLDR plural categories for this specific secondary locale so
+        // we can recognise locale-specific plural suffixes (e.g. `_many` for fr/es)
+        // that are not present in the primary language and must not be discarded.
+        const sep = config.extract.pluralSeparator ?? '_'
+        const localeCardinalCategories: Set<string> = (() => {
+          try {
+            return new Set(new Intl.PluralRules(lang, { type: 'cardinal' }).resolvedOptions().pluralCategories)
+          } catch {
+            return new Set(['one', 'other'])
+          }
+        })()
+        const localeOrdinalCategories: Set<string> = (() => {
+          try {
+            return new Set(new Intl.PluralRules(lang, { type: 'ordinal' }).resolvedOptions().pluralCategories)
+          } catch {
+            return new Set(['one', 'other', 'two', 'few'])
+          }
+        })()
+
+        /**
+         * Returns true when `key` is a plural variant that is:
+         *  1. Valid for this locale's CLDR rules (cardinal or ordinal), AND
+         *  2. Derived from a base key that exists in the primary locale.
+         *
+         * This handles both cardinal (`title_many`) and ordinal
+         * (`place_ordinal_few`) suffixes so neither gets erased during sync.
+         */
+        const isLocaleSpecificPluralExtension = (key: string): boolean => {
+          // Cardinal: key ends with `{sep}{category}` and base key is in primary
+          for (const cat of localeCardinalCategories) {
+            const suffix = `${sep}${cat}`
+            if (key.endsWith(suffix)) {
+              const base = key.slice(0, -suffix.length)
+              // The base itself, or any primary key that starts with `{base}{sep}`,
+              // confirms this is a plural family rooted in the primary locale.
+              if (primaryKeySet.has(base) || primaryKeys.some(pk => pk.startsWith(`${base}${sep}`))) {
+                return true
+              }
+            }
+          }
+          // Ordinal: key ends with `{sep}ordinal{sep}{category}`
+          for (const cat of localeOrdinalCategories) {
+            const suffix = `${sep}ordinal${sep}${cat}`
+            if (key.endsWith(suffix)) {
+              const base = key.slice(0, -suffix.length)
+              if (primaryKeySet.has(base) || primaryKeys.some(pk => pk.startsWith(`${base}${sep}`))) {
+                return true
+              }
+            }
+          }
+          return false
+        }
+
         for (const key of primaryKeys) {
           const primaryValue = getNestedValue(primaryTranslations, key, keySeparator ?? '.')
           const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
@@ -106,6 +160,24 @@ export async function runSyncer (
           // Use the resolved default value if no existing value
           const valueToSet = existingValue ?? resolveDefaultValue(defaultValue, key, ns, lang, primaryValue)
           setNestedValue(newSecondaryTranslations, key, valueToSet, keySeparator ?? '.')
+        }
+
+        // Preserve locale-specific plural forms that exist in the secondary file
+        // but are absent from the primary locale (e.g. `_many` for French/Spanish
+        // when the primary language is English, which has no `_many` category).
+        // Without this pass the syncer would silently drop those keys, causing
+        // `status` to immediately report them as missing.
+        const existingSecondaryKeys = getNestedKeys(existingSecondaryTranslations, keySeparator ?? '.')
+        for (const key of existingSecondaryKeys) {
+          if (!primaryKeySet.has(key) && isLocaleSpecificPluralExtension(key)) {
+            const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
+            // Only preserve non-empty values; an empty string was likely a
+            // placeholder left by a previous (buggy) sync run and should not
+            // be perpetuated.
+            if (existingValue !== '' && existingValue != null) {
+              setNestedValue(newSecondaryTranslations, key, existingValue, keySeparator ?? '.')
+            }
+          }
         }
 
         // Use JSON.stringify for a reliable object comparison, regardless of format
