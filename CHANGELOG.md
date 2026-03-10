@@ -5,9 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.49.5](https://github.com/i18next/i18next-cli/compare/v1.49.4...v1.49.5) - 2026-03-10
+
+- updated dependencies
+
 ## [1.49.4](https://github.com/i18next/i18next-cli/compare/v1.49.3...v1.49.4) - 2026-03-08
 
--  improve extractor regarding "resolve namespace from const/identifier expressions" [#209](https://github.com/i18next/i18next-cli/issues/209)
+- improve extractor regarding "resolve namespace from const/identifier expressions" [#209](https://github.com/i18next/i18next-cli/issues/209)
 - improve extractor regarding "support TS type-aware resolution for finite dynamic keys (template unions, const maps, helper returns)" [#210](https://github.com/i18next/i18next-cli/issues/210)
 
 ## [1.49.3](https://github.com/i18next/i18next-cli/compare/v1.49.2...v1.49.3) - 2026-03-05
@@ -20,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.49.1](https://github.com/i18next/i18next-cli/compare/v1.49.0...v1.49.1) - 2026-03-05
 
--  **Extractor ([#209](https://github.com/i18next/i18next-cli/issues/209)):** `t('key', { ns: IDENTIFIER })` now correctly resolves the namespace when `ns` is a `const` variable, matching the already-supported `useTranslation(IDENTIFIER)` pattern
+- **Extractor ([#209](https://github.com/i18next/i18next-cli/issues/209)):** `t('key', { ns: IDENTIFIER })` now correctly resolves the namespace when `ns` is a `const` variable, matching the already-supported `useTranslation(IDENTIFIER)` pattern
 - **Extractor ([#210](https://github.com/i18next/i18next-cli/issues/210)):** `as const` array literals (`['a', 'b'] as const`) are now captured and their values expanded when used in `.map()` / `.forEach()` callbacks
 - **Extractor ([#210](https://github.com/i18next/i18next-cli/issues/210)):** `(typeof ARRAY)[number]` indexed access types now resolve correctly through `TsParenthesizedType` wrappers emitted by SWC
 - **Extractor ([#210](https://github.com/i18next/i18next-cli/issues/210)):** `declare const x: TypeAlias` and `useState<TypeAlias>()` destructuring patterns now resolve after their referenced type alias is captured, fixing ordering-dependent failures
