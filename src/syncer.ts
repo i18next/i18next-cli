@@ -153,30 +153,51 @@ export async function runSyncer (
           return false
         }
 
-        for (const key of primaryKeys) {
-          const primaryValue = getNestedValue(primaryTranslations, key, keySeparator ?? '.')
-          const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
-
-          // Use the resolved default value if no existing value
-          const valueToSet = existingValue ?? resolveDefaultValue(defaultValue, key, ns, lang, primaryValue)
-          setNestedValue(newSecondaryTranslations, key, valueToSet, keySeparator ?? '.')
-        }
-
-        // Preserve locale-specific plural forms that exist in the secondary file
-        // but are absent from the primary locale (e.g. `_many` for French/Spanish
-        // when the primary language is English, which has no `_many` category).
-        // Without this pass the syncer would silently drop those keys, causing
-        // `status` to immediately report them as missing.
+        // Build newSecondaryTranslations in a single, order-preserving pass so
+        // that the syncer and the extractor produce byte-identical files after
+        // the first extract run (issue #216).
+        //
+        // Strategy:
+        //  1. Walk every key in the *existing* secondary file in its current
+        //     order.  Keep it if it belongs to the primary key set, or if it is
+        //     a valid locale-specific plural extension with a non-empty value.
+        //     Obsolete keys (neither primary nor a locale extension) are dropped.
+        //  2. Append any primary keys that are genuinely new (not present in the
+        //     existing secondary file at all) so they get picked up on first sync.
+        //
+        // This means that once `extract` has written the secondary file in its
+        // canonical order, a subsequent `sync` will read that order and reproduce
+        // it exactly — the pipeline becomes idempotent.
         const existingSecondaryKeys = getNestedKeys(existingSecondaryTranslations, keySeparator ?? '.')
+        const handledKeys = new Set<string>()
+
+        // Pass 1: existing keys in their current order (preserves extract's ordering)
         for (const key of existingSecondaryKeys) {
-          if (!primaryKeySet.has(key) && isLocaleSpecificPluralExtension(key)) {
+          if (primaryKeySet.has(key)) {
+            const primaryValue = getNestedValue(primaryTranslations, key, keySeparator ?? '.')
+            const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
+            const valueToSet = existingValue ?? resolveDefaultValue(defaultValue, key, ns, lang, primaryValue)
+            setNestedValue(newSecondaryTranslations, key, valueToSet, keySeparator ?? '.')
+            handledKeys.add(key)
+          } else if (isLocaleSpecificPluralExtension(key)) {
             const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
             // Only preserve non-empty values; an empty string was likely a
             // placeholder left by a previous (buggy) sync run and should not
             // be perpetuated.
             if (existingValue !== '' && existingValue != null) {
               setNestedValue(newSecondaryTranslations, key, existingValue, keySeparator ?? '.')
+              handledKeys.add(key)
             }
+          }
+          // else: obsolete key — omit it from the output
+        }
+
+        // Pass 2: new primary keys not yet in the secondary file
+        for (const key of primaryKeys) {
+          if (!handledKeys.has(key)) {
+            const primaryValue = getNestedValue(primaryTranslations, key, keySeparator ?? '.')
+            const valueToSet = resolveDefaultValue(defaultValue, key, ns, lang, primaryValue)
+            setNestedValue(newSecondaryTranslations, key, valueToSet, keySeparator ?? '.')
           }
         }
 
