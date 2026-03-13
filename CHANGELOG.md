@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.50.0](https://github.com/i18next/i18next-cli/compare/v1.49.7...v1.50.0) - 2026-03-13
+
+### Added
+- Non-JS/TS file support via `onLoad` plugin hook ([#217](https://github.com/i18next/i18next-cli/issues/217))
+  - Plugins can now return transformed JS/TS code from `onLoad` for any file type (e.g. `.svelte`, `.vue`), and the extractor will parse it correctly using TSX syntax
+  - Files with unsupported extensions that no plugin handles are now silently skipped instead of throwing an `ExtractorError`
+  - The `onLoad` return type now explicitly allows `undefined` (pass-through) in addition to `string`, matching the documented behaviour
+
+### Fixed
+- `Plugin.onLoad` TypeScript signature corrected to `MaybePromise<string | undefined>` — returning `undefined` to opt out of transformation was always the intended pattern but the type incorrectly disallowed it
+
 ## [1.49.7](https://github.com/i18next/i18next-cli/compare/v1.49.6...v1.49.7) - 2026-03-12
 
 - fix: sync and extract --ci produce inconsistent plural key ordering in JSON locale files [#216](https://github.com/i18next/i18next-cli/issues/216)

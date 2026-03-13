@@ -163,12 +163,17 @@ export async function processFile (
   try {
     let code = await readFile(file, 'utf-8')
 
-    // Run onLoad hooks from plugins with error handling
+    // Run onLoad hooks from plugins with error handling.
+    // Track whether any plugin actually transformed the code so we can make
+    // the right parse decision for non-native file types (e.g. .svelte, .vue).
+    let wasTransformedByPlugin = false
     for (const plugin of plugins) {
       try {
         const result = await plugin.onLoad?.(code, file)
         if (result !== undefined) {
           code = result
+          wasTransformedByPlugin = true
+          // No break — plugins chain: each receives the previous plugin's output
         }
       } catch (err) {
         logger.warn(`Plugin ${plugin.name} onLoad failed:`, err)
@@ -176,11 +181,26 @@ export async function processFile (
       }
     }
 
-    // Determine parser options from file extension so .ts is not parsed as TSX
+    // Determine parser options.
+    // For non-native extensions (e.g. .svelte, .vue):
+    //   - If a plugin transformed the code, parse the *result* as tsx (most
+    //     permissive SWC syntax) regardless of the original extension.
+    //   - If no plugin handled the file, skip it gracefully — there is nothing
+    //     SWC can do with raw .svelte/.vue markup.
     const fileExt = extname(file).toLowerCase()
-    const isTypeScriptFile = fileExt === '.ts' || fileExt === '.tsx' || fileExt === '.mts' || fileExt === '.cts'
-    const isTSX = fileExt === '.tsx'
-    const isJSX = fileExt === '.jsx'
+    const isNativeExt = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'].includes(fileExt)
+
+    if (!isNativeExt && !wasTransformedByPlugin) {
+      // Non-JS/TS file with no plugin handler — skip silently, not an error.
+      return
+    }
+
+    // When a plugin transformed a non-native file, always use tsx so SWC can
+    // handle TypeScript syntax that the plugin may have extracted from the file.
+    const effectiveExt = (!isNativeExt && wasTransformedByPlugin) ? '.tsx' : fileExt
+    const isTypeScriptFile = effectiveExt === '.ts' || effectiveExt === '.tsx' || effectiveExt === '.mts' || effectiveExt === '.cts'
+    const isTSX = effectiveExt === '.tsx'
+    const isJSX = effectiveExt === '.jsx'
 
     let ast: Module
     try {
@@ -194,7 +214,7 @@ export async function processFile (
       })
     } catch (err) {
       // Fallback for .ts files with JSX (already present)
-      if (fileExt === '.ts' && !isTSX) {
+      if (effectiveExt === '.ts' && !isTSX) {
         try {
           ast = await parse(code, {
             syntax: 'typescript',
@@ -208,7 +228,7 @@ export async function processFile (
           throw new ExtractorError('Failed to process file', file, err2 as Error)
         }
       // Fallback for .js files with JSX
-      } else if (fileExt === '.js' && !isJSX) {
+      } else if (effectiveExt === '.js' && !isJSX) {
         try {
           ast = await parse(code, {
             syntax: 'ecmascript',
@@ -303,6 +323,13 @@ export async function preScanFile (
   try {
     const code = await readFile(file, 'utf-8')
     const fileExt = extname(file).toLowerCase()
+
+    // Non-native files (e.g. .svelte, .vue) cannot be parsed by SWC in the
+    // pre-scan pass — plugins have not run yet so no onLoad transformation is
+    // available.  Skip them silently; processFile will handle them correctly.
+    const isNativeExt = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'].includes(fileExt)
+    if (!isNativeExt) return
+
     const isTypeScriptFile = fileExt === '.ts' || fileExt === '.tsx' || fileExt === '.mts' || fileExt === '.cts'
     const isTSX = fileExt === '.tsx'
     const isJSX = fileExt === '.jsx'

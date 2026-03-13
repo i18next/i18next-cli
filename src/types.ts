@@ -501,7 +501,7 @@ export interface Plugin extends LinterPlugin, InstrumenterPlugin {
    * @param path - The file path being processed
    * @returns The transformed code (or undefined to keep original)
    */
-  onLoad?: (code: string, path: string) => MaybePromise<string>;
+  onLoad?: (code: string, path: string) => MaybePromise<string | undefined>;
 
   /**
    * Hook called for each AST node during traversal.
