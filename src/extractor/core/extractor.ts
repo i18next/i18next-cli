@@ -132,6 +132,28 @@ export async function runExtractor (
 }
 
 /**
+ * Returns true when the given file extension (e.g. '.svelte') is explicitly
+ * referenced in at least one of the input glob patterns.
+ *
+ * This is used to decide whether to emit a warning when a non-native file is
+ * skipped because no plugin handled it.  A pattern like `src/**\/*.{ts,svelte}`
+ * or `src/**\/*.svelte` clearly signals intent; a catch-all like `src/**\/*`
+ * does not.
+ *
+ * @internal
+ */
+function isExtExplicitlyInInputPatterns (ext: string, input: string | string[]): boolean {
+  const patterns = Array.isArray(input) ? input : [input]
+  // Strip the leading dot for matching (e.g. '.svelte' → 'svelte')
+  const bare = ext.startsWith('.') ? ext.slice(1) : ext
+  return patterns.some(p => {
+    // Matches both `*.svelte` and `*.{ts,svelte}` style patterns
+    const escaped = bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp(`[{,*]${escaped}[},*]|[.]${escaped}(?:[^a-z]|$)`).test(p)
+  })
+}
+
+/**
  * Processes an individual source file for translation key extraction.
  *
  * This function:
@@ -191,7 +213,17 @@ export async function processFile (
     const isNativeExt = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'].includes(fileExt)
 
     if (!isNativeExt && !wasTransformedByPlugin) {
-      // Non-JS/TS file with no plugin handler — skip silently, not an error.
+      // Non-JS/TS file with no plugin handler — skip, but warn when the
+      // extension was explicitly listed in the input glob patterns.  That
+      // strongly suggests the developer intended to handle it (e.g. via a
+      // Svelte/Vue plugin) but forgot to install or register the plugin.
+      if (isExtExplicitlyInInputPatterns(fileExt, config.extract.input)) {
+        logger.warn(
+          `No plugin handled "${file}" (${fileExt}). ` +
+          `If you intended to extract translations from ${fileExt} files, ` +
+          'make sure the appropriate plugin is installed and added to your config.'
+        )
+      }
       return
     }
 

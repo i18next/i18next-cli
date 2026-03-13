@@ -185,6 +185,55 @@ describe('plugin onLoad: non-JS/TS file handling (issue #217)', () => {
     expect(fileErrors.filter(e => e.includes('App.svelte'))).toHaveLength(0)
   })
 
+  it('warns when a non-native file extension is explicitly listed in the input patterns but no plugin handles it', async () => {
+    const { glob } = await import('glob')
+    ;(glob as any).mockResolvedValue(['/src/App.svelte'])
+
+    vol.fromJSON({ '/src/App.svelte': '<button>No script</button>' })
+
+    const warnSpy = vi.fn()
+    const warnLogger = { warn: warnSpy, info: vi.fn(), error: vi.fn() }
+
+    // Extension '.svelte' explicitly listed in the glob — user likely forgot the plugin
+    const config: I18nextToolkitConfig = {
+      ...mockConfigBase,
+      extract: {
+        ...mockConfigBase.extract,
+        input: ['src/**/*.{ts,tsx,svelte}'],
+      },
+      // No plugins
+    }
+
+    await findKeys(config, warnLogger)
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('.svelte'))
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('plugin'))
+  })
+
+  it('does NOT warn for a non-native file when the input pattern is a catch-all', async () => {
+    const { glob } = await import('glob')
+    ;(glob as any).mockResolvedValue(['/src/App.svelte'])
+
+    vol.fromJSON({ '/src/App.svelte': '<button>No script</button>' })
+
+    const warnSpy = vi.fn()
+    const warnLogger = { warn: warnSpy, info: vi.fn(), error: vi.fn() }
+
+    // Catch-all pattern — user may not have intended to process .svelte at all
+    const config: I18nextToolkitConfig = {
+      ...mockConfigBase,
+      extract: {
+        ...mockConfigBase.extract,
+        input: ['src/**/*'],
+      },
+    }
+
+    await findKeys(config, warnLogger)
+
+    // No warning because the extension was not explicitly requested
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('.svelte'))
+  })
+
   it('does not crash when onLoad returns undefined for a non-native file', async () => {
     const { glob } = await import('glob')
     ;(glob as any).mockResolvedValue(['/src/App.svelte'])
