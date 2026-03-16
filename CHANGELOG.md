@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.50.3](https://github.com/i18next/i18next-cli/compare/v1.50.2...v1.50.3) - 2026-03-16
+
+- Improve `status` output to distinguish between **untranslated** keys (present
+  in the file with an empty value — needs translation) and **absent** keys
+  (missing from the file entirely — probably structural problem). Both still cause a
+  non-zero exit. Addresses [#220](https://github.com/i18next/i18next-cli/issues/220).
+
 ## [1.50.2](https://github.com/i18next/i18next-cli/compare/v1.50.1...v1.50.2) - 2026-03-16
 
 - try to address [#218](https://github.com/i18next/i18next-cli/issues/218) by updating `i18next-resources-for-ts` dependency
