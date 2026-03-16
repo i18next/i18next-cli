@@ -55,10 +55,10 @@
     "@rollup/plugin-replace": "^6.0.3",
     "@rollup/plugin-terser": "^1.0.0",
     "@types/inquirer": "^9.0.9",
-    "@types/node": "^25.4.0",
+    "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@typescript-eslint/parser": "^8.57.0",
-    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/coverage-v8": "^4.1.0",
     "eslint": "^9.39.2",
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.32.0",
@@ -67,7 +67,7 @@
     "rollup-plugin-typescript2": "^0.36.0",
     "typescript": "^5.9.3",
     "unplugin-swc": "^1.5.9",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.0"
   },
   "dependencies": {
     "@croct/json5-parser": "^0.2.2",
@@ -76,15 +76,15 @@
     "commander": "^14.0.3",
     "execa": "^9.6.1",
     "glob": "^13.0.6",
-    "i18next-resources-for-ts": "^2.0.1",
-    "inquirer": "^13.3.0",
+    "i18next-resources-for-ts": "^2.0.2",
+    "inquirer": "^13.3.2",
     "jiti": "^2.6.1",
     "jsonc-parser": "^3.3.1",
     "magic-string": "^0.30.21",
     "minimatch": "^10.2.4",
     "ora": "^9.3.0",
     "react": "^19.2.4",
-    "react-i18next": "^16.5.6",
+    "react-i18next": "^16.5.8",
     "yaml": "^2.8.2"
   }
 }
