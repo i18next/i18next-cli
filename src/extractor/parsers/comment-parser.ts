@@ -1,5 +1,9 @@
 import type { PluginContext, I18nextToolkitConfig } from '../../types.js'
 
+// Checks if a string looks like natural language (contains spaces, punctuation, etc.)
+const naturalLanguageChars = /[ ,?!;]/
+const looksLikeNaturalLanguage = (s: string) => naturalLanguageChars.test(s)
+
 /**
  * Extracts translation keys from comments in source code using regex patterns.
  * Supports extraction from single-line (//) and multi-line comments.
@@ -105,17 +109,21 @@ export function extractKeysFromComments (
       const nsSeparator = config.extract.nsSeparator ?? ':'
       if (!ns && nsSeparator && key.includes(nsSeparator)) {
         const parts = key.split(nsSeparator)
-        ns = parts.shift()
-        key = parts.join(nsSeparator)
 
-        // Validate that the key didn't become empty after namespace removal
-        if (!key || key.trim() === '') {
-          continue // Skip keys that become empty after namespace removal
-        }
+        // If the candidate namespace looks like natural language, don't split
+        if (!looksLikeNaturalLanguage(parts[0])) {
+          ns = parts.shift()
+          key = parts.join(nsSeparator)
 
-        // Re-check preservePatterns after namespace processing (namespace-aware)
-        if (matchesPreserve(key, ns as string | undefined)) {
-          continue // Skip processed keys that match preserve patterns
+          // Validate that the key didn't become empty after namespace removal
+          if (!key || key.trim() === '') {
+            continue // Skip keys that become empty after namespace removal
+          }
+
+          // Re-check preservePatterns after namespace processing (namespace-aware)
+          if (matchesPreserve(key, ns as string | undefined)) {
+            continue // Skip processed keys that match preserve patterns
+          }
         }
       }
 

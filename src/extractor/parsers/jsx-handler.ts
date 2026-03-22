@@ -4,6 +4,10 @@ import { ExpressionResolver } from './expression-resolver.js'
 import { extractFromTransComponent } from './jsx-parser.js'
 import { getObjectPropValue, lineColumnFromOffset } from './ast-utils.js'
 
+// Checks if a string looks like natural language (contains spaces, punctuation, etc.)
+const naturalLanguageChars = /[ ,?!;]/
+const looksLikeNaturalLanguage = (s: string) => naturalLanguageChars.test(s)
+
 export class JSXHandler {
   private config: Omit<I18nextToolkitConfig, 'plugins'>
   private pluginContext: PluginContext
@@ -109,10 +113,11 @@ export class JSXHandler {
             // If the key contains a namespace separator, it takes precedence
             // over the default t ns value
             if (nsSeparator && key.includes(nsSeparator)) {
-              let parts: string[]
-              ([ns, ...parts] = key.split(nsSeparator))
-
-              key = parts.join(nsSeparator)
+              const parts = key.split(nsSeparator)
+              if (!looksLikeNaturalLanguage(parts[0])) {
+                ns = parts.shift()
+                key = parts.join(nsSeparator)
+              }
             }
 
             return {

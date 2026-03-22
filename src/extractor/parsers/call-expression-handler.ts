@@ -6,6 +6,11 @@ import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiter
 // Helper to escape regex characters
 const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
+// Checks if a string looks like natural language (contains spaces, punctuation, etc.)
+// Used to prevent splitting keys like "Error message: not found" into namespace + key.
+const naturalLanguageChars = /[ ,?!;]/
+const looksLikeNaturalLanguage = (s: string) => naturalLanguageChars.test(s)
+
 export class CallExpressionHandler {
   private pluginContext: PluginContext
   private config: Omit<I18nextToolkitConfig, 'plugins'>
@@ -180,12 +185,18 @@ export class CallExpressionHandler {
       const nsSeparator = this.config.extract.nsSeparator ?? ':'
       if (!ns && nsSeparator && key.includes(nsSeparator)) {
         const parts = key.split(nsSeparator)
-        ns = parts.shift()
-        key = parts.join(nsSeparator)
+        const candidateNs = parts[0]
 
-        if (!key || key.trim() === '') {
-          this.logger.warn(`Skipping key that became empty after namespace removal: '${ns}${nsSeparator}'`)
-          continue
+        // If the candidate namespace looks like natural language (contains spaces,
+        // punctuation), assume the separator is part of the key text, not a namespace delimiter.
+        if (!looksLikeNaturalLanguage(candidateNs)) {
+          ns = parts.shift()
+          key = parts.join(nsSeparator)
+
+          if (!key || key.trim() === '') {
+            this.logger.warn(`Skipping key that became empty after namespace removal: '${ns}${nsSeparator}'`)
+            continue
+          }
         }
       }
 
@@ -533,9 +544,14 @@ export class CallExpressionHandler {
     const nsSeparator = this.config.extract.nsSeparator ?? ':'
     if (nsSeparator && key.includes(nsSeparator)) {
       const parts = key.split(nsSeparator)
-      nestedNs = parts.shift()
-      key = parts.join(nsSeparator)
-      if (!key || key.trim() === '') return
+      const candidateNs = parts[0]
+      if (!looksLikeNaturalLanguage(candidateNs)) {
+        nestedNs = parts.shift()
+        key = parts.join(nsSeparator)
+        if (!key || key.trim() === '') return
+      } else {
+        nestedNs = this.config.extract.defaultNS
+      }
     } else {
       nestedNs = this.config.extract.defaultNS
     }

@@ -604,6 +604,15 @@ export interface ExtractedKey {
    * Empty/undefined if the key doesn't use context.
    */
   keyAcceptingContext?: string;
+
+  /**
+   * Whether the namespace was derived from splitting the key by nsSeparator.
+   * When true, the natural language heuristic may rejoin the namespace and key
+   * if the namespace looks like natural language (contains spaces, etc.).
+   * When false/undefined, the namespace was explicitly provided (via options,
+   * useTranslation scope, etc.) and should not be subject to the heuristic.
+   */
+  nsFromKeySplit?: boolean;
 }
 
 /**

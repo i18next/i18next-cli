@@ -948,31 +948,14 @@ export async function getTranslations (
   const NO_NS_TOKEN = '__no_namespace__'
   const keysByNS = new Map<string, ExtractedKey[]>()
 
-  const nsSep = typeof config.extract.nsSeparator === 'string' ? config.extract.nsSeparator : ':'
-  const nsNaturalLanguageRegex = new RegExp(`(${chars.map((c) => (c === '?' ? '\\?' : c)).join('|')})`)
-
   for (const k of keys.values()) {
-    let ns = k.ns
-    let key = k.key
-
-    // Fix for incorrect splitting of natural language keys containing nsSeparator
-    // If the namespace contains spaces or looks like natural language, assume it was split incorrectly
-    // and rejoin it with the key.
-    if (ns && nsNaturalLanguageRegex.test(ns)) {
-      key = `${ns}${nsSep}${key}`
-      ns = undefined
-    }
+    const ns = k.ns
 
     const nsKey = (k.nsIsImplicit && config.extract.defaultNS === false)
       ? NO_NS_TOKEN
       : String(ns ?? (config.extract.defaultNS ?? 'translation'))
     if (!keysByNS.has(nsKey)) keysByNS.set(nsKey, [])
-
-    if (ns !== k.ns || key !== k.key) {
-      keysByNS.get(nsKey)!.push({ ...k, ns, key })
-    } else {
-      keysByNS.get(nsKey)!.push(k)
-    }
+    keysByNS.get(nsKey)!.push(k)
   }
 
   // Filter out ignored namespaces

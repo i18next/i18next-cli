@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.50.4](https://github.com/i18next/i18next-cli/compare/v1.50.3...v1.50.4) - 2026-03-22
+
+- Fix namespaces containing spaces (e.g. `useTranslation(['Generic category'])` or
+  `{ ns: 'Example two' }`) being incorrectly rejected by the natural-language
+  heuristic and merged back into the key. The check now only applies when the
+  namespace was derived from splitting a key string by `nsSeparator`, not when it
+  was explicitly provided. Fixes [#221](https://github.com/i18next/i18next-cli/issues/221).
+
 ## [1.50.3](https://github.com/i18next/i18next-cli/compare/v1.50.2...v1.50.3) - 2026-03-16
 
 - Improve `status` output to distinguish between **untranslated** keys (present

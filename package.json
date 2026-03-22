@@ -57,12 +57,12 @@
     "@types/inquirer": "^9.0.9",
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
-    "@typescript-eslint/parser": "^8.57.0",
+    "@typescript-eslint/parser": "^8.57.1",
     "@vitest/coverage-v8": "^4.1.0",
     "eslint": "^9.39.2",
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.32.0",
-    "memfs": "^4.56.11",
+    "memfs": "^4.57.1",
     "neostandard": "^0.13.0",
     "rollup-plugin-typescript2": "^0.36.0",
     "typescript": "^5.9.3",
@@ -71,7 +71,7 @@
   },
   "dependencies": {
     "@croct/json5-parser": "^0.2.2",
-    "@swc/core": "^1.15.18",
+    "@swc/core": "^1.15.21",
     "chokidar": "^5.0.0",
     "commander": "^14.0.3",
     "execa": "^9.6.1",
@@ -84,7 +84,7 @@
     "minimatch": "^10.2.4",
     "ora": "^9.3.0",
     "react": "^19.2.4",
-    "react-i18next": "^16.5.8",
-    "yaml": "^2.8.2"
+    "react-i18next": "^16.6.1",
+    "yaml": "^2.8.3"
   }
 }
