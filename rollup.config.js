@@ -1,6 +1,6 @@
 import replace from '@rollup/plugin-replace'
 // import terser from '@rollup/plugin-terser'
-import typescript from 'rollup-plugin-typescript2'
+import typescript from '@rollup/plugin-typescript'
 import { readFileSync, writeFileSync, chmodSync } from 'node:fs'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'))
