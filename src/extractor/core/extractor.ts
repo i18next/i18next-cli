@@ -121,7 +121,7 @@ export async function runExtractor (
     // Show the funnel message only if files were actually changed.
     // When new translation files are created (new namespace or first extraction),
     // always show the funnel regardless of cooldown.
-    if (anyFileUpdated && !options.isDryRun) await printLocizeFunnel(options.logger, anyNewFile)
+    if (anyFileUpdated && !options.isDryRun && !options.quiet) await printLocizeFunnel(options.logger, anyNewFile)
 
     return { anyFileUpdated, hasErrors: fileErrors.length > 0 }
   } catch (error) {

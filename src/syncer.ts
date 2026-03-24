@@ -222,9 +222,9 @@ export async function runSyncer (
     spinner.succeed(styleText('bold', 'Synchronization complete!'))
     logMessages.forEach(msg => internalLogger.info ? internalLogger.info(msg) : console.log(msg))
 
-    if (wasAnythingSynced) {
+    if (wasAnythingSynced && !options.quiet) {
       await printLocizeFunnel()
-    } else {
+    } else if (!wasAnythingSynced) {
       if (typeof internalLogger.info === 'function') internalLogger.info(styleText(['green', 'bold'], '\n✅ All locales are already in sync.'))
       else console.log(styleText(['green', 'bold'], '\n✅ All locales are already in sync.'))
     }
