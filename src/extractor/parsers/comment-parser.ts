@@ -1,4 +1,5 @@
 import type { PluginContext, I18nextToolkitConfig } from '../../types.js'
+import { safePluralRules } from '../../utils/plural-rules.js'
 
 // Checks if a string looks like natural language (contains spaces, punctuation, etc.)
 const naturalLanguageChars = /[ ,?!;]/
@@ -200,12 +201,12 @@ function generatePluralKeys (
 
     for (const locale of config.locales) {
       try {
-        const pluralRules = new Intl.PluralRules(locale, { type })
+        const pluralRules = safePluralRules(locale, { type })
         const categories = pluralRules.resolvedOptions().pluralCategories
         categories.forEach(cat => allPluralCategories.add(cat))
       } catch (e) {
         // If a locale is invalid, fall back to English rules
-        const englishRules = new Intl.PluralRules('en', { type })
+        const englishRules = safePluralRules('en', { type })
         const categories = englishRules.resolvedOptions().pluralCategories
         categories.forEach(cat => allPluralCategories.add(cat))
       }
@@ -266,12 +267,12 @@ function generateContextPluralKeys (
 
     for (const locale of config.locales) {
       try {
-        const pluralRules = new Intl.PluralRules(locale, { type })
+        const pluralRules = safePluralRules(locale, { type })
         const categories = pluralRules.resolvedOptions().pluralCategories
         categories.forEach(cat => allPluralCategories.add(cat))
       } catch (e) {
         // If a locale is invalid, fall back to English rules
-        const englishRules = new Intl.PluralRules(config.extract.primaryLanguage || 'en', { type })
+        const englishRules = safePluralRules(config.extract.primaryLanguage || 'en', { type })
         const categories = englishRules.resolvedOptions().pluralCategories
         categories.forEach(cat => allPluralCategories.add(cat))
       }

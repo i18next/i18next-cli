@@ -5,6 +5,7 @@ import { findKeys } from './extractor.js'
 import { getNestedValue } from './utils/nested-object.js'
 import type { I18nextToolkitConfig, ExtractedKey } from './types.js'
 import { getOutputPath, loadTranslationFile } from './utils/file-utils.js'
+import { safePluralRules } from './utils/plural-rules.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 
 /**
@@ -213,11 +214,11 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
       const getLocalePluralCategories = (locale: string, isOrdinal: boolean): string[] => {
         try {
           const type = isOrdinal ? 'ordinal' : 'cardinal'
-          const pluralRules = new Intl.PluralRules(locale, { type })
+          const pluralRules = safePluralRules(locale, { type })
           return pluralRules.resolvedOptions().pluralCategories
         } catch (e) {
           // Fallback to English if locale is invalid
-          const fallbackRules = new Intl.PluralRules('en', { type: isOrdinal ? 'ordinal' : 'cardinal' })
+          const fallbackRules = safePluralRules('en', { type: isOrdinal ? 'ordinal' : 'cardinal' })
           return fallbackRules.resolvedOptions().pluralCategories
         }
       }

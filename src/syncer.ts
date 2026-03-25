@@ -9,6 +9,7 @@ import { resolveDefaultValue } from './utils/default-value.js'
 import { getOutputPath, loadTranslationFile, serializeTranslationFile, loadRawJson5Content, inferFormatFromPath } from './utils/file-utils.js'
 import { recordFunnelShown, shouldShowFunnel } from './utils/funnel-msg-tracker.js'
 import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-object.js'
+import { safePluralRules } from './utils/plural-rules.js'
 
 /**
  * Synchronizes translation files across different locales by ensuring all secondary
@@ -106,14 +107,14 @@ export async function runSyncer (
         const sep = config.extract.pluralSeparator ?? '_'
         const localeCardinalCategories: Set<string> = (() => {
           try {
-            return new Set(new Intl.PluralRules(lang, { type: 'cardinal' }).resolvedOptions().pluralCategories)
+            return new Set(safePluralRules(lang, { type: 'cardinal' }).resolvedOptions().pluralCategories)
           } catch {
             return new Set(['one', 'other'])
           }
         })()
         const localeOrdinalCategories: Set<string> = (() => {
           try {
-            return new Set(new Intl.PluralRules(lang, { type: 'ordinal' }).resolvedOptions().pluralCategories)
+            return new Set(safePluralRules(lang, { type: 'ordinal' }).resolvedOptions().pluralCategories)
           } catch {
             return new Set(['one', 'other', 'two', 'few'])
           }

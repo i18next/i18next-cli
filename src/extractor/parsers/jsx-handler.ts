@@ -1,6 +1,7 @@
 import type { JSXElement, ObjectExpression } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, ExtractedKey } from '../../types.js'
 import { ExpressionResolver } from './expression-resolver.js'
+import { safePluralRules } from '../../utils/plural-rules.js'
 import { extractFromTransComponent } from './jsx-parser.js'
 import { getObjectPropValue, lineColumnFromOffset } from './ast-utils.js'
 
@@ -408,12 +409,12 @@ export class JSXHandler {
 
       for (const locale of this.config.locales) {
         try {
-          const pluralRules = new Intl.PluralRules(locale, { type })
+          const pluralRules = safePluralRules(locale, { type })
           const categories = pluralRules.resolvedOptions().pluralCategories
           categories.forEach(cat => allPluralCategories.add(cat))
         } catch (e) {
           // If a locale is invalid, fall back to English rules
-          const englishRules = new Intl.PluralRules('en', { type })
+          const englishRules = safePluralRules('en', { type })
           const categories = englishRules.resolvedOptions().pluralCategories
           categories.forEach(cat => allPluralCategories.add(cat))
         }

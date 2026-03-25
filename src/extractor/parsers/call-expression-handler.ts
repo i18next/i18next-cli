@@ -1,6 +1,7 @@
 import type { CallExpression, ArrowFunctionExpression, ObjectExpression } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey, ScopeInfo } from '../../types.js'
 import { ExpressionResolver } from './expression-resolver.js'
+import { safePluralRules } from '../../utils/plural-rules.js'
 import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset } from './ast-utils.js'
 
 // Helper to escape regex characters
@@ -366,7 +367,7 @@ export class CallExpressionHandler {
             const primaryLang = this.config.extract?.primaryLanguage || (Array.isArray(this.config.locales) ? this.config.locales[0] : undefined) || 'en'
             let isSingleOther = false
             try {
-              const primaryCategories = new Intl.PluralRules(primaryLang, { type: typeForCheck }).resolvedOptions().pluralCategories
+              const primaryCategories = safePluralRules(primaryLang, { type: typeForCheck }).resolvedOptions().pluralCategories
               if (primaryCategories.length === 1 && primaryCategories[0] === 'other') {
                 isSingleOther = true
               }
@@ -378,10 +379,10 @@ export class CallExpressionHandler {
               const allPluralCategoriesCheck = new Set<string>()
               for (const locale of this.config.locales) {
                 try {
-                  const rules = new Intl.PluralRules(locale, { type: typeForCheck })
+                  const rules = safePluralRules(locale, { type: typeForCheck })
                   rules.resolvedOptions().pluralCategories.forEach(c => allPluralCategoriesCheck.add(c))
                 } catch {
-                  new Intl.PluralRules('en', { type: typeForCheck }).resolvedOptions().pluralCategories.forEach(c => allPluralCategoriesCheck.add(c))
+                  safePluralRules('en', { type: typeForCheck }).resolvedOptions().pluralCategories.forEach(c => allPluralCategoriesCheck.add(c))
                 }
               }
               const pluralCategoriesCheck = Array.from(allPluralCategoriesCheck).sort()
@@ -599,11 +600,11 @@ export class CallExpressionHandler {
       const locales = this.config.locales || ['en']
       for (const locale of locales) {
         try {
-          const pluralRules = new Intl.PluralRules(locale, { type })
+          const pluralRules = safePluralRules(locale, { type })
           const categories = pluralRules.resolvedOptions().pluralCategories
           categories.forEach(cat => allPluralCategories.add(cat))
         } catch (e) {
-          const englishRules = new Intl.PluralRules('en', { type })
+          const englishRules = safePluralRules('en', { type })
           const categories = englishRules.resolvedOptions().pluralCategories
           categories.forEach(cat => allPluralCategories.add(cat))
         }
@@ -616,7 +617,7 @@ export class CallExpressionHandler {
       const primaryLang = this.config.extract?.primaryLanguage || (Array.isArray(this.config.locales) ? this.config.locales[0] : undefined) || 'en'
       let primaryIsSingleOther = false
       try {
-        const primaryCats = new Intl.PluralRules(primaryLang, { type }).resolvedOptions().pluralCategories
+        const primaryCats = safePluralRules(primaryLang, { type }).resolvedOptions().pluralCategories
         if (primaryCats.length === 1 && primaryCats[0] === 'other') primaryIsSingleOther = true
       } catch {
         primaryIsSingleOther = false
@@ -771,12 +772,12 @@ export class CallExpressionHandler {
 
       for (const locale of this.config.locales) {
         try {
-          const pluralRules = new Intl.PluralRules(locale, { type })
+          const pluralRules = safePluralRules(locale, { type })
           const categories = pluralRules.resolvedOptions().pluralCategories
           categories.forEach(cat => allPluralCategories.add(cat))
         } catch (e) {
           // If a locale is invalid, fall back to English rules
-          const englishRules = new Intl.PluralRules('en', { type })
+          const englishRules = safePluralRules('en', { type })
           const categories = englishRules.resolvedOptions().pluralCategories
           categories.forEach(cat => allPluralCategories.add(cat))
         }
@@ -849,7 +850,7 @@ export class CallExpressionHandler {
       const primaryLang = this.config.extract?.primaryLanguage || (Array.isArray(this.config.locales) ? this.config.locales[0] : undefined) || 'en'
       let primaryIsSingleOther = false
       try {
-        const primaryCats = new Intl.PluralRules(primaryLang, { type }).resolvedOptions().pluralCategories
+        const primaryCats = safePluralRules(primaryLang, { type }).resolvedOptions().pluralCategories
         if (primaryCats.length === 1 && primaryCats[0] === 'other') primaryIsSingleOther = true
       } catch {
         primaryIsSingleOther = false

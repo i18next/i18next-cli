@@ -869,4 +869,50 @@ describe('extractor.getTranslations', () => {
       expect(result.newTranslations).toEqual({ hello: 'Hello' })
     })
   })
+
+  describe('custom locale codes (#225)', () => {
+    it('should not crash with non-BCP47 locale codes like E and F', async () => {
+      const keysMap = new Map<string, { key: string; defaultValue?: string }>()
+      keysMap.set('hello', { key: 'hello', defaultValue: 'Hello' })
+
+      const config: I18nextToolkitConfig = {
+        locales: ['E', 'F'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+        },
+      }
+
+      // Should not throw RangeError: Invalid language tag
+      const results = await getTranslations(keysMap as any, new Set(), config)
+      expect(results.length).toBe(2)
+
+      const eResult = results.find(r => pathEndsWith(r.path, '/locales/E/translation.json'))
+      const fResult = results.find(r => pathEndsWith(r.path, '/locales/F/translation.json'))
+      expect(eResult).toBeDefined()
+      expect(fResult).toBeDefined()
+      expect(eResult!.newTranslations).toEqual({ hello: 'Hello' })
+    })
+
+    it('should handle plural keys with custom locale codes', async () => {
+      const keysMap = new Map<string, { key: string; defaultValue?: string; hasCount?: boolean }>()
+      keysMap.set('item', { key: 'item', defaultValue: 'Item', hasCount: true })
+
+      const config: I18nextToolkitConfig = {
+        locales: ['E'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+        },
+      }
+
+      // Should not throw, and should fall back to English plural rules
+      const [result] = await getTranslations(keysMap as any, new Set(), config)
+      expect(result).toBeDefined()
+      // Fallback to English plural rules: one + other
+      const keys = Object.keys(result.newTranslations)
+      expect(keys).toContain('item_one')
+      expect(keys).toContain('item_other')
+    })
+  })
 })

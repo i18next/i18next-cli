@@ -5,6 +5,7 @@ import { getNestedValue, setNestedValue, getNestedKeys } from '../../utils/neste
 import { getOutputPath, loadTranslationFile } from '../../utils/file-utils.js'
 import { resolveDefaultValue } from '../../utils/default-value.js'
 import { ConsoleLogger } from '../../utils/logger.js'
+import { safePluralRules } from '../../utils/plural-rules.js'
 
 // used for natural language check
 const chars = [' ', ',', '?', '!', ';']
@@ -326,26 +327,14 @@ function buildNewTranslationsForNs (
   }
 
   // Get the plural categories for the target language (only used for filtering extracted keys)
+  // safePluralRules falls back to 'en' for non-BCP47 custom locale codes (e.g. 'E', 'F')
   const targetLanguagePluralCategories = new Set<string>()
+  const cardinalRules = safePluralRules(locale, { type: 'cardinal' })
+  const ordinalRules = safePluralRules(locale, { type: 'ordinal' })
   // Track cardinal plural categories separately so we can special-case single-"other" languages
-  let cardinalCategories: string[] = []
-  try {
-    const cardinalRules = new Intl.PluralRules(locale, { type: 'cardinal' })
-    const ordinalRules = new Intl.PluralRules(locale, { type: 'ordinal' })
-
-    cardinalCategories = cardinalRules.resolvedOptions().pluralCategories
-    cardinalCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
-    ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
-  } catch (e) {
-    // Fallback to primaryLanguage (or English) if locale is invalid
-    const fallbackLang = primaryLanguage || 'en'
-    const cardinalRules = new Intl.PluralRules(fallbackLang, { type: 'cardinal' })
-    const ordinalRules = new Intl.PluralRules(fallbackLang, { type: 'ordinal' })
-
-    cardinalCategories = cardinalRules.resolvedOptions().pluralCategories
-    cardinalCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
-    ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
-  }
+  const cardinalCategories: string[] = cardinalRules.resolvedOptions().pluralCategories
+  cardinalCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
+  ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
 
   // Prepare namespace pattern checking helpers
   const rawPreserve = config.extract.preservePatterns || []
