@@ -816,8 +816,10 @@ describe('extractor.getTranslations', () => {
       await vol.promises.writeFile(enPath, JSON.stringify(existingTranslations, null, 2))
 
       // Extracted keys from source code (only errors.unknown is used)
+      // Note: useTranslation() with no args resolves to ns: 'translation', nsIsImplicit: false
+      // (the SWC parser marks it as explicit after resolution)
       const keysMap = new Map<string, { key: string; defaultValue?: string; ns?: string; nsIsImplicit?: boolean }>()
-      keysMap.set('errors.unknown', { key: 'errors.unknown', defaultValue: 'An unknown error occurred', ns: 'translation', nsIsImplicit: true })
+      keysMap.set('errors.unknown', { key: 'errors.unknown', defaultValue: 'An unknown error occurred', ns: 'translation', nsIsImplicit: false })
 
       const config: I18nextToolkitConfig = {
         locales: ['en'],
@@ -847,8 +849,9 @@ describe('extractor.getTranslations', () => {
       await vol.promises.mkdir(resolve(process.cwd(), 'locales'), { recursive: true })
       await vol.promises.writeFile(enPath, JSON.stringify({}, null, 2))
 
+      // useTranslation() with no args → ns: 'translation', nsIsImplicit: false
       const keysMap = new Map<string, { key: string; defaultValue?: string; ns?: string; nsIsImplicit?: boolean }>()
-      keysMap.set('hello', { key: 'hello', defaultValue: 'Hello', ns: 'translation', nsIsImplicit: true })
+      keysMap.set('hello', { key: 'hello', defaultValue: 'Hello', ns: 'translation', nsIsImplicit: false })
 
       const config: I18nextToolkitConfig = {
         locales: ['en'],

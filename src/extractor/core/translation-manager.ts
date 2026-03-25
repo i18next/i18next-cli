@@ -976,7 +976,7 @@ export async function getTranslations (
   for (const k of keys.values()) {
     const ns = k.ns
 
-    const nsKey = (k.nsIsImplicit && (config.extract.defaultNS === false || config.extract.nsSeparator === false))
+    const nsKey = (k.nsIsImplicit && config.extract.defaultNS === false)
       ? NO_NS_TOKEN
       : String(ns ?? (config.extract.defaultNS ?? 'translation'))
     if (!keysByNS.has(nsKey)) keysByNS.set(nsKey, [])
@@ -1034,9 +1034,16 @@ export async function getTranslations (
         namespacesToProcess.delete(ns)
       }
 
+      // When nsSeparator is false, keys resolved to the defaultNS (e.g. from
+      // useTranslation() with no args) should be treated as top-level, not
+      // wrapped under the namespace name.
+      const defaultNs = String(config.extract.defaultNS ?? 'translation')
+      const isTopLevel = (nsKey: string) =>
+        nsKey === NO_NS_TOKEN || (config.extract.nsSeparator === false && nsKey === defaultNs)
+
       for (const nsKey of namespacesToProcess) {
         const nsKeys = keysByNS.get(nsKey) || []
-        if (nsKey === NO_NS_TOKEN) {
+        if (isTopLevel(nsKey)) {
           // keys without namespace -> merged into top-level of the merged file
           const built = buildNewTranslationsForNs(nsKeys, existingMergedFile, config, locale, undefined, preservePatterns, objectKeys, syncPrimaryWithDefaults, undefined, logger)
           Object.assign(newMergedTranslations, built)
