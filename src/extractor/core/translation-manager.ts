@@ -829,7 +829,32 @@ function buildNewTranslationsForNs (
     setNestedValue(newTranslations, key, valueToSet, separator)
   }
 
-  // 2. If sorting is enabled, recursively sort the entire object.
+  // 2a. When sort is disabled but removeUnusedKeys is on, the rebuild from `{}`
+  // lost the original key order. Reorder to match existingTranslations, with new keys at the end.
+  if (sort === false && removeUnusedKeys) {
+    const reorderToMatch = (newObj: Record<string, any>, refObj: Record<string, any>): Record<string, any> => {
+      if (typeof newObj !== 'object' || newObj === null || typeof refObj !== 'object' || refObj === null) return newObj
+      const ordered: Record<string, any> = {}
+      // First: keys from refObj in original order
+      for (const key of Object.keys(refObj)) {
+        if (key in newObj) {
+          ordered[key] = (typeof newObj[key] === 'object' && newObj[key] !== null && typeof refObj[key] === 'object' && refObj[key] !== null)
+            ? reorderToMatch(newObj[key], refObj[key])
+            : newObj[key]
+        }
+      }
+      // Then: new keys not in refObj
+      for (const key of Object.keys(newObj)) {
+        if (!(key in ordered)) {
+          ordered[key] = newObj[key]
+        }
+      }
+      return ordered
+    }
+    return reorderToMatch(newTranslations, existingTranslations)
+  }
+
+  // 2b. If sorting is enabled, recursively sort the entire object.
   // This correctly handles both top-level and nested keys.
   if (sort === true) {
     return sortObject(newTranslations, config)
@@ -951,7 +976,7 @@ export async function getTranslations (
   for (const k of keys.values()) {
     const ns = k.ns
 
-    const nsKey = (k.nsIsImplicit && config.extract.defaultNS === false)
+    const nsKey = (k.nsIsImplicit && (config.extract.defaultNS === false || config.extract.nsSeparator === false))
       ? NO_NS_TOKEN
       : String(ns ?? (config.extract.defaultNS ?? 'translation'))
     if (!keysByNS.has(nsKey)) keysByNS.set(nsKey, [])
@@ -992,7 +1017,7 @@ export async function getTranslations (
       // (possibly as nested objects when keySeparator is '.'), which should NOT
       // be interpreted as "namespaced files". This avoids splitting a single
       // merged translations file into artificial namespace buckets on re-extract.
-      const existingIsNamespaced = (config.extract.defaultNS !== false) && existingKeys.some(k => {
+      const existingIsNamespaced = (config.extract.defaultNS !== false) && (config.extract.nsSeparator !== false) && existingKeys.some(k => {
         const v = (existingMergedFile as any)[k]
         return typeof v === 'object' && v !== null && !Array.isArray(v)
       })

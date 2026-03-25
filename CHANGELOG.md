@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.50.6](https://github.com/i18next/i18next-cli/compare/v1.50.5...v1.50.6) - 2026-03-25
+
+- Fix merged single-file layout with `nsSeparator: false` misdetecting top-level
+  object keys as namespace buckets. The `existingIsNamespaced` check now respects
+  `nsSeparator: false`, and implicit-namespace keys are correctly routed to the
+  top level instead of being wrapped under the `defaultNS` name.
+  Fixes [#223](https://github.com/i18next/i18next-cli/issues/223).
+
+- Fix `sort: false` not being respected when `removeUnusedKeys: true`. The
+  rebuild from an empty object lost the original key order; the output is now
+  reordered to match the existing file, with new keys appended at the end.
+  Fixes [#224](https://github.com/i18next/i18next-cli/issues/224).
+
 ## [1.50.5](https://github.com/i18next/i18next-cli/compare/v1.50.4...v1.50.5) - 2026-03-24
 
 - Suppress promotional messages when `--quiet` flag is used. The `extract`

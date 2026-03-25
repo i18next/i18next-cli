@@ -722,4 +722,148 @@ describe('extractor.getTranslations', () => {
       expect(alertKeys).toEqual(['count_zero', 'count_one', 'count_other'])
     })
   })
+
+  describe('sort: false with removeUnusedKeys: true (#224)', () => {
+    it('should preserve original key order when preserved-pattern keys are present', async () => {
+      // Original file has a specific key order: errors, languages, techSupport, saveFailed
+      // With preservePatterns, "languages.*" keys get inserted first (via the preserved-keys loop),
+      // followed by extracted keys — losing the original order.
+      const existingTranslations = {
+        errors: { required: 'Required', invalid: 'Invalid' },
+        languages: { en: 'English', de: 'German' },
+        techSupport: 'Tech Support',
+        saveFailed: 'Save failed',
+      }
+
+      const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+      await vol.promises.mkdir(resolve(process.cwd(), 'locales/en'), { recursive: true })
+      await vol.promises.writeFile(enPath, JSON.stringify(existingTranslations, null, 2))
+
+      // Extracted keys: only errors and techSupport/saveFailed are used in code
+      // languages.* is preserved via preservePatterns
+      const keysMap = new Map<string, { key: string; defaultValue?: string }>()
+      keysMap.set('errors.required', { key: 'errors.required', defaultValue: 'Required' })
+      keysMap.set('errors.invalid', { key: 'errors.invalid', defaultValue: 'Invalid' })
+      keysMap.set('techSupport', { key: 'techSupport', defaultValue: 'Tech Support' })
+      keysMap.set('saveFailed', { key: 'saveFailed', defaultValue: 'Save failed' })
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          sort: false,
+          removeUnusedKeys: true,
+          preservePatterns: ['languages.*'],
+        },
+      }
+
+      const [result] = await getTranslations(keysMap as any, new Set(), config)
+
+      // Key order should match the original file: errors, languages, techSupport, saveFailed
+      // NOT: languages (preserved first), errors, techSupport, saveFailed (insertion order)
+      const topKeys = Object.keys(result.newTranslations)
+      expect(topKeys).toEqual(['errors', 'languages', 'techSupport', 'saveFailed'])
+    })
+
+    it('should place new keys at the end when preserving original order', async () => {
+      // Original file: beta, alpha (non-alphabetical)
+      // With preservePatterns on "alpha", the preserved-keys loop inserts alpha first,
+      // then beta from extracted keys — losing original order.
+      const existingTranslations = {
+        beta: 'Beta',
+        alpha: 'Alpha',
+      }
+
+      const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+      await vol.promises.mkdir(resolve(process.cwd(), 'locales/en'), { recursive: true })
+      await vol.promises.writeFile(enPath, JSON.stringify(existingTranslations, null, 2))
+
+      const keysMap = new Map<string, { key: string; defaultValue?: string }>()
+      keysMap.set('beta', { key: 'beta', defaultValue: 'Beta' })
+      keysMap.set('gamma', { key: 'gamma', defaultValue: 'Gamma' }) // new key
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}/{{namespace}}.json',
+          sort: false,
+          removeUnusedKeys: true,
+          preservePatterns: ['alpha'],
+        },
+      }
+
+      const [result] = await getTranslations(keysMap as any, new Set(), config)
+
+      // Original order: beta, alpha (preserved), gamma (new, at end)
+      // NOT: alpha (preserved first), beta, gamma
+      const keys = Object.keys(result.newTranslations)
+      expect(keys).toEqual(['beta', 'alpha', 'gamma'])
+    })
+  })
+
+  describe('merged single-file with nsSeparator: false (#223)', () => {
+    it('should not treat top-level object keys as namespaces when nsSeparator is false', async () => {
+      // Existing merged file with nested objects (keySeparator groups, NOT namespaces)
+      const existingTranslations = {
+        languages: { en: 'English', de: 'German' },
+        errors: { unknown: 'An unknown error occurred' },
+      }
+
+      const enPath = resolve(process.cwd(), 'locales/en.json')
+      await vol.promises.mkdir(resolve(process.cwd(), 'locales'), { recursive: true })
+      await vol.promises.writeFile(enPath, JSON.stringify(existingTranslations, null, 2))
+
+      // Extracted keys from source code (only errors.unknown is used)
+      const keysMap = new Map<string, { key: string; defaultValue?: string; ns?: string; nsIsImplicit?: boolean }>()
+      keysMap.set('errors.unknown', { key: 'errors.unknown', defaultValue: 'An unknown error occurred', ns: 'translation', nsIsImplicit: true })
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}.json',
+          defaultNS: 'translation',
+          keySeparator: '.',
+          nsSeparator: false,
+          removeUnusedKeys: true,
+          preservePatterns: ['languages.*'],
+        },
+      }
+
+      const [result] = await getTranslations(keysMap as any, new Set(), config)
+
+      // languages.* should be preserved via preservePatterns
+      expect(result.newTranslations.languages).toEqual({ en: 'English', de: 'German' })
+      // errors.unknown should be present (it's extracted)
+      expect(result.newTranslations.errors).toEqual({ unknown: 'An unknown error occurred' })
+      // Should NOT have a top-level "translation" wrapper
+      expect(result.newTranslations.translation).toBeUndefined()
+    })
+
+    it('should not wrap keys under defaultNS when nsSeparator is false', async () => {
+      const enPath = resolve(process.cwd(), 'locales/en.json')
+      await vol.promises.mkdir(resolve(process.cwd(), 'locales'), { recursive: true })
+      await vol.promises.writeFile(enPath, JSON.stringify({}, null, 2))
+
+      const keysMap = new Map<string, { key: string; defaultValue?: string; ns?: string; nsIsImplicit?: boolean }>()
+      keysMap.set('hello', { key: 'hello', defaultValue: 'Hello', ns: 'translation', nsIsImplicit: true })
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}.json',
+          defaultNS: 'translation',
+          nsSeparator: false,
+        },
+      }
+
+      const [result] = await getTranslations(keysMap as any, new Set(), config)
+
+      // Should be flat, not wrapped in { translation: { hello: ... } }
+      expect(result.newTranslations).toEqual({ hello: 'Hello' })
+    })
+  })
 })
