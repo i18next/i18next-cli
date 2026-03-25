@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.51.0](https://github.com/i18next/i18next-cli/compare/v1.50.8...v1.51.0) - 2026-03-25
+
+- Add `allPluralForms` option to force generation of all 6 CLDR plural forms
+  (`zero`, `one`, `two`, `few`, `many`, `other`) for every language, including
+  the primary language. This is useful when secondary languages need plural forms
+  that the primary language doesn't have, and you want a consistent set of keys
+  across all locales. Set `extract.allPluralForms: true` in your config to enable.
+  Addresses [#226](https://github.com/i18next/i18next-cli/issues/226).
+
 ## [1.50.8](https://github.com/i18next/i18next-cli/compare/v1.50.7...v1.50.8) - 2026-03-25
 
 - Fix crash with custom locale codes (e.g. `'E'`, `'F'`) that are not valid

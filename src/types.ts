@@ -170,6 +170,15 @@ export interface I18nextToolkitConfig {
     disablePlurals?: boolean
 
     /**
+     * When true, generates all 6 CLDR plural forms (zero, one, two, few, many, other)
+     * for every language, including the primary language.
+     * Useful when secondary languages need plural forms that the primary language doesn't have,
+     * and you want a consistent set of keys across all locales.
+     * (default: false)
+     */
+    allPluralForms?: boolean
+
+    /**
      * Prefix for nested translations.
      * (default: '$t(')
      */

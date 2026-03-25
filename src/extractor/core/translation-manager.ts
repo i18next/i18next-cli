@@ -434,6 +434,11 @@ function buildNewTranslationsForNs (
       return true
     }
 
+    // When allPluralForms is enabled, include all CLDR plural forms regardless of the target language
+    if (config.extract.allPluralForms && pluralForms.includes(lastPart)) {
+      return true
+    }
+
     if (isOrdinal && keyParts.includes('ordinal')) {
       // For ordinal plurals: key_context_ordinal_category or key_ordinal_category
       return targetLanguagePluralCategories.has(`ordinal_${lastPart}`)
@@ -597,8 +602,8 @@ function buildNewTranslationsForNs (
           let formsToGenerate: string[]
           if (locale !== primaryLanguage) {
             // For non-primary locales:
-            // 1. Generate the forms that locale actually needs
-            formsToGenerate = cardinalCategories
+            // 1. Generate the forms that locale actually needs (or all forms if allPluralForms is enabled)
+            formsToGenerate = config.extract.allPluralForms ? [...pluralForms] : cardinalCategories
             // 2. Also prepare empty placeholders for all OTHER CLDR forms not in this locale
             //    so translators can add them manually without --sync-primary removing them
             const otherForms = pluralForms.filter(f => !cardinalCategories.includes(f))
@@ -642,13 +647,13 @@ function buildNewTranslationsForNs (
             }
           } else {
             // For primary language, only expand if it has multiple plural forms
-            // Single-"other" languages (ja, zh, ko) should NOT expand the base key
-            if (cardinalCategories.length === 1 && cardinalCategories[0] === 'other') {
+            // Single-"other" languages (ja, zh, ko) should NOT expand the base key (unless allPluralForms is enabled)
+            if (cardinalCategories.length === 1 && cardinalCategories[0] === 'other' && !config.extract.allPluralForms) {
               // Single-"other" language - don't expand, keep just the base key
               formsToGenerate = []
             } else {
-              // Multi-form language - expand to its plural forms
-              formsToGenerate = cardinalCategories
+              // Multi-form language - expand to its plural forms (or all forms if allPluralForms is enabled)
+              formsToGenerate = config.extract.allPluralForms ? [...pluralForms] : cardinalCategories
 
               for (const form of formsToGenerate) {
                 const finalKey = isOrdinal
@@ -816,6 +821,27 @@ function buildNewTranslationsForNs (
     }
 
     setNestedValue(newTranslations, key, valueToSet, separator)
+  }
+
+  // When allPluralForms is enabled, ensure all 6 CLDR plural forms exist for every plural base key.
+  // The extractor only generates forms for the configured locales' categories, so we need to fill in the rest.
+  if (config.extract.allPluralForms && !config.extract.disablePlurals) {
+    for (const base of expandedBases) {
+      for (const form of pluralForms) {
+        const finalKey = `${base}${pluralSeparator}${form}`
+        const separator = finalKey.startsWith('<') ? false : (keySeparator ?? '.')
+        const existingInNew = getNestedValue(newTranslations, finalKey, separator)
+        if (existingInNew === undefined) {
+          const existingVariantValue = getNestedValue(existingTranslations, finalKey, separator)
+          if (existingVariantValue !== undefined) {
+            setNestedValue(newTranslations, finalKey, existingVariantValue, separator)
+          } else {
+            const resolvedValue = resolveDefaultValue(emptyDefaultValue, String(base), namespace || config?.extract?.defaultNS || 'translation', locale)
+            setNestedValue(newTranslations, finalKey, resolvedValue, separator)
+          }
+        }
+      }
+    }
   }
 
   // 2a. When sort is disabled but removeUnusedKeys is on, the rebuild from `{}`
