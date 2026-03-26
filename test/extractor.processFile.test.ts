@@ -1,6 +1,6 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
-import { processFile } from '../src/extractor/core/extractor'
+import { processFile, preScanFile } from '../src/extractor/core/extractor'
 import { ASTVisitors } from '../src/extractor/core/ast-visitors'
 import { createPluginContext } from '../src/extractor/plugin-manager'
 import { ConsoleLogger } from '../src/utils/logger'
@@ -217,6 +217,45 @@ describe('processFile', () => {
     await processFile('/nonexistent/file.ts', plugins, astVisitors, pluginContext, mockConfig, mockLogger)
 
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Skipping file due to error:'))
+  })
+
+  it('should silently skip directories with file-like extensions (issue #229)', async () => {
+    // A directory named "Foo.tsx" can match glob patterns like **/*.tsx
+    // and should be skipped without emitting a warning.
+    vol.mkdirSync('/src/Foo.tsx', { recursive: true })
+
+    const plugins: Plugin[] = []
+    const mockLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      log: vi.fn(),
+    } as any
+    const pluginContext = createPluginContext(allKeys, plugins, mockConfig, mockLogger)
+    const fileErrors: string[] = []
+
+    await processFile('/src/Foo.tsx', plugins, astVisitors, pluginContext, mockConfig, mockLogger, fileErrors)
+
+    expect(mockLogger.warn).not.toHaveBeenCalled()
+    expect(fileErrors).toHaveLength(0)
+    expect(astVisitors.visit).not.toHaveBeenCalled()
+  })
+
+  it('should silently skip directories with file-like extensions in preScanFile (issue #229)', async () => {
+    vol.mkdirSync('/src/Foo.tsx', { recursive: true })
+
+    const mockLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      log: vi.fn(),
+    } as any
+    const fileErrors: string[] = []
+
+    await preScanFile('/src/Foo.tsx', astVisitors, mockConfig, mockLogger, fileErrors)
+
+    expect(mockLogger.warn).not.toHaveBeenCalled()
+    expect(fileErrors).toHaveLength(0)
   })
 
   it('should support custom plugin that extracts keys from TypeScript satisfies expressions', async () => {

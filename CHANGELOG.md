@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.51.3](https://github.com/i18next/i18next-cli/compare/v1.51.2...v1.51.3) - 2026-03-26
+
+- Silently skip directories that happen to have file-like extensions (e.g. a
+  directory named `Foo.tsx`) instead of logging a misleading
+  "Skipping file due to error" warning.
+  Fixes [#229](https://github.com/i18next/i18next-cli/issues/229).
+
 ## [1.51.2](https://github.com/i18next/i18next-cli/compare/v1.51.1...v1.51.2) - 2026-03-26
 
 - Fix `extract` function returning default namespace keys at top level instead of

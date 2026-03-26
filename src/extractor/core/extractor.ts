@@ -2,7 +2,7 @@ import { createSpinnerLike } from '../../utils/wrap-ora.js'
 import { styleText } from 'node:util'
 import { parse } from '@swc/core'
 import type { Module } from '@swc/types'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname } from 'node:path'
 import type { Logger, I18nextToolkitConfig, Plugin, PluginContext, TranslationResult } from '../../types.js'
 import { findKeys } from './key-finder.js'
@@ -183,6 +183,10 @@ export async function processFile (
   fileErrors?: string[]
 ): Promise<void> {
   try {
+    // Skip directories that happen to match file-extension globs (e.g. a directory named "Foo.tsx")
+    const fileStat = await stat(file)
+    if (fileStat.isDirectory()) return
+
     let code = await readFile(file, 'utf-8')
 
     // Run onLoad hooks from plugins with error handling.
@@ -353,6 +357,10 @@ export async function preScanFile (
   fileErrors?: string[]
 ): Promise<void> {
   try {
+    // Skip directories that happen to match file-extension globs (e.g. a directory named "Foo.tsx")
+    const fileStat = await stat(file)
+    if (fileStat.isDirectory()) return
+
     const code = await readFile(file, 'utf-8')
     const fileExt = extname(file).toLowerCase()
 
