@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.51.2](https://github.com/i18next/i18next-cli/compare/v1.51.1...v1.51.2) - 2026-03-26
+
+- Fix `extract` function returning default namespace keys at top level instead of
+  under `"translation"` when `nsSeparator: false` is used with multiple namespaces.
+  The `nsSeparator: false` top-level collapsing (#223) now only applies when there
+  are no other explicit namespaces present.
+  Fixes [#227](https://github.com/i18next/i18next-cli/issues/227).
+
 ## [1.51.1](https://github.com/i18next/i18next-cli/compare/v1.51.0...v1.51.1) - 2026-03-26
 
 - Fix `allPluralForms` to only generate plural forms needed by at least one

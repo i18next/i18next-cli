@@ -1063,10 +1063,13 @@ export async function getTranslations (
 
       // When nsSeparator is false, keys resolved to the defaultNS (e.g. from
       // useTranslation() with no args) should be treated as top-level, not
-      // wrapped under the namespace name.
+      // wrapped under the namespace name — but only when there are no other
+      // explicit namespaces. If multiple namespaces exist, we must keep the
+      // default namespace wrapper to avoid flattening it into the top level (#227).
       const defaultNs = String(config.extract.defaultNS ?? 'translation')
+      const hasOtherNamespaces = [...keysByNS.keys()].some(k => k !== NO_NS_TOKEN && k !== defaultNs)
       const isTopLevel = (nsKey: string) =>
-        nsKey === NO_NS_TOKEN || (config.extract.nsSeparator === false && nsKey === defaultNs)
+        nsKey === NO_NS_TOKEN || (config.extract.nsSeparator === false && nsKey === defaultNs && !hasOtherNamespaces)
 
       for (const nsKey of namespacesToProcess) {
         const nsKeys = keysByNS.get(nsKey) || []

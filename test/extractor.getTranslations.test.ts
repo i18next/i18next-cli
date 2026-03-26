@@ -870,6 +870,38 @@ describe('extractor.getTranslations', () => {
     })
   })
 
+  describe('nsSeparator: false with multiple namespaces (#227)', () => {
+    it('should keep default namespace keys under "translation" when other namespaces exist', async () => {
+      const enPath = resolve(process.cwd(), 'locales/en.json')
+      await vol.promises.mkdir(resolve(process.cwd(), 'locales'), { recursive: true })
+      await vol.promises.writeFile(enPath, JSON.stringify({}, null, 2))
+
+      // Keys in default namespace and a custom namespace
+      const keysMap = new Map<string, { key: string; defaultValue?: string; ns?: string; nsIsImplicit?: boolean }>()
+      keysMap.set('test1', { key: 'test1', defaultValue: 'test1', ns: 'translation', nsIsImplicit: false })
+      keysMap.set('ns:test2', { key: 'test2', defaultValue: 'test2', ns: 'namespace', nsIsImplicit: false })
+
+      const config: I18nextToolkitConfig = {
+        locales: ['en'],
+        extract: {
+          input: 'src/**/*.{ts,tsx}',
+          output: 'locales/{{language}}.json',
+          contextSeparator: '',
+          keySeparator: false,
+          nsSeparator: false,
+        },
+      }
+
+      const [result] = await getTranslations(keysMap as any, new Set(), config)
+
+      // With multiple namespaces, keys should be nested under their namespace names
+      expect(result.newTranslations).toEqual({
+        translation: { test1: 'test1' },
+        namespace: { test2: 'test2' },
+      })
+    })
+  })
+
   describe('custom locale codes (#225)', () => {
     it('should not crash with non-BCP47 locale codes like E and F', async () => {
       const keysMap = new Map<string, { key: string; defaultValue?: string }>()
