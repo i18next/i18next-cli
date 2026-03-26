@@ -649,10 +649,10 @@ export default defineConfig({
     // The count option can still be used for {{count}} interpolation in the translation value
     disablePlurals: false, // Default: false
 
-    // Force generation of all 6 CLDR plural forms (zero, one, two, few, many, other)
-    // for every language, including the primary language.
-    // Useful when secondary languages need plural forms that the primary language doesn't have,
-    // and you want a consistent set of keys across all locales.
+    // Generate the union of all configured locales' plural forms for every language.
+    // For example, if your locales are ['en', 'pl'], English normally only gets _one/_other,
+    // but with this option it also gets _few/_many (needed by Polish).
+    // Useful when you want a consistent set of plural keys across all locales.
     allPluralForms: false, // Default: false
 
     // Prefix for nested translations.

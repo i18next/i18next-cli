@@ -336,6 +336,18 @@ function buildNewTranslationsForNs (
   cardinalCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
   ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
 
+  // When allPluralForms is enabled, compute the union of cardinal categories across all configured locales.
+  // This ensures every locale gets the same set of plural keys — but only the forms actually needed by at least one locale.
+  const allLocalesCardinalCategories: string[] | null = config.extract.allPluralForms
+    ? (() => {
+        const union = new Set<string>()
+        for (const loc of config.locales) {
+          safePluralRules(loc, { type: 'cardinal' }).resolvedOptions().pluralCategories.forEach(c => union.add(c))
+        }
+        return [...union]
+      })()
+    : null
+
   // Prepare namespace pattern checking helpers
   const rawPreserve = config.extract.preservePatterns || []
 
@@ -435,7 +447,7 @@ function buildNewTranslationsForNs (
     }
 
     // When allPluralForms is enabled, include all CLDR plural forms regardless of the target language
-    if (config.extract.allPluralForms && pluralForms.includes(lastPart)) {
+    if (allLocalesCardinalCategories && allLocalesCardinalCategories.includes(lastPart)) {
       return true
     }
 
@@ -602,8 +614,8 @@ function buildNewTranslationsForNs (
           let formsToGenerate: string[]
           if (locale !== primaryLanguage) {
             // For non-primary locales:
-            // 1. Generate the forms that locale actually needs (or all forms if allPluralForms is enabled)
-            formsToGenerate = config.extract.allPluralForms ? [...pluralForms] : cardinalCategories
+            // 1. Generate the forms that locale actually needs (or union of all locales' forms if allPluralForms is enabled)
+            formsToGenerate = allLocalesCardinalCategories ?? cardinalCategories
             // 2. Also prepare empty placeholders for all OTHER CLDR forms not in this locale
             //    so translators can add them manually without --sync-primary removing them
             const otherForms = pluralForms.filter(f => !cardinalCategories.includes(f))
@@ -648,12 +660,12 @@ function buildNewTranslationsForNs (
           } else {
             // For primary language, only expand if it has multiple plural forms
             // Single-"other" languages (ja, zh, ko) should NOT expand the base key (unless allPluralForms is enabled)
-            if (cardinalCategories.length === 1 && cardinalCategories[0] === 'other' && !config.extract.allPluralForms) {
+            if (cardinalCategories.length === 1 && cardinalCategories[0] === 'other' && !allLocalesCardinalCategories) {
               // Single-"other" language - don't expand, keep just the base key
               formsToGenerate = []
             } else {
-              // Multi-form language - expand to its plural forms (or all forms if allPluralForms is enabled)
-              formsToGenerate = config.extract.allPluralForms ? [...pluralForms] : cardinalCategories
+              // Multi-form language - expand to its plural forms (or union of all locales' forms if allPluralForms is enabled)
+              formsToGenerate = allLocalesCardinalCategories ?? cardinalCategories
 
               for (const form of formsToGenerate) {
                 const finalKey = isOrdinal
@@ -823,11 +835,11 @@ function buildNewTranslationsForNs (
     setNestedValue(newTranslations, key, valueToSet, separator)
   }
 
-  // When allPluralForms is enabled, ensure all 6 CLDR plural forms exist for every plural base key.
+  // When allPluralForms is enabled, ensure all union plural forms exist for every plural base key.
   // The extractor only generates forms for the configured locales' categories, so we need to fill in the rest.
-  if (config.extract.allPluralForms && !config.extract.disablePlurals) {
+  if (allLocalesCardinalCategories && !config.extract.disablePlurals) {
     for (const base of expandedBases) {
-      for (const form of pluralForms) {
+      for (const form of allLocalesCardinalCategories) {
         const finalKey = `${base}${pluralSeparator}${form}`
         const separator = finalKey.startsWith('<') ? false : (keySeparator ?? '.')
         const existingInNew = getNestedValue(newTranslations, finalKey, separator)
