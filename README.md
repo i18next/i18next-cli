@@ -683,10 +683,10 @@ export default defineConfig({
   // options for linter
   lint: {
     /** Optional accept-list of JSX attribute names to exclusively lint (takes precedence over ignoredAttributes). */
-    acceptedAttributes: ['title'];
+    acceptedAttributes: ['title'],
 
     /** Optional accept-list of JSX tag names to exclusively lint (takes precedence over ignoredTags). */
-    acceptedTags: ['p'];
+    acceptedTags: ['p'],
 
     // Optional custom JSX attributes to ignore during linting
     ignoredAttributes: ['data-testid', 'aria-label'],
