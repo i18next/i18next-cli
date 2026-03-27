@@ -122,7 +122,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
 
-    const expectedDefaultValue = 'Hello <1>{{name}}</1>, you have {{count}} unread message.'
+    const expectedDefaultValue = 'Hello <strong>{{name}}</strong>, you have {{count}} unread message.'
 
     expect(translationFile!.newTranslations).toEqual({
       userMessagesUnreadARA_one: expectedDefaultValue,
@@ -715,7 +715,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      testme: "<0>If you're having a problem or question about LosslessCut, please first check the links in the <1>Help</1> menu. If you cannot find any resolution, you may ask a question in <3>GitHub discussions</3> or on <5>Discord.</5></0><1>If you believe that you found a bug in LosslessCut, you may <1>report a bug</1>.</1>",
+      testme: "<p>If you're having a problem or question about LosslessCut, please first check the links in the <1>Help</1> menu. If you cannot find any resolution, you may ask a question in <3>GitHub discussions</3> or on <5>Discord.</5></p><p>If you believe that you found a bug in LosslessCut, you may <1>report a bug</1>.</p>",
     })
   })
 
@@ -736,7 +736,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
 
-    const expectedDefaultValue = 'First line with empty JSXTextNode<1><0>Span that should have index 1 but has index 0</0></1>Second line'
+    const expectedDefaultValue = 'First line with empty JSXTextNode<p><0>Span that should have index 1 but has index 0</0></p>Second line'
 
     expect(translationFile!.newTranslations).toEqual({
       children_receive_wrong_index: expectedDefaultValue,
@@ -2063,7 +2063,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      embed_answer: '<p>text</p><1><0>ink</0></1>',
+      embed_answer: '<p>text</p><p><0>ink</0></p>',
     })
   })
 
@@ -2110,8 +2110,7 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      'space-comp': '<0>text <2>link</2></0>',
-      // 'space-comp': '<p>text <2>link</2></p>', // currently generates this
+      'space-comp': '<p>text <2>link</2></p>',
     })
   })
 
@@ -2260,8 +2259,8 @@ describe('extractor: advanced Trans features', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      '<0>You have <1>{{count}} item</1>.</0>_one': '<0>You have <1>{{count}} item</1>.</0>',
-      '<0>You have <1>{{count}} item</1>.</0>_other': '<0>You have <1>{{count}} item</1>.</0>'
+      '<0>You have <strong>{{count}} item</strong>.</0>_one': '<0>You have <strong>{{count}} item</strong>.</0>',
+      '<0>You have <strong>{{count}} item</strong>.</0>_other': '<0>You have <strong>{{count}} item</strong>.</0>'
     })
   })
 

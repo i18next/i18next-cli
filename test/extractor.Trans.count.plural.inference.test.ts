@@ -97,8 +97,8 @@ describe('extractor: Trans inline count inference', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      transTest_one: '<0>{{count}} and {{stuff}}</0>',
-      transTest_other: '<0>{{count}} and {{stuff}}</0>',
+      transTest_one: '<strong>{{count}} and {{stuff}}</strong>',
+      transTest_other: '<strong>{{count}} and {{stuff}}</strong>',
     })
   })
 
@@ -121,8 +121,8 @@ describe('extractor: Trans inline count inference', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      deepCount_one: 'You have <1><0>{{count}} item</0></1>.',
-      deepCount_other: 'You have <1><0>{{count}} item</0></1>.',
+      deepCount_one: 'You have <strong><0>{{count}} item</0></strong>.',
+      deepCount_other: 'You have <strong><0>{{count}} item</0></strong>.',
     })
   })
 
@@ -143,7 +143,7 @@ describe('extractor: Trans inline count inference', () => {
     const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
 
     expect(translationFile).toBeDefined()
-    const expectedValue = 'Hello <1>{{name}}</1>, you have {{count}} message. Open <5>here</5>.'
+    const expectedValue = 'Hello <strong>{{name}}</strong>, you have {{count}} message. Open <5>here</5>.'
     expect(translationFile!.newTranslations).toEqual({
       transTest2_one: expectedValue,
       transTest2_other: expectedValue,
@@ -215,7 +215,7 @@ describe('extractor: Trans inline count inference', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      noCount: 'Hello <1>{{name}}</1>, welcome back.',
+      noCount: 'Hello <strong>{{name}}</strong>, welcome back.',
     })
     // Explicitly assert no spurious plural keys were generated
     expect(Object.keys(translationFile!.newTranslations)).not.toContain('noCount_one')
@@ -305,8 +305,8 @@ describe('extractor: Trans inline count inference', () => {
 
     expect(translationFile).toBeDefined()
     expect(translationFile!.newTranslations).toEqual({
-      tsCount_one: 'You have <1>{{count}}</1> unread messages.',
-      tsCount_other: 'You have <1>{{count}}</1> unread messages.',
+      tsCount_one: 'You have <strong>{{count}}</strong> unread messages.',
+      tsCount_other: 'You have <strong>{{count}}</strong> unread messages.',
     })
   })
 
