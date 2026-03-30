@@ -163,8 +163,20 @@ export class ExpressionResolver {
         }
       }
 
-      // For other initializers, try to resolve to one-or-more strings
+      // For other initializers, try to resolve to one-or-more strings.
+      // Also check the type annotation: when the type resolves to a broader set
+      // (e.g. an enum type), prefer it over the single initializer value.
+      // Example: `const status: Status = Status.New` — the init resolves to ["new"]
+      // but the type annotation `Status` resolves to ["new", "active", "done"].
       const vals = this.resolvePossibleStringValuesFromExpression(init)
+      const typeAnnotation = this.extractTypeAnnotation(node.id)
+      if (typeAnnotation) {
+        const typeVals = this.resolvePossibleStringValuesFromType(typeAnnotation)
+        if (typeVals.length > vals.length) {
+          this.variableTable.set(name, typeVals)
+          return
+        }
+      }
       if (vals.length > 0) {
         this.variableTable.set(name, vals)
         return

@@ -319,6 +319,29 @@ describe('extractor: finite dynamic key resolution (issue #210)', () => {
       expect(translationFile!.newTranslations).toHaveProperty('status.inactive')
     })
 
+    it('should expand all enum values when variable has both type annotation and initializer', async () => {
+      // Regression: `const status: Status = Status.New` should extract all enum values,
+      // not just the single initializer value.
+      const sampleCode = `
+        enum Status {
+          New = 'new',
+          Active = 'active',
+          Done = 'done',
+        }
+        const status: Status = Status.New;
+        t(\`ms.status.\${status}\`);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile, 'translation.json should be created').toBeDefined()
+      expect(translationFile!.newTranslations).toHaveProperty('ms.status.new')
+      expect(translationFile!.newTranslations).toHaveProperty('ms.status.active')
+      expect(translationFile!.newTranslations).toHaveProperty('ms.status.done')
+    })
+
     it('should NOT produce keys for numeric enums (only string-valued enums are finite keys)', async () => {
       const sampleCode = `
         enum Count { One = 1, Two = 2 }
