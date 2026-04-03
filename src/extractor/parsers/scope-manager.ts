@@ -142,7 +142,7 @@ export class ScopeManager {
   }
 
   private getUseTranslationConfig (name: string): UseTranslationHookConfig | undefined {
-    const useTranslationNames = this.config.extract.useTranslationNames || ['useTranslation']
+    const useTranslationNames = this.config.extract.useTranslationNames || ['useTranslation', 'getT', 'useT']
 
     for (const item of useTranslationNames) {
       if (typeof item === 'string' && item === name) {

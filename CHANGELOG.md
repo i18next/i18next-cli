@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.51.6](https://github.com/i18next/i18next-cli/compare/v1.51.5...v1.51.6) - 2026-04-03
+
+- Add `getT` and `useT` to the default `useTranslationNames` so that
+  `next-i18next` v16 App Router hooks are recognized out of the box.
+  Keys from `useT('ns')` and `await getT('ns')` are now correctly
+  extracted into the specified namespace instead of falling back to
+  `defaultNS`.
+  Fixes [#232](https://github.com/i18next/i18next-cli/issues/232).
+
 ## [1.51.5](https://github.com/i18next/i18next-cli/compare/v1.51.4...v1.51.5) - 2026-03-30
 
 - Fix extractor using only the initializer value instead of the full enum type
