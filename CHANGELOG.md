@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.51.7](https://github.com/i18next/i18next-cli/compare/v1.51.6...v1.51.7) - 2026-04-07
+
+- Fix `--sync-all` not clearing secondary locale translations when
+  `mergeNamespaces` is enabled. The `syncAll` flag was not being passed
+  through in the merged namespaces code path.
+  Fixes [#233](https://github.com/i18next/i18next-cli/issues/233).
+
 ## [1.51.6](https://github.com/i18next/i18next-cli/compare/v1.51.5...v1.51.6) - 2026-04-03
 
 - Add `getT` and `useT` to the default `useTranslationNames` so that

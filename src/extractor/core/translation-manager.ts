@@ -1075,11 +1075,11 @@ export async function getTranslations (
         const nsKeys = keysByNS.get(nsKey) || []
         if (isTopLevel(nsKey)) {
           // keys without namespace -> merged into top-level of the merged file
-          const built = buildNewTranslationsForNs(nsKeys, existingMergedFile, config, locale, undefined, preservePatterns, objectKeys, syncPrimaryWithDefaults, undefined, logger)
+          const built = buildNewTranslationsForNs(nsKeys, existingMergedFile, config, locale, undefined, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, logger)
           Object.assign(newMergedTranslations, built)
         } else {
           const existingTranslations = existingMergedFile[nsKey] || {}
-          newMergedTranslations[nsKey] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, nsKey, preservePatterns, objectKeys, syncPrimaryWithDefaults, undefined, logger)
+          newMergedTranslations[nsKey] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, nsKey, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, logger)
         }
       }
 
