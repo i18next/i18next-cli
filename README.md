@@ -707,7 +707,8 @@ export default defineConfig({
   
   // TypeScript type generation
   types: {
-    input: ['locales/en/*.json'],
+    input: ['locales/en/*.json'], // or use '**/*.json' with basePath for nested namespaces
+    basePath: 'locales/en', // Optional: enables nested directory structures as namespaces
     output: 'src/types/i18next.d.ts',
     resourcesFile: 'src/types/resources.d.ts',
     enableSelector: true, // Enable type-safe key selection
@@ -1215,6 +1216,47 @@ export default {
   }
 } as const;
 ```
+
+### Nested Namespaces for Type Generation
+
+When generating TypeScript types, namespaces are derived from the filename only by default (e.g., `locales/en/dashboard/user.json` → namespace: `user`). If you organize translation files in nested directories and want the generated types to preserve that structure as part of the namespace, use the `basePath` option in your `types` configuration.
+
+Configuration (`i18next.config.ts`):
+
+```typescript
+export default defineConfig({
+  locales: ['en', 'de'],
+  extract: {
+    input: ['src/**/*.{ts,tsx}'],
+    output: 'public/locales/{{language}}/{{namespace}}.json',
+  },
+  types: {
+    input: 'public/locales/en/**/*.json',
+    basePath: 'public/locales/en',
+    output: 'src/types/i18next.d.ts',
+    resourcesFile: 'src/types/resources.d.ts',
+  }
+});
+```
+
+With this configuration:
+- `public/locales/en/common.json` → type namespace: `common`
+- `public/locales/en/dashboard/user.json` → type namespace: `dashboard/user`
+- `public/locales/en/dashboard/settings.json` → type namespace: `dashboard/settings`
+- `public/locales/en/features/auth/login.json` → type namespace: `features/auth/login`
+
+The `basePath` can include the `{{language}}` placeholder for flexibility:
+
+```typescript
+types: {
+  input: 'public/locales/en/**/*.json',
+  basePath: 'public/locales/{{language}}',
+  output: 'src/types/i18next.d.ts',
+  resourcesFile: 'src/types/resources.d.ts',
+}
+```
+
+This is useful for organizing translations into logical groups while maintaining type safety across your entire namespace hierarchy.
 
 ## Migration from i18next-parser
 
