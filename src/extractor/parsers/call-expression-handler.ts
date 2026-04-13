@@ -673,9 +673,9 @@ export class CallExpressionHandler {
     let isSelectorAPI = false
 
     if (firstArg.type === 'ArrowFunctionExpression') {
-      const key = this.extractKeyFromSelector(firstArg)
-      if (key) {
-        keysToProcess.push(key)
+      const keys = this.extractKeysFromSelector(firstArg)
+      if (keys.length > 0) {
+        keysToProcess.push(...keys)
         isSelectorAPI = true
       }
     } else if (firstArg.type === 'ArrayExpression') {
@@ -695,20 +695,23 @@ export class CallExpressionHandler {
   }
 
   /**
-   * Extracts translation key from selector API arrow function.
+   * Extracts translation key(s) from selector API arrow function.
    *
    * Processes selector expressions like:
-   * - `$ => $.path.to.key` → 'path.to.key'
-   * - `$ => $.app['title'].main` → 'app.title.main'
-   * - `$ => { return $.nested.key; }` → 'nested.key'
+   * - `$ => $.path.to.key` → ['path.to.key']
+   * - `$ => $.app['title'].main` → ['app.title.main']
+   * - `$ => { return $.nested.key; }` → ['nested.key']
+   * - `$ => $.table.columns[field]` → ['table.columns.name', 'table.columns.age']
+   *   (when `field` resolves to `"name" | "age"`)
    *
    * Handles both dot notation and bracket notation, respecting
-   * the configured key separator or flat key structure.
+   * the configured key separator or flat key structure. Dynamic
+   * bracket expressions are resolved via the expression resolver.
    *
    * @param node - Arrow function expression from selector call
-   * @returns Extracted key path or null if not statically analyzable
+   * @returns Extracted key paths, or empty array if not statically analyzable
    */
-  private extractKeyFromSelector (node: ArrowFunctionExpression): string | null {
+  private extractKeysFromSelector (node: ArrowFunctionExpression): string[] {
     let body = node.body
 
     // Handle block bodies, e.g., $ => { return $.key; }
@@ -717,12 +720,13 @@ export class CallExpressionHandler {
       if (returnStmt?.type === 'ReturnStatement' && returnStmt.argument) {
         body = returnStmt.argument
       } else {
-        return null
+        return []
       }
     }
 
     let current = body
-    const parts: string[] = []
+    // Each element is an array of possible values for that position in the key path
+    const parts: string[][] = []
 
     // Recursively walk down MemberExpressions
     while (current.type === 'MemberExpression') {
@@ -730,13 +734,20 @@ export class CallExpressionHandler {
 
       if (prop.type === 'Identifier') {
         // This handles dot notation: .key
-        parts.unshift(prop.value)
+        parts.unshift([prop.value])
       } else if (prop.type === 'Computed' && prop.expression.type === 'StringLiteral') {
-        // This handles bracket notation: ['key']
-        parts.unshift(prop.expression.value)
+        // This handles bracket notation with string literal: ['key']
+        parts.unshift([prop.expression.value])
+      } else if (prop.type === 'Computed' && prop.expression) {
+        // This is a dynamic property like [myVar] — try to resolve it
+        const resolved = this.expressionResolver.resolvePossibleKeyStringValues(prop.expression)
+        if (resolved.length > 0) {
+          parts.unshift(resolved)
+        } else {
+          return []
+        }
       } else {
-        // This is a dynamic property like [myVar] or a private name, which we cannot resolve.
-        return null
+        return []
       }
 
       current = current.object
@@ -745,10 +756,23 @@ export class CallExpressionHandler {
     if (parts.length > 0) {
       const keySeparator = this.config.extract.keySeparator
       const joiner = typeof keySeparator === 'string' ? keySeparator : '.'
-      return parts.join(joiner)
+
+      // Compute the cartesian product of all parts to generate all possible keys
+      let combinations: string[][] = [[]]
+      for (const part of parts) {
+        const newCombinations: string[][] = []
+        for (const combo of combinations) {
+          for (const value of part) {
+            newCombinations.push([...combo, value])
+          }
+        }
+        combinations = newCombinations
+      }
+
+      return combinations.map(combo => combo.join(joiner))
     }
 
-    return null
+    return []
   }
 
   /**

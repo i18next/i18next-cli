@@ -385,7 +385,9 @@ export class ExpressionResolver {
    */
   private resolvePossibleStringValuesFromExpression (expression: Expression, returnEmptyStrings = false): string[] {
     // Support selector-style arrow functions used by the selector API:
-    // e.g. ($) => $.path.to.key  ->  'path.to.key'
+    // e.g. ($) => $.path.to.key  ->  ['path.to.key']
+    // e.g. ($) => $.table.columns[field]  ->  ['table.columns.name', 'table.columns.age']
+    //   (when `field` resolves to "name" | "age")
     if (expression.type === 'ArrowFunctionExpression') {
       try {
         let body: any = expression.body
@@ -400,14 +402,23 @@ export class ExpressionResolver {
         }
 
         let current: any = body
-        const parts: string[] = []
+        // Each element is an array of possible values for that position
+        const parts: string[][] = []
 
         while (current && current.type === 'MemberExpression') {
           const prop = current.property
           if (prop.type === 'Identifier') {
-            parts.unshift(prop.value)
+            parts.unshift([prop.value])
           } else if (prop.type === 'Computed' && prop.expression && prop.expression.type === 'StringLiteral') {
-            parts.unshift(prop.expression.value)
+            parts.unshift([prop.expression.value])
+          } else if (prop.type === 'Computed' && prop.expression) {
+            // Dynamic bracket: try to resolve the expression to possible string values
+            const resolved = this.resolvePossibleStringValuesFromExpression(prop.expression, returnEmptyStrings)
+            if (resolved.length > 0) {
+              parts.unshift(resolved)
+            } else {
+              return []
+            }
           } else {
             return []
           }
@@ -415,7 +426,18 @@ export class ExpressionResolver {
         }
 
         if (parts.length > 0) {
-          return [parts.join('.')]
+          // Compute cartesian product of all parts
+          let combinations: string[][] = [[]]
+          for (const part of parts) {
+            const newCombinations: string[][] = []
+            for (const combo of combinations) {
+              for (const value of part) {
+                newCombinations.push([...combo, value])
+              }
+            }
+            combinations = newCombinations
+          }
+          return combinations.map(combo => combo.join('.'))
         }
       } catch {
         return []

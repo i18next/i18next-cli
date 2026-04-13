@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.51.8](https://github.com/i18next/i18next-cli/compare/v1.51.7...v1.51.8) - 2026-04-13
+
+- Fix selector API with dynamic bracket notation (e.g.
+  `t(($) => $.table.columns[field])`) incorrectly treating keys as unused
+  and removing them during extraction. Dynamic bracket expressions are now
+  resolved via the expression resolver, so typed variables
+  (`const field: "name" | "age"`) and const-initialised variables
+  (`const field = "name"`) are correctly expanded into all possible keys.
+  Fixes [#234](https://github.com/i18next/i18next-cli/issues/234).
+
 ## [1.51.7](https://github.com/i18next/i18next-cli/compare/v1.51.6...v1.51.7) - 2026-04-07
 
 - Fix `--sync-all` not clearing secondary locale translations when

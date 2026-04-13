@@ -910,6 +910,58 @@ describe('extractor: advanced t features', () => {
         },
       })
     })
+
+    it('should resolve dynamic bracket notation in selectors from typed variables', async () => {
+      const sampleCode = `
+        const field: "name" | "age" = "name";
+        t(($) => $.table.columns[field]);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      const results = await extract(mockConfig)
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(file).toBeDefined()
+      expect(file!.newTranslations).toEqual({
+        table: {
+          columns: {
+            name: 'table.columns.name',
+            age: 'table.columns.age',
+          },
+        },
+      })
+    })
+
+    it('should resolve dynamic bracket notation in selectors from const values', async () => {
+      const sampleCode = `
+        const field = "name";
+        t(($) => $.table.columns[field]);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      const results = await extract(mockConfig)
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(file).toBeDefined()
+      expect(file!.newTranslations).toEqual({
+        table: {
+          columns: {
+            name: 'table.columns.name',
+          },
+        },
+      })
+    })
+
+    it('should still return nothing for completely unresolvable dynamic bracket notation', async () => {
+      const sampleCode = `
+        function getField() { return Math.random() > 0.5 ? "a" : "b"; }
+        t(($) => $.table.columns[getField()]);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      const results = await extract(mockConfig)
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      // No keys extracted means no translation file generated
+      expect(file).toBeUndefined()
+    })
   })
 
   describe('key fallbacks', () => {
