@@ -772,16 +772,8 @@ function buildNewTranslationsForNs (
     } else {
       // Existing value exists - decide whether to preserve, sync primary, or clear other locales when requested
       if (locale === primaryLanguage && syncPrimaryWithDefaults) {
-        // Only update when we have a meaningful defaultValue that's not derived from the key pattern.
-        const isDerivedDefault = defaultValue && (
-          defaultValue === key || // Exact match with the key itself
-            // Check if defaultValue matches the namespaced key format (namespace:key)
-            (nsSep && namespace && defaultValue === `${namespace}${nsSep}${key}`) ||
-            // For variant keys (plural/context), check if defaultValue is the base
-            (key !== defaultValue &&
-            (key.startsWith(defaultValue + pluralSeparator) ||
-              key.startsWith(defaultValue + contextSeparator)))
-        )
+        // Reuse the same derived-default detection as the initial write path so reruns stay idempotent.
+        const isDerivedDefault = isDerivedFromKey(key, defaultValue, explicitDefault)
 
         // If this key looks like a plural/context variant and the default
         // wasn't explicitly provided in source code, preserve the existing value.

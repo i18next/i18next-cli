@@ -59,4 +59,49 @@ describe('extractor: --sync-all', () => {
     // syncAll should clear the secondary translation (use configured default empty string)
     expect(deContent).toEqual({ app: { title: '' } })
   })
+
+  it('should be idempotent across repeated syncAll runs for keyPrefix-derived defaults', async () => {
+    const appPath = '/src/App.tsx'
+    const keyPrefixPath = '/src/KeyPrefix.tsx'
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+    vol.fromJSON({
+      [appPath]: `
+        import KeyPrefix from './KeyPrefix'
+
+        export default function App() {
+          return <KeyPrefix />
+        }
+      `,
+      [keyPrefixPath]: `
+        import { useTranslation } from 'react-i18next'
+
+        export default function KeyPrefix() {
+          const { t } = useTranslation('translation', { keyPrefix: 'nested' })
+          return <>{t('key')}</>
+        }
+      `,
+    })
+
+    vi.mocked(glob).mockResolvedValue([appPath, keyPrefixPath])
+
+    const firstRun = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true, syncAll: true })
+    expect(firstRun.anyFileUpdated).toBe(true)
+
+    const enAfterFirstRun = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    const deAfterFirstRun = JSON.parse(vol.readFileSync(dePath, 'utf8') as string)
+
+    expect(enAfterFirstRun).toEqual({ nested: { key: '' } })
+    expect(deAfterFirstRun).toEqual({ nested: { key: '' } })
+
+    const secondRun = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true, syncAll: true })
+
+    const enAfterSecondRun = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    const deAfterSecondRun = JSON.parse(vol.readFileSync(dePath, 'utf8') as string)
+
+    expect(secondRun.anyFileUpdated).toBe(false)
+    expect(enAfterSecondRun).toEqual(enAfterFirstRun)
+    expect(deAfterSecondRun).toEqual(deAfterFirstRun)
+  })
 })

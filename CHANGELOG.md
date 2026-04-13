@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.51.9](https://github.com/i18next/i18next-cli/compare/v1.51.8...v1.51.9) - 2026-04-13
+
+- Fix `extract --sync-all` producing different results on repeated runs when a
+  key has a derived default value (including `keyPrefix`-derived keys).
+  Derived defaults are now detected consistently in both the initial write and
+  existing-value sync paths, so rerunning the same command no longer rewrites
+  the primary locale unexpectedly.
+  Fixes [#235](https://github.com/i18next/i18next-cli/issues/235).
+
 ## [1.51.8](https://github.com/i18next/i18next-cli/compare/v1.51.7...v1.51.8) - 2026-04-13
 
 - Fix selector API with dynamic bracket notation (e.g.
