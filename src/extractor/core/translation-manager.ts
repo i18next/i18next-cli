@@ -256,18 +256,19 @@ function buildNewTranslationsForNs (
   syncPrimaryWithDefaults: boolean = false,
   syncAll: boolean = false,
   trustDerivedDefaults: boolean = false,
+  primaryExistingTranslations: Record<string, any> = {},
   logger: Logger = new ConsoleLogger()
 ): Record<string, any> {
   const {
     keySeparator = '.',
     sort = true,
     removeUnusedKeys = true,
-    primaryLanguage,
     defaultValue: emptyDefaultValue = '',
     pluralSeparator = '_',
     contextSeparator = '_',
     preserveContextVariants = false,
   } = config.extract
+  const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
 
   const nsSep = typeof config.extract.nsSeparator === 'string' ? config.extract.nsSeparator : ':'
 
@@ -717,12 +718,17 @@ function buildNewTranslationsForNs (
     }
 
     const existingValue = getNestedValue(existingTranslations, key, separator)
+    const primaryExistingValue = locale === primaryLanguage
+      ? existingValue
+      : getNestedValue(primaryExistingTranslations, key, separator)
     // When keySeparator === false we are working with flat keys (no nesting).
     // Avoid concatenating false into strings (``${key}${false}`` => "keyfalse") which breaks the startsWith check.
     // For flat keys there cannot be nested children, so treat them as leaves.
     const isLeafInNewKeys = keySeparator === false
       ? true
       : !filteredKeys.some(otherKey => otherKey.key !== key && otherKey.key.startsWith(`${key}${keySeparator}`))
+
+    const isDerivedDefault = isDerivedFromKey(key, defaultValue, explicitDefault)
 
     // Determine if we should preserve an existing object
     const shouldPreserveObject = typeof existingValue === 'object' && existingValue !== null && (
@@ -731,6 +737,13 @@ function buildNewTranslationsForNs (
     )
 
     const isStaleObject = typeof existingValue === 'object' && existingValue !== null && isLeafInNewKeys && !objectKeys.has(key) && !shouldPreserveObject
+
+    const primaryShouldPreserveObject = typeof primaryExistingValue === 'object' && primaryExistingValue !== null && (
+      objectKeys.has(key) ||
+      !defaultValue || defaultValue === key
+    )
+
+    const primaryIsStaleObject = typeof primaryExistingValue === 'object' && primaryExistingValue !== null && isLeafInNewKeys && !objectKeys.has(key) && !primaryShouldPreserveObject
 
     // Special handling for existing objects that should be preserved
     if (shouldPreserveObject) {
@@ -743,9 +756,6 @@ function buildNewTranslationsForNs (
     if (existingValue === undefined || isStaleObject) {
       if (locale === primaryLanguage) {
         if (syncPrimaryWithDefaults) {
-          // use the unified "derived" detector (includes keyPrefix suffixes).
-          const isDerivedDefault = isDerivedFromKey(key, defaultValue, explicitDefault)
-
           valueToSet =
             (defaultValue && (!isDerivedDefault || trustDerivedDefaults))
               ? (defaultValue as any)
@@ -759,8 +769,7 @@ function buildNewTranslationsForNs (
         } else {
           // If there's no real code-provided default (defaultValue is derived fallback),
           // use the configured extract.defaultValue for PRIMARY language too.
-          const derived = isDerivedFromKey(key, defaultValue, explicitDefault)
-          if (derived && configuredDefaultValue !== undefined) {
+          if (isDerivedDefault && configuredDefaultValue !== undefined) {
             valueToSet = resolveDefaultValue(configuredDefaultValue as any, key, namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
           } else {
             valueToSet = (defaultValue as any) || key
@@ -773,9 +782,6 @@ function buildNewTranslationsForNs (
     } else {
       // Existing value exists - decide whether to preserve, sync primary, or clear other locales when requested
       if (locale === primaryLanguage && syncPrimaryWithDefaults) {
-        // Reuse the same derived-default detection as the initial write path so reruns stay idempotent.
-        const isDerivedDefault = isDerivedFromKey(key, defaultValue, explicitDefault)
-
         // If this key looks like a plural/context variant and the default
         // wasn't explicitly provided in source code, preserve the existing value.
         const isVariantKey = key.includes(pluralSeparator) || key.includes(contextSeparator)
@@ -794,7 +800,30 @@ function buildNewTranslationsForNs (
         }
       } else {
         // Non-primary locale behavior
-        const syncDerivedDefault = Boolean(trustDerivedDefaults && defaultValue && isDerivedFromKey(key, defaultValue, explicitDefault))
+        const isVariantKey = key.includes(pluralSeparator) || key.includes(contextSeparator)
+        const syncDerivedDefault = Boolean(
+          syncAll &&
+          locale !== primaryLanguage &&
+          syncPrimaryWithDefaults &&
+          trustDerivedDefaults &&
+          defaultValue &&
+          isDerivedDefault &&
+          !primaryShouldPreserveObject &&
+          (
+            primaryExistingValue === undefined ||
+            primaryIsStaleObject ||
+            (
+              (!isVariantKey || explicitDefault) &&
+              primaryExistingValue !== resolveDefaultValue(
+                defaultValue as any,
+                key,
+                namespace || config?.extract?.defaultNS || 'translation',
+                primaryLanguage,
+                defaultValue as any
+              )
+            )
+          )
+        )
         if (syncAll && locale !== primaryLanguage && (explicitDefault || syncDerivedDefault)) {
           // When syncAll is requested, clear (reset) any existing translations for keys
           // that had explicit defaults in code so the primary default can be propagated
@@ -979,7 +1008,8 @@ export async function getTranslations (
   } = {}
 ): Promise<TranslationResult[]> {
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
-  config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
+  const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
+  config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== primaryLanguage)
   const patternsToPreserve = [...(config.extract.preservePatterns || [])]
   const indentation = config.extract.indentation ?? 2
 
@@ -1030,6 +1060,10 @@ export async function getTranslations (
       const outputPath = getOutputPath(config.extract.output, locale)
       const fullPath = resolve(process.cwd(), outputPath)
       const existingMergedFile = await loadTranslationFile(fullPath) || {}
+      const primaryMergedPath = resolve(process.cwd(), getOutputPath(config.extract.output, primaryLanguage))
+      const primaryMergedFile = locale === primaryLanguage
+        ? existingMergedFile
+        : (await loadTranslationFile(primaryMergedPath) || {})
 
       // Determine whether the existing merged file already uses namespace objects
       // or is a flat mapping of translation keys -> values.
@@ -1071,11 +1105,12 @@ export async function getTranslations (
         const nsKeys = keysByNS.get(nsKey) || []
         if (isTopLevel(nsKey)) {
           // keys without namespace -> merged into top-level of the merged file
-          const built = buildNewTranslationsForNs(nsKeys, existingMergedFile, config, locale, undefined, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, logger)
+          const built = buildNewTranslationsForNs(nsKeys, existingMergedFile, config, locale, undefined, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, primaryMergedFile, logger)
           Object.assign(newMergedTranslations, built)
         } else {
           const existingTranslations = existingMergedFile[nsKey] || {}
-          newMergedTranslations[nsKey] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, nsKey, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, logger)
+          const primaryExistingTranslations = primaryMergedFile[nsKey] || {}
+          newMergedTranslations[nsKey] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, nsKey, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, primaryExistingTranslations, logger)
         }
       }
 
@@ -1117,7 +1152,11 @@ export async function getTranslations (
         const outputPath = getOutputPath(config.extract.output, locale, ns)
         const fullPath = resolve(process.cwd(), outputPath)
         const existingTranslations = await loadTranslationFile(fullPath) || {}
-        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, ns, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, logger)
+        const primaryOutputPath = resolve(process.cwd(), getOutputPath(config.extract.output, primaryLanguage, ns))
+        const primaryExistingTranslations = locale === primaryLanguage
+          ? existingTranslations
+          : (await loadTranslationFile(primaryOutputPath) || {})
+        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, ns, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, primaryExistingTranslations, logger)
 
         const oldContent = JSON.stringify(existingTranslations, null, indentation)
         const newContent = JSON.stringify(newTranslations, null, indentation)

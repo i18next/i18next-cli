@@ -157,4 +157,35 @@ describe('extractor: --sync-all', () => {
     expect(enAfterSecondRun).toEqual(enAfterFirstRun)
     expect(deAfterSecondRun).toEqual(deAfterFirstRun)
   })
+
+  it('should preserve secondary translations for trusted derived defaults when the primary value is already up to date', async () => {
+    const appPath = '/src/App.tsx'
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+    vol.fromJSON({
+      [appPath]: `
+        import { t } from 'i18next'
+        const title = t('my new text')
+      `,
+      [enPath]: JSON.stringify({ 'my new text': 'my new text' }, null, 2),
+      [dePath]: JSON.stringify({ 'my new text': 'Mein neuer Text' }, null, 2),
+    })
+
+    vi.mocked(glob).mockResolvedValue([appPath])
+
+    const result = await runExtractor(mockConfig, {
+      syncPrimaryWithDefaults: true,
+      syncAll: true,
+      trustDerivedDefaults: true,
+    })
+
+    expect(result.anyFileUpdated).toBe(false)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    const deContent = JSON.parse(vol.readFileSync(dePath, 'utf8') as string)
+
+    expect(enContent).toEqual({ 'my new text': 'my new text' })
+    expect(deContent).toEqual({ 'my new text': 'Mein neuer Text' })
+  })
 })

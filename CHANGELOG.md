@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.52.1](https://github.com/i18next/i18next-cli/compare/v1.52.0...v1.52.1) - 2026-04-13
+
+- Fix `extract --sync-all --trust-derived` resetting secondary locale values
+  to empty strings even when the trusted derived default was already in sync in
+  the primary locale. Secondary translations are now only cleared when the
+  primary locale would actually be updated by the sync.
+  Follow-up to [#235](https://github.com/i18next/i18next-cli/issues/235).
+
 ## [1.52.0](https://github.com/i18next/i18next-cli/compare/v1.51.9...v1.52.0) - 2026-04-13
 
 - Add `extract --trust-derived` as an opt-in companion to `--sync-primary`
