@@ -1222,4 +1222,71 @@ describe('extractor: runExtractor (sync primary language defaults)', () => {
       },
     })
   })
+
+  it('should trust key-derived defaults during syncPrimaryWithDefaults when trustDerivedDefaults is enabled', async () => {
+    const appPath = '/src/App.tsx'
+    const keyPrefixPath = '/src/KeyPrefix.tsx'
+
+    vol.fromJSON({
+      [appPath]: `
+        import { useTranslation } from 'react-i18next'
+        import KeyPrefix from './KeyPrefix'
+
+        export default function App() {
+          const { t } = useTranslation()
+          return (
+            <div>
+              <h1>{t('hello')}</h1>
+              <KeyPrefix />
+            </div>
+          )
+        }
+      `,
+      [keyPrefixPath]: `
+        import { useTranslation } from 'react-i18next'
+
+        export default function KeyPrefix() {
+          const { t } = useTranslation('translation', { keyPrefix: 'nested' })
+          t('key')
+          t('another.key')
+          return null
+        }
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+    vol.fromJSON({
+      [enPath]: JSON.stringify({}, null, 2),
+      [dePath]: JSON.stringify({}, null, 2),
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue([appPath, keyPrefixPath])
+
+    const result = await runExtractor(mockConfig, {
+      syncPrimaryWithDefaults: true,
+      trustDerivedDefaults: true,
+    })
+    expect(result.anyFileUpdated).toBe(true)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({
+      hello: 'hello',
+      nested: {
+        another: { key: 'another.key' },
+        key: 'key',
+      },
+    })
+
+    const deContent = JSON.parse(vol.readFileSync(dePath, 'utf8') as string)
+    expect(deContent).toEqual({
+      hello: '',
+      nested: {
+        another: { key: '' },
+        key: '',
+      },
+    })
+  })
 })

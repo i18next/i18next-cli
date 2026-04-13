@@ -49,6 +49,7 @@ export async function runExtractor (
     isDryRun?: boolean,
     syncPrimaryWithDefaults?: boolean,
     syncAll?: boolean,
+    trustDerivedDefaults?: boolean,
     quiet?: boolean,
     logger?: Logger
   } = {}
@@ -75,6 +76,7 @@ export async function runExtractor (
     const results = await getTranslations(allKeys, objectKeys, config, {
       syncPrimaryWithDefaults: options.syncPrimaryWithDefaults,
       syncAll: options.syncAll,
+      trustDerivedDefaults: options.trustDerivedDefaults,
       logger: options.logger
     })
 

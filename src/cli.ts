@@ -37,6 +37,7 @@ program
   .option('--dry-run', 'Run the extractor without writing any files to disk.')
   .option('--sync-primary', 'Sync primary language values with default values from code.')
   .option('--sync-all', 'Sync primary language values with default values from code AND clear synced keys in all other locales.')
+  .option('--trust-derived', 'When used with --sync-primary or --sync-all, also trust defaults inferred from keys (including keyPrefix-derived values).')
   .option('-q, --quiet', 'Suppress spinner and output')
   .action(async (options) => {
     try {
@@ -51,6 +52,7 @@ program
           isDryRun: !!options.dryRun,
           syncPrimaryWithDefaults: syncPrimary,
           syncAll: !!options.syncAll,
+          trustDerivedDefaults: !!options.trustDerived,
           quiet: !!options.quiet
         })
 

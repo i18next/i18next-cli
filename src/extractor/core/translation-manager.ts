@@ -255,6 +255,7 @@ function buildNewTranslationsForNs (
   objectKeys: Set<string> = new Set(),
   syncPrimaryWithDefaults: boolean = false,
   syncAll: boolean = false,
+  trustDerivedDefaults: boolean = false,
   logger: Logger = new ConsoleLogger()
 ): Record<string, any> {
   const {
@@ -746,7 +747,7 @@ function buildNewTranslationsForNs (
           const isDerivedDefault = isDerivedFromKey(key, defaultValue, explicitDefault)
 
           valueToSet =
-            (defaultValue && !isDerivedDefault)
+            (defaultValue && (!isDerivedDefault || trustDerivedDefaults))
               ? (defaultValue as any)
               : resolveDefaultValue(
                 emptyDefaultValue,
@@ -780,7 +781,7 @@ function buildNewTranslationsForNs (
         const isVariantKey = key.includes(pluralSeparator) || key.includes(contextSeparator)
         if (isVariantKey && !explicitDefault) {
           valueToSet = existingValue
-        } else if (defaultValue && !isDerivedDefault) {
+        } else if (defaultValue && (!isDerivedDefault || trustDerivedDefaults)) {
           valueToSet = resolveDefaultValue(
             defaultValue as any,
             key,
@@ -793,7 +794,8 @@ function buildNewTranslationsForNs (
         }
       } else {
         // Non-primary locale behavior
-        if (syncAll && locale !== primaryLanguage && explicitDefault) {
+        const syncDerivedDefault = Boolean(trustDerivedDefaults && defaultValue && isDerivedFromKey(key, defaultValue, explicitDefault))
+        if (syncAll && locale !== primaryLanguage && (explicitDefault || syncDerivedDefault)) {
           // When syncAll is requested, clear (reset) any existing translations for keys
           // that had explicit defaults in code so the primary default can be propagated
           // while secondary locales get a blank/placeholder value.
@@ -967,10 +969,12 @@ export async function getTranslations (
   {
     syncPrimaryWithDefaults = false,
     syncAll = false,
+    trustDerivedDefaults = false,
     logger = new ConsoleLogger()
   }: {
     syncPrimaryWithDefaults?: boolean,
     syncAll?: boolean,
+    trustDerivedDefaults?: boolean,
     logger?: Logger
   } = {}
 ): Promise<TranslationResult[]> {
@@ -1067,11 +1071,11 @@ export async function getTranslations (
         const nsKeys = keysByNS.get(nsKey) || []
         if (isTopLevel(nsKey)) {
           // keys without namespace -> merged into top-level of the merged file
-          const built = buildNewTranslationsForNs(nsKeys, existingMergedFile, config, locale, undefined, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, logger)
+          const built = buildNewTranslationsForNs(nsKeys, existingMergedFile, config, locale, undefined, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, logger)
           Object.assign(newMergedTranslations, built)
         } else {
           const existingTranslations = existingMergedFile[nsKey] || {}
-          newMergedTranslations[nsKey] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, nsKey, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, logger)
+          newMergedTranslations[nsKey] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, nsKey, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, logger)
         }
       }
 
@@ -1113,7 +1117,7 @@ export async function getTranslations (
         const outputPath = getOutputPath(config.extract.output, locale, ns)
         const fullPath = resolve(process.cwd(), outputPath)
         const existingTranslations = await loadTranslationFile(fullPath) || {}
-        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, ns, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, logger)
+        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, ns, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, logger)
 
         const oldContent = JSON.stringify(existingTranslations, null, indentation)
         const newContent = JSON.stringify(newTranslations, null, indentation)

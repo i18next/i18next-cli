@@ -119,6 +119,7 @@ npx i18next-cli extract [options]
 - `--dry-run`: Does not change any files - useful in combination with `--ci` (for CI/CD)
 - `--sync-primary`: Sync primary language values with default values from code
 - `--sync-all`: Sync primary language values with default values from code AND clear synced keys in all other locales (implies `--sync-primary`)
+- `--trust-derived`: When used with `--sync-primary` or `--sync-all`, also trust defaults inferred from keys such as `t('Hello')` or `keyPrefix`-derived values. This keeps the default sync behavior strict unless you opt in.
 - `--quiet`: Suppress spinner and non-essential output (for CI or scripting)
 
 ### Spinner and Logger Output Control
@@ -164,6 +165,9 @@ npx i18next-cli extract --sync-primary
 
 # Sync primary and clear synced keys in all other locales
 npx i18next-cli extract --sync-all
+
+# Sync using explicit defaults plus inferred key-derived defaults
+npx i18next-cli extract --sync-all --trust-derived
 
 # Combine options for optimal development workflow
 npx i18next-cli extract --sync-primary --watch

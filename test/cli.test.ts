@@ -220,6 +220,29 @@ describe('CLI command parsing and dispatching', () => {
     )
   })
 
+  it('should parse the "extract --sync-all --trust-derived" command and pass trustDerivedDefaults option', async () => {
+    vi.resetModules()
+    process.argv = ['node', 'cli.ts', 'extract', '--sync-all', '--trust-derived']
+
+    mockEnsureConfig.mockResolvedValue(validMockConfig)
+    mockRunExtractor.mockResolvedValue({ anyFileUpdated: false, hasErrors: false })
+
+    await import('../src/cli')
+
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockRunExtractor).toHaveBeenCalledWith(
+      validMockConfig,
+      expect.objectContaining({
+        isWatchMode: false,
+        isDryRun: false,
+        syncPrimaryWithDefaults: true,
+        syncAll: true,
+        trustDerivedDefaults: true
+      })
+    )
+  })
+
   it('should honor extract.ignore when running in watch mode', async () => {
     vi.resetModules()
     const mockWatch = (await import('chokidar')).watch as any
