@@ -950,6 +950,27 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should resolve dynamic bracket notation when field is a function parameter with type annotation', async () => {
+      const sampleCode = `
+        function renderColumn(field: "name" | "age") {
+          return t(($) => $.table.columns[field]);
+        }
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      const results = await extract(mockConfig)
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(file).toBeDefined()
+      expect(file!.newTranslations).toEqual({
+        table: {
+          columns: {
+            name: 'table.columns.name',
+            age: 'table.columns.age',
+          },
+        },
+      })
+    })
+
     it('should still return nothing for completely unresolvable dynamic bracket notation', async () => {
       const sampleCode = `
         function getField() { return Math.random() > 0.5 ? "a" : "b"; }

@@ -181,6 +181,7 @@ export class ASTVisitors {
     if (!node) return
 
     let isNewScope = false
+    let paramTemporaries: string[] | undefined
     // ENTER SCOPE for functions
     // Accept many SWC/TS AST variants for function-like nodes (declarations, expressions, arrow functions)
     if (
@@ -318,6 +319,19 @@ export class ASTVisitors {
                 keyPrefix: kpFromType // honour TFunction<Ns, KPrefix>
               })
             }
+          }
+        }
+
+        // Capture parameter type annotations as temporary variables in the
+        // expression resolver so that dynamic bracket expressions like
+        // `t(($) => $.table.columns[field])` can resolve `field` to its
+        // possible string values (e.g. "name" | "age").
+        if (typeAnn) {
+          const paramVals = this.expressionResolver.resolveTypeToStringValues(typeAnn)
+          if (paramVals.length > 0) {
+            this.expressionResolver.setTemporaryVariable(paramKey, paramVals)
+            if (!paramTemporaries) paramTemporaries = []
+            paramTemporaries.push(paramKey)
           }
         }
       }
@@ -525,6 +539,12 @@ export class ASTVisitors {
 
     // LEAVE SCOPE for functions
     if (isNewScope) {
+      // Remove temporary parameter type bindings
+      if (paramTemporaries) {
+        for (const name of paramTemporaries) {
+          this.expressionResolver.deleteTemporaryVariable(name)
+        }
+      }
       this.scopeManager.exitScope()
     }
   }

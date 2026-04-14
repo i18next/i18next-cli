@@ -247,4 +247,83 @@ describe('reproducer: plural re-extract corruption', () => {
     expect(content2).toContain('\n' + ' '.repeat(12) + '"key": "First"')
     expect(content2).toContain('\n' + ' '.repeat(12) + '"keyAnother": "Second"')
   })
+
+  it('selector API with dynamic bracket notation should preserve keys when removeUnusedKeys is true', async () => {
+    const component = `
+      import { useTranslation } from 'react-i18next';
+
+      export const ReactComponent = () => {
+        const { t } = useTranslation();
+        const field: "name" | "age" = "name";
+        return (
+          <div>
+            <p>{t(($) => $.table.columns[field])}</p>
+          </div>
+        );
+      };
+    `
+
+    await fs.writeFile(join(tempDir, 'components', 'ReactComponent.tsx'), component)
+
+    // Pre-populate existing translations
+    await fs.mkdir(join(tempDir, 'locales', 'en'), { recursive: true })
+    await fs.mkdir(join(tempDir, 'locales', 'de'), { recursive: true })
+    await fs.writeFile(
+      join(tempDir, 'locales', 'en', 'translation.json'),
+      JSON.stringify({
+        table: {
+          columns: {
+            name: 'Name',
+            age: 'Age',
+          },
+        },
+      }, null, 2),
+    )
+    await fs.writeFile(
+      join(tempDir, 'locales', 'de', 'translation.json'),
+      JSON.stringify({
+        table: {
+          columns: {
+            name: 'Name (DE)',
+            age: 'Alter',
+          },
+        },
+      }, null, 2),
+    )
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        removeUnusedKeys: true,
+        defaultNS: 'translation',
+        outputFormat: 'json',
+        keySeparator: '.',
+        input: normalizePath(join(tempDir, 'components/*.{ts,tsx,cts,mts}')),
+        output: normalizePath(join(tempDir, 'locales/{{language}}/{{namespace}}.json')),
+      },
+    }
+
+    await runExtractor(config, { isDryRun: false })
+
+    const en = JSON.parse(await fs.readFile(join(tempDir, 'locales', 'en', 'translation.json'), 'utf-8'))
+    const de = JSON.parse(await fs.readFile(join(tempDir, 'locales', 'de', 'translation.json'), 'utf-8'))
+
+    // Keys should be preserved, not removed
+    expect(en).toEqual({
+      table: {
+        columns: {
+          name: 'Name',
+          age: 'Age',
+        },
+      },
+    })
+    expect(de).toEqual({
+      table: {
+        columns: {
+          name: 'Name (DE)',
+          age: 'Alter',
+        },
+      },
+    })
+  })
 })

@@ -284,6 +284,19 @@ export class ExpressionResolver {
   }
 
   /**
+   * Resolve a TypeScript type annotation to its possible string values.
+   * Used by ast-visitors to capture function parameter type annotations
+   * (e.g. `field: "name" | "age"`) as temporary variable bindings.
+   */
+  public resolveTypeToStringValues (tsType: any): string[] {
+    try {
+      return this.resolvePossibleStringValuesFromType(tsType)
+    } catch {
+      return []
+    }
+  }
+
+  /**
    * Return the array values stored for a variable name, checking all tables.
    * Returns undefined if the name is not a known string array.
    */
