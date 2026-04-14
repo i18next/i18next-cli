@@ -666,6 +666,12 @@ export interface TranslationResult {
   /** Full file system path where the translation file will be written */
   path: string;
 
+  /** The locale this result belongs to (e.g. 'en', 'fr') */
+  locale: string;
+
+  /** The namespace for this result, or undefined for merged single-file output */
+  namespace?: string;
+
   /** Whether the file content changed and needs to be written */
   updated: boolean;
 

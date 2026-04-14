@@ -77,8 +77,12 @@ describe('plugin system: afterSync hook', () => {
     expect(results).toHaveLength(1)
     expect(receivedConfig).toEqual(config)
 
-    // 3. Verify the content of the results to find the new key
+    // 3. Verify locale and namespace are present on the result
     const primaryLangResult = results[0]
+    expect(primaryLangResult.locale).toBe('en')
+    expect(primaryLangResult.namespace).toBe('translation')
+
+    // 4. Verify the content of the results to find the new key
     const newKeys = Object.keys(primaryLangResult.newTranslations)
     const existingKeys = Object.keys(primaryLangResult.existingTranslations)
 

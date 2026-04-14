@@ -1124,7 +1124,7 @@ export async function getTranslations (
       const oldContent = JSON.stringify(existingMergedFile, null, indentation)
       const newContent = JSON.stringify(newMergedTranslations, null, indentation)
       // Push a single result for the merged file
-      results.push({ path: fullPath, updated: newContent !== oldContent, newTranslations: newMergedTranslations, existingTranslations: existingMergedFile })
+      results.push({ path: fullPath, locale, updated: newContent !== oldContent, newTranslations: newMergedTranslations, existingTranslations: existingMergedFile })
 
     // LOGIC PATH 2: Separate Namespace Files
     } else {
@@ -1161,7 +1161,7 @@ export async function getTranslations (
         const oldContent = JSON.stringify(existingTranslations, null, indentation)
         const newContent = JSON.stringify(newTranslations, null, indentation)
         // Push one result per namespace file
-        results.push({ path: fullPath, updated: newContent !== oldContent, newTranslations, existingTranslations })
+        results.push({ path: fullPath, locale, namespace: ns, updated: newContent !== oldContent, newTranslations, existingTranslations })
       }
     }
   }

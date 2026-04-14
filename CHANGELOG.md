@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.53.2](https://github.com/i18next/i18next-cli/compare/v1.53.1...v1.53.2) - 2026-04-14
+
+- Add `locale` and `namespace` fields to the `TranslationResult` object passed
+  to the `afterSync` plugin hook, so plugins no longer need to reverse-engineer
+  these values from the file path.
+  Relates to [#237](https://github.com/i18next/i18next-cli/issues/237).
+
 ## [1.53.1](https://github.com/i18next/i18next-cli/compare/v1.53.0...v1.53.1) - 2026-04-14
 
 - Fix selector API with dynamic bracket notation (e.g.
