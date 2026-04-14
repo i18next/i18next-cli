@@ -261,8 +261,32 @@ export interface I18nextToolkitConfig {
 
   /** Configuration options for TypeScript type generation */
   types?: {
-    /** Glob pattern(s) for translation files to generate types from */
+    /**
+     * Glob pattern(s) for translation files to generate types from.
+     *
+     * @example
+     * // Flat namespaces (filename only)
+     * 'public/locales/en/*.json'
+     *
+     * @example
+     * // Nested namespaces (requires basePath)
+     * input: 'public/locales/en/**\/*.json',
+     * basePath: 'public/locales/en'
+     */
     input: string | string[];
+
+    /**
+     * Base path for resolving namespaces from nested directory structures.
+     * When set, namespace is derived from the file's path relative to basePath.
+     *
+     * @example
+     * // Enable nested namespaces:
+     * input: 'public/locales/en/**\/*.json',
+     * basePath: 'public/locales/en'
+     * // 'public/locales/en/dashboard/user.json' → namespace: 'dashboard/user'
+     * // 'public/locales/en/common.json' → namespace: 'common'
+     */
+    basePath?: string;
 
     /** Output path for the main TypeScript definition file */
     output: string;

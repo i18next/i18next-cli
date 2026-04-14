@@ -4,7 +4,7 @@ import { glob } from 'glob'
 import { createSpinnerLike } from './utils/wrap-ora.js'
 import { styleText } from 'node:util'
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
-import { basename, extname, resolve, dirname, join, relative } from 'node:path'
+import { basename, extname, resolve, dirname, join, relative, normalize } from 'node:path'
 import { transform } from '@swc/core'
 import type { I18nextToolkitConfig, Logger } from './types.js'
 import { getOutputPath } from './utils/file-utils.js'
@@ -61,13 +61,31 @@ async function loadFile (file: string) {
 }
 
 /**
+ * Extracts namespace from file path relative to base path.
+ * Preserves directory structure as namespace using forward slashes.
+ *
+ * @example
+ * getNamespaceFromPath('public/locales/en/dashboard/user.json', 'public/locales/en')
+ * // Returns: 'dashboard/user'
+ */
+function getNamespaceFromPath (filePath: string, basePath: string): string {
+  const normalized = normalize(filePath)
+  const normalizedBase = normalize(basePath)
+
+  let relativePath = relative(normalizedBase, normalized)
+  relativePath = relativePath.replace(extname(relativePath), '')
+
+  return relativePath.replace(/\\/g, '/')
+}
+
+/**
  * Generates TypeScript type definitions for i18next translations.
  *
  * This function:
  * 1. Reads translation files based on the input glob patterns
  * 2. Generates TypeScript interfaces using i18next-resources-for-ts
  * 3. Creates separate resources.d.ts and main i18next.d.ts files
- * 4. Handles namespace detection from filenames
+ * 4. Handles namespace detection from filenames. Supports nested namespaces when `basePath` is provided
  * 5. Supports type-safe selector API when enabled
  *
  * @param config - The i18next toolkit configuration object
@@ -108,14 +126,16 @@ export async function runTypesGenerator (
       return
     }
 
-    const resourceFiles = await glob(config.types?.input || [], {
-      cwd: process.cwd(),
-    })
+    const resourceFiles = await glob(config.types.input, { cwd: process.cwd() })
+    const basePath = config.types.basePath ? getOutputPath(config.types.basePath, config.extract.primaryLanguage) : undefined
 
     const resources: Resource[] = []
 
     for (const file of resourceFiles) {
-      const namespace = basename(file, extname(file))
+      const namespace = basePath
+        ? getNamespaceFromPath(file, basePath)
+        : basename(file, extname(file))
+
       const parsedContent = await loadFile(file)
 
       // If mergeNamespaces is used, a single file can contain multiple namespaces
