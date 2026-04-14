@@ -291,6 +291,40 @@ describe('types-generator with nested namespaces (basePath)', () => {
       expect(content).toContain('"features/auth/login"')
     })
 
+    it('should warn when basePath does not match file paths', async () => {
+      const { glob } = await import('glob') as any
+
+      ;(glob as any).mockResolvedValue([
+        '/project/other/path/common.json'
+      ])
+
+      vol.fromJSON({
+        '/project/other/path/common.json': JSON.stringify({ key: 'value' })
+      })
+
+      const config: any = {
+        locales: ['en'],
+        extract: {
+          primaryLanguage: 'en',
+          output: 'locales/{{language}}/{{namespace}}.json',
+        },
+        types: {
+          input: 'other/path/**/*.json',
+          basePath: 'locales/en',
+          output: 'src/types/i18next.d.ts',
+          resourcesFile: 'src/types/resources.d.ts',
+        },
+      }
+
+      const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+
+      await runTypesGenerator(config, { logger })
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('is outside the configured types.basePath')
+      )
+    })
+
     it('should handle empty directories gracefully', async () => {
       const { glob } = await import('glob') as any
 

@@ -4,7 +4,7 @@ import { glob } from 'glob'
 import { createSpinnerLike } from './utils/wrap-ora.js'
 import { styleText } from 'node:util'
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
-import { basename, extname, resolve, dirname, join, relative, normalize } from 'node:path'
+import { basename, extname, resolve, dirname, join, relative } from 'node:path'
 import { transform } from '@swc/core'
 import type { I18nextToolkitConfig, Logger } from './types.js'
 import { getOutputPath } from './utils/file-utils.js'
@@ -69,10 +69,7 @@ async function loadFile (file: string) {
  * // Returns: 'dashboard/user'
  */
 function getNamespaceFromPath (filePath: string, basePath: string): string {
-  const normalized = normalize(filePath)
-  const normalizedBase = normalize(basePath)
-
-  let relativePath = relative(normalizedBase, normalized)
+  let relativePath = relative(basePath, filePath)
   relativePath = relativePath.replace(extname(relativePath), '')
 
   return relativePath.replace(/\\/g, '/')
@@ -136,6 +133,10 @@ export async function runTypesGenerator (
         ? getNamespaceFromPath(file, basePath)
         : basename(file, extname(file))
 
+      if (basePath && namespace.startsWith('..')) {
+        internalLogger.warn(styleText('yellow', `Warning: The file ${file} is outside the configured types.basePath (${basePath}). The resolved namespace "${namespace}" looks incorrect. Please ensure types.basePath is a parent directory of your translation files.`))
+      }
+
       const parsedContent = await loadFile(file)
 
       // If mergeNamespaces is used, a single file can contain multiple namespaces
@@ -154,7 +155,7 @@ export async function runTypesGenerator (
 
           const nonObjectKeys = keys.filter(k => !parsedContent[k] || typeof parsedContent[k] !== 'object')
           if (nonObjectKeys.length > 0) {
-            console.warn(styleText('yellow', `Warning: The file ${file} contains top-level keys that are not objects (${nonObjectKeys.join(', ')}). When 'mergeNamespaces' is enabled, top-level keys are treated as namespaces. These keys will be ignored.`))
+            internalLogger.warn(styleText('yellow', `Warning: The file ${file} contains top-level keys that are not objects (${nonObjectKeys.join(', ')}). When 'mergeNamespaces' is enabled, top-level keys are treated as namespaces. These keys will be ignored.`))
           }
           continue
         }

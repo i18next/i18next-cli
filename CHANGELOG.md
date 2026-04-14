@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.53.0](https://github.com/i18next/i18next-cli/compare/v1.52.1...v1.53.0) - 2026-04-14
+
+- Add optional `types.basePath` configuration to support nested namespaces in
+  TypeScript type generation. When set, namespaces are derived from the file's
+  path relative to `basePath` instead of just the filename, so
+  `locales/en/dashboard/user.json` produces namespace `"dashboard/user"` instead
+  of `"user"`. When `basePath` is omitted, existing behavior is preserved.
+  Contributed by [@camerondubas](https://github.com/camerondubas) in
+  [#236](https://github.com/i18next/i18next-cli/pull/236).
+- Add a warning when `types.basePath` is misconfigured and translation files
+  fall outside the specified base directory.
+- Use the internal logger instead of `console.warn` for warnings in the type
+  generator.
+
 ## [1.52.1](https://github.com/i18next/i18next-cli/compare/v1.52.0...v1.52.1) - 2026-04-13
 
 - Fix `extract --sync-all --trust-derived` resetting secondary locale values
