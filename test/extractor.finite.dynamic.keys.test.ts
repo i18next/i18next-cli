@@ -166,6 +166,58 @@ describe('extractor: finite dynamic key resolution (issue #210)', () => {
       const keys = Object.keys(translationFile?.newTranslations ?? {})
       expect(keys).toHaveLength(0)
     })
+
+    it('should infer return type from the body when no annotation is present', async () => {
+      // Mirrors the user's getCurrentAppType(): no explicit return type, body
+      // returns enum members via if/else. TS infers the union — extractor now
+      // does the same by walking the body's return statements.
+      const sampleCode = `
+        enum AppType { Routing = 'routing', Contractor = 'contractor' }
+        function getCurrentAppType() {
+          if (window.location.origin.includes('x')) return AppType.Routing;
+          return AppType.Contractor;
+        }
+        const type = getCurrentAppType();
+        t(\`app.\${type}.title\`);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toHaveProperty('app.routing.title')
+      expect(translationFile!.newTranslations).toHaveProperty('app.contractor.title')
+    })
+
+    it('should infer return type across files when the function is imported', async () => {
+      // Cross-file version of the previous case: getCurrentAppType lives in a
+      // separate module. The shared return-type table populated during
+      // pre-scan makes the inferred union visible to importers.
+      vol.fromJSON({
+        '/src/app-type.ts': `
+          export enum AppType { Routing = 'routing', Contractor = 'contractor' }
+          export function getCurrentAppType() {
+            if (window.location.origin.includes('x')) return AppType.Routing;
+            return AppType.Contractor;
+          }
+        `,
+        '/src/App.tsx': `
+          import { getCurrentAppType } from './app-type';
+          const type = getCurrentAppType();
+          t(\`app.\${type}.title\`);
+        `,
+      })
+      const { glob } = await import('glob')
+      ;(glob as any).mockResolvedValue(['/src/App.tsx', '/src/app-type.ts'])
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toHaveProperty('app.routing.title')
+      expect(translationFile!.newTranslations).toHaveProperty('app.contractor.title')
+    })
   })
 
   // ─── Pattern 4: t(map[dynamicKey]) where map is as const and key is a known union ─────────────
