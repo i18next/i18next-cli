@@ -158,6 +158,36 @@ describe('extractor: --sync-all', () => {
     expect(deAfterSecondRun).toEqual(deAfterFirstRun)
   })
 
+  it('should preserve secondary translations for explicit defaults when the primary value matches the code default', async () => {
+    const appPath = '/src/App.tsx'
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+    vol.fromJSON({
+      [appPath]: `
+        import { t } from 'i18next'
+        const title = t('my-key', 'my message')
+      `,
+      [enPath]: JSON.stringify({ 'my-key': 'my message' }, null, 2),
+      [dePath]: JSON.stringify({ 'my-key': 'meine Nachricht' }, null, 2),
+    })
+
+    vi.mocked(glob).mockResolvedValue([appPath])
+
+    const result = await runExtractor(mockConfig, {
+      syncPrimaryWithDefaults: true,
+      syncAll: true,
+    })
+
+    expect(result.anyFileUpdated).toBe(false)
+
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    const deContent = JSON.parse(vol.readFileSync(dePath, 'utf8') as string)
+
+    expect(enContent).toEqual({ 'my-key': 'my message' })
+    expect(deContent).toEqual({ 'my-key': 'meine Nachricht' })
+  })
+
   it('should preserve secondary translations for trusted derived defaults when the primary value is already up to date', async () => {
     const appPath = '/src/App.tsx'
     const enPath = resolve(process.cwd(), 'locales/en/translation.json')

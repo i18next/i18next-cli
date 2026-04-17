@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.54.1](https://github.com/i18next/i18next-cli/compare/v1.54.0...v1.54.1) - 2026-04-17
+
+- Fix `--sync-all` unexpectedly clearing secondary locale translations for
+  keys with explicit defaults (e.g. `t('my-key', 'my message')`) when the
+  code-provided default still matches the primary locale value. Secondary
+  translations are now only reset when the primary value has actually
+  diverged from the code default, matching the behavior already in place
+  for trusted derived defaults.
+  Fixes [#235](https://github.com/i18next/i18next-cli/issues/235).
+
 ## [1.54.0](https://github.com/i18next/i18next-cli/compare/v1.53.2...v1.54.0) - 2026-04-17
 
 - Emit the generated `Resources` interface as a single combined

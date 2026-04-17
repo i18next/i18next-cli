@@ -801,13 +801,8 @@ function buildNewTranslationsForNs (
       } else {
         // Non-primary locale behavior
         const isVariantKey = key.includes(pluralSeparator) || key.includes(contextSeparator)
-        const syncDerivedDefault = Boolean(
-          syncAll &&
-          locale !== primaryLanguage &&
-          syncPrimaryWithDefaults &&
-          trustDerivedDefaults &&
+        const primaryDivergedFromDefault = Boolean(
           defaultValue &&
-          isDerivedDefault &&
           !primaryShouldPreserveObject &&
           (
             primaryExistingValue === undefined ||
@@ -824,10 +819,25 @@ function buildNewTranslationsForNs (
             )
           )
         )
-        if (syncAll && locale !== primaryLanguage && (explicitDefault || syncDerivedDefault)) {
-          // When syncAll is requested, clear (reset) any existing translations for keys
-          // that had explicit defaults in code so the primary default can be propagated
-          // while secondary locales get a blank/placeholder value.
+        const syncExplicitDefault = Boolean(
+          syncAll &&
+          locale !== primaryLanguage &&
+          explicitDefault &&
+          primaryDivergedFromDefault
+        )
+        const syncDerivedDefault = Boolean(
+          syncAll &&
+          locale !== primaryLanguage &&
+          syncPrimaryWithDefaults &&
+          trustDerivedDefaults &&
+          defaultValue &&
+          isDerivedDefault &&
+          primaryDivergedFromDefault
+        )
+        if (syncAll && locale !== primaryLanguage && (syncExplicitDefault || syncDerivedDefault)) {
+          // When syncAll is requested and the primary value has actually diverged from the
+          // code-provided default, clear secondary translations so the new primary default
+          // can be propagated while secondary locales get a blank/placeholder value.
           valueToSet = resolveDefaultValue(emptyDefaultValue, key, namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
         } else {
           // Preserve existing translation by default
