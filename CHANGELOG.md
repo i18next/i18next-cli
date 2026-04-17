@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.54.0](https://github.com/i18next/i18next-cli/compare/v1.53.2...v1.54.0) - 2026-04-17
+
+- Emit the generated `Resources` interface as a single combined
+  `export default interface Resources { ... }` declaration, and import it in
+  the generated i18next module augmentation file using `import type`. This
+  makes the generated type files compatible with TypeScript's
+  `verbatimModuleSyntax` compiler option. The interface's type identity is
+  unchanged, so consumers importing `Resources` from the resources file
+  continue to work without modification.
+  Fixes [#238](https://github.com/i18next/i18next-cli/issues/238).
+- Bump `i18next-resources-for-ts` to `2.1.0` for the new interface output
+  format.
+
 ## [1.53.2](https://github.com/i18next/i18next-cli/compare/v1.53.1...v1.53.2) - 2026-04-14
 
 - Add `locale` and `namespace` fields to the `TranslationResult` object passed

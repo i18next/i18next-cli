@@ -61,7 +61,7 @@ describe('types-generator', () => {
     expect(resourcesFileContent).toContain('export default interface Resources')
 
     // Check the main definition file
-    expect(mainOutputFileContent).toContain("import Resources from './resources';")
+    expect(mainOutputFileContent).toContain("import type Resources from './resources';")
     expect(mainOutputFileContent).toContain("declare module 'i18next'")
     expect(mainOutputFileContent).toContain('interface CustomTypeOptions')
     expect(mainOutputFileContent).toContain('resources: Resources;')

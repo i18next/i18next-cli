@@ -277,7 +277,7 @@ describe('reproducer: plural re-extract corruption', () => {
             age: 'Age',
           },
         },
-      }, null, 2),
+      }, null, 2)
     )
     await fs.writeFile(
       join(tempDir, 'locales', 'de', 'translation.json'),
@@ -288,7 +288,7 @@ describe('reproducer: plural re-extract corruption', () => {
             age: 'Alter',
           },
         },
-      }, null, 2),
+      }, null, 2)
     )
 
     const config: I18nextToolkitConfig = {
