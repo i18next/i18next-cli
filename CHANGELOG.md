@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.54.2](https://github.com/i18next/i18next-cli/compare/v1.54.1...v1.54.2) - 2026-04-18
+
+- Propagate `defaultNs` and `keyPrefix` from a custom translation hook to
+  inner `t()` calls accessed via a member expression (e.g.
+  `const obj = useMyHook('auth'); obj.t('key')`). Previously the scope was
+  stored on the outer variable but the call-site lookup used the full
+  `obj.t` name and missed it, causing keys to fall back to the default
+  namespace. The lookup now also tries the object part(s) of the member
+  expression.
+  Fixes [#239](https://github.com/i18next/i18next-cli/issues/239).
+
 ## [1.54.1](https://github.com/i18next/i18next-cli/compare/v1.54.0...v1.54.1) - 2026-04-17
 
 - Fix `--sync-all` unexpectedly clearing secondary locale translations for

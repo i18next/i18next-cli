@@ -155,6 +155,42 @@ describe('extractor: custom hook keyPrefix/namespace extraction', () => {
     })
   })
 
+  it('propagates namespace from a custom hook bound to a non-destructured object via member expression t() — issue #239', async () => {
+    // The hook returns an object with a `t` method, and the user uses it as
+    // `obj.t(key)` instead of destructuring `const { t } = ...`.
+    const sampleCode = `
+      const emailError = useTranslateKeyState('auth')
+      emailError.t('loginForm.input.email.required', 'Email is required')
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        functions: ['t', '*.t'],
+        useTranslationNames: [
+          'useTranslation',
+          { name: 'useTranslateKeyState', nsArg: 0, keyPrefixArg: -1 },
+        ],
+      },
+    }
+
+    const results = await extract(config)
+    const authFile = results.find(r => pathEndsWith(r.path, '/locales/en/auth.json'))
+
+    expect(authFile).toBeDefined()
+    expect(authFile!.newTranslations).toEqual({
+      loginForm: {
+        input: {
+          email: {
+            required: 'Email is required',
+          },
+        },
+      },
+    })
+  })
+
   it('does not extract when keyPrefix is a template literal with expressions (current limitation)', async () => {
     const sampleCode = `
       const id = 'footer'
