@@ -972,8 +972,12 @@ describe('extractor: advanced t features', () => {
     })
 
     it('should still return nothing for completely unresolvable dynamic bracket notation', async () => {
+      // The function has an explicit `: string` return type annotation — we
+      // respect explicit annotations authoritatively and do NOT fall back to
+      // body inference in that case, so the bracket access is genuinely
+      // unresolvable and no keys are extracted.
       const sampleCode = `
-        function getField() { return Math.random() > 0.5 ? "a" : "b"; }
+        function getField(): string { return Math.random() > 0.5 ? "a" : "b"; }
         t(($) => $.table.columns[getField()]);
       `
       vol.fromJSON({ '/src/App.tsx': sampleCode })
@@ -982,6 +986,29 @@ describe('extractor: advanced t features', () => {
 
       // No keys extracted means no translation file generated
       expect(file).toBeUndefined()
+    })
+
+    it('should resolve dynamic bracket notation from a function whose body returns a literal union (no annotation)', async () => {
+      // Without an explicit return annotation, TS infers getField's return type
+      // as `"a" | "b"`. The extractor now mirrors that inference and expands
+      // the selector bracket into both possibilities.
+      const sampleCode = `
+        function getField() { return Math.random() > 0.5 ? "a" : "b"; }
+        t(($) => $.table.columns[getField()]);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      const results = await extract(mockConfig)
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(file).toBeDefined()
+      expect(file!.newTranslations).toEqual({
+        table: {
+          columns: {
+            a: 'table.columns.a',
+            b: 'table.columns.b',
+          },
+        },
+      })
     })
   })
 

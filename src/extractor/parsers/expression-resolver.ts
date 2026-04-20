@@ -24,6 +24,12 @@ export class ExpressionResolver {
   // Persists across resetFileSymbols() so exported type aliases are visible to importers.
   private sharedTypeAliasTable: Map<string, string[]> = new Map()
 
+  // Shared (cross-file) table for function return-value sets. Populated from
+  // both explicit return-type annotations and body-inferred return values so
+  // that `t(fn())` / `const x = fn(); t(\`...${x}...\`)` work across files.
+  // Persists across resetFileSymbols() just like the other shared tables.
+  private sharedFunctionReturnTable: Map<string, string[]> = new Map()
+
   // Temporary per-scope variable overrides, used to inject .map() / .forEach()
   // callback parameters while the callback body is being walked.
   private temporaryVariables: Map<string, string[]> = new Map()
@@ -183,15 +189,22 @@ export class ExpressionResolver {
       }
 
       // pattern 3 (arrow function variant):
-      // `const fn = (): 'a' | 'b' => ...` — capture the explicit return type annotation.
+      // `const fn = (): 'a' | 'b' => ...` — capture the explicit return type annotation,
+      // OR fall back to walking the body's return expressions / expression body
+      // when no annotation is present (mirrors TS's own return-type inference).
       if (unwrappedInit.type === 'ArrowFunctionExpression' || unwrappedInit.type === 'FunctionExpression') {
+        let returnVals: string[] = []
         const rawReturnType = unwrappedInit.returnType ?? unwrappedInit.typeAnnotation
         if (rawReturnType) {
+          // Explicit annotation — trust it even when it resolves to [].
           const tsType = rawReturnType.typeAnnotation ?? rawReturnType
-          const returnVals = this.resolvePossibleStringValuesFromType(tsType)
-          if (returnVals.length > 0) {
-            this.variableTable.set(name, returnVals)
-          }
+          returnVals = this.resolvePossibleStringValuesFromType(tsType)
+        } else {
+          returnVals = this.inferReturnValuesFromFunctionBody(unwrappedInit)
+        }
+        if (returnVals.length > 0) {
+          this.variableTable.set(name, returnVals)
+          this.sharedFunctionReturnTable.set(name, returnVals)
         }
       }
     } catch {
@@ -243,16 +256,87 @@ export class ExpressionResolver {
       // or directly in `.returnType` (FunctionExpression / ArrowFunctionExpression).
       const fn = node.function ?? node
       const rawReturnType = fn.returnType ?? fn.typeAnnotation
-      if (!rawReturnType) return
-      // Unwrap TsTypeAnnotation wrapper if present
-      const tsType = rawReturnType.typeAnnotation ?? rawReturnType
-      const vals = this.resolvePossibleStringValuesFromType(tsType)
+
+      let vals: string[] = []
+      if (rawReturnType) {
+        // Unwrap TsTypeAnnotation wrapper if present. Explicit annotations are
+        // authoritative: if the author declared the return type we trust it,
+        // even when it resolves to [] (e.g. plain `string`). Falling back to
+        // body inference in that case would invent keys the author deliberately
+        // opted out of.
+        const tsType = rawReturnType.typeAnnotation ?? rawReturnType
+        vals = this.resolvePossibleStringValuesFromType(tsType)
+      } else {
+        // No annotation — infer from body. Mirrors TS's own return-type
+        // inference for functions like:
+        //   function getCurrentAppType() {
+        //     if (...) return OrganizationType.ROUTING;
+        //     if (...) return OrganizationType.CONTRACTOR;
+        //   }
+        vals = this.inferReturnValuesFromFunctionBody(fn)
+      }
+
       if (vals.length > 0) {
         this.variableTable.set(name, vals)
+        this.sharedFunctionReturnTable.set(name, vals)
       }
     } catch {
       // noop
     }
+  }
+
+  /**
+   * Walk a function body's ReturnStatements and union the statically-resolvable
+   * string values of their argument expressions. Does NOT descend into nested
+   * function declarations (their returns belong to the inner function, not us).
+   *
+   * This is how we mirror TypeScript's implicit return-type inference for the
+   * purpose of extracting translation keys — we don't need exhaustiveness, just
+   * the set of string values any return statement could produce.
+   */
+  private inferReturnValuesFromFunctionBody (fn: any): string[] {
+    const body = fn?.body
+    if (!body) return []
+
+    const collected: string[] = []
+    const visit = (n: any): void => {
+      if (!n || typeof n !== 'object') return
+      // Don't descend into nested function bodies — their returns aren't ours.
+      if (
+        n !== body && (
+          n.type === 'FunctionDeclaration' ||
+          n.type === 'FunctionExpression' ||
+          n.type === 'ArrowFunctionExpression'
+        )
+      ) return
+
+      if (n.type === 'ReturnStatement' && n.argument) {
+        const vals = this.resolvePossibleStringValuesFromExpression(n.argument)
+        if (vals.length > 0) collected.push(...vals)
+      }
+
+      for (const key of Object.keys(n)) {
+        const child = (n as any)[key]
+        if (Array.isArray(child)) {
+          for (const item of child) {
+            if (item && typeof item === 'object') visit(item)
+          }
+        } else if (child && typeof child === 'object' && typeof child.type === 'string') {
+          visit(child)
+        }
+      }
+    }
+
+    // Arrow functions with an expression body (no BlockStatement) — `() => expr` —
+    // have their return expression directly as `body`.
+    if (body.type !== 'BlockStatement') {
+      const vals = this.resolvePossibleStringValuesFromExpression(body)
+      if (vals.length > 0) return Array.from(new Set(vals))
+      return []
+    }
+
+    visit(body)
+    return Array.from(new Set(collected))
   }
 
   /**
@@ -512,13 +596,18 @@ export class ExpressionResolver {
     }
 
     // pattern 3:
-    // `t(fn())` — resolve to the function's known return-type union when captured.
+    // `t(fn())` — resolve to the function's known return-value set (either
+    // from an explicit annotation or inferred from the function body). Check
+    // the per-file variable table first (same-file capture) and fall back to
+    // the shared cross-file table populated during pre-scan.
     if (expression.type === 'CallExpression') {
       try {
         const callee = (expression as any).callee
         if (callee?.type === 'Identifier') {
           const v = this.variableTable.get(callee.value)
           if (Array.isArray(v) && v.length > 0) return v
+          const sv = this.sharedFunctionReturnTable.get(callee.value)
+          if (sv && sv.length > 0) return sv
         }
       } catch {}
     }

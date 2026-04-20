@@ -122,6 +122,16 @@ export class ASTVisitors {
         this.scopeManager.handleVariableDeclarator(node)
         this.expressionResolver.captureVariableDeclarator(node)
         break
+      case 'TSEnumDeclaration':
+      case 'TsEnumDeclaration':
+      case 'TsEnumDecl':
+        // Enums → ExpressionResolver.sharedEnumTable. Needed in pre-scan so
+        // that function bodies referencing enum members (e.g. `return
+        // OrganizationType.ROUTING`) can be resolved by the body-inference
+        // branch of captureFunctionDeclaration when we hit the function later
+        // in the same file.
+        this.expressionResolver.captureEnumDeclaration(node)
+        break
       case 'TsTypeAliasDeclaration':
       case 'TSTypeAliasDeclaration':
       case 'TsTypeAliasDecl':
@@ -130,7 +140,7 @@ export class ASTVisitors {
         break
       case 'FunctionDeclaration':
       case 'FnDecl':
-        // Return-type annotations for t(fn()) patterns
+        // Return-type annotations or inferred return values for t(fn()) patterns
         this.expressionResolver.captureFunctionDeclaration(node)
         break
     }

@@ -17,7 +17,8 @@ import { runStatus } from './status.js'
 import { runLocizeSync, runLocizeDownload, runLocizeMigrate } from './locize.js'
 import { runRenameKey } from './rename-key.js'
 import { runInstrumenter } from './instrumenter/index.js'
-import type { I18nextToolkitConfig } from './types.js'
+import { getNestedKeys, getNestedValue } from './utils/nested-object.js'
+import type { I18nextToolkitConfig, TranslationResult } from './types.js'
 
 const program = new Command()
 
@@ -47,7 +48,7 @@ program
       const runExtract = async () => {
         // --sync-all implies sync-primary behavior
         const syncPrimary = !!options.syncPrimary || !!options.syncAll
-        const { anyFileUpdated, hasErrors } = await runExtractor(config, {
+        const { anyFileUpdated, hasErrors, results } = await runExtractor(config, {
           isWatchMode: !!options.watch,
           isDryRun: !!options.dryRun,
           syncPrimaryWithDefaults: syncPrimary,
@@ -61,6 +62,7 @@ program
           process.exit(hasErrors ? 1 : 0)
         } else if (options.ci && anyFileUpdated) {
           console.error('❌ Some files were updated. This should not happen in CI mode.')
+          printCiDiff(results, config)
           process.exit(1)
         }
 
@@ -350,6 +352,73 @@ const expandGlobs = async (patterns: string | string[] = []) => {
   const arr = toArray(patterns)
   const sets = await Promise.all(arr.map(p => glob(p || '', { nodir: true })))
   return Array.from(new Set(sets.flat()))
+}
+
+function printCiDiff (results: TranslationResult[], config: I18nextToolkitConfig): void {
+  const rawSep = config.extract.keySeparator
+  const keySeparator: string | false = rawSep === false ? false : (rawSep ?? '.')
+
+  for (const result of results) {
+    if (!result.updated) continue
+
+    const existing = result.existingTranslations || {}
+    const next = result.newTranslations || {}
+    const oldKeys = new Set(getNestedKeys(existing, keySeparator))
+    const newKeys = new Set(getNestedKeys(next, keySeparator))
+
+    const added: string[] = []
+    const removed: string[] = []
+    const changed: string[] = []
+
+    for (const k of newKeys) {
+      if (!oldKeys.has(k)) {
+        added.push(k)
+      } else {
+        const oldVal = getNestedValue(existing, k, keySeparator)
+        const newVal = getNestedValue(next, k, keySeparator)
+        if (oldVal !== newVal) changed.push(k)
+      }
+    }
+    for (const k of oldKeys) {
+      if (!newKeys.has(k)) removed.push(k)
+    }
+
+    const nsLabel = result.namespace
+      ? ` [${result.locale}/${result.namespace}]`
+      : ` [${result.locale}]`
+    console.error(`\n  ${result.path}${nsLabel}`)
+
+    if (added.length === 0 && removed.length === 0 && changed.length === 0) {
+      console.error('    (no key differences — only formatting or ordering changes)')
+      continue
+    }
+
+    added.sort()
+    removed.sort()
+    changed.sort()
+
+    for (const k of added) {
+      const v = getNestedValue(next, k, keySeparator)
+      console.error(styleText('green', `    + ${k}: ${formatCiDiffValue(v)}`))
+    }
+    for (const k of removed) {
+      const v = getNestedValue(existing, k, keySeparator)
+      console.error(styleText('red', `    - ${k}: ${formatCiDiffValue(v)}`))
+    }
+    for (const k of changed) {
+      const oldV = getNestedValue(existing, k, keySeparator)
+      const newV = getNestedValue(next, k, keySeparator)
+      console.error(styleText('yellow', `    ~ ${k}: ${formatCiDiffValue(oldV)} → ${formatCiDiffValue(newV)}`))
+    }
+  }
+}
+
+function formatCiDiffValue (value: unknown): string {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
 }
 
 export { program }
