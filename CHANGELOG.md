@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.55.0](https://github.com/i18next/i18next-cli/compare/v1.54.2...v1.55.0) - 2026-04-20
+
+- Infer function return types from the body when no explicit return-type
+  annotation is present, so `t(fn())` and `` t(`...${x}...`) `` with
+  `const x = fn()` expand to all statically-resolvable return values. Works
+  across files via a shared cross-file table populated during the pre-scan
+  pass (alongside enums), so imported functions resolve just like in-file
+  ones. Explicit annotations remain authoritative: `: string` still returns
+  no keys rather than falling back to body inference.
+- Print a per-file diff (added / removed / changed keys) when `extract --ci`
+  fails because files would be updated. Makes CI failures actionable without
+  needing to reproduce locally.
+  Thanks to [@LudvigHz](https://github.com/LudvigHz) for both changes
+  ([#240](https://github.com/i18next/i18next-cli/pull/240)).
+
 ## [1.54.2](https://github.com/i18next/i18next-cli/compare/v1.54.1...v1.54.2) - 2026-04-18
 
 - Propagate `defaultNs` and `keyPrefix` from a custom translation hook to
