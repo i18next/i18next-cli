@@ -53,7 +53,7 @@ export async function runExtractor (
     quiet?: boolean,
     logger?: Logger
   } = {}
-): Promise<{ anyFileUpdated: boolean; hasErrors: boolean }> {
+): Promise<{ anyFileUpdated: boolean; hasErrors: boolean; results: TranslationResult[] }> {
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
 
@@ -125,7 +125,7 @@ export async function runExtractor (
     // always show the funnel regardless of cooldown.
     if (anyFileUpdated && !options.isDryRun && !options.quiet) await printLocizeFunnel(options.logger, anyNewFile)
 
-    return { anyFileUpdated, hasErrors: fileErrors.length > 0 }
+    return { anyFileUpdated, hasErrors: fileErrors.length > 0, results }
   } catch (error) {
     spinner.fail(styleText('red', 'Extraction failed.'))
     // Re-throw or handle error
