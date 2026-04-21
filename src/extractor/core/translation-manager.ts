@@ -6,6 +6,7 @@ import { getOutputPath, loadTranslationFile } from '../../utils/file-utils.js'
 import { resolveDefaultValue } from '../../utils/default-value.js'
 import { ConsoleLogger } from '../../utils/logger.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
+import { parseNestedReferences } from '../../utils/nesting.js'
 
 // used for natural language check
 const chars = [' ', ',', '?', '!', ';']
@@ -350,6 +351,98 @@ function buildNewTranslationsForNs (
       })()
     : null
 
+  // Discover keys that are only referenced through `$t(...)` nested references
+  // inside existing translation values (see issue #241). These keys are
+  // invisible to the AST-based extractor, so without this step they would be
+  // deleted when `removeUnusedKeys` is true and never expanded into the plural
+  // forms a secondary locale needs.
+  //
+  // We inject synthetic ExtractedKey entries for each discovered reference so
+  // the normal filter / plural-expansion pipeline picks them up — for the
+  // primary language this preserves the existing variants, and for secondary
+  // languages this generates the correct per-locale plural skeleton.
+  const syntheticNestedKeys: ExtractedKey[] = []
+  const namespaceMatches = (refNs: string | false | undefined): boolean => {
+    if (namespace === undefined) return true
+    // Nested references arrive from parseNestedReferences with `ns` either set
+    // from an explicit `ns:key` prefix or defaulted to config.extract.defaultNS.
+    // Normalise to the same bucket keys used in `keysByNS`.
+    const normalizedRef = refNs === undefined || refNs === null
+      ? config.extract.defaultNS ?? 'translation'
+      : refNs
+    return normalizedRef === namespace
+  }
+
+  // All cardinal plural categories we should expand to for a context+count
+  // nested reference, covering every configured locale so the per-locale
+  // filter can then keep only the relevant ones.
+  const nestedContextCountCategories = (() => {
+    const union = new Set<string>()
+    for (const loc of config.locales) {
+      safePluralRules(loc, { type: 'cardinal' }).resolvedOptions().pluralCategories.forEach(c => union.add(c))
+    }
+    return [...union]
+  })()
+
+  const seenNestedValues = new Set<string>()
+  const collectFromValue = (value: unknown): void => {
+    if (typeof value === 'string') {
+      if (seenNestedValues.has(value)) return
+      seenNestedValues.add(value)
+      const refs = parseNestedReferences(value, {
+        nestingPrefix: config.extract.nestingPrefix,
+        nestingSuffix: config.extract.nestingSuffix,
+        nestingOptionsSeparator: config.extract.nestingOptionsSeparator,
+        nsSeparator: config.extract.nsSeparator,
+        defaultNS: config.extract.defaultNS
+      })
+      for (const ref of refs) {
+        if (!namespaceMatches(ref.ns)) continue
+        const effectiveHasCount = ref.hasCount && !config.extract.disablePlurals
+        if (ref.context !== undefined) {
+          const ctxKey = `${ref.key}${contextSeparator}${ref.context}`
+          if (effectiveHasCount) {
+            // `ctxKey` contains `contextSeparator` (which equals pluralSeparator
+            // by default) so we cannot hand it to the base plural expansion
+            // pass. Instead, push fully-expanded variants and rely on the
+            // per-locale filter to keep the relevant ones.
+            for (const category of nestedContextCountCategories) {
+              syntheticNestedKeys.push({
+                key: `${ctxKey}${pluralSeparator}${category}`,
+                hasCount: true,
+                isExpandedPlural: true
+              })
+            }
+          } else {
+            syntheticNestedKeys.push({ key: ref.key })
+            syntheticNestedKeys.push({ key: ctxKey })
+          }
+        } else if (effectiveHasCount) {
+          // Plain plural reference — push the base plural key and let the
+          // normal expansion in the main loop emit per-locale variants.
+          syntheticNestedKeys.push({ key: ref.key, hasCount: true })
+        } else {
+          syntheticNestedKeys.push({ key: ref.key })
+        }
+      }
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      for (const v of Object.values(value as Record<string, unknown>)) {
+        collectFromValue(v)
+      }
+    }
+  }
+
+  // Scan both the locale being built and the primary locale so that newly
+  // introduced references are propagated to every locale on the first run.
+  collectFromValue(existingTranslations)
+  if (primaryExistingTranslations && primaryExistingTranslations !== existingTranslations) {
+    collectFromValue(primaryExistingTranslations)
+  }
+
+  const nsKeysWithNested: ExtractedKey[] = syntheticNestedKeys.length > 0
+    ? [...nsKeys, ...syntheticNestedKeys]
+    : nsKeys
+
   // Prepare namespace pattern checking helpers
   const rawPreserve = config.extract.preservePatterns || []
 
@@ -408,7 +501,7 @@ function buildNewTranslationsForNs (
   }
 
   // Filter nsKeys to only include keys relevant to this language
-  const filteredKeys = nsKeys.filter(({ key, hasCount, isOrdinal, explicitDefault }) => {
+  const filteredKeys = nsKeysWithNested.filter(({ key, hasCount, isOrdinal, explicitDefault }) => {
     // FIRST: Check if key matches preservePatterns and should be excluded
     if (shouldFilterKey(key)) {
       return false

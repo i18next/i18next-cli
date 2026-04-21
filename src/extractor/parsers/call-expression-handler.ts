@@ -2,6 +2,7 @@ import type { CallExpression, ArrowFunctionExpression, ObjectExpression } from '
 import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey, ScopeInfo } from '../../types.js'
 import { ExpressionResolver } from './expression-resolver.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
+import { parseNestedReferences } from '../../utils/nesting.js'
 import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset } from './ast-utils.js'
 
 // Helper to escape regex characters
@@ -489,115 +490,26 @@ export class CallExpressionHandler {
   }
 
   /**
-   * Scans a string for nested translations like $t(key, options) and extracts them.
+   * Scans a string for nested translations like $t(key, options) and registers
+   * the referenced keys (plus their plural / context variants) on the current
+   * plugin context.
    */
-  private extractNestedKeys (text: string, ns: string | false | undefined): void {
-    if (!text || typeof text !== 'string') return
+  private extractNestedKeys (text: string, _ns: string | false | undefined): void {
+    const references = parseNestedReferences(text, {
+      nestingPrefix: this.config.extract.nestingPrefix,
+      nestingSuffix: this.config.extract.nestingSuffix,
+      nestingOptionsSeparator: this.config.extract.nestingOptionsSeparator,
+      nsSeparator: this.config.extract.nsSeparator,
+      defaultNS: this.config.extract.defaultNS
+    })
 
-    const prefix = this.config.extract.nestingPrefix ?? '$t('
-    const suffix = this.config.extract.nestingSuffix ?? ')'
-
-    const escapedPrefix = escapeRegex(prefix)
-    const escapedSuffix = escapeRegex(suffix)
-
-    // Regex adapted from i18next Interpolator.js
-    // Matches nested calls like $t(key) or $t(key, { options })
-    // It handles balanced parentheses to some extent and quoted strings
-    const nestingRegexp = new RegExp(
-      `${escapedPrefix}((?:[^()"']+|"[^"]*"|'[^']*'|\\((?:[^()]|"[^"]*"|'[^']*')*\\))*?)${escapedSuffix}`,
-      'g'
-    )
-
-    let match
-    while ((match = nestingRegexp.exec(text)) !== null) {
-      if (match[1]) {
-        // Do NOT trust the outer `ns` blindly — compute namespace from the nested key itself
-        // inside processNestedContent. Pass `undefined` so processNestedContent resolves ns
-        // deterministically (either from key "ns:key" or from defaultNS).
-        this.processNestedContent(match[1], undefined)
-      }
-    }
-  }
-
-  private processNestedContent (content: string, ns: string | false | undefined) {
-    let key = content
-    let optionsString = ''
-
-    const separator = this.config.extract.nestingOptionsSeparator ?? ','
-
-    // Logic adapted from i18next Interpolator.js handleHasOptions
-    if (content.indexOf(separator) < 0) {
-      key = content.trim()
-    } else {
-      // Split by separator, but be careful about objects
-      // i18next does: const c = key.split(new RegExp(`${sep}[ ]*{`));
-      // This assumes options start with {
-
-      const sepRegex = new RegExp(`${escapeRegex(separator)}[ ]*{`)
-      const parts = content.split(sepRegex)
-
-      if (parts.length > 1) {
-        key = parts[0].trim()
-        // Reconstruct the options part: add back the '{' that was consumed by split
-        optionsString = `{${parts.slice(1).join(separator + ' {')}`
+    for (const { key, ns: nestedNs, hasCount, context } of references) {
+      const effectiveHasCount = hasCount && !this.config.extract.disablePlurals
+      if (effectiveHasCount || context !== undefined) {
+        this.generateNestedPluralKeys(key, nestedNs, effectiveHasCount, context)
       } else {
-        // Fallback for simple split if no object pattern found
-        const sepIdx = content.indexOf(separator)
-        key = content.substring(0, sepIdx).trim()
-        optionsString = content.substring(sepIdx + 1).trim()
+        this.pluginContext.addKey({ key, ns: nestedNs })
       }
-    }
-
-    // Remove quotes from key if present
-    if ((key.startsWith("'") && key.endsWith("'")) || (key.startsWith('"') && key.endsWith('"'))) {
-      key = key.slice(1, -1)
-    }
-
-    if (!key) return
-
-    // Resolve namespace for the nested key:
-    // If nested key contains nsSeparator (e.g. "ns:key"), extract namespace,
-    // otherwise use configured defaultNS.
-    let nestedNs: string | false | undefined
-    const nsSeparator = this.config.extract.nsSeparator ?? ':'
-    if (nsSeparator && key.includes(nsSeparator)) {
-      const parts = key.split(nsSeparator)
-      const candidateNs = parts[0]
-      if (!looksLikeNaturalLanguage(candidateNs)) {
-        nestedNs = parts.shift()
-        key = parts.join(nsSeparator)
-        if (!key || key.trim() === '') return
-      } else {
-        nestedNs = this.config.extract.defaultNS
-      }
-    } else {
-      nestedNs = this.config.extract.defaultNS
-    }
-
-    let hasCount = false
-    let context: string | undefined
-
-    if (optionsString) {
-      // Simple regex check for count and context in the options string
-      // This is an approximation since we don't have a full JSON parser here that handles JS objects perfectly
-      // but it should cover most static cases.
-
-      // Check for count: ...
-      if (/['"]?count['"]?\s*:/.test(optionsString)) {
-        hasCount = true
-      }
-
-      // Check for context: ...
-      const contextMatch = /['"]?context['"]?\s*:\s*(['"])(.*?)\1/.exec(optionsString)
-      if (contextMatch) {
-        context = contextMatch[2]
-      }
-    }
-
-    if ((hasCount && !this.config.extract.disablePlurals) || context !== undefined) {
-      this.generateNestedPluralKeys(key, nestedNs, hasCount && !this.config.extract.disablePlurals, context)
-    } else {
-      this.pluginContext.addKey({ key, ns: nestedNs })
     }
   }
 

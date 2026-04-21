@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.0](https://github.com/i18next/i18next-cli/compare/v1.55.0...v1.56.0) - 2026-04-21
+
+- Preserve keys that are only referenced through `$t(...)` nested references
+  inside existing translation values. Previously, when `removeUnusedKeys` was
+  enabled, keys like `boys_one`/`boys_other` referenced only from
+  `"girlsAndBoys": "$t(boys, {\"count\": {{boys}} })"` were deleted because
+  the AST-based extractor never sees them. The extractor now also scans
+  existing translation values, treats referenced keys (and their
+  plural / context variants) as used, and — for secondary locales — expands
+  them into the correct per-locale CLDR plural skeleton on first extract.
+  Fixes [#241](https://github.com/i18next/i18next-cli/issues/241).
+
 ## [1.55.0](https://github.com/i18next/i18next-cli/compare/v1.54.2...v1.55.0) - 2026-04-20
 
 - Infer function return types from the body when no explicit return-type
