@@ -607,9 +607,12 @@ export default defineConfig({
     ],
     
     /**
-     * When true, preserves all context variants of keys that use context parameters.
-     * For example, if 'friend' is used with context, all variants like 'friend_male',
-     * 'friend_female', etc. are preserved even if not explicitly found in source code.
+     * When true, preserves all context variants of keys that use context parameters,
+     * across every configured locale. For example, if 'friend' is used with a context
+     * option in source code, variants like 'friend_male' and 'friend_female' are kept
+     * in the primary language even when they're not referenced explicitly, and are
+     * propagated to secondary locales with empty placeholders so every language ends
+     * up with the same key skeleton.
      * (default: false)
      */
     preserveContextVariants: false,
@@ -661,6 +664,10 @@ export default defineConfig({
 
     // Prefix for nested translations.
     // Controls how nested $t(...) calls inside strings are detected.
+    // Nested references are scanned in BOTH source code (keys and defaultValues
+    // passed to t()) and in the values of existing translation files, so keys
+    // reachable only via `$t(...)` inside a translation value are preserved by
+    // `extract` and expanded into the correct per-locale plural skeleton.
     // Example: '$t('
     nestingPrefix: '$t(', // Default: '$t('
     
