@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plural / context variants) as used, and — for secondary locales — expands
   them into the correct per-locale CLDR plural skeleton on first extract.
   Fixes [#241](https://github.com/i18next/i18next-cli/issues/241).
+- Propagate context variants from the primary locale to secondary locales
+  when `preserveContextVariants` is enabled. Previously, dynamic context
+  usage like `t('exportType', { context: type })` preserved the variants
+  (`exportType_gas`, `exportType_water`) only in the primary language file;
+  secondary languages never received them. They are now copied to every
+  locale with empty placeholders so translators and `sync` see the same key
+  skeleton everywhere. Existing secondary values are left untouched.
+  Fixes [#242](https://github.com/i18next/i18next-cli/issues/242).
 
 ## [1.55.0](https://github.com/i18next/i18next-cli/compare/v1.54.2...v1.55.0) - 2026-04-20
 

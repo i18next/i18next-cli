@@ -597,6 +597,45 @@ function buildNewTranslationsForNs (
     }
   }
 
+  // PROPAGATE CONTEXT VARIANTS FROM PRIMARY TO SECONDARY (issue #242):
+  // When `preserveContextVariants` is enabled and the source code uses a
+  // dynamic context value (e.g. `t('exportType', { context: type })`), the
+  // extractor tags the base key as "accepting context" but the actual context
+  // values (e.g. `gas`, `water`) are only known from the primary translation
+  // file. Propagate those variants from primary to secondary locales so every
+  // locale ends up with the same key skeleton — translators and downstream
+  // `sync` can then fill in real values.
+  if (preserveContextVariants && locale !== primaryLanguage && primaryExistingTranslations) {
+    const primaryKeys = getNestedKeys(primaryExistingTranslations, keySeparator ?? '.')
+    for (const primaryKey of primaryKeys) {
+      if (shouldFilterKey(primaryKey)) continue
+      const isContextVariant = isContextVariantOfAcceptingKey(
+        primaryKey,
+        keysAcceptingContext,
+        pluralSeparator,
+        contextSeparator
+      )
+      if (!isContextVariant) continue
+
+      const separator = primaryKey.startsWith('<') ? false : (keySeparator ?? '.')
+      const alreadySet = getNestedValue(newTranslations, primaryKey, separator)
+      if (alreadySet !== undefined) continue
+
+      // Prefer an existing secondary value if present, otherwise fall back to
+      // the configured defaultValue (empty string for secondaries by default).
+      const existingSecondaryValue = getNestedValue(existingTranslations, primaryKey, separator)
+      const valueToSet = existingSecondaryValue !== undefined
+        ? existingSecondaryValue
+        : resolveDefaultValue(
+          emptyDefaultValue,
+          primaryKey,
+          namespace || config?.extract?.defaultNS || 'translation',
+          locale
+        )
+      setNestedValue(newTranslations, primaryKey, valueToSet, separator)
+    }
+  }
+
   // PRESERVE LOCALE-SPECIFIC PLURAL FORMS: When dealing with plural keys in non-primary locales,
   // preserve any existing plural forms that are NOT being explicitly generated.
   // This ensures that locale-specific forms (like _few, _many) added by translators are preserved.
