@@ -2,10 +2,11 @@ import { styleText } from 'node:util'
 import ora from 'ora'
 import { resolve } from 'node:path'
 import { findKeys } from './extractor.js'
-import { getNestedValue } from './utils/nested-object.js'
+import { getNestedValue, getNestedKeys } from './utils/nested-object.js'
 import type { I18nextToolkitConfig, ExtractedKey } from './types.js'
 import { getOutputPath, loadTranslationFile } from './utils/file-utils.js'
 import { safePluralRules } from './utils/plural-rules.js'
+import { isContextVariantOfAcceptingKey } from './utils/context-variants.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 
 /**
@@ -134,7 +135,8 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
 
   const { allKeys: allExtractedKeys } = await findKeys(config)
-  const { secondaryLanguages, keySeparator = '.', defaultNS = 'translation', mergeNamespaces = false, pluralSeparator = '_', fallbackNS } = config.extract
+  const { secondaryLanguages, keySeparator = '.', defaultNS = 'translation', mergeNamespaces = false, pluralSeparator = '_', contextSeparator = '_', fallbackNS } = config.extract
+  const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
 
   const keysByNs = new Map<string, ExtractedKey[]>()
   for (const key of allExtractedKeys.values()) {
@@ -159,6 +161,53 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
     totalBaseKeys: filteredKeyCount,
     keysByNs,
     locales: new Map(),
+  }
+
+  // Discover context variants that live in the primary translation file but
+  // are not directly extracted as keys (see issue #243). When source code uses
+  // a dynamic context value like `t('exportType', { context: type })`, the
+  // extractor can only tag the base key as "accepting context"; the actual
+  // context values (`_gas`, `_water`, ...) are only visible in the primary
+  // translation file. Without this scan, status never checks those variants
+  // for translation gaps in secondary locales.
+  const keysAcceptingContext = new Set<string>()
+  for (const keys of keysByNs.values()) {
+    for (const k of keys) {
+      if (k.keyAcceptingContext) keysAcceptingContext.add(k.keyAcceptingContext)
+    }
+  }
+
+  const contextVariantsByNs = new Map<string, string[]>()
+  if (keysAcceptingContext.size > 0) {
+    const primaryMerged = mergeNamespaces
+      ? ((await loadTranslationFile(
+          resolve(
+            process.cwd(),
+            getOutputPath(
+              config.extract.output,
+              primaryLanguage,
+              (defaultNS === false ? 'translation' : (defaultNS || 'translation'))
+            )
+          )
+        )) || {})
+      : null
+
+    for (const ns of keysByNs.keys()) {
+      const primaryNsTranslations = mergeNamespaces
+        ? (primaryMerged?.[ns] ?? primaryMerged ?? {})
+        : ((await loadTranslationFile(
+            resolve(process.cwd(), getOutputPath(config.extract.output, primaryLanguage, ns))
+          )) || {})
+
+      const primaryKeys = getNestedKeys(primaryNsTranslations, keySeparator ?? '.')
+      const variants: string[] = []
+      for (const primaryKey of primaryKeys) {
+        if (isContextVariantOfAcceptingKey(primaryKey, keysAcceptingContext, pluralSeparator, contextSeparator)) {
+          variants.push(primaryKey)
+        }
+      }
+      if (variants.length > 0) contextVariantsByNs.set(ns, variants)
+    }
   }
 
   for (const locale of secondaryLanguages) {
@@ -246,6 +295,8 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
         return primaryState
       }
 
+      const processedKeys = new Set<string>()
+
       for (const { key: baseKey, hasCount, isOrdinal, isExpandedPlural } of keysInNs) {
         if (hasCount) {
           if (isExpandedPlural) {
@@ -262,7 +313,8 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
             const localePluralCategories = getLocalePluralCategories(locale, isOrdinalVariant)
 
             // Only count this key if it's a plural form used by this locale
-            if (localePluralCategories.includes(category)) {
+            if (localePluralCategories.includes(category) && !processedKeys.has(baseKey)) {
+              processedKeys.add(baseKey)
               totalInNs++
               const state = resolveAndClassify(baseKey)
               if (state === 'translated') translatedInNs++
@@ -276,10 +328,12 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
             const localePluralCategories = getLocalePluralCategories(locale, isOrdinal || false)
 
             for (const category of localePluralCategories) {
-              totalInNs++
               const pluralKey = isOrdinal
                 ? `${baseKey}${pluralSeparator}ordinal${pluralSeparator}${category}`
                 : `${baseKey}${pluralSeparator}${category}`
+              if (processedKeys.has(pluralKey)) continue
+              processedKeys.add(pluralKey)
+              totalInNs++
               const state = resolveAndClassify(pluralKey)
               if (state === 'translated') translatedInNs++
               else if (state === 'empty') emptyInNs++
@@ -288,13 +342,30 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
             }
           }
         } else {
-          totalInNs++
-          const state = resolveAndClassify(baseKey)
-          if (state === 'translated') translatedInNs++
-          else if (state === 'empty') emptyInNs++
-          else absentInNs++
-          keyDetails.push({ key: baseKey, state })
+          if (!processedKeys.has(baseKey)) {
+            processedKeys.add(baseKey)
+            totalInNs++
+            const state = resolveAndClassify(baseKey)
+            if (state === 'translated') translatedInNs++
+            else if (state === 'empty') emptyInNs++
+            else absentInNs++
+            keyDetails.push({ key: baseKey, state })
+          }
         }
+      }
+
+      // Additionally check context variants discovered in the primary file
+      // (see issue #243). Skip variants already counted via extracted keys.
+      const contextVariants = contextVariantsByNs.get(ns) || []
+      for (const variantKey of contextVariants) {
+        if (processedKeys.has(variantKey)) continue
+        processedKeys.add(variantKey)
+        totalInNs++
+        const state = resolveAndClassify(variantKey)
+        if (state === 'translated') translatedInNs++
+        else if (state === 'empty') emptyInNs++
+        else absentInNs++
+        keyDetails.push({ key: variantKey, state })
       }
 
       namespaces.set(ns, { totalKeys: totalInNs, translatedKeys: translatedInNs, emptyKeys: emptyInNs, absentKeys: absentInNs, keyDetails })

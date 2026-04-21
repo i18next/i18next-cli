@@ -24,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   locale with empty placeholders so translators and `sync` see the same key
   skeleton everywhere. Existing secondary values are left untouched.
   Fixes [#242](https://github.com/i18next/i18next-cli/issues/242).
+- `status` now detects context variants when source code uses a dynamic
+  context value. Previously, `t('key', { context: type })` registered only
+  the base key and tagged it as accepting context, so status had no way to
+  count the actual variants (`key_a`, `key_b`) — empty values in secondary
+  locales were silently ignored. Status now scans the primary translation
+  file for context variants of each accepting-context base key and includes
+  them in the per-locale translation report.
+  Fixes [#243](https://github.com/i18next/i18next-cli/issues/243).
 
 ## [1.55.0](https://github.com/i18next/i18next-cli/compare/v1.54.2...v1.55.0) - 2026-04-20
 

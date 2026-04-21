@@ -7,6 +7,7 @@ import { resolveDefaultValue } from '../../utils/default-value.js'
 import { ConsoleLogger } from '../../utils/logger.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
 import { parseNestedReferences } from '../../utils/nesting.js'
+import { isContextVariantOfAcceptingKey } from '../../utils/context-variants.js'
 
 // used for natural language check
 const chars = [' ', ',', '?', '!', ';']
@@ -22,69 +23,6 @@ function globToRegex (glob: string): RegExp {
   const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
   const regexString = `^${escaped.replace(/\*/g, '.*')}$`
   return new RegExp(regexString)
-}
-
-/**
- * Checks if an existing key is a context variant of a base key that accepts context.
- * This function handles complex cases where:
- * - The key might have plural suffixes (_one, _other, etc.)
- * - The context value itself might contain the separator (e.g., mc_laren)
- *
- * @param existingKey - The key from the translation file to check
- * @param keysAcceptingContext - Set of base keys that were used with context in source code
- * @param pluralSeparator - The separator used for plural forms (default: '_')
- * @param contextSeparator - The separator used for context variants (default: '_')
- * @returns true if the existing key is a context variant of a key accepting context
- */
-function isContextVariantOfAcceptingKey (
-  existingKey: string,
-  keysAcceptingContext: ReadonlySet<string>,
-  pluralSeparator: string,
-  contextSeparator: string
-): boolean {
-  if (keysAcceptingContext.size === 0) {
-    return false
-  }
-
-  // Try to extract the base key from this existing key by removing context and/or plural suffixes
-  let potentialBaseKey = existingKey
-
-  // First, try removing plural suffixes if present
-  for (const form of pluralForms) {
-    if (potentialBaseKey.endsWith(`${pluralSeparator}${form}`)) {
-      potentialBaseKey = potentialBaseKey.slice(0, -(pluralSeparator.length + form.length))
-      break
-    }
-    if (potentialBaseKey.endsWith(`${pluralSeparator}ordinal${pluralSeparator}${form}`)) {
-      potentialBaseKey = potentialBaseKey.slice(0, -(pluralSeparator.length + 'ordinal'.length + pluralSeparator.length + form.length))
-      break
-    }
-  }
-
-  // Then, try removing the context suffix to get the base key
-  // We need to check all possible base keys since the context value itself might contain separators
-  // For example: 'formula_one_mc_laren' could be:
-  //   - base: 'formula_one_mc', context: 'laren'
-  //   - base: 'formula_one', context: 'mc_laren'  ← correct
-  //   - base: 'formula', context: 'one_mc_laren'
-  const parts = potentialBaseKey.split(contextSeparator)
-  if (parts.length > 1) {
-    // Try removing 1, 2, 3... parts from the end to find a matching base key
-    for (let i = 1; i < parts.length; i++) {
-      const baseWithoutContext = parts.slice(0, -i).join(contextSeparator)
-      if (keysAcceptingContext.has(baseWithoutContext)) {
-        return true
-      }
-    }
-  }
-
-  // Also check if the key itself (after removing plural suffix) accepts context
-  // This handles cases like 'friend_other' where 'friend' accepts context
-  if (keysAcceptingContext.has(potentialBaseKey)) {
-    return true
-  }
-
-  return false
 }
 
 /**
