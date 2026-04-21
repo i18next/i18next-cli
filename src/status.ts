@@ -7,6 +7,7 @@ import type { I18nextToolkitConfig, ExtractedKey } from './types.js'
 import { getOutputPath, loadTranslationFile } from './utils/file-utils.js'
 import { safePluralRules } from './utils/plural-rules.js'
 import { isContextVariantOfAcceptingKey } from './utils/context-variants.js'
+import { parseNestedReferences } from './utils/nesting.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 
 /**
@@ -163,13 +164,23 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
     locales: new Map(),
   }
 
-  // Discover context variants that live in the primary translation file but
-  // are not directly extracted as keys (see issue #243). When source code uses
-  // a dynamic context value like `t('exportType', { context: type })`, the
-  // extractor can only tag the base key as "accepting context"; the actual
-  // context values (`_gas`, `_water`, ...) are only visible in the primary
-  // translation file. Without this scan, status never checks those variants
-  // for translation gaps in secondary locales.
+  // Build per-namespace "virtual" key lists for translation entries that the
+  // AST-based extractor cannot see on its own. Both inputs come from the
+  // primary translation file:
+  //
+  //  1. Context variants of an accepting-context key (see issue #243).
+  //     `t('exportType', { context: dynamic })` only registers the base key;
+  //     the concrete `exportType_gas` / `exportType_water` variants live in
+  //     the primary file.
+  //
+  //  2. Keys reachable only via `$t(...)` nested references from inside an
+  //     existing translation value (see follow-up to issue #241).
+  //     `"girlsAndBoys": "... $t(boys, {\"count\": x}) ..."` doesn't appear
+  //     in source code, yet the referenced keys (`boys`, plus per-locale
+  //     plural forms) must be checked in every secondary locale.
+  //
+  // Both scans need the primary translation file per namespace, so the load
+  // is shared.
   const keysAcceptingContext = new Set<string>()
   for (const keys of keysByNs.values()) {
     for (const k of keys) {
@@ -178,27 +189,71 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
   }
 
   const contextVariantsByNs = new Map<string, string[]>()
-  if (keysAcceptingContext.size > 0) {
-    const primaryMerged = mergeNamespaces
-      ? ((await loadTranslationFile(
-          resolve(
-            process.cwd(),
-            getOutputPath(
-              config.extract.output,
-              primaryLanguage,
-              (defaultNS === false ? 'translation' : (defaultNS || 'translation'))
-            )
+  const nestedReferenceKeysByNs = new Map<string, ExtractedKey[]>()
+
+  const primaryMergedForScan = mergeNamespaces
+    ? ((await loadTranslationFile(
+        resolve(
+          process.cwd(),
+          getOutputPath(
+            config.extract.output,
+            primaryLanguage,
+            (defaultNS === false ? 'translation' : (defaultNS || 'translation'))
           )
+        )
+      )) || {})
+    : null
+
+  const collectNestedRefsFromValue = (value: unknown, refNs: string, bucket: ExtractedKey[], seen: Set<string>): void => {
+    if (typeof value === 'string') {
+      if (seen.has(value)) return
+      seen.add(value)
+      const refs = parseNestedReferences(value, {
+        nestingPrefix: config.extract.nestingPrefix,
+        nestingSuffix: config.extract.nestingSuffix,
+        nestingOptionsSeparator: config.extract.nestingOptionsSeparator,
+        nsSeparator: config.extract.nsSeparator,
+        defaultNS: config.extract.defaultNS
+      })
+      for (const ref of refs) {
+        // References with an explicit namespace that differs from the current
+        // bucket are ignored — they belong to another namespace's scan.
+        const normalizedRefNs = ref.ns === undefined || ref.ns === null
+          ? (config.extract.defaultNS ?? 'translation')
+          : ref.ns
+        if (normalizedRefNs !== refNs) continue
+
+        if (ref.context !== undefined) {
+          const ctxKey = `${ref.key}${contextSeparator}${ref.context}`
+          if (ref.hasCount) {
+            // Treat `key_ctx` as a base plural key; the per-locale loop
+            // expands it into the correct CLDR forms for each target locale.
+            bucket.push({ key: ctxKey, hasCount: true })
+          } else {
+            bucket.push({ key: ref.key })
+            bucket.push({ key: ctxKey })
+          }
+        } else if (ref.hasCount) {
+          bucket.push({ key: ref.key, hasCount: true })
+        } else {
+          bucket.push({ key: ref.key })
+        }
+      }
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      for (const v of Object.values(value as Record<string, unknown>)) {
+        collectNestedRefsFromValue(v, refNs, bucket, seen)
+      }
+    }
+  }
+
+  for (const ns of keysByNs.keys()) {
+    const primaryNsTranslations = mergeNamespaces
+      ? (primaryMergedForScan?.[ns] ?? primaryMergedForScan ?? {})
+      : ((await loadTranslationFile(
+          resolve(process.cwd(), getOutputPath(config.extract.output, primaryLanguage, ns))
         )) || {})
-      : null
 
-    for (const ns of keysByNs.keys()) {
-      const primaryNsTranslations = mergeNamespaces
-        ? (primaryMerged?.[ns] ?? primaryMerged ?? {})
-        : ((await loadTranslationFile(
-            resolve(process.cwd(), getOutputPath(config.extract.output, primaryLanguage, ns))
-          )) || {})
-
+    if (keysAcceptingContext.size > 0) {
       const primaryKeys = getNestedKeys(primaryNsTranslations, keySeparator ?? '.')
       const variants: string[] = []
       for (const primaryKey of primaryKeys) {
@@ -208,6 +263,10 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
       }
       if (variants.length > 0) contextVariantsByNs.set(ns, variants)
     }
+
+    const nestedRefKeys: ExtractedKey[] = []
+    collectNestedRefsFromValue(primaryNsTranslations, ns, nestedRefKeys, new Set<string>())
+    if (nestedRefKeys.length > 0) nestedReferenceKeysByNs.set(ns, nestedRefKeys)
   }
 
   for (const locale of secondaryLanguages) {
@@ -297,7 +356,15 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
 
       const processedKeys = new Set<string>()
 
-      for (const { key: baseKey, hasCount, isOrdinal, isExpandedPlural } of keysInNs) {
+      // Combine AST-extracted keys with nested-reference keys discovered in
+      // the primary translation file (see follow-up on issue #241). Both go
+      // through the same plural-expansion logic; processedKeys dedupes.
+      const nestedRefKeys = nestedReferenceKeysByNs.get(ns) || []
+      const combinedKeysInNs = nestedRefKeys.length > 0
+        ? [...keysInNs, ...nestedRefKeys]
+        : keysInNs
+
+      for (const { key: baseKey, hasCount, isOrdinal, isExpandedPlural } of combinedKeysInNs) {
         if (hasCount) {
           if (isExpandedPlural) {
             // This is an already-expanded plural variant key (e.g., key_one, key_other)

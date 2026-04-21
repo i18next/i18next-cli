@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.1](https://github.com/i18next/i18next-cli/compare/v1.56.0...v1.56.1) - 2026-04-22
+
+- `status` now detects keys reachable only through `$t(...)` nested
+  references in the primary translation file. Previously, keys like
+  `boys_one`/`boys_other` — referenced only from
+  `"girlsAndBoys": "$t(boys, {\"count\": ...})"` — were preserved by
+  `extract` but never included in the `status` check, so empty values in
+  secondary locales were silently ignored. Status now scans primary
+  translation values for `$t(...)` references and includes the referenced
+  keys (plus their per-locale plural and context variants) in the report,
+  so translation gaps surface correctly.
+  Follow-up to [#241](https://github.com/i18next/i18next-cli/issues/241).
+
 ## [1.56.0](https://github.com/i18next/i18next-cli/compare/v1.55.0...v1.56.0) - 2026-04-21
 
 - Preserve keys that are only referenced through `$t(...)` nested references
