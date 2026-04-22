@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.56.5](https://github.com/i18next/i18next-cli/compare/v1.56.4...v1.56.5) - 2026-04-22
 
+- `extract` now walks both branches of branching selector bodies, so
+  keys referenced inside ternaries and short-circuit logicals are no
+  longer dropped. Previously a selector like
+  `t(($) => isPinned ? $.notes.unpinned : $.notes.pinned)` produced no
+  keys at all (both `notes.pinned` and `notes.unpinned` got pruned by
+  `removeUnusedKeys`). The selector walker now recurses into
+  `ConditionalExpression` (`a ? b : c`) and short-circuit logical
+  forms (`||`, `&&`, `??`, emitted by SWC as either
+  `LogicalExpression` or `BinaryExpression`), taking the union of key
+  paths from each branch. Common wrappers (`ParenthesisExpression`,
+  `TsAsExpression`, `TsSatisfiesExpression`, `TsNonNullExpression`,
+  `TsConstAssertion`) are transparently unwrapped. Fixes
+  [#247](https://github.com/i18next/i18next-cli/issues/247).
 - Trimmed the `<Trans>` bare-identifier diagnostic to drop the
   confusing trailing suggestion "or inline the value if it isn't meant
   to be translated." Inlining a literal value (e.g.

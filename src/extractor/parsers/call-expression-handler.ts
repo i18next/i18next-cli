@@ -653,7 +653,56 @@ export class CallExpressionHandler {
       }
     }
 
-    let current = body
+    return this.extractKeysFromSelectorExpression(body as any)
+  }
+
+  /**
+   * Recursively extracts key paths from a selector-body expression.
+   *
+   * On top of the straight MemberExpression walk this also descends into
+   * branching forms so keys referenced in either branch are preserved
+   * (see #247): ternaries (`cond ? $.a : $.b`), nullish/logical
+   * short-circuits (`x ?? $.a`, `x && $.a`, `x || $.a`), and common
+   * wrapper nodes (parentheses, TS type assertions).
+   */
+  private extractKeysFromSelectorExpression (expr: any): string[] {
+    if (!expr) return []
+
+    // Unwrap wrappers that don't change the expressed key path.
+    if (
+      expr.type === 'ParenthesisExpression' ||
+      expr.type === 'TsAsExpression' ||
+      expr.type === 'TsSatisfiesExpression' ||
+      expr.type === 'TsNonNullExpression' ||
+      expr.type === 'TsConstAssertion'
+    ) {
+      return this.extractKeysFromSelectorExpression(expr.expression)
+    }
+
+    // Ternary: union of both branches.
+    if (expr.type === 'ConditionalExpression') {
+      return [
+        ...this.extractKeysFromSelectorExpression(expr.consequent),
+        ...this.extractKeysFromSelectorExpression(expr.alternate),
+      ]
+    }
+
+    // Short-circuit logicals (`||`, `&&`, `??`): union of both sides. SWC
+    // may emit these as LogicalExpression or BinaryExpression depending on
+    // version, so accept both.
+    if (
+      (expr.type === 'LogicalExpression' || expr.type === 'BinaryExpression') &&
+      (expr.operator === '||' || expr.operator === '&&' || expr.operator === '??')
+    ) {
+      return [
+        ...this.extractKeysFromSelectorExpression(expr.left),
+        ...this.extractKeysFromSelectorExpression(expr.right),
+      ]
+    }
+
+    if (expr.type !== 'MemberExpression') return []
+
+    let current: any = expr
     // Each element is an array of possible values for that position in the key path
     const parts: string[][] = []
 

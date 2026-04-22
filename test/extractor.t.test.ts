@@ -1032,6 +1032,59 @@ describe('extractor: advanced t features', () => {
         },
       })
     })
+
+    it('should extract both branches of a ternary selector body (#247)', async () => {
+      const sampleCode = `
+        function Note({ isPinned }: { isPinned: boolean }) {
+          return t(($) => (isPinned ? $.notes.unpinned : $.notes.pinned));
+        }
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      const results = await extract(mockConfig)
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(file).toBeDefined()
+      expect(file!.newTranslations).toEqual({
+        notes: {
+          pinned: 'notes.pinned',
+          unpinned: 'notes.unpinned',
+        },
+      })
+    })
+
+    it('should extract both sides of a logical-or / nullish-coalesce / logical-and selector body (#247)', async () => {
+      const sampleCode = `
+        t(($) => $.a.primary || $.a.fallback);
+        t(($) => $.b.primary ?? $.b.fallback);
+        t(($) => cond && $.c.gated);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      const results = await extract(mockConfig)
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(file).toBeDefined()
+      expect(file!.newTranslations).toEqual({
+        a: { primary: 'a.primary', fallback: 'a.fallback' },
+        b: { primary: 'b.primary', fallback: 'b.fallback' },
+        c: { gated: 'c.gated' },
+      })
+    })
+
+    it('should extract nested ternary branches in selector bodies (#247)', async () => {
+      const sampleCode = `
+        t(($) => cond1 ? $.one : (cond2 ? $.two : $.three));
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      const results = await extract(mockConfig)
+      const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(file).toBeDefined()
+      expect(file!.newTranslations).toEqual({
+        one: 'one',
+        two: 'two',
+        three: 'three',
+      })
+    })
   })
 
   describe('key fallbacks', () => {
