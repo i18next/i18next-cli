@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `MemberExpression`, interpolation-free `TemplateLiteral`, and TS
   wrappers like `as const` / `satisfies`), so both forms behave
   consistently. Fixes [#245](https://github.com/i18next/i18next-cli/issues/245).
+- `extract` now warns when a `<Trans>` component contains a bare
+  identifier JSX child such as `<Trans>Hello <b>{cat}</b></Trans>`.
+  react-i18next inlines the value at runtime (producing a key like
+  `"Hello <1>meow</1>"`), but the extractor serialises the identifier
+  name as `"Hello <1>{{cat}}</1>"` — the two never match, and even with
+  an explicit `i18nKey` the placeholder cannot be interpolated without a
+  `values={{ cat }}` prop, so it renders literally. The warning points
+  users at the correct `{{cat}}` double-brace form with a `values` prop.
+  Extraction output is unchanged so existing projects that paired the
+  `{{cat}}` output with a matching `values` prop keep working.
+  Addresses [#246](https://github.com/i18next/i18next-cli/issues/246).
 
 ## [1.56.2](https://github.com/i18next/i18next-cli/compare/v1.56.1...v1.56.2) - 2026-04-22
 

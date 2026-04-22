@@ -1,4 +1,4 @@
-import type { JSXElement, ObjectExpression } from '@swc/core'
+import type { Expression, JSXElement, JSXElementChild, ObjectExpression } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, ExtractedKey } from '../../types.js'
 import { ExpressionResolver } from './expression-resolver.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
@@ -41,6 +41,65 @@ export class JSXHandler {
   }
 
   /**
+   * Warns about `<Trans>Hello <b>{name}</b></Trans>` style children where a
+   * bare identifier is used as a React child. react-i18next inlines the value
+   * at runtime, producing a key like `"Hello <1>meow</1>"`, but the extractor
+   * serializes the identifier name as `"{{name}}"`. The two never match, and
+   * even when an `i18nKey` is set, the placeholder `{{name}}` cannot be
+   * interpolated without a `values={{ name }}` prop — it renders literally.
+   *
+   * We keep the existing extraction behaviour so projects that already rely on
+   * the `{{name}}` output (with a matching `values` prop) aren't broken, and
+   * instead surface a diagnostic pointing users at the runtime mismatch.
+   */
+  private warnOnBareIdentifierTransChildren (node: JSXElement, elementName: string): void {
+    const bareIdentifiers: Array<{ name: string; span: { start: number } }> = []
+    const visit = (children: JSXElementChild[]): void => {
+      for (const child of children) {
+        if (child.type === 'JSXExpressionContainer') {
+          const inner = this.unwrapExpression(child.expression as Expression)
+          if (inner && inner.type === 'Identifier') {
+            bareIdentifiers.push({ name: inner.value, span: child.span as any })
+          }
+        } else if (child.type === 'JSXElement') {
+          visit(child.children)
+        } else if (child.type === 'JSXFragment') {
+          visit(child.children)
+        }
+      }
+    }
+    visit(node.children)
+    if (bareIdentifiers.length === 0) return
+
+    const warn =
+      (this.pluginContext as any)?.logger?.warn?.bind((this.pluginContext as any).logger) ??
+      console.warn.bind(console)
+
+    for (const { name, span } of bareIdentifiers) {
+      const loc = lineColumnFromOffset(this.getCurrentCode(), span.start)
+      const where = loc
+        ? `${this.getCurrentFile()}:${loc.line}:${loc.column}`
+        : this.getCurrentFile()
+      warn(`<${elementName}> child {${name}} at ${where} won't match at runtime — react-i18next inlines the value (e.g. "<1>meow</1>"), but extraction produces "<1>{{${name}}}</1>". Use {{${name}}} (double braces) with values={{ ${name} }} for interpolation, or inline the value if it isn't meant to be translated.`)
+    }
+  }
+
+  /**
+   * Unwraps TS type-assertion and parenthesis wrappers so we can inspect the
+   * underlying expression type (mirrors behaviour in jsx-parser).
+   */
+  private unwrapExpression (expr: Expression | undefined): Expression | undefined {
+    if (!expr) return expr
+    if (expr.type === 'TsAsExpression' || expr.type === 'TsSatisfiesExpression') {
+      return this.unwrapExpression(expr.expression as Expression)
+    }
+    if (expr.type === 'ParenthesisExpression') {
+      return this.unwrapExpression(expr.expression as Expression)
+    }
+    return expr
+  }
+
+  /**
    * Processes JSX elements to extract translation keys from Trans components.
    *
    * Identifies configured Trans components and delegates to the JSX parser
@@ -53,6 +112,8 @@ export class JSXHandler {
     const elementName = this.getElementName(node)
 
     if (elementName && (this.config.extract.transComponents || ['Trans']).includes(elementName)) {
+      this.warnOnBareIdentifierTransChildren(node, elementName)
+
       let extractedAttributes: ReturnType<typeof extractFromTransComponent> | null = null
 
       try {

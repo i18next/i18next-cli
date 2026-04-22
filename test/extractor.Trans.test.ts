@@ -2353,4 +2353,60 @@ describe('extractor: advanced Trans features', () => {
     expect(keys).not.toContain('disputeDrawer.explanations.ongoing_one')
     expect(keys).not.toContain('disputeDrawer.explanations.ongoing_other')
   })
+
+  describe('bare identifier child warning (#246)', () => {
+    it('warns when <Trans> contains a bare {name} child (no i18nKey)', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const sampleCode = `
+        function MyComponent() {
+          const cat = "meow";
+          return <Trans>Hello world <b>{cat}</b></Trans>;
+        }
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      await extract(mockConfig)
+
+      const messages = warnSpy.mock.calls.map(args => String(args[0]))
+      const match = messages.find(m => m.includes('<Trans> child {cat}') && m.includes("won't match at runtime"))
+      expect(match).toBeDefined()
+      warnSpy.mockRestore()
+    })
+
+    it('warns when <Trans i18nKey=...> contains a bare {name} child', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const sampleCode = `
+        function MyComponent() {
+          const cat = "meow";
+          return <Trans i18nKey="key">Hello world <b>{cat}</b></Trans>;
+        }
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      await extract(mockConfig)
+
+      const messages = warnSpy.mock.calls.map(args => String(args[0]))
+      const match = messages.find(m => m.includes('<Trans> child {cat}'))
+      expect(match).toBeDefined()
+      warnSpy.mockRestore()
+    })
+
+    it('does not warn for the correct {{name}} double-brace form', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const sampleCode = `
+        function MyComponent() {
+          const cat = "meow";
+          return <Trans values={{ cat }}>Hello world <b>{{cat}}</b></Trans>;
+        }
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      await extract(mockConfig)
+
+      const messages = warnSpy.mock.calls.map(args => String(args[0]))
+      const match = messages.find(m => m.includes("won't match at runtime"))
+      expect(match).toBeUndefined()
+      warnSpy.mockRestore()
+    })
+  })
 })
