@@ -817,6 +817,28 @@ describe('extractor: advanced t features', () => {
         },
       })
     })
+
+    it('should resolve namespace and keyPrefix passed as const identifiers', async () => {
+      const sampleCode = `
+        const MY_NAMESPACE = 'common';
+        const MY_PREFIX = 'forms.user';
+        const t = i18next.getFixedT('en', MY_NAMESPACE, MY_PREFIX);
+        t('name');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
+
+      expect(commonFile).toBeDefined()
+      expect(commonFile!.newTranslations).toEqual({
+        forms: {
+          user: {
+            name: 'name',
+          },
+        },
+      })
+    })
   })
 
   describe('selector api', () => {

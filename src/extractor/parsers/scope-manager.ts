@@ -526,15 +526,34 @@ export class ScopeManager {
 
     // getFixedT(lng, ns, keyPrefix)
     // We ignore the first argument (lng) for key extraction.
-    const nsArg = args[1]?.expression
-    const keyPrefixArg = args[2]?.expression
-
-    const defaultNs = (nsArg?.type === 'StringLiteral') ? nsArg.value : undefined
-    const keyPrefix = (keyPrefixArg?.type === 'StringLiteral') ? keyPrefixArg.value : undefined
+    const defaultNs = this.resolveStringArg(args[1]?.expression)
+    const keyPrefix = this.resolveStringArg(args[2]?.expression)
 
     if (defaultNs || keyPrefix) {
       this.setVarInScope(variableName, { defaultNs, keyPrefix })
     }
+  }
+
+  /**
+   * Resolves a call argument expression to a string value by handling string
+   * literals, previously-declared local/shared constants (Identifier), member
+   * expressions referencing constant objects, and simple template literals
+   * without interpolation. Returns undefined when the expression cannot be
+   * resolved statically.
+   */
+  private resolveStringArg (node: Expression | undefined): string | undefined {
+    if (!node) return undefined
+    const unwrapped = ScopeManager.unwrapTsExpression(node)
+    if (unwrapped.type === 'StringLiteral') return unwrapped.value
+    if (unwrapped.type === 'Identifier') return this.resolveSimpleStringIdentifier(unwrapped.value)
+    if (unwrapped.type === 'MemberExpression') return this.resolveSimpleMemberExpression(unwrapped)
+    if (unwrapped.type === 'TemplateLiteral') {
+      const tpl = unwrapped as TemplateLiteral
+      if ((tpl.expressions || []).length === 0) {
+        return tpl.quasis?.[0]?.cooked ?? undefined
+      }
+    }
+    return undefined
   }
 
   /**
@@ -556,11 +575,8 @@ export class ScopeManager {
 
     const args = callExpr.arguments
     // getFixedT(lng, ns, keyPrefix)
-    const nsArg = args[1]?.expression
-    const keyPrefixArg = args[2]?.expression
-
-    const nsFromCall = (nsArg?.type === 'StringLiteral') ? nsArg.value : undefined
-    const keyPrefixFromCall = (keyPrefixArg?.type === 'StringLiteral') ? keyPrefixArg.value : undefined
+    const nsFromCall = this.resolveStringArg(args[1]?.expression)
+    const keyPrefixFromCall = this.resolveStringArg(args[2]?.expression)
 
     // Merge: call args take precedence over source scope values
     const finalNs = nsFromCall ?? sourceScope.defaultNs

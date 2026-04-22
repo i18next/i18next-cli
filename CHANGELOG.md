@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.3](https://github.com/i18next/i18next-cli/compare/v1.56.2...v1.56.3) - 2026-04-22
+
+- `extract` now resolves constant identifiers passed as the namespace or
+  keyPrefix argument to `i18next.getFixedT(...)`. Previously, only string
+  literals were recognised, so
+  `const NS = "my-ns"; const t = i18next.getFixedT("en", NS, "prefix")`
+  silently fell back to the default namespace, while the equivalent
+  `useTranslation(NS)` form worked correctly. The `getFixedT` handlers
+  now reuse the same resolution logic as `useTranslation` (local/shared
+  string constants via `Identifier`, constant-object property access via
+  `MemberExpression`, interpolation-free `TemplateLiteral`, and TS
+  wrappers like `as const` / `satisfies`), so both forms behave
+  consistently. Fixes [#245](https://github.com/i18next/i18next-cli/issues/245).
+
 ## [1.56.2](https://github.com/i18next/i18next-cli/compare/v1.56.1...v1.56.2) - 2026-04-22
 
 - `lint` now detects hardcoded strings wrapped in JSX expression
