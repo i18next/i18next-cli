@@ -788,15 +788,24 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
 
     if (node.type === 'StringLiteral') {
       const parent = currentAncestors[currentAncestors.length - 2]
+      const grandparent = currentAncestors[currentAncestors.length - 3]
       // Determine whether this attribute is inside any ignored element (handles nested Trans etc.)
       const insideIgnored = isWithinIgnoredElement(currentAncestors)
 
-      if (parent?.type === 'JSXAttribute' && !insideIgnored) {
-        const rawAttrName = extractAttrName(parent.name)
+      // A StringLiteral can be an attribute value in two forms:
+      //   <tag attr="value" />       → parent is JSXAttribute
+      //   <tag attr={"value"} />     → parent is JSXExpressionContainer, grandparent is JSXAttribute
+      const attrNode = parent?.type === 'JSXAttribute'
+        ? parent
+        : (parent?.type === 'JSXExpressionContainer' && grandparent?.type === 'JSXAttribute' ? grandparent : null)
+
+      if (attrNode && !insideIgnored) {
+        const rawAttrName = extractAttrName(attrNode.name)
         const attrNameLower = rawAttrName ? String(rawAttrName).toLowerCase() : null
         // Check tag-level acceptance if acceptedTagsSet provided: attributes should only be considered
-        // when the nearest enclosing element is accepted.
-        const parentElement = currentAncestors.slice(0, -2).reverse().find(a => a && typeof a === 'object' && (a.type === 'JSXElement' || a.type === 'JSXOpeningElement' || a.type === 'JSXSelfClosingElement'))
+        // when the nearest enclosing element is accepted. Use the ancestors above the attrNode.
+        const attrNodeIdx = currentAncestors.indexOf(attrNode)
+        const parentElement = currentAncestors.slice(0, attrNodeIdx).reverse().find(a => a && typeof a === 'object' && (a.type === 'JSXElement' || a.type === 'JSXOpeningElement' || a.type === 'JSXSelfClosingElement'))
         if (acceptedTagsSet && parentElement) {
           const parentName = extractJSXName(parentElement)
           if (!parentName || !acceptedTagsSet.has(String(parentName).toLowerCase())) {
@@ -817,6 +826,22 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
           // Filter out: empty strings, URLs, numbers, and ellipsis
           if (text && text !== '...' && !isUrlOrPath(text) && isNaN(Number(text))) {
             nodesToLint.push(node) // Collect the node
+          }
+        }
+      }
+
+      // Hardcoded string inside a JSX expression container used as element child:
+      //   <tag>{"hello"}</tag>   → parent is JSXExpressionContainer, grandparent is JSXElement/JSXFragment
+      // Apply the same filters used for JSXText so this behaves like raw text.
+      const isJsxChildExpression = parent?.type === 'JSXExpressionContainer' &&
+        (grandparent?.type === 'JSXElement' || grandparent?.type === 'JSXFragment')
+      if (isJsxChildExpression && !insideIgnored) {
+        // Respect attribute-only mode: when acceptedAttributes is set without acceptedTags,
+        // only attribute strings are linted — skip JSX child text.
+        if (!(acceptedAttributesSet && !acceptedTagsSet)) {
+          const text = node.value.trim()
+          if (text && text.length > 1 && text !== '...' && !isUrlOrPath(text) && isNaN(Number(text)) && !text.startsWith('{{')) {
+            nodesToLint.push(node)
           }
         }
       }

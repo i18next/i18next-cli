@@ -1591,4 +1591,46 @@ describe('Linter (core logic)', () => {
     expect(result.files['/src/App.tsx']).toHaveLength(1)
     expect(result.files['/src/App.tsx'][0].text).toBe('This line is NOT ignored and should be flagged')
   })
+
+  // --- Hardcoded string in JSX expression container (issue #244) ---
+
+  it('should detect a hardcoded string inside a JSX expression container', async () => {
+    const sampleCode = [
+      'function MyComponent() {',
+      '  return <div>',
+      '        {',
+      '          "Is this skipped"',
+      '        }',
+      '      </div>;',
+      '}',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(mockConfig)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('Is this skipped')
+  })
+
+  it('should detect a hardcoded string in a braced JSX attribute', async () => {
+    const sampleCode = '<img alt={"A hardcoded alt text"} />'
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(mockConfig)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('A hardcoded alt text')
+  })
+
+  it('should respect ignoredTags for strings inside JSX expression containers', async () => {
+    const sampleCode = '<Trans>{"Key inside Trans"}</Trans>'
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(mockConfig)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+  })
 })

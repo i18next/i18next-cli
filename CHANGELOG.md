@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.2](https://github.com/i18next/i18next-cli/compare/v1.56.1...v1.56.2) - 2026-04-22
+
+- `lint` now detects hardcoded strings wrapped in JSX expression
+  containers. Previously, string literals like `<div>{"Hello"}</div>` or
+  braced attribute values like `<img alt={"Logo"} />` were silently
+  skipped because the walker only inspected `StringLiteral` nodes whose
+  direct parent was a `JSXAttribute`. The linter now also recognises
+  `StringLiteral` nodes whose parent is a `JSXExpressionContainer`,
+  treating them as JSX child text or attribute values depending on the
+  grandparent, and applying the same `acceptedTags` / `acceptedAttributes`
+  / `ignoredTags` / `i18next-instrument-ignore` rules as raw text.
+  Fixes [#244](https://github.com/i18next/i18next-cli/issues/244).
+
 ## [1.56.1](https://github.com/i18next/i18next-cli/compare/v1.56.0...v1.56.1) - 2026-04-22
 
 - `status` now detects keys reachable only through `$t(...)` nested
