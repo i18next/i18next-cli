@@ -2354,9 +2354,9 @@ describe('extractor: advanced Trans features', () => {
     expect(keys).not.toContain('disputeDrawer.explanations.ongoing_other')
   })
 
-  describe('bare identifier child warning (#246)', () => {
-    it('warns when <Trans> contains a bare {name} child (no i18nKey)', async () => {
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  describe('bare identifier child error (#246)', () => {
+    it('errors when <Trans> contains a bare {name} child (no i18nKey)', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       const sampleCode = `
         function MyComponent() {
           const cat = "meow";
@@ -2367,14 +2367,14 @@ describe('extractor: advanced Trans features', () => {
 
       await extract(mockConfig)
 
-      const messages = warnSpy.mock.calls.map(args => String(args[0]))
-      const match = messages.find(m => m.includes('<Trans> child {cat}') && m.includes("won't match at runtime"))
+      const messages = errorSpy.mock.calls.map(args => String(args[0]))
+      const match = messages.find(m => m.startsWith('Error: <Trans> child {cat}') && m.includes("won't match at runtime"))
       expect(match).toBeDefined()
-      warnSpy.mockRestore()
+      errorSpy.mockRestore()
     })
 
-    it('warns when <Trans i18nKey=...> contains a bare {name} child', async () => {
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    it('errors when <Trans i18nKey=...> contains a bare {name} child', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       const sampleCode = `
         function MyComponent() {
           const cat = "meow";
@@ -2385,14 +2385,14 @@ describe('extractor: advanced Trans features', () => {
 
       await extract(mockConfig)
 
-      const messages = warnSpy.mock.calls.map(args => String(args[0]))
-      const match = messages.find(m => m.includes('<Trans> child {cat}'))
+      const messages = errorSpy.mock.calls.map(args => String(args[0]))
+      const match = messages.find(m => m.startsWith('Error: <Trans> child {cat}'))
       expect(match).toBeDefined()
-      warnSpy.mockRestore()
+      errorSpy.mockRestore()
     })
 
-    it('does not warn for the correct {{name}} double-brace form', async () => {
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    it('does not error for the correct {{name}} double-brace form', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       const sampleCode = `
         function MyComponent() {
           const cat = "meow";
@@ -2403,10 +2403,10 @@ describe('extractor: advanced Trans features', () => {
 
       await extract(mockConfig)
 
-      const messages = warnSpy.mock.calls.map(args => String(args[0]))
+      const messages = errorSpy.mock.calls.map(args => String(args[0]))
       const match = messages.find(m => m.includes("won't match at runtime"))
       expect(match).toBeUndefined()
-      warnSpy.mockRestore()
+      errorSpy.mockRestore()
     })
   })
 })

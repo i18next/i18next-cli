@@ -41,16 +41,19 @@ export class JSXHandler {
   }
 
   /**
-   * Warns about `<Trans>Hello <b>{name}</b></Trans>` style children where a
-   * bare identifier is used as a React child. react-i18next inlines the value
-   * at runtime, producing a key like `"Hello <1>meow</1>"`, but the extractor
-   * serializes the identifier name as `"{{name}}"`. The two never match, and
-   * even when an `i18nKey` is set, the placeholder `{{name}}` cannot be
-   * interpolated without a `values={{ name }}` prop — it renders literally.
+   * Emits an error for `<Trans>Hello <b>{name}</b></Trans>` style children
+   * where a bare identifier is used as a React child. react-i18next inlines
+   * the value at runtime, producing a key like `"Hello <1>meow</1>"`, but the
+   * extractor serializes the identifier name as `"{{name}}"`. The two never
+   * match, and even when an `i18nKey` is set, the placeholder `{{name}}`
+   * cannot be interpolated without a `values={{ name }}` prop — it renders
+   * literally.
    *
-   * We keep the existing extraction behaviour so projects that already rely on
-   * the `{{name}}` output (with a matching `values` prop) aren't broken, and
-   * instead surface a diagnostic pointing users at the runtime mismatch.
+   * We keep the existing extraction behaviour so projects that already rely
+   * on the `{{name}}` output (with a matching `values` prop) aren't broken,
+   * and instead surface a diagnostic pointing users at the runtime mismatch.
+   * Emitted via `logger.error` with an `Error:` prefix so build tooling that
+   * watches for errors (see #200) can treat this as fatal if desired.
    */
   private warnOnBareIdentifierTransChildren (node: JSXElement, elementName: string): void {
     const bareIdentifiers: Array<{ name: string; span: { start: number } }> = []
@@ -71,16 +74,16 @@ export class JSXHandler {
     visit(node.children)
     if (bareIdentifiers.length === 0) return
 
-    const warn =
-      (this.pluginContext as any)?.logger?.warn?.bind((this.pluginContext as any).logger) ??
-      console.warn.bind(console)
+    const emit =
+      (this.pluginContext as any)?.logger?.error?.bind((this.pluginContext as any).logger) ??
+      console.error.bind(console)
 
     for (const { name, span } of bareIdentifiers) {
       const loc = lineColumnFromOffset(this.getCurrentCode(), span.start)
       const where = loc
         ? `${this.getCurrentFile()}:${loc.line}:${loc.column}`
         : this.getCurrentFile()
-      warn(`<${elementName}> child {${name}} at ${where} won't match at runtime — react-i18next inlines the value (e.g. "<1>meow</1>"), but extraction produces "<1>{{${name}}}</1>". Use {{${name}}} (double braces) with values={{ ${name} }} for interpolation, or inline the value if it isn't meant to be translated.`)
+      emit(`Error: <${elementName}> child {${name}} at ${where} won't match at runtime — react-i18next inlines the value (e.g. "<1>meow</1>"), but extraction produces "<1>{{${name}}}</1>". Use {{${name}}} (double braces) with values={{ ${name} }} for interpolation, or inline the value if it isn't meant to be translated.`)
     }
   }
 

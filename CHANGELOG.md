@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.4](https://github.com/i18next/i18next-cli/compare/v1.56.3...v1.56.4) - 2026-04-22
+
+- The `<Trans>` bare-identifier diagnostic added in 1.56.3 now uses
+  `logger.error` and is prefixed with `Error:`, matching the convention
+  established in
+  [#200](https://github.com/i18next/i18next-cli/issues/200) so build
+  tooling that watches for errors (or grep for `Error:`) can treat it
+  as fatal. Behaviour and message are otherwise unchanged.
+  Follow-up to [#246](https://github.com/i18next/i18next-cli/issues/246).
+
 ## [1.56.3](https://github.com/i18next/i18next-cli/compare/v1.56.2...v1.56.3) - 2026-04-22
 
 - `extract` now resolves constant identifiers passed as the namespace or
