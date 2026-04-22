@@ -83,7 +83,7 @@ export class JSXHandler {
       const where = loc
         ? `${this.getCurrentFile()}:${loc.line}:${loc.column}`
         : this.getCurrentFile()
-      emit(`Error: <${elementName}> child {${name}} at ${where} won't match at runtime — react-i18next inlines the value (e.g. "<1>meow</1>"), but extraction produces "<1>{{${name}}}</1>". Use {{${name}}} (double braces) with values={{ ${name} }} for interpolation, or inline the value if it isn't meant to be translated.`)
+      emit(`Error: <${elementName}> child {${name}} at ${where} won't match at runtime — react-i18next inlines the value (e.g. "<1>meow</1>"), but extraction produces "<1>{{${name}}}</1>". Use {{${name}}} (double braces) with values={{ ${name} }} for interpolation.`)
     }
   }
 
