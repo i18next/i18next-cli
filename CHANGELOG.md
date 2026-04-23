@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.7](https://github.com/i18next/i18next-cli/compare/v1.56.6...v1.56.7) - 2026-04-23
+
+- `extract` no longer mis-extracts arbitrary method calls on a
+  scoped `i18n` (or other `useTranslation`-derived) object as
+  translation keys. Previously, code like
+  `const { i18n } = useTranslation(); i18n.language.substring(0, 2)` or
+  `i18n.languages.join('|')` leaked bogus entries such as `"0": "0"`
+  and `"|": "|"` into the output. The scope-propagation fallback
+  introduced in [#239](https://github.com/i18next/i18next-cli/pull/239)
+  ran before the configured `functions` pattern check, so any call
+  whose callee had an in-scope prefix was promoted to a translation
+  call, bypassing the `['t', '*.t']` match entirely. The fallback
+  now runs after the pattern check: `*.t` consistently means "member
+  expression whose final property is literally `t`", and scope
+  (namespace/keyPrefix) is only propagated into calls that already
+  matched a configured pattern. The #239 behaviour is preserved —
+  `emailError.t(...)` with `const emailError = useTranslateKeyState('auth')`
+  still picks up its namespace, including through deeper chains like
+  `wrapper.i18n.t(...)`. Fixes
+  [#249](https://github.com/i18next/i18next-cli/pull/249).
+
 ## [1.56.6](https://github.com/i18next/i18next-cli/compare/v1.56.5...v1.56.6) - 2026-04-23
 
 - `extract --sync-all --trust-derived` no longer resets locale-specific
