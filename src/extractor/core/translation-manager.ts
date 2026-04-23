@@ -277,6 +277,16 @@ function buildNewTranslationsForNs (
   cardinalCategories.forEach(cat => targetLanguagePluralCategories.add(cat))
   ordinalRules.resolvedOptions().pluralCategories.forEach(cat => targetLanguagePluralCategories.add(`ordinal_${cat}`))
 
+  // Plural categories of the primary language — used to recognise locale-specific
+  // plural variants (e.g. French `_many` when primary is English) so we don't
+  // treat their absence from the primary file as a "divergence" during --sync-all.
+  const primaryCardinalCategoriesSet = new Set<string>(
+    safePluralRules(primaryLanguage, { type: 'cardinal' }).resolvedOptions().pluralCategories
+  )
+  const primaryOrdinalCategoriesSet = new Set<string>(
+    safePluralRules(primaryLanguage, { type: 'ordinal' }).resolvedOptions().pluralCategories
+  )
+
   // When allPluralForms is enabled, compute the union of cardinal categories across all configured locales.
   // This ensures every locale gets the same set of plural keys — but only the forms actually needed by at least one locale.
   const allLocalesCardinalCategories: string[] | null = config.extract.allPluralForms
@@ -871,9 +881,25 @@ function buildNewTranslationsForNs (
       } else {
         // Non-primary locale behavior
         const isVariantKey = key.includes(pluralSeparator) || key.includes(contextSeparator)
+        // A plural variant whose category exists in the current locale but not in the
+        // primary language (e.g. French `_many` vs English `one`/`other`) will always be
+        // absent from the primary file by CLDR design. Treat that absence as expected —
+        // not as the primary "diverging" from the default — so --sync-all preserves the
+        // locale-specific translation instead of clearing it on every run. (issue #248)
+        const isLocaleSpecificPluralVariant = (() => {
+          if (!hasCount) return false
+          const parts = String(key).split(pluralSeparator)
+          if (parts.length < 2) return false
+          const lastPart = parts[parts.length - 1]
+          if (isOrdinal && parts.length >= 3 && parts[parts.length - 2] === 'ordinal') {
+            return !primaryOrdinalCategoriesSet.has(lastPart)
+          }
+          return !primaryCardinalCategoriesSet.has(lastPart)
+        })()
         const primaryDivergedFromDefault = Boolean(
           defaultValue &&
           !primaryShouldPreserveObject &&
+          !isLocaleSpecificPluralVariant &&
           (
             primaryExistingValue === undefined ||
             primaryIsStaleObject ||

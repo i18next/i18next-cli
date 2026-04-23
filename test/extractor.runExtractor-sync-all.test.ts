@@ -218,4 +218,55 @@ describe('extractor: --sync-all', () => {
     expect(enContent).toEqual({ 'my new text': 'my new text' })
     expect(deContent).toEqual({ 'my new text': 'Mein neuer Text' })
   })
+
+  it('should preserve locale-specific plural forms (e.g. French _many) when primary has no such CLDR category (issue #248)', async () => {
+    const appPath = '/src/App.tsx'
+    const enPath = resolve(process.cwd(), 'locales/en-GB/translation.json')
+    const frPath = resolve(process.cwd(), 'locales/fr/translation.json')
+
+    vol.fromJSON({
+      [appPath]: `
+        import { useTranslation } from 'react-i18next'
+        export default function App({ count }: { count: number }) {
+          const { t } = useTranslation()
+          return <div>{t('myKey', { count })}</div>
+        }
+      `,
+      // Primary already stores the derived default the previous run would have written.
+      [enPath]: JSON.stringify({ myKey_one: 'myKey', myKey_other: 'myKey' }, null, 2),
+      // Translator has filled in all French plural forms, including the locale-specific `_many`
+      // (which is NOT part of English's CLDR categories).
+      [frPath]: JSON.stringify({
+        myKey_one: 'Un élément',
+        myKey_many: "Beaucoup d'éléments",
+        myKey_other: 'éléments',
+      }, null, 2),
+    })
+
+    vi.mocked(glob).mockResolvedValue([appPath])
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      locales: ['en-GB', 'fr'],
+      extract: {
+        ...mockConfig.extract,
+        primaryLanguage: 'en-GB',
+      },
+    }
+
+    // With --sync-all --trust-derived the extractor must not treat the French-only
+    // `_many` variant as primary divergence and must preserve the translator's work.
+    await runExtractor(config, {
+      syncPrimaryWithDefaults: true,
+      syncAll: true,
+      trustDerivedDefaults: true,
+    })
+
+    const frContent = JSON.parse(vol.readFileSync(frPath, 'utf8') as string)
+    expect(frContent).toEqual({
+      myKey_one: 'Un élément',
+      myKey_many: "Beaucoup d'éléments",
+      myKey_other: 'éléments',
+    })
+  })
 })

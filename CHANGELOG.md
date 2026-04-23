@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.6](https://github.com/i18next/i18next-cli/compare/v1.56.5...v1.56.6) - 2026-04-23
+
+- `extract --sync-all --trust-derived` no longer resets locale-specific
+  plural forms on every run. When a secondary language has a CLDR
+  cardinal/ordinal category that the primary language does not (e.g.
+  French `_many` vs English `one`/`other`), the primary file will never
+  contain that key — but the divergence check was reading that
+  expected absence as "primary diverged from the default" and clearing
+  the translator's value on each run. The check now recognises
+  locale-specific plural variants and preserves their existing
+  secondary translations. Fixes
+  [#248](https://github.com/i18next/i18next-cli/issues/248).
+
 ## [1.56.5](https://github.com/i18next/i18next-cli/compare/v1.56.4...v1.56.5) - 2026-04-22
 
 - `extract` now walks both branches of branching selector bodies, so
