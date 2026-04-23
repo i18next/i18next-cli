@@ -86,22 +86,6 @@ export class CallExpressionHandler {
     // The scope lookup will only work for simple identifiers, which is okay for this fix.
     let scopeInfo = getScopeInfo(functionName)
 
-    // For member expressions like `emailError.t`, also try the object part(s) as a
-    // fallback. This lets custom hooks that return an object with a `t` method
-    // (e.g. `const emailError = useTranslateKeyState('auth')`) propagate their
-    // namespace/keyPrefix to the inner `t` call.
-    if (!scopeInfo && functionName.includes('.')) {
-      const parts = functionName.split('.')
-      for (let i = parts.length - 1; i > 0; i--) {
-        const candidate = parts.slice(0, i).join('.')
-        const candidateScope = getScopeInfo(candidate)
-        if (candidateScope) {
-          scopeInfo = candidateScope
-          break
-        }
-      }
-    }
-
     const configuredFunctions = this.config.extract.functions || ['t', '*.t']
     let isFunctionToParse = scopeInfo !== undefined // A scoped variable (from useTranslation, etc.) is always parsed.
     if (!isFunctionToParse) {
@@ -122,6 +106,24 @@ export class CallExpressionHandler {
       }
     }
     if (!isFunctionToParse || node.arguments.length === 0) return
+
+    // For member expressions like `emailError.t`, also try the object part(s) as a
+    // fallback. This lets custom hooks that return an object with a `t` method
+    // (e.g. `const emailError = useTranslateKeyState('auth')`) propagate their
+    // namespace/keyPrefix to the inner `t` call. This runs AFTER the pattern
+    // check so an in-scope prefix cannot by itself promote an arbitrary method
+    // call (e.g. `i18n.language.substring(...)`) into a translation call.
+    if (!scopeInfo && functionName.includes('.')) {
+      const parts = functionName.split('.')
+      for (let i = parts.length - 1; i > 0; i--) {
+        const candidate = parts.slice(0, i).join('.')
+        const candidateScope = getScopeInfo(candidate)
+        if (candidateScope) {
+          scopeInfo = candidateScope
+          break
+        }
+      }
+    }
 
     const { keysToProcess, isSelectorAPI } = this.handleCallExpressionArgument(node, 0)
 

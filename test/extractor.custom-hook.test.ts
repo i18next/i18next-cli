@@ -191,6 +191,73 @@ describe('extractor: custom hook keyPrefix/namespace extraction', () => {
     })
   })
 
+  it('propagates namespace through a deeper member-expression chain (e.g. `wrapper.i18n.t(...)`)', async () => {
+    // When a custom hook returns a nested shape like `{ i18n: { t } }`, the
+    // scope attached to the outer variable must still propagate to the inner
+    // `t` call even though neither the full callee nor the immediate object
+    // is the scoped variable directly.
+    const sampleCode = `
+      const wrapper = useTranslateKeyState('auth')
+      wrapper.i18n.t('loginForm.input.email.required', 'Email is required')
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        functions: ['t', '*.t'],
+        useTranslationNames: [
+          'useTranslation',
+          { name: 'useTranslateKeyState', nsArg: 0, keyPrefixArg: -1 },
+        ],
+      },
+    }
+
+    const results = await extract(config)
+    const authFile = results.find(r => pathEndsWith(r.path, '/locales/en/auth.json'))
+
+    expect(authFile).toBeDefined()
+    expect(authFile!.newTranslations).toEqual({
+      loginForm: {
+        input: {
+          email: {
+            required: 'Email is required',
+          },
+        },
+      },
+    })
+  })
+
+  it('does not treat arbitrary method calls on a scoped i18n object as translation calls', async () => {
+    // Only callees that match one of the configured `functions` patterns
+    // (here: `t` and `*.t`) are translation calls. A method call such as
+    // `i18n.language.substring(...)` or `i18n.languages.join(...)` on a
+    // variable that happens to be in scope (via `useTranslation()`
+    // destructuring) must not be extracted — its first literal argument is
+    // not a translation key.
+    const sampleCode = `
+      const { i18n } = useTranslation()
+      const lang = i18n.language.substring(0, 2)
+      const key = i18n.languages.join('|')
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        functions: ['t', '*.t'],
+      },
+    }
+
+    const results = await extract(config)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    // No t()/*.t() calls are present, so nothing should be extracted.
+    expect(translationFile?.newTranslations ?? {}).toEqual({})
+  })
+
   it('does not extract when keyPrefix is a template literal with expressions (current limitation)', async () => {
     const sampleCode = `
       const id = 'footer'
