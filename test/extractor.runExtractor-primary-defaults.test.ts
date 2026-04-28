@@ -1289,4 +1289,39 @@ describe('extractor: runExtractor (sync primary language defaults)', () => {
       },
     })
   })
+
+  it('should sync primary defaults for <Trans i18nKey="..."> when key contains the plural separator but is not a plural variant (regression #250)', async () => {
+    vol.fromJSON({
+      '/src/App.tsx': `
+        import { Trans } from 'react-i18next'
+        export default function App() {
+          return <Trans i18nKey="abc_123">my new value</Trans>
+        }
+      `,
+    })
+
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+    // Pre-existing primary value differs from the new default in code
+    vol.fromJSON({
+      [enPath]: JSON.stringify({ abc_123: 'hello world' }, null, 2),
+      [dePath]: JSON.stringify({ abc_123: 'Hallo Welt' }, null, 2),
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['/src/App.tsx'])
+
+    const result = await runExtractor(mockConfig, { syncPrimaryWithDefaults: true })
+    expect(result.anyFileUpdated).toBe(true)
+
+    // Primary should adopt the new default — the underscore in `abc_123` must
+    // not be misinterpreted as a plural/context variant suffix.
+    const enContent = JSON.parse(vol.readFileSync(enPath, 'utf8') as string)
+    expect(enContent).toEqual({ abc_123: 'my new value' })
+
+    // Secondary locales should still preserve their existing translations.
+    const deContent = JSON.parse(vol.readFileSync(dePath, 'utf8') as string)
+    expect(deContent).toEqual({ abc_123: 'Hallo Welt' })
+  })
 })

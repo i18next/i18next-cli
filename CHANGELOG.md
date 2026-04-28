@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.8](https://github.com/i18next/i18next-cli/compare/v1.56.7...v1.56.8) - 2026-04-29
+
+- `extract --sync-primary` now updates `<Trans>` defaults when the key
+  contains an underscore but is not actually a plural or context
+  variant. Previously, the "is this a variant key?" check used a loose
+  `key.includes(pluralSeparator) || key.includes(contextSeparator)`
+  heuristic, which (with the default `_` separator) misclassified
+  ordinary keys like `abc_123` as variants and preserved the existing
+  translation instead of adopting the new default from code. The check
+  now treats a key as a synthesized plural variant only when the
+  extractor flagged it with `hasCount` AND its suffix matches a CLDR
+  plural form; context variants are unaffected because they were
+  already handled by the derived-default detection. Fixes
+  [#250](https://github.com/i18next/i18next-cli/issues/250).
+
 ## [1.56.7](https://github.com/i18next/i18next-cli/compare/v1.56.6...v1.56.7) - 2026-04-23
 
 - `extract` no longer mis-extracts arbitrary method calls on a

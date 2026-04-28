@@ -860,11 +860,21 @@ function buildNewTranslationsForNs (
         valueToSet = resolveDefaultValue(emptyDefaultValue, key, namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
       }
     } else {
+      // A key is a synthesized plural variant only when the extractor flagged it
+      // with `hasCount` AND its suffix matches a CLDR plural form. Relying purely
+      // on the presence of the separator misclassifies regular keys that happen to
+      // contain `_` (e.g. `abc_123`) — see issue #250. Context variants are caught
+      // by `isDerivedDefault` below (their synthesized default mirrors the base key).
+      const isVariantKey = (() => {
+        if (!hasCount) return false
+        const parts = key.split(pluralSeparator)
+        if (parts.length < 2) return false
+        return pluralForms.includes(parts[parts.length - 1])
+      })()
       // Existing value exists - decide whether to preserve, sync primary, or clear other locales when requested
       if (locale === primaryLanguage && syncPrimaryWithDefaults) {
-        // If this key looks like a plural/context variant and the default
-        // wasn't explicitly provided in source code, preserve the existing value.
-        const isVariantKey = key.includes(pluralSeparator) || key.includes(contextSeparator)
+        // If this key is a plural/context variant and the default wasn't explicitly
+        // provided in source code, preserve the existing value.
         if (isVariantKey && !explicitDefault) {
           valueToSet = existingValue
         } else if (defaultValue && (!isDerivedDefault || trustDerivedDefaults)) {
@@ -880,7 +890,6 @@ function buildNewTranslationsForNs (
         }
       } else {
         // Non-primary locale behavior
-        const isVariantKey = key.includes(pluralSeparator) || key.includes(contextSeparator)
         // A plural variant whose category exists in the current locale but not in the
         // primary language (e.g. French `_many` vs English `one`/`other`) will always be
         // absent from the primary file by CLDR design. Treat that absence as expected —
