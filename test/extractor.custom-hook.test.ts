@@ -258,6 +258,96 @@ describe('extractor: custom hook keyPrefix/namespace extraction', () => {
     expect(translationFile?.newTranslations ?? {}).toEqual({})
   })
 
+  it('propagates namespace through a class field destructured in a method (issue #251)', async () => {
+    const sampleCode = `
+      class Context {
+        #translationContext = getTranslationContext('settings');
+
+        getFunction = (search) => {
+          const { t } = this.#translationContext;
+          return { variable: t('hello', 'Hello') }
+        }
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        useTranslationNames: ['getTranslationContext'],
+      },
+    }
+
+    const results = await extract(config)
+    const settingsFile = results.find(r => pathEndsWith(r.path, '/locales/en/settings.json'))
+
+    expect(settingsFile).toBeDefined()
+    expect(settingsFile!.newTranslations).toEqual({
+      hello: 'Hello',
+    })
+  })
+
+  it('propagates namespace through a class field invoked in a method (issue #251)', async () => {
+    const sampleCode = `
+      class Context {
+        #translationContext = getTranslationContext('settings');
+
+        getFunction = (search) => {
+          const { t } = this.#translationContext();
+          return { variable: t('hello', 'Hello') }
+        }
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        useTranslationNames: ['getTranslationContext'],
+      },
+    }
+
+    const results = await extract(config)
+    const settingsFile = results.find(r => pathEndsWith(r.path, '/locales/en/settings.json'))
+
+    expect(settingsFile).toBeDefined()
+    expect(settingsFile!.newTranslations).toEqual({
+      hello: 'Hello',
+    })
+  })
+
+  it('propagates namespace through a public class field destructured in a method (issue #251)', async () => {
+    const sampleCode = `
+      class Context {
+        translationContext = getTranslationContext('settings');
+
+        getFunction = (search) => {
+          const { t } = this.translationContext;
+          return { variable: t('hello', 'Hello') }
+        }
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        useTranslationNames: ['getTranslationContext'],
+      },
+    }
+
+    const results = await extract(config)
+    const settingsFile = results.find(r => pathEndsWith(r.path, '/locales/en/settings.json'))
+
+    expect(settingsFile).toBeDefined()
+    expect(settingsFile!.newTranslations).toEqual({
+      hello: 'Hello',
+    })
+  })
+
   it('does not extract when keyPrefix is a template literal with expressions (current limitation)', async () => {
     const sampleCode = `
       const id = 'footer'

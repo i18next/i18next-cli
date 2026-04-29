@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.9](https://github.com/i18next/i18next-cli/compare/v1.56.8...v1.56.9) - 2026-04-29
+
+- `extract` now propagates namespace/keyPrefix from a
+  `useTranslationNames`-listed call when its result is stored on a
+  class field and later destructured inside a method, e.g.
+  `#ctx = getTranslationContext('settings')` followed by
+  `const { t } = this.#ctx` (or `this.#ctx()`) inside a class method.
+  Previously, only top-level `VariableDeclarator` initializers were
+  tracked, so `t('hello')` reached through `this.#ctx` was extracted
+  without its namespace. The scope manager now keeps a per-class
+  field registry (public and private fields, including the `()`
+  invocation form) and resolves `this.<field>` references against
+  it during destructuring. The non-class form
+  `const { t } = getTranslationContext(...)` is unchanged. Fixes
+  [#251](https://github.com/i18next/i18next-cli/issues/251).
+
 ## [1.56.8](https://github.com/i18next/i18next-cli/compare/v1.56.7...v1.56.8) - 2026-04-29
 
 - `extract --sync-primary` now updates `<Trans>` defaults when the key

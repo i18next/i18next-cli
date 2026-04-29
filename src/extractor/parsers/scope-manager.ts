@@ -16,6 +16,12 @@ export class ScopeManager {
   private config: Omit<I18nextToolkitConfig, 'plugins'>
   private scope: Map<string, { defaultNs?: string; keyPrefix?: string }> = new Map()
 
+  // Stack of class scopes; each entry maps a class field name (e.g. `myField`
+  // or `#privateField`) to the ScopeInfo derived from its initializer. Used to
+  // resolve `const { t } = this.field` and `const { t } = this.field()` patterns
+  // inside class methods.
+  private thisFieldStack: Array<Map<string, ScopeInfo>> = []
+
   // Track simple local constants with string literal values to resolve identifier args
   private simpleConstants: Map<string, string> = new Map()
 
@@ -81,6 +87,53 @@ export class ScopeManager {
     this.scope = new Map()
     this.simpleConstants.clear()
     this.simpleConstantObjects.clear()
+    this.thisFieldStack = []
+  }
+
+  /**
+   * Pushes a new class scope used for tracking class field → ScopeInfo
+   * mappings. Should be called when entering a ClassDeclaration or
+   * ClassExpression.
+   */
+  enterClassScope (): void {
+    this.thisFieldStack.push(new Map())
+  }
+
+  /**
+   * Pops the current class scope. Should be called when leaving a
+   * ClassDeclaration or ClassExpression.
+   */
+  exitClassScope (): void {
+    this.thisFieldStack.pop()
+  }
+
+  /**
+   * Records a class field's ScopeInfo so that later `this.<field>` or
+   * `this.<field>()` accesses inside the class can inherit the namespace
+   * and keyPrefix from its initializer.
+   *
+   * @param fieldName - Field name (private fields are prefixed with `#`)
+   * @param info - Scope information derived from the field's initializer
+   */
+  setThisField (fieldName: string, info: ScopeInfo): void {
+    if (this.thisFieldStack.length > 0) {
+      this.thisFieldStack[this.thisFieldStack.length - 1].set(fieldName, info)
+    }
+  }
+
+  /**
+   * Looks up a class field's ScopeInfo from the innermost class scope outward.
+   *
+   * @param fieldName - Field name (private fields are prefixed with `#`)
+   * @returns Scope information if found, undefined otherwise
+   */
+  getThisField (fieldName: string): ScopeInfo | undefined {
+    for (let i = this.thisFieldStack.length - 1; i >= 0; i--) {
+      if (this.thisFieldStack[i].has(fieldName)) {
+        return this.thisFieldStack[i].get(fieldName)
+      }
+    }
+    return undefined
   }
 
   /**
@@ -247,6 +300,18 @@ export class ScopeManager {
         }
       }
       // continue processing; still may be a useTranslation/getFixedT call below
+    }
+
+    // Handle: const { t } = this.#field  OR  const { t } = this.#field()
+    // Resolve the source `this.<field>` to its previously-registered ScopeInfo
+    // and propagate it onto the destructured variables.
+    const thisFieldName = ScopeManager.extractThisFieldName(init)
+    if (thisFieldName !== undefined) {
+      const sourceScope = this.getThisField(thisFieldName)
+      if (sourceScope) {
+        this.attachScopeToDestructuredVars(node, sourceScope)
+        return
+      }
     }
 
     // Determine the actual call expression, looking inside AwaitExpressions.
@@ -585,5 +650,163 @@ export class ScopeManager {
     if (finalNs || finalKeyPrefix) {
       this.setVarInScope(targetVarName, { defaultNs: finalNs, keyPrefix: finalKeyPrefix })
     }
+  }
+
+  /**
+   * Returns the field name being referenced when an expression takes the form
+   * `this.<field>` or `this.<field>()`. Strips the call wrapper if present and
+   * prefixes private fields with `#`.
+   *
+   * Returns undefined if the expression is not such an access.
+   */
+  private static extractThisFieldName (init: Expression): string | undefined {
+    let memberExpr: MemberExpression | undefined
+    if (init.type === 'MemberExpression') {
+      memberExpr = init
+    } else if (init.type === 'CallExpression' && init.callee.type === 'MemberExpression') {
+      memberExpr = init.callee
+    }
+    if (!memberExpr) return undefined
+    if (memberExpr.object.type !== 'ThisExpression') return undefined
+
+    const prop: any = memberExpr.property
+    if (prop?.type === 'Identifier') return prop.value
+    if (prop?.type === 'PrivateName') return '#' + prop.value
+    return undefined
+  }
+
+  /**
+   * Attaches the given ScopeInfo to all destructured variables of a variable
+   * declarator (`const { t } = ...`, `const [t] = ...`, or `const t = ...`).
+   */
+  private attachScopeToDestructuredVars (node: VariableDeclarator, info: ScopeInfo): void {
+    if (node.id.type === 'ObjectPattern') {
+      for (const prop of node.id.properties) {
+        if (prop.type === 'AssignmentPatternProperty' && prop.key.type === 'Identifier') {
+          this.setVarInScope(prop.key.value, info)
+        }
+        if (prop.type === 'KeyValuePatternProperty' && prop.value.type === 'Identifier') {
+          this.setVarInScope(prop.value.value, info)
+          // Also store under the pattern key name so legacy comment-scope
+          // lookups by the original property name continue to work.
+          if (prop.key.type === 'Identifier' && (prop.key.value === 't' || prop.key.value === 'getFixedT')) {
+            this.scope.set(prop.value.value, { defaultNs: info.defaultNs, keyPrefix: info.keyPrefix })
+          }
+        }
+      }
+    } else if (node.id.type === 'Identifier') {
+      this.setVarInScope(node.id.value, info)
+    } else if (node.id.type === 'ArrayPattern') {
+      const firstElement = node.id.elements[0]
+      if (firstElement?.type === 'Identifier') {
+        this.setVarInScope(firstElement.value, info)
+      }
+    }
+  }
+
+  /**
+   * Registers a class field's initializer with the current class scope so that
+   * later `const { t } = this.<field>` or `const { t } = this.<field>()` calls
+   * inside the class body inherit the namespace and keyPrefix from the field
+   * initializer.
+   *
+   * Recognizes the same useTranslation-like patterns supported on regular
+   * variable declarations (configured via `useTranslationNames`).
+   *
+   * @param fieldName - Field name (private fields are prefixed with `#`)
+   * @param value - The field initializer expression
+   */
+  registerClassField (fieldName: string, value: Expression | null | undefined): void {
+    if (!value) return
+    if (this.thisFieldStack.length === 0) return
+
+    const callExpr =
+      value.type === 'AwaitExpression' && value.argument.type === 'CallExpression'
+        ? value.argument
+        : value.type === 'CallExpression'
+          ? value
+          : null
+    if (!callExpr) return
+
+    const callee = callExpr.callee
+    if (callee.type !== 'Identifier') return
+
+    const hookConfig = this.getUseTranslationConfig(callee.value)
+    if (!hookConfig) return
+
+    const info = this.computeScopeInfoFromHookCall(callExpr, hookConfig)
+    if (info.defaultNs || info.keyPrefix) {
+      this.setThisField(fieldName, info)
+    }
+  }
+
+  /**
+   * Computes ScopeInfo (defaultNs, keyPrefix) for a useTranslation-style call
+   * given a hook configuration that describes argument positions. Mirrors the
+   * extraction performed by handleUseTranslationDeclarator without attaching
+   * the result to any variable.
+   */
+  private computeScopeInfoFromHookCall (callExpr: CallExpression, hookConfig: UseTranslationHookConfig): ScopeInfo {
+    const nsArgIndex = hookConfig.nsArg ?? 0
+    const kpArgIndex = hookConfig.keyPrefixArg ?? 1
+
+    let defaultNs: string | undefined
+    let keyPrefix: string | undefined
+
+    const first = callExpr.arguments?.[0]?.expression
+    const second = callExpr.arguments?.[1]?.expression
+    const third = callExpr.arguments?.[2]?.expression
+    const looksLikeLanguage = (s: string) => /^[a-z]{2,3}([-_][A-Za-z0-9-]+)?$/i.test(s)
+    const isBuiltInLngNsForm = hookConfig.name === 'useTranslation' &&
+      first?.type === 'StringLiteral' &&
+      second?.type === 'StringLiteral' &&
+      looksLikeLanguage(first.value)
+
+    let kpArg
+    if (isBuiltInLngNsForm) {
+      defaultNs = second.value
+      kpArg = third
+    } else {
+      if (nsArgIndex !== -1) {
+        const nsNode = callExpr.arguments?.[nsArgIndex]?.expression
+        if (nsNode?.type === 'StringLiteral') {
+          defaultNs = nsNode.value
+        } else if (nsNode?.type === 'Identifier') {
+          defaultNs = this.resolveSimpleStringIdentifier(nsNode.value)
+        } else if (nsNode?.type === 'MemberExpression') {
+          defaultNs = this.resolveSimpleMemberExpression(nsNode)
+        } else if (nsNode?.type === 'ArrayExpression') {
+          const firstEl = nsNode.elements[0]?.expression
+          if (firstEl?.type === 'StringLiteral') {
+            defaultNs = firstEl.value
+          } else if (firstEl?.type === 'Identifier') {
+            defaultNs = this.resolveSimpleStringIdentifier(firstEl.value)
+          }
+        }
+      }
+      kpArg = kpArgIndex === -1 ? undefined : callExpr.arguments?.[kpArgIndex]?.expression
+    }
+
+    if (kpArg?.type === 'ObjectExpression') {
+      const kp = getObjectPropValue(
+        kpArg,
+        'keyPrefix',
+        this.resolveSimpleStringIdentifier.bind(this)
+      )
+      if (typeof kp === 'string') {
+        keyPrefix = kp
+      }
+    } else if (kpArg?.type === 'StringLiteral') {
+      keyPrefix = kpArg.value
+    } else if (kpArg?.type === 'Identifier') {
+      keyPrefix = this.resolveSimpleStringIdentifier(kpArg.value)
+    } else if (kpArg?.type === 'TemplateLiteral') {
+      const tpl = kpArg as TemplateLiteral
+      if ((tpl.expressions || []).length === 0) {
+        keyPrefix = tpl.quasis?.[0]?.cooked ?? undefined
+      }
+    }
+
+    return { defaultNs, keyPrefix }
   }
 }

@@ -191,7 +191,39 @@ export class ASTVisitors {
     if (!node) return
 
     let isNewScope = false
+    let isNewClassScope = false
     let paramTemporaries: string[] | undefined
+
+    // ENTER CLASS SCOPE for class declarations / expressions and pre-register
+    // class field initializers so that later `this.<field>` references inside
+    // method bodies can inherit the namespace/keyPrefix from the field.
+    if (
+      node.type === 'ClassDeclaration' ||
+      node.type === 'ClassExpression' ||
+      node.type === 'ClassDecl' ||
+      node.type === 'ClassExpr'
+    ) {
+      this.scopeManager.enterClassScope()
+      isNewClassScope = true
+
+      const classBody: any[] = Array.isArray(node.body) ? node.body : (node.body?.body ?? [])
+      for (const member of classBody) {
+        if (!member || typeof member !== 'object') continue
+        if (
+          member.type === 'ClassProperty' ||
+          member.type === 'PrivateProperty' ||
+          member.type === 'PropertyDefinition' ||
+          member.type === 'ClassPrivateProperty'
+        ) {
+          let fieldName: string | undefined
+          const key = member.key
+          if (key?.type === 'Identifier') fieldName = key.value ?? key.name
+          else if (key?.type === 'PrivateName') fieldName = '#' + (key.value ?? key.name ?? key.id?.value ?? key.id?.name)
+          if (!fieldName) continue
+          this.scopeManager.registerClassField(fieldName, member.value)
+        }
+      }
+    }
     // ENTER SCOPE for functions
     // Accept many SWC/TS AST variants for function-like nodes (declarations, expressions, arrow functions)
     if (
@@ -556,6 +588,11 @@ export class ASTVisitors {
         }
       }
       this.scopeManager.exitScope()
+    }
+
+    // LEAVE CLASS SCOPE for classes
+    if (isNewClassScope) {
+      this.scopeManager.exitClassScope()
     }
   }
 
