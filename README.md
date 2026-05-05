@@ -44,7 +44,7 @@ A unified, high-performance i18next CLI toolchain, powered by SWC.
 - **Translation Status**: Get a high-level overview or a detailed, key-by-key report of your project's translation completeness.
 - **Plugin System**: Extensible architecture for custom extraction patterns and file types (e.g., HTML, Handlebars).
 - **Legacy Migration**: Automatic migration from `i18next-parser` configurations.
-- **Cloud Integration**: Seamless integration with the [Locize](https://locize.com) translation management platform.
+- **Cloud Integration**: Seamless integration with the [Locize](https://www.locize.com?utm_source=i18next_cli_readme&utm_medium=github&utm_campaign=readme) translation management platform.
 
 ## Installation
 
@@ -253,7 +253,7 @@ npx i18next-cli lint
 
 ### `instrument`
 
-Scans your source code for hardcoded user-facing strings and instruments them with i18next translation calls. This is useful for adding i18next instrumentation to an existing codebase that wasn't built with internationalization in mind. You can see this in action in [this video](https://youtu.be/aWZnZXwGg34) or in [this blog post](https://www.locize.com/blog/i18next-cli-instrument).
+Scans your source code for hardcoded user-facing strings and instruments them with i18next translation calls. This is useful for adding i18next instrumentation to an existing codebase that wasn't built with internationalization in mind. You can see this in action in [this video](https://youtu.be/aWZnZXwGg34) or in [this blog post](https://www.locize.com/blog/i18next-cli-instrument?utm_source=i18next_cli_readme&utm_medium=github&utm_campaign=readme).
 
 > **⚠️ First-Step Tool:** The `instrument` command uses heuristic-based detection and is designed as a **first pass** to identify and suggest transformation candidates. It will **not catch 100% of cases**, and you should expect both false positives and false negatives. Always review the suggested transformations carefully before committing them to your codebase. Think of it as an intelligent code assistant, not an automated compiler.
 
@@ -1507,21 +1507,21 @@ This programmatic API gives you the same power as the CLI but with full control 
 <h3 align="center">Gold Sponsors</h3>
 
 <p align="center">
-  <a href="https://www.locize.com/" target="_blank">
+  <a href="https://www.locize.com/?utm_source=i18next_cli_readme&utm_medium=github&utm_campaign=readme" target="_blank">
     <img src="https://raw.githubusercontent.com/i18next/i18next/master/assets/locize_sponsor_240.gif" width="240px">
   </a>
 </p>
 
 ---
 
-**From the creators of i18next: localization as a service - [Locize](https://www.locize.com)**
+**From the creators of i18next: localization as a service - [Locize](https://www.locize.com?utm_source=i18next_cli_readme&utm_medium=github&utm_campaign=readme)**
 
-A translation management system built around the i18next ecosystem - [Locize](https://locize.com).
+A translation management system built around the i18next ecosystem - [Locize](https://www.locize.com?utm_source=i18next_cli_readme&utm_medium=github&utm_campaign=readme).
 
-**Now with a [Free plan](https://locize.com/pricing) for small projects!** Perfect for hobbyists or getting started.
+**Now with a [Free plan](https://www.locize.com/pricing?utm_source=i18next_cli_readme&utm_medium=github&utm_campaign=readme) for small projects!** Perfect for hobbyists or getting started.
 
 ![Locize](https://www.locize.com/img/ads/github_locize.png)
 
-With using [Locize](https://www.locize.com/?utm_source=i18next_cli_readme&utm_medium=github) you directly support the future of i18next.
+With using [Locize](https://www.locize.com/?utm_source=i18next_cli_readme&utm_medium=github&utm_campaign=readme) you directly support the future of i18next.
 
 ---
