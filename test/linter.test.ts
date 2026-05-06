@@ -74,6 +74,7 @@ describe('Linter (core logic)', () => {
     expect(result.message).toContain('Linter found 1 potential issues')
     expect(result.files['/src/App.tsx']).toHaveLength(1)
     expect(result.files['/src/App.tsx'][0].text).toBe('This is a hardcoded string.')
+    expect(result.files['/src/App.tsx'][0].type).toBe('hardcoded')
   })
 
   it('should detect a hardcoded string in a JSX attribute', async () => {

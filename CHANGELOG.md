@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.10](https://github.com/i18next/i18next-cli/compare/v1.56.9...v1.56.10) - 2026-05-06
+
+- `lint` now sets `type: 'hardcoded'` on hardcoded-string issues. The
+  `LintIssue` type already declared a `'hardcoded' | 'interpolation'`
+  union, but `findHardcodedStrings` only emitted `text` and `line`,
+  leaving `type` undefined. Consumers (including `lintOnResult`
+  plugins) had to rely on `type !== 'interpolation'`, which would
+  silently misclassify any future issue category. The discriminant is
+  now populated so `issue.type === 'hardcoded'` works as advertised.
+  Fixes [#255](https://github.com/i18next/i18next-cli/issues/255).
+
 ## [1.56.9](https://github.com/i18next/i18next-cli/compare/v1.56.8...v1.56.9) - 2026-04-29
 
 - `extract` now propagates namespace/keyPrefix from a

@@ -874,6 +874,7 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
       issues.push({
         text: node.value.trim(),
         line: getLineNumber(position),
+        type: 'hardcoded',
       })
       lastSearchIndex = position + searchText.length
     }
