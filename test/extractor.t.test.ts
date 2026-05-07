@@ -1085,6 +1085,147 @@ describe('extractor: advanced t features', () => {
         three: 'three',
       })
     })
+
+    // i18next-cli #256: extractor must mirror i18next runtime v25.8.19's
+    // selector rule. With useTranslation([nsA, nsB, ...]), a selector path
+    // whose first segment matches a *secondary* namespace must route to that
+    // namespace's file. Primary-prefixed paths and unrelated leading segments
+    // stay flat in the primary namespace.
+    describe('multi-namespace selector routing (#256)', () => {
+      it('routes selector secondary-ns prefix to that namespace file', async () => {
+        const sampleCode = `
+          import { useTranslation } from 'react-i18next';
+          function C() {
+            const { t } = useTranslation(['auth', 'validation']);
+            return [
+              t($ => $.login['Welcome Back!']),                  // primary 'auth' (flat)
+              t($ => $.validation.email['An email is required']) // secondary 'validation'
+            ];
+          }
+        `
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+        const config: I18nextToolkitConfig = {
+          locales: ['en', 'de'],
+          extract: {
+            input: ['src/**/*.{ts,tsx}'],
+            output: 'locales/{{language}}/{{namespace}}.json',
+            functions: ['t'],
+            defaultNS: 'translation',
+            nsSeparator: ':',
+          },
+        }
+        const results = await extract(config)
+
+        const authFile = results.find(r => pathEndsWith(r.path, '/locales/en/auth.json'))
+        const validationFile = results.find(r => pathEndsWith(r.path, '/locales/en/validation.json'))
+
+        expect(authFile).toBeDefined()
+        expect(validationFile).toBeDefined()
+        expect(authFile!.newTranslations).toEqual({
+          login: { 'Welcome Back!': 'login.Welcome Back!' },
+        })
+        expect(validationFile!.newTranslations).toEqual({
+          email: { 'An email is required': 'email.An email is required' },
+        })
+      })
+
+      it('does NOT route a primary-prefixed selector path (regression #2405)', async () => {
+        // useTranslation('config') as a single string: $.common.name means a
+        // literal key "common.name" inside config, not a switch to a "common"
+        // namespace. With single-ns scope no rewrite should fire.
+        const sampleCode = `
+          import { useTranslation } from 'react-i18next';
+          function C() {
+            const { t } = useTranslation('config');
+            return t($ => $.common.name);
+          }
+        `
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+        const config: I18nextToolkitConfig = {
+          locales: ['en', 'de'],
+          extract: {
+            input: ['src/**/*.{ts,tsx}'],
+            output: 'locales/{{language}}/{{namespace}}.json',
+            functions: ['t'],
+            defaultNS: 'translation',
+            nsSeparator: ':',
+          },
+        }
+        const results = await extract(config)
+
+        const configFile = results.find(r => pathEndsWith(r.path, '/locales/en/config.json'))
+        const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
+
+        expect(configFile).toBeDefined()
+        expect(commonFile).toBeUndefined()
+        expect(configFile!.newTranslations).toEqual({
+          common: { name: 'common.name' },
+        })
+      })
+
+      it('does NOT route selector when leading segment is the primary in a multi-ns scope', async () => {
+        const sampleCode = `
+          import { useTranslation } from 'react-i18next';
+          function C() {
+            const { t } = useTranslation(['auth', 'validation']);
+            return t($ => $.auth.someFlatKey);
+          }
+        `
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+        const config: I18nextToolkitConfig = {
+          locales: ['en', 'de'],
+          extract: {
+            input: ['src/**/*.{ts,tsx}'],
+            output: 'locales/{{language}}/{{namespace}}.json',
+            functions: ['t'],
+            defaultNS: 'translation',
+            nsSeparator: ':',
+          },
+        }
+        const results = await extract(config)
+
+        const authFile = results.find(r => pathEndsWith(r.path, '/locales/en/auth.json'))
+        expect(authFile).toBeDefined()
+        // Path stays flat under primary 'auth' — `auth` was the bound primary
+        // and is not re-routed. Mirrors i18next selector.js exclusion of
+        // path[0] === namespaces[0].
+        expect(authFile!.newTranslations).toEqual({
+          auth: { someFlatKey: 'auth.someFlatKey' },
+        })
+      })
+
+      it('honors a custom nsSeparator when rewriting', async () => {
+        const sampleCode = `
+          import { useTranslation } from 'react-i18next';
+          function C() {
+            const { t } = useTranslation(['auth', 'validation']);
+            return t($ => $.validation.email);
+          }
+        `
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+        const config: I18nextToolkitConfig = {
+          locales: ['en', 'de'],
+          extract: {
+            input: ['src/**/*.{ts,tsx}'],
+            output: 'locales/{{language}}/{{namespace}}.json',
+            functions: ['t'],
+            defaultNS: 'translation',
+            nsSeparator: '|',
+          },
+        }
+        const results = await extract(config)
+
+        const validationFile = results.find(r => pathEndsWith(r.path, '/locales/en/validation.json'))
+        expect(validationFile).toBeDefined()
+        expect(validationFile!.newTranslations).toEqual({
+          email: 'email',
+        })
+      })
+    })
   })
 
   describe('key fallbacks', () => {

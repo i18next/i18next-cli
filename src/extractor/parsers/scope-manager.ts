@@ -430,21 +430,9 @@ export class ScopeManager {
     } else {
       // Position-driven extraction: respect hookConfig positions (nsArg/keyPrefixArg).
       if (nsArgIndex !== -1) {
-        const nsNode = callExpr.arguments?.[nsArgIndex]?.expression
-        if (nsNode?.type === 'StringLiteral') {
-          defaultNs = nsNode.value
-        } else if (nsNode?.type === 'Identifier') {
-          defaultNs = this.resolveSimpleStringIdentifier(nsNode.value)
-        } else if (nsNode?.type === 'MemberExpression') {
-          defaultNs = this.resolveSimpleMemberExpression(nsNode)
-        } else if (nsNode?.type === 'ArrayExpression') {
-          const first = nsNode.elements[0]?.expression
-          if (first?.type === 'StringLiteral') {
-            defaultNs = first.value
-          } else if (first?.type === 'Identifier') {
-            defaultNs = this.resolveSimpleStringIdentifier(first.value)
-          }
-        }
+        // Comment scope only cares about the primary ns — selector multi-ns
+        // rewriting is handled by the runtime extractor scope, not comments.
+        defaultNs = this.resolveNsArg(callExpr.arguments?.[nsArgIndex]?.expression).defaultNs
       }
       kpArg = kpArgIndex === -1 ? undefined : callExpr.arguments?.[kpArgIndex]?.expression
     }
@@ -494,6 +482,7 @@ export class ScopeManager {
     const kpArgIndex = hookConfig.keyPrefixArg ?? 1
 
     let defaultNs: string | undefined
+    let namespaces: string[] | undefined
     let keyPrefix: string | undefined
 
     // Early detect useTranslation(lng, ns) for built-in hook name only
@@ -512,21 +501,9 @@ export class ScopeManager {
       kpArg = third
     } else {
       if (nsArgIndex !== -1) {
-        const nsNode = callExpr.arguments?.[nsArgIndex]?.expression
-        if (nsNode?.type === 'StringLiteral') {
-          defaultNs = nsNode.value
-        } else if (nsNode?.type === 'Identifier') {
-          defaultNs = this.resolveSimpleStringIdentifier(nsNode.value)
-        } else if (nsNode?.type === 'MemberExpression') {
-          defaultNs = this.resolveSimpleMemberExpression(nsNode)
-        } else if (nsNode?.type === 'ArrayExpression') {
-          const first = nsNode.elements[0]?.expression
-          if (first?.type === 'StringLiteral') {
-            defaultNs = first.value
-          } else if (first?.type === 'Identifier') {
-            defaultNs = this.resolveSimpleStringIdentifier(first.value)
-          }
-        }
+        const resolved = this.resolveNsArg(callExpr.arguments?.[nsArgIndex]?.expression)
+        defaultNs = resolved.defaultNs
+        namespaces = resolved.namespaces
       }
       kpArg = kpArgIndex === -1 ? undefined : callExpr.arguments?.[kpArgIndex]?.expression
     }
@@ -551,22 +528,24 @@ export class ScopeManager {
       }
     }
 
+    const info: ScopeInfo = { defaultNs, namespaces, keyPrefix }
+
     // Attach scope info to all destructured properties (custom functions, t, getFixedT, etc.)
     if (node.id.type === 'ObjectPattern') {
       for (const prop of node.id.properties) {
         if (prop.type === 'AssignmentPatternProperty' && prop.key.type === 'Identifier') {
-          this.setVarInScope(prop.key.value, { defaultNs, keyPrefix })
+          this.setVarInScope(prop.key.value, info)
         }
         if (prop.type === 'KeyValuePatternProperty' && prop.value.type === 'Identifier') {
-          this.setVarInScope(prop.value.value, { defaultNs, keyPrefix })
+          this.setVarInScope(prop.value.value, info)
         }
       }
     } else if (node.id.type === 'Identifier') {
-      this.setVarInScope(node.id.value, { defaultNs, keyPrefix })
+      this.setVarInScope(node.id.value, info)
     } else if (node.id.type === 'ArrayPattern') {
       const firstElement = node.id.elements[0]
       if (firstElement?.type === 'Identifier') {
-        this.setVarInScope(firstElement.value, { defaultNs, keyPrefix })
+        this.setVarInScope(firstElement.value, info)
       }
     }
   }
@@ -606,6 +585,43 @@ export class ScopeManager {
    * without interpolation. Returns undefined when the expression cannot be
    * resolved statically.
    */
+  /**
+   * Resolve the `ns` argument of useTranslation to `{ defaultNs, namespaces }`.
+   *
+   * - String literal / identifier / member-expr → single `defaultNs`, no array.
+   * - Array expression → first element becomes `defaultNs`, every statically
+   *   resolvable element ends up in `namespaces` (preserving order).
+   *
+   * `namespaces` is only set when the input was an array form, so consumers can
+   * distinguish `useTranslation('a')` (single, `namespaces` undefined) from
+   * `useTranslation(['a'])` (single-element array, `namespaces = ['a']`).
+   * The runtime selector rule from v25.8.19 only applies when length > 1, so
+   * either single form behaves identically downstream.
+   */
+  private resolveNsArg (nsNode: Expression | undefined): { defaultNs?: string; namespaces?: string[] } {
+    if (!nsNode) return {}
+    if (nsNode.type === 'StringLiteral') return { defaultNs: nsNode.value }
+    if (nsNode.type === 'Identifier') return { defaultNs: this.resolveSimpleStringIdentifier(nsNode.value) }
+    if (nsNode.type === 'MemberExpression') return { defaultNs: this.resolveSimpleMemberExpression(nsNode) }
+    if (nsNode.type === 'ArrayExpression') {
+      const namespaces: string[] = []
+      for (const el of nsNode.elements) {
+        const expr = el?.expression
+        if (!expr) continue
+        if (expr.type === 'StringLiteral') namespaces.push(expr.value)
+        else if (expr.type === 'Identifier') {
+          const resolved = this.resolveSimpleStringIdentifier(expr.value)
+          if (resolved !== undefined) namespaces.push(resolved)
+        } else if (expr.type === 'MemberExpression') {
+          const resolved = this.resolveSimpleMemberExpression(expr)
+          if (resolved !== undefined) namespaces.push(resolved)
+        }
+      }
+      return { defaultNs: namespaces[0], namespaces: namespaces.length > 0 ? namespaces : undefined }
+    }
+    return {}
+  }
+
   private resolveStringArg (node: Expression | undefined): string | undefined {
     if (!node) return undefined
     const unwrapped = ScopeManager.unwrapTsExpression(node)

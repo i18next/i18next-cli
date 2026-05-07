@@ -1386,6 +1386,40 @@ const fixedT = getFixedT('en', 'namespace');
 fixedT('key');
 ```
 
+### Selector API
+
+The extractor handles the type-safe Selector API and mirrors the runtime
+namespace-routing rule from i18next v25.8.19. With a single-namespace hook,
+selector paths are extracted into the bound namespace as-is:
+
+```ts
+const { t } = useTranslation('common');
+
+t($ => $.button.save);                  // → common.json: button.save
+t($ => $.button.save, { ns: 'auth' });  // → auth.json:   button.save
+```
+
+When the hook is called with a multi-namespace array, a leading path segment
+that matches a **secondary** namespace is treated as a namespace prefix and
+the rest of the path is routed to that namespace's file. The primary
+namespace (the array's first entry) is **never** rewritten — its keys are
+exposed flat on the selector proxy:
+
+```ts
+const { t } = useTranslation(['auth', 'validation']);
+
+t($ => $.login['Welcome Back!']);                // → auth.json:       login.Welcome Back!
+t($ => $.validation.email['Required']);          // → validation.json: email.Required
+t($ => $.email['Required'], { ns: 'validation'}); // → validation.json: email.Required
+```
+
+This matches the behavior of `i18next/src/selector.js` exactly: paths whose
+first segment is the primary namespace, or doesn't appear in the hook's
+namespace list at all, are joined with the configured `keySeparator` and
+routed to the primary. Secondary-prefixed paths are joined as
+`<ns><nsSeparator><rest>` so the standard `ns:key` routing places them in
+the correct file.
+
 ## Programmatic Usage
 
 In addition to the CLI commands, `i18next-cli` can be used programmatically in your build scripts, Gulp tasks, or any Node.js application:

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.56.11
+
+- `extract` and `status` now mirror i18next's runtime selector rule
+  (v25.8.19) for multi-namespace `useTranslation([nsA, nsB, ...])`
+  hooks. When a selector path's first segment matches a *secondary*
+  namespace from the hook's array, the key is routed to that
+  namespace's file instead of the primary. Single-namespace hooks and
+  primary-prefixed paths are unaffected — the primary namespace is
+  never rewritten, matching `i18next/src/selector.js` exactly.
+  Fixes [#256](https://github.com/i18next/i18next-cli/issues/256).
+
 ## [1.56.10](https://github.com/i18next/i18next-cli/compare/v1.56.9...v1.56.10) - 2026-05-06
 
 - `lint` now sets `type: 'hardcoded'` on hardcoded-string issues. The

@@ -794,6 +794,17 @@ export interface PluginContext {
 export interface ScopeInfo {
   /** Default namespace for translation calls in this scope */
   defaultNs?: string;
+  /**
+   * Full namespace list when the hook was called with an array
+   * (e.g. `useTranslation(['nsA', 'nsB'])`).
+   *
+   * Mirrors the runtime selector rule from i18next v25.8.19: when a selector
+   * path's first segment matches a secondary namespace in this list, the
+   * extractor rewrites the key to `ns:rest` so it routes to the right file.
+   * `defaultNs` is the primary (`namespaces[0]`); subsequent entries are
+   * "secondary" and eligible for the rewrite.
+   */
+  namespaces?: string[];
   /** Key prefix to prepend to all translation keys in this scope */
   keyPrefix?: string;
 }

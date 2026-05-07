@@ -125,7 +125,7 @@ export class CallExpressionHandler {
       }
     }
 
-    const { keysToProcess, isSelectorAPI } = this.handleCallExpressionArgument(node, 0)
+    const { keysToProcess, originalKeysToProcess, isSelectorAPI } = this.handleCallExpressionArgument(node, 0, scopeInfo)
 
     if (keysToProcess.length === 0) return
 
@@ -192,7 +192,11 @@ export class CallExpressionHandler {
 
     // Loop through each key found (could be one or more) and process it
     for (let i = 0; i < keysToProcess.length; i++) {
-      const originalKey = keysToProcess[i] // preserve original (possibly namespaced) form
+      // For the dv heuristic we want the user-typed shape, not the post-rewrite
+      // form: a synthetic `validation:email` (rewritten from a `$.validation.email`
+      // selector) shouldn't leak into the default value. originalKeysToProcess
+      // is the pre-rewrite path; for non-selector calls it's the same as keysToProcess.
+      const originalKey = originalKeysToProcess[i]
       let key = keysToProcess[i]
       let ns: string | false | undefined
 
@@ -597,32 +601,91 @@ export class CallExpressionHandler {
    */
   private handleCallExpressionArgument (
     node: CallExpression,
-    argIndex: number
-  ): { keysToProcess: string[]; isSelectorAPI: boolean } {
+    argIndex: number,
+    scopeInfo?: ScopeInfo
+  ): { keysToProcess: string[]; originalKeysToProcess: string[]; isSelectorAPI: boolean } {
     const firstArg = node.arguments[argIndex].expression
     const keysToProcess: string[] = []
+    // Mirror of keysToProcess BEFORE selector-ns rewriting. For non-selector
+    // calls and selector calls that don't trigger a rewrite, both arrays hold
+    // identical strings. Used by the default-value heuristic so a synthetic
+    // `ns:key` from selector rewriting doesn't surface as the dv.
+    const originalKeysToProcess: string[] = []
     let isSelectorAPI = false
 
     if (firstArg.type === 'ArrowFunctionExpression') {
       const keys = this.extractKeysFromSelector(firstArg)
       if (keys.length > 0) {
-        keysToProcess.push(...keys)
+        for (const k of keys) {
+          originalKeysToProcess.push(k)
+          keysToProcess.push(this.applySelectorNsRewrite(k, scopeInfo))
+        }
         isSelectorAPI = true
       }
     } else if (firstArg.type === 'ArrayExpression') {
       for (const element of firstArg.elements) {
         if (element?.expression) {
-          keysToProcess.push(...this.expressionResolver.resolvePossibleKeyStringValues(element.expression))
+          const resolved = this.expressionResolver.resolvePossibleKeyStringValues(element.expression)
+          keysToProcess.push(...resolved)
+          originalKeysToProcess.push(...resolved)
         }
       }
     } else {
-      keysToProcess.push(...this.expressionResolver.resolvePossibleKeyStringValues(firstArg))
+      const resolved = this.expressionResolver.resolvePossibleKeyStringValues(firstArg)
+      keysToProcess.push(...resolved)
+      originalKeysToProcess.push(...resolved)
+    }
+
+    // Filter empties on both arrays in lockstep to keep them index-aligned.
+    const filteredKeys: string[] = []
+    const filteredOriginals: string[] = []
+    for (let i = 0; i < keysToProcess.length; i++) {
+      if (keysToProcess[i]) {
+        filteredKeys.push(keysToProcess[i])
+        filteredOriginals.push(originalKeysToProcess[i])
+      }
     }
 
     return {
-      keysToProcess: keysToProcess.filter((key) => !!key),
+      keysToProcess: filteredKeys,
+      originalKeysToProcess: filteredOriginals,
       isSelectorAPI,
     }
+  }
+
+  /**
+   * Mirror i18next v25.8.19's runtime selector rule: when the hook was called
+   * with a multi-element namespace array (e.g. `useTranslation(['nsA', 'nsB'])`)
+   * and a selector path's first segment matches a *secondary* namespace,
+   * rewrite the joined key to `ns<nsSeparator>rest` so the downstream
+   * extractor's standard `ns:key` split routes the key to the right file.
+   *
+   * The primary namespace is intentionally never rewritten — its keys are
+   * exposed flat on `$`, so a leading segment matching the primary name means
+   * a literal sub-key (see #2405). This matches the runtime behavior in
+   * i18next/src/selector.js exactly.
+   *
+   * Falls through to the input string when:
+   * - the call had no selector (string keys go through this path unchanged),
+   * - scope has < 2 namespaces, or
+   * - first segment is the primary or not in the scope's namespaces list.
+   */
+  private applySelectorNsRewrite (key: string, scopeInfo?: ScopeInfo): string {
+    const ns = scopeInfo?.namespaces
+    if (!ns || ns.length < 2) return key
+
+    const keySeparator = this.config.extract.keySeparator
+    const joiner = typeof keySeparator === 'string' ? keySeparator : '.'
+    const nsSeparator = this.config.extract.nsSeparator ?? ':'
+    if (keySeparator === false || !nsSeparator) return key
+
+    const firstSepAt = key.indexOf(joiner)
+    if (firstSepAt < 0) return key
+    const head = key.slice(0, firstSepAt)
+    if (head === ns[0]) return key
+    if (!ns.includes(head)) return key
+
+    return `${head}${nsSeparator}${key.slice(firstSepAt + joiner.length)}`
   }
 
   /**
