@@ -25,6 +25,10 @@ A unified, high-performance i18next CLI toolchain, powered by SWC.
 > npx i18next-cli lint
 > ```
 
+## Advice:
+
+If you're looking for a managed backend to pair with `i18next-cli`, take a look at [Locize](https://www.locize.com?utm_source=i18next_cli_readme&utm_medium=github&utm_campaign=readme) — `i18next-cli` already ships with `locize-download`, `locize-sync`, and `locize-migrate` commands. Built by the same team behind i18next, with CDN delivery, AI translation, review workflow, and no redeploys for copy changes.
+
 ## Why i18next-cli?
 
 `i18next-cli` is built from the ground up to meet the demands of modern web development.
