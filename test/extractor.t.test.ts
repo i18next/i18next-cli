@@ -1226,6 +1226,106 @@ describe('extractor: advanced t features', () => {
         })
       })
     })
+
+    // i18next's `enableSelector: 'strict'` (≥ 26.1.0) drops the flattened-primary
+    // form: every selector path starts with an explicit namespace, primary or
+    // secondary. The extractor mirrors this when `config.types.enableSelector`
+    // is `'strict'` — leading-ns rewriting applies uniformly, including primary
+    // and single-ns hooks.
+    describe('strict selector mode (types.enableSelector: "strict")', () => {
+      const strictConfig = (overrides: Partial<I18nextToolkitConfig['extract']> = {}): I18nextToolkitConfig => ({
+        locales: ['en', 'de'],
+        extract: {
+          input: ['src/**/*.{ts,tsx}'],
+          output: 'locales/{{language}}/{{namespace}}.json',
+          functions: ['t'],
+          defaultNS: 'translation',
+          nsSeparator: ':',
+          ...overrides,
+        },
+        types: {
+          input: ['locales/en/*.json'],
+          output: 'src/types/i18next.d.ts',
+          resourcesFile: 'src/types/resources.d.ts',
+          enableSelector: 'strict',
+        },
+      })
+
+      it('routes primary-prefixed selector path to the primary namespace (multi-ns hook)', async () => {
+        const sampleCode = `
+          import { useTranslation } from 'react-i18next';
+          function C() {
+            const { t } = useTranslation(['auth', 'validation']);
+            return t($ => $.auth.login['Welcome Back!']);
+          }
+        `
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+        const results = await extract(strictConfig())
+
+        const authFile = results.find(r => pathEndsWith(r.path, '/locales/en/auth.json'))
+        expect(authFile).toBeDefined()
+        // Strict mode strips the primary 'auth' prefix and routes the rest
+        // into auth.json — opposite of default mode's "leave flat".
+        expect(authFile!.newTranslations).toEqual({
+          login: { 'Welcome Back!': 'login.Welcome Back!' },
+        })
+      })
+
+      it('routes single-ns hook selector path with explicit ns prefix', async () => {
+        const sampleCode = `
+          import { useTranslation } from 'react-i18next';
+          function C() {
+            const { t } = useTranslation('only');
+            return t($ => $.only.deeply.nested);
+          }
+        `
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+        const results = await extract(strictConfig())
+
+        const onlyFile = results.find(r => pathEndsWith(r.path, '/locales/en/only.json'))
+        expect(onlyFile).toBeDefined()
+        // Strict mode synthesizes ['only'] from defaultNs and strips the prefix.
+        expect(onlyFile!.newTranslations).toEqual({
+          deeply: { nested: 'deeply.nested' },
+        })
+      })
+
+      it('still routes secondary-prefixed selector in multi-ns hook', async () => {
+        const sampleCode = `
+          import { useTranslation } from 'react-i18next';
+          function C() {
+            const { t } = useTranslation(['auth', 'validation']);
+            return t($ => $.validation.email);
+          }
+        `
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+        const results = await extract(strictConfig())
+
+        const file = results.find(r => pathEndsWith(r.path, '/locales/en/validation.json'))
+        expect(file).toBeDefined()
+        expect(file!.newTranslations).toEqual({ email: 'email' })
+      })
+
+      it('leaves the path alone when first segment is not in the ns list', async () => {
+        // Strict mode is namespace-list-driven. An unrelated leading segment
+        // stays flat (the user gets a missing key in primary as a signal).
+        const sampleCode = `
+          import { useTranslation } from 'react-i18next';
+          function C() {
+            const { t } = useTranslation(['auth', 'validation']);
+            return t($ => $.unknown.foo);
+          }
+        `
+        vol.fromJSON({ '/src/App.tsx': sampleCode })
+        const results = await extract(strictConfig())
+
+        const authFile = results.find(r => pathEndsWith(r.path, '/locales/en/auth.json'))
+        expect(authFile).toBeDefined()
+        expect(authFile!.newTranslations).toEqual({
+          unknown: { foo: 'unknown.foo' },
+        })
+      })
+    })
   })
 
   describe('key fallbacks', () => {

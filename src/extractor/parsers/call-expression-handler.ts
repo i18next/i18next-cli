@@ -654,25 +654,40 @@ export class CallExpressionHandler {
   }
 
   /**
-   * Mirror i18next v25.8.19's runtime selector rule: when the hook was called
-   * with a multi-element namespace array (e.g. `useTranslation(['nsA', 'nsB'])`)
-   * and a selector path's first segment matches a *secondary* namespace,
-   * rewrite the joined key to `ns<nsSeparator>rest` so the downstream
-   * extractor's standard `ns:key` split routes the key to the right file.
+   * Mirror i18next's runtime selector rule (v25.8.19 default, or
+   * `enableSelector: 'strict'` when `types.enableSelector === 'strict'`).
    *
-   * The primary namespace is intentionally never rewritten — its keys are
-   * exposed flat on `$`, so a leading segment matching the primary name means
-   * a literal sub-key (see #2405). This matches the runtime behavior in
-   * i18next/src/selector.js exactly.
+   * **Default mode** — rewrite only when the hook was called with a multi-element
+   * namespace array and the path's first segment matches a *secondary* namespace.
+   * The primary is intentionally not rewritten (preserves #2405): its keys are
+   * exposed flat on `$`, so `$.primary.foo` means a literal sub-key.
+   *
+   * **Strict mode** — every namespace (primary included) is exposed only under
+   * its own key on `$`. So a leading segment matching *any* namespace in the
+   * scope's list — primary or secondary, single-ns or multi-ns — is rewritten.
+   * Mirrors `i18next/src/selector.js` strict branch.
+   *
+   * In strict mode we also accept a single-ns scope, falling back to
+   * `[scopeInfo.defaultNs]` when the scope didn't capture an explicit array
+   * (e.g. `useTranslation('only')`).
    *
    * Falls through to the input string when:
    * - the call had no selector (string keys go through this path unchanged),
-   * - scope has < 2 namespaces, or
-   * - first segment is the primary or not in the scope's namespaces list.
+   * - scope has no namespaces info,
+   * - first segment isn't in the scope's namespaces list, or
+   * - separators are configured off.
    */
   private applySelectorNsRewrite (key: string, scopeInfo?: ScopeInfo): string {
-    const ns = scopeInfo?.namespaces
-    if (!ns || ns.length < 2) return key
+    const strict = this.config.types?.enableSelector === 'strict'
+
+    // Resolve the effective namespace list for the rule:
+    // - default mode: only the explicitly-captured `namespaces` array, length ≥ 2
+    // - strict mode: same array if present; otherwise synthesize from `defaultNs`
+    const nsCaptured = scopeInfo?.namespaces
+    const nsList = strict
+      ? (nsCaptured ?? (scopeInfo?.defaultNs ? [scopeInfo.defaultNs] : undefined))
+      : nsCaptured
+    if (!nsList || nsList.length < (strict ? 1 : 2)) return key
 
     const keySeparator = this.config.extract.keySeparator
     const joiner = typeof keySeparator === 'string' ? keySeparator : '.'
@@ -682,8 +697,9 @@ export class CallExpressionHandler {
     const firstSepAt = key.indexOf(joiner)
     if (firstSepAt < 0) return key
     const head = key.slice(0, firstSepAt)
-    if (head === ns[0]) return key
-    if (!ns.includes(head)) return key
+    // Default mode excludes the primary; strict mode includes it.
+    if (!strict && head === nsList[0]) return key
+    if (!nsList.includes(head)) return key
 
     return `${head}${nsSeparator}${key.slice(firstSepAt + joiner.length)}`
   }

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.56.12
+
+- feat: `types.enableSelector` now accepts `'strict'`, mirroring i18next's
+  runtime `enableSelector: 'strict'` (≥ 26.1.0). When set, the extractor
+  applies the leading-namespace rewrite uniformly: a selector path's first
+  segment matching any namespace in the hook's scope — primary or secondary,
+  single- or multi-ns — is rewritten to `ns:rest` so the key routes to the
+  right namespace file. Same applies to `useTranslation('only')` paths
+  written as `$.only.foo` (strict-mode shape). Generated `i18next.d.ts`
+  emits `enableSelector: "strict"` accordingly.
+
 ## [1.56.11](https://github.com/i18next/i18next-cli/compare/v1.56.10...v1.56.11) - 2026-05-07
 
 - `extract` and `status` now mirror i18next's runtime selector rule

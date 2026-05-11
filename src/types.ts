@@ -291,8 +291,19 @@ export interface I18nextToolkitConfig {
     /** Output path for the main TypeScript definition file */
     output: string;
 
-    /** Enable type-safe selector API (boolean or 'optimize' for smaller types) */
-    enableSelector?: boolean | 'optimize';
+    /**
+     * Enable type-safe selector API.
+     *
+     * - `false` (default): disabled.
+     * - `true`: standard selector typing — primary namespace keys exposed flat on `$`.
+     * - `'optimize'`: skip deep type-level processing for very large/deep resources.
+     * - `'strict'`: every namespace (primary included) is exposed only under its
+     *   own key on `$`. The extractor mirrors this at extraction time: a leading
+     *   path segment matching a scope's namespace is always rewritten to
+     *   `ns:rest`, including the primary and single-ns hooks. Pairs with i18next
+     *   ≥ 26.1.0's runtime `enableSelector: 'strict'` option.
+     */
+    enableSelector?: boolean | 'optimize' | 'strict';
 
     /** Path for the separate resources interface file */
     resourcesFile?: string;

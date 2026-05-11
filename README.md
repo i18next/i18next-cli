@@ -1420,6 +1420,29 @@ routed to the primary. Secondary-prefixed paths are joined as
 `<ns><nsSeparator><rest>` so the standard `ns:key` routing places them in
 the correct file.
 
+#### Strict mode
+
+Set `types.enableSelector: 'strict'` (requires `i18next` ≥ 26.1.0 with
+the matching runtime option) to drop the flattened-primary form entirely.
+Every selector path must lead with an explicit namespace segment, and the
+extractor rewrites leading segments uniformly — primary, secondary,
+single- or multi-ns hooks all behave the same:
+
+```ts
+// useTranslation('common');
+t($ => $.common.button.save);             // → common.json: button.save
+
+// useTranslation(['auth', 'validation']);
+t($ => $.auth.login['Welcome Back!']);    // → auth.json:       login.Welcome Back!
+t($ => $.validation.email['Required']);   // → validation.json: email.Required
+```
+
+Strict mode is opt-in and incompatible with the [#2405](https://github.com/i18next/i18next/issues/2405)
+pattern (a key inside a namespace whose name matches a sibling namespace).
+If you have keys like `Resources['config'].common.name` while `common` is
+also a sibling namespace, leave strict mode off — the rewrite would route
+that key into the wrong file.
+
 ## Programmatic Usage
 
 In addition to the CLI commands, `i18next-cli` can be used programmatically in your build scripts, Gulp tasks, or any Node.js application:
