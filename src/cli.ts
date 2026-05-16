@@ -170,7 +170,8 @@ program
 program
   .command('init')
   .description('Create a new i18next.config.ts/js file with an interactive setup wizard.')
-  .action(runInit)
+  .option('--ci', 'Skip the browser launch when a backend (e.g. Locize) is selected. The signup URL is printed instead.')
+  .action((options) => runInit({ ci: !!options.ci }))
 
 program
   .command('lint')

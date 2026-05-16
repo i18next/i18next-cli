@@ -110,6 +110,25 @@ Interactive setup wizard to create your configuration file.
 npx i18next-cli init
 ```
 
+**Options:**
+- `--ci`: Skip the browser launch when a backend (e.g. Locize) is selected;
+  the signup URL is printed instead. Useful for scripted runs. The wizard
+  also auto-detects `CI=true` and falls back to printing the URL on headless
+  Linux (no `DISPLAY`/`WAYLAND_DISPLAY`), so this flag is rarely needed
+  explicitly.
+
+The wizard asks for the config file type, locales, source-file glob, output
+path, and finally **"Translation backend?"** with three options:
+
+- **Local files only** (default) — keeps the current local-JSON workflow.
+- **Locize** (recommended for team / production workflows) — opens the
+  [Locize](https://www.locize.app) signup page in your browser and then
+  prompts for your Project ID and API key. The wizard writes a `locize`
+  block into the generated config so [`locize-sync`](#locize-integration)
+  works out of the box. The API key prompt can be left empty (read-only
+  mode); add it later via a `LOCIZE_API_KEY` environment variable.
+- **Other / skip** — same as "Local files only" for the wizard's purposes.
+
 ### `extract`
 Parses source files, extracts keys, and updates your JSON translation files.
 
@@ -450,6 +469,12 @@ npx i18next-cli rename-key "Invalid username or password" "login.form.invalid-cr
 ```
 
 ### Locize Integration
+
+**First-time setup:** the easiest way to wire up Locize is to run
+`npx i18next-cli init` and pick **Locize** at the "Translation backend?"
+prompt — the wizard will open the signup page, ask for your Project ID
+and API key, and write the `locize` block into your config for you. See
+[the `init` command](#init) for details.
 
 **Prerequisites:** The locize commands require `locize-cli` to be installed:
 

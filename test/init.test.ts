@@ -10,6 +10,9 @@ vi.mock('fs/promises', async () => {
   return memfs.fs.promises
 })
 vi.mock('inquirer')
+vi.mock('execa', () => ({
+  execa: vi.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+}))
 vi.mock('../src/heuristic-config', () => ({
   detectConfig: vi.fn(),
 }))
@@ -20,6 +23,7 @@ describe('init', () => {
     locales: ['en', 'de'],
     input: 'src/**/*.tsx',
     output: 'public/locales/{{language}}/{{namespace}}.json',
+    backend: 'local',
   }
 
   beforeEach(() => {
@@ -27,10 +31,17 @@ describe('init', () => {
     vi.clearAllMocks()
     vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.spyOn(process, 'cwd').mockReturnValue('/')
+    // Pin browser-open env to a non-CI, graphical-Linux state so tests are
+    // not affected by the host's CI / DISPLAY / WSL env.
+    vi.stubEnv('CI', '')
+    vi.stubEnv('WSL_DISTRO_NAME', '')
+    vi.stubEnv('DISPLAY', ':0')
+    vi.stubEnv('WAYLAND_DISPLAY', '')
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllEnvs()
   })
 
   it('should create a TypeScript config file (without local i18next-cli)', async () => {
@@ -169,6 +180,7 @@ describe('init', () => {
       locales: detected.locales,
       input: detected.extract.input.join(','),
       output: detected.extract.output,
+      backend: 'local',
     })
 
     await runInit()
@@ -182,5 +194,155 @@ describe('init', () => {
     const configPath = resolve(process.cwd(), 'i18next.config.ts')
     const content = await vol.promises.readFile(configPath, 'utf-8')
     expect(content).toContain('output: "app/i18n/locales/{{language}}/{{namespace}}.json"')
+  })
+
+  describe('translation backend', () => {
+    it('exposes a "backend" question with local / locize / other choices and a local default', async () => {
+      vi.mocked(inquirer.prompt).mockResolvedValue(mockAnswers)
+      await runInit()
+      const promptCalls = vi.mocked(inquirer.prompt).mock.calls[0][0] as unknown as any[]
+      const backendQ = promptCalls.find(q => q.name === 'backend')
+      expect(backendQ).toBeDefined()
+      expect(backendQ.default).toBe('local')
+      const values = backendQ.choices.map((c: any) => c.value)
+      expect(values).toEqual(['local', 'locize', 'other'])
+    })
+
+    it('omits the locize block when "local" is selected and does not open a browser', async () => {
+      vi.mocked(inquirer.prompt).mockResolvedValue({ ...mockAnswers, backend: 'local' })
+      const { execa } = await import('execa')
+      await runInit()
+
+      const configPath = resolve('/', 'i18next.config.ts')
+      const content = await vol.promises.readFile(configPath, 'utf-8')
+      expect(content).not.toContain('locize')
+      expect(execa).not.toHaveBeenCalled()
+    })
+
+    it('omits the locize block when "other" is selected and does not open a browser', async () => {
+      vi.mocked(inquirer.prompt).mockResolvedValue({ ...mockAnswers, backend: 'other' })
+      const { execa } = await import('execa')
+      await runInit()
+
+      const configPath = resolve('/', 'i18next.config.ts')
+      const content = await vol.promises.readFile(configPath, 'utf-8')
+      expect(content).not.toContain('locize')
+      expect(execa).not.toHaveBeenCalled()
+    })
+
+    it('writes a locize block with projectId and apiKey when "locize" is selected', async () => {
+      const projectId = '4eeb5ce0-a7a7-453f-8eb3-078f6eeb56fe'
+      const apiKey = '11111111-2222-3333-4444-555555555555'
+      vi.mocked(inquirer.prompt)
+        .mockResolvedValueOnce({ ...mockAnswers, backend: 'locize' })
+        .mockResolvedValueOnce({ projectId, apiKey })
+
+      const { execa } = await import('execa')
+      await runInit()
+
+      const configPath = resolve('/', 'i18next.config.ts')
+      const content = await vol.promises.readFile(configPath, 'utf-8')
+      expect(content).toContain('locize:')
+      expect(content).toContain(`projectId: "${projectId}"`)
+      expect(content).toContain(`apiKey: "${apiKey}"`)
+      // Browser-open was attempted with the exact signup URL (no UTM, only `?from=`)
+      expect(execa).toHaveBeenCalled()
+      const callArgs = vi.mocked(execa).mock.calls[0]
+      const flatArgs = (callArgs as any[]).flat()
+      expect(flatArgs.some((a: any) => typeof a === 'string' && a === 'https://www.locize.app/register?from=i18next-cli+init+wizard')).toBe(true)
+    })
+
+    it('omits apiKey from the locize block when the user leaves it empty', async () => {
+      const projectId = '4eeb5ce0-a7a7-453f-8eb3-078f6eeb56fe'
+      vi.mocked(inquirer.prompt)
+        .mockResolvedValueOnce({ ...mockAnswers, backend: 'locize' })
+        .mockResolvedValueOnce({ projectId, apiKey: '' })
+
+      await runInit()
+
+      const configPath = resolve('/', 'i18next.config.ts')
+      const content = await vol.promises.readFile(configPath, 'utf-8')
+      expect(content).toContain(`projectId: "${projectId}"`)
+      expect(content).not.toContain('apiKey')
+    })
+
+    it('accepts non-UUID API key formats (e.g. lz_pat_*, lz_api_*) without a format warning', async () => {
+      const projectId = '4eeb5ce0-a7a7-453f-8eb3-078f6eeb56fe'
+      const apiKey = 'lz_pat_abc123def456ghi789'
+      vi.mocked(inquirer.prompt)
+        .mockResolvedValueOnce({ ...mockAnswers, backend: 'locize' })
+        .mockResolvedValueOnce({ projectId, apiKey })
+
+      const logSpy = vi.spyOn(console, 'log')
+      await runInit()
+
+      const configPath = resolve('/', 'i18next.config.ts')
+      const content = await vol.promises.readFile(configPath, 'utf-8')
+      expect(content).toContain(`apiKey: "${apiKey}"`)
+
+      const logged = logSpy.mock.calls.map(c => String(c[0] ?? '')).join('\n')
+      expect(logged).not.toMatch(/API key.*doesn['’]t look/i)
+    })
+
+    it('does not log the API key to stdout', async () => {
+      const projectId = '4eeb5ce0-a7a7-453f-8eb3-078f6eeb56fe'
+      const apiKey = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+      vi.mocked(inquirer.prompt)
+        .mockResolvedValueOnce({ ...mockAnswers, backend: 'locize' })
+        .mockResolvedValueOnce({ projectId, apiKey })
+
+      const logSpy = vi.spyOn(console, 'log')
+      await runInit()
+
+      const logged = logSpy.mock.calls.map(c => String(c[0] ?? '')).join('\n')
+      expect(logged).not.toContain(apiKey)
+    })
+
+    it('does not attempt to spawn a browser in CI and falls back to printing the URL', async () => {
+      vi.stubEnv('CI', 'true')
+      const projectId = '4eeb5ce0-a7a7-453f-8eb3-078f6eeb56fe'
+      vi.mocked(inquirer.prompt)
+        .mockResolvedValueOnce({ ...mockAnswers, backend: 'locize' })
+        .mockResolvedValueOnce({ projectId, apiKey: '' })
+
+      const { execa } = await import('execa')
+      const logSpy = vi.spyOn(console, 'log')
+      await runInit()
+
+      expect(execa).not.toHaveBeenCalled()
+      const logged = logSpy.mock.calls.map(c => String(c[0] ?? '')).join('\n')
+      expect(logged).toContain('https://www.locize.app/register?from=i18next-cli+init+wizard')
+    })
+
+    it('does not attempt to spawn a browser when --ci is passed (env CI unset)', async () => {
+      const projectId = '4eeb5ce0-a7a7-453f-8eb3-078f6eeb56fe'
+      vi.mocked(inquirer.prompt)
+        .mockResolvedValueOnce({ ...mockAnswers, backend: 'locize' })
+        .mockResolvedValueOnce({ projectId, apiKey: '' })
+
+      const { execa } = await import('execa')
+      const logSpy = vi.spyOn(console, 'log')
+      await runInit({ ci: true })
+
+      expect(execa).not.toHaveBeenCalled()
+      const logged = logSpy.mock.calls.map(c => String(c[0] ?? '')).join('\n')
+      expect(logged).toContain('https://www.locize.app/register?from=i18next-cli+init+wizard')
+    })
+
+    it('falls back to printing the URL when browser-open fails', async () => {
+      const projectId = '4eeb5ce0-a7a7-453f-8eb3-078f6eeb56fe'
+      vi.mocked(inquirer.prompt)
+        .mockResolvedValueOnce({ ...mockAnswers, backend: 'locize' })
+        .mockResolvedValueOnce({ projectId, apiKey: '' })
+
+      const { execa } = await import('execa')
+      vi.mocked(execa).mockRejectedValueOnce(new Error('no browser'))
+
+      const logSpy = vi.spyOn(console, 'log')
+      await runInit()
+
+      const logged = logSpy.mock.calls.map(c => String(c[0] ?? '')).join('\n')
+      expect(logged).toContain('https://www.locize.app/register?from=i18next-cli+init+wizard')
+    })
   })
 })

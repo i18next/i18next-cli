@@ -1,7 +1,56 @@
 import inquirer from 'inquirer'
 import { writeFile, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { execa } from 'execa'
 import { detectConfig } from './heuristic-config.js'
+
+const LOCIZE_SIGNUP_URL = 'https://www.locize.app/register?from=i18next-cli+init+wizard'
+
+/** Rough 8-4-4-4-12 hex UUID shape — not strict (locize project IDs may evolve). */
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Opens the given URL in the user's default browser using the platform-native command.
+ * Returns true on success, false if there's nowhere to open one (CI, headless Linux)
+ * or if spawning the command failed.
+ */
+async function openBrowser (url: string, opts: { ci?: boolean } = {}): Promise<boolean> {
+  // Short-circuit: no point spawning a browser-opener in CI or headless Linux.
+  if (opts.ci || process.env.CI === 'true') return false
+  const isWSL = !!process.env.WSL_DISTRO_NAME
+  if (
+    process.platform === 'linux' && !isWSL &&
+    !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY
+  ) {
+    return false
+  }
+
+  try {
+    if (process.platform === 'darwin') {
+      await execa('open', [url], { stdio: 'ignore' })
+    } else if (process.platform === 'win32') {
+      // `start` is a cmd.exe builtin; the empty "" is the window-title slot
+      await execa('cmd', ['/c', 'start', '""', url], { stdio: 'ignore' })
+    } else if (isWSL) {
+      // WSL: try the wslu / wsl-open shims that bridge to the Windows side
+      // before falling back to xdg-open (which usually isn't installed there).
+      try {
+        await execa('wslview', [url], { stdio: 'ignore' })
+      } catch {
+        try {
+          await execa('wsl-open', [url], { stdio: 'ignore' })
+        } catch {
+          await execa('xdg-open', [url], { stdio: 'ignore' })
+        }
+      }
+    } else {
+      await execa('xdg-open', [url], { stdio: 'ignore' })
+    }
+    return true
+  } catch {
+    return false
+  }
+}
 
 /**
  * Determines if the current project is configured as an ESM project.
@@ -90,7 +139,7 @@ async function isTypeScriptProject (): Promise<boolean> {
  * // - i18next.config.js (JavaScript ESM/CommonJS)
  * ```
  */
-export async function runInit () {
+export async function runInit (options: { ci?: boolean } = {}) {
   console.log('Welcome to the i18next-cli setup wizard!')
   console.log('Scanning your project for a recommended configuration...')
 
@@ -143,19 +192,65 @@ export async function runInit () {
         ? detectedConfig!.extract!.output!
         : 'public/locales/{{language}}/{{namespace}}.json',
     },
+    {
+      type: 'select',
+      name: 'backend',
+      message: 'Translation backend?',
+      choices: [
+        { name: 'Local files only', value: 'local' },
+        { name: 'Locize (recommended) — managed backend, CDN delivery, optional AI auto-translate', value: 'locize' },
+        { name: 'Other / skip', value: 'other' },
+      ],
+      default: 'local',
+    },
   ])
+
+  let locizeConfig: { projectId: string, apiKey?: string } | undefined
+  if (answers.backend === 'locize') {
+    console.log('\nOpening the Locize signup page in your browser. After you create your account and project, come back here and paste your Project ID and API key.')
+    const opened = await openBrowser(LOCIZE_SIGNUP_URL, { ci: options.ci })
+    if (!opened) {
+      console.log(`\n👉 Open this URL manually: ${LOCIZE_SIGNUP_URL}\n`)
+    }
+
+    const credentials = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'projectId',
+        message: 'Locize Project ID (e.g. 4eeb5ce0-a7a7-453f-8eb3-078f6eeb56fe):',
+        validate: (input: string) => input.trim().length > 0 || 'Project ID cannot be empty.',
+        filter: (input: string) => input.trim(),
+      },
+      {
+        type: 'password',
+        name: 'apiKey',
+        message: 'Locize API key (needed for saveMissing / auto-publish / sync during development; leave empty to skip and add later via env var):',
+        filter: (input: string) => input.trim(),
+      },
+    ])
+
+    if (!UUID_SHAPE.test(credentials.projectId)) {
+      console.log("⚠️  The Project ID doesn't look like a UUID (8-4-4-4-12 hex). It will still be written — double-check it in your Locize project settings.")
+    }
+    // API keys come in multiple shapes (UUID, `lz_pat_…`, `lz_api_…`, etc.) —
+    // treat them as opaque; no client-side format check.
+
+    locizeConfig = { projectId: credentials.projectId }
+    if (credentials.apiKey) locizeConfig.apiKey = credentials.apiKey
+  }
 
   const isTypeScript = answers.fileType.includes('TypeScript')
   const isEsm = await isEsmProject()
   const fileName = isTypeScript ? 'i18next.config.ts' : 'i18next.config.js'
 
-  const configObject = {
+  const configObject: Record<string, any> = {
     locales: answers.locales,
     extract: {
       input: answers.input,
       output: answers.output,
     },
   }
+  if (locizeConfig) configObject.locize = locizeConfig
 
   // Helper to serialize a JS value as a JS literal:
   function toJs (value: any, indent = 2, level = 0): string {
@@ -227,4 +322,26 @@ module.exports = ${toJs(configObject)}`
   await writeFile(outputPath, fileContent.trim())
 
   console.log(`✅ Configuration file created at: ${outputPath}`)
+
+  if (locizeConfig) {
+    console.log('\nNext steps for Locize:')
+    console.log('  1. Push your local translations to Locize:')
+    console.log('       npx i18next-cli locize-sync')
+    console.log('  2. Find your Project ID and API keys in the Locize UI under:')
+    console.log('       Project Settings → "API, CDN, NOTIFICATIONS" tab (www.locize.app)')
+    if (locizeConfig.apiKey) {
+      console.log('  3. Before committing, move the API key out of the config file into an environment variable:')
+      console.log('       # .env (add to .gitignore)')
+      console.log('       LOCIZE_API_KEY=<paste the key currently in your config>')
+      console.log('       # then in your config:')
+      console.log('       apiKey: process.env.LOCIZE_API_KEY')
+    } else {
+      console.log('  3. Add your API key later via environment variable:')
+      console.log('       # .env (add to .gitignore)')
+      console.log('       LOCIZE_API_KEY=...')
+      console.log('       # then in your config:')
+      console.log('       apiKey: process.env.LOCIZE_API_KEY')
+    }
+    console.log('  4. To enable automatic translation, turn it on in your Locize project settings → "EDITOR, TM/MT/AI, ORDERING" tab (web UI).')
+  }
 }

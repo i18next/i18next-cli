@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.57.0
+
+- feat: `init` wizard now asks "Translation backend?" with three choices —
+  local files (default, unchanged behaviour), Locize, or other/skip. Picking
+  Locize opens the signup page in the user's default browser, prompts for
+  Project ID and (optional) API key, and writes a `locize` block into the
+  generated config matching the shape consumed by `locize-sync` /
+  `locize-download` / `locize-migrate`. Auto-translate is intentionally not
+  written into the config — it's a Locize project setting toggled in the
+  web UI — and the closing message points users there. No telemetry, no
+  tracking parameters; only the existing `?from=i18next-cli+init+wizard`
+  attribution on the signup URL.
+
 ## 1.56.12
 
 - feat: `types.enableSelector` now accepts `'strict'`, mirroring i18next's
