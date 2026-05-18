@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.58.0
+
+- feat: `extract` gains a `--with-types` flag. When set, the TypeScript
+  definitions are regenerated in the same process after extraction (on
+  every re-run in `--watch` mode) whenever translation files actually
+  changed. This removes the need to run `extract -w` and `types -w` as
+  two parallel processes — which suffered from a chokidar mid-write race
+  where the types output ended up one cycle behind the JSON files.
+  Skipped under `--dry-run` (no files written) and `--ci` (exits before
+  this point).
+- fix: `types --watch` now uses chokidar's `awaitWriteFinish` option, so
+  the watcher no longer triggers mid-write when another process (e.g.
+  `extract -w`) is rewriting the same translation files. Hardens the
+  existing two-process workflow for users who keep it.
+  Fixes [#257](https://github.com/i18next/i18next-cli/issues/257).
+
 ## 1.57.0
 
 - feat: `init` wizard now asks "Translation backend?" with three choices —

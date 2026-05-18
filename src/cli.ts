@@ -39,6 +39,7 @@ program
   .option('--sync-primary', 'Sync primary language values with default values from code.')
   .option('--sync-all', 'Sync primary language values with default values from code AND clear synced keys in all other locales.')
   .option('--trust-derived', 'When used with --sync-primary or --sync-all, also trust defaults inferred from keys (including keyPrefix-derived values).')
+  .option('--with-types', 'After extraction, regenerate TypeScript definitions (runs the types generator) when translation files changed.')
   .option('-q, --quiet', 'Suppress spinner and output')
   .action(async (options) => {
     try {
@@ -68,6 +69,12 @@ program
 
         if (hasErrors && !options.watch) {
           process.exit(1)
+        }
+
+        // Re-generate TypeScript definitions in the same process so consumers
+        // don't have to wire a second watcher (avoids the chokidar mid-write race).
+        if (options.withTypes && anyFileUpdated && !options.dryRun) {
+          await runTypesGenerator(config, { quiet: !!options.quiet })
         }
 
         return anyFileUpdated
@@ -142,7 +149,12 @@ program
       const expandedTypes = await expandGlobs(config.types?.input || [])
       const ignoredTypes = [...toArray(config.extract?.ignore)].filter(Boolean)
       const watchTypes = expandedTypes.filter(f => !ignoredTypes.some(g => minimatch(f, g, { dot: true })))
-      const watcher = chokidar.watch(watchTypes, { persistent: true })
+      // awaitWriteFinish avoids triggering mid-write when another process (e.g. `extract -w`)
+      // is rewriting the same translation files. See i18next/i18next-cli#257.
+      const watcher = chokidar.watch(watchTypes, {
+        persistent: true,
+        awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
+      })
       watcher.on('change', path => {
         console.log(`\nFile changed: ${path}`)
         run()

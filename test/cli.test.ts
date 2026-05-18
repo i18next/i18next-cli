@@ -165,6 +165,26 @@ describe('CLI command parsing and dispatching', () => {
     expect(mockRunTypesGenerator).toHaveBeenCalledTimes(1)
   })
 
+  it('should configure the "types --watch" watcher with awaitWriteFinish to avoid mid-write races', async () => {
+    vi.resetModules()
+    const mockWatch = (await import('chokidar')).watch as any
+    const mockGlob = (await import('glob')).glob as any
+    mockGlob.mockResolvedValue(['locales/en/translation.json'])
+
+    process.argv = ['node', 'cli.ts', 'types', '--watch']
+    mockEnsureConfig.mockResolvedValue({ extract: {}, types: { input: ['locales/en/*.json'] } })
+
+    await import('../src/cli')
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockWatch).toHaveBeenCalledTimes(1)
+    const calledOptions = mockWatch.mock.calls[0][1]
+    expect(calledOptions).toEqual(expect.objectContaining({
+      persistent: true,
+      awaitWriteFinish: expect.objectContaining({ stabilityThreshold: expect.any(Number) }),
+    }))
+  })
+
   it('should parse the "lint" command and call runLinter', async () => {
     vi.resetModules()
     process.argv = ['node', 'cli.ts', 'lint']
@@ -218,6 +238,46 @@ describe('CLI command parsing and dispatching', () => {
         syncPrimaryWithDefaults: true
       })
     )
+  })
+
+  it('should parse the "extract --with-types" command and call runTypesGenerator when files were updated', async () => {
+    vi.resetModules()
+    process.argv = ['node', 'cli.ts', 'extract', '--with-types']
+
+    mockEnsureConfig.mockResolvedValue(validMockConfig)
+    mockRunExtractor.mockResolvedValue({ anyFileUpdated: true, hasErrors: false })
+
+    await import('../src/cli')
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockRunTypesGenerator).toHaveBeenCalledTimes(1)
+    expect(mockRunTypesGenerator).toHaveBeenCalledWith(validMockConfig, { quiet: false })
+  })
+
+  it('should parse the "extract --with-types" command and NOT call runTypesGenerator when nothing changed', async () => {
+    vi.resetModules()
+    process.argv = ['node', 'cli.ts', 'extract', '--with-types']
+
+    mockEnsureConfig.mockResolvedValue(validMockConfig)
+    mockRunExtractor.mockResolvedValue({ anyFileUpdated: false, hasErrors: false })
+
+    await import('../src/cli')
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockRunTypesGenerator).not.toHaveBeenCalled()
+  })
+
+  it('should parse the "extract --with-types --dry-run" command and NOT call runTypesGenerator', async () => {
+    vi.resetModules()
+    process.argv = ['node', 'cli.ts', 'extract', '--with-types', '--dry-run']
+
+    mockEnsureConfig.mockResolvedValue(validMockConfig)
+    mockRunExtractor.mockResolvedValue({ anyFileUpdated: true, hasErrors: false })
+
+    await import('../src/cli')
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(mockRunTypesGenerator).not.toHaveBeenCalled()
   })
 
   it('should parse the "extract --sync-all --trust-derived" command and pass trustDerivedDefaults option', async () => {
