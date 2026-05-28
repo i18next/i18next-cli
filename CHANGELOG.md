@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.58.1
+
+- fix: `types` now accepts `.yaml`/`.yml` (and `.json5`) input files. The
+  command's internal `loadFile` previously fell through to `JSON.parse` for
+  any non-TS/JS file, so YAML/JSON5 translation sources threw a
+  `SyntaxError` even though `i18next-resources-for-ts` supports them and
+  `yaml` / `@croct/json5-parser` are already direct dependencies.
+  Fixes [#258](https://github.com/i18next/i18next-cli/issues/258).
+
 ## 1.58.0
 
 - feat: `extract` gains a `--with-types` flag. When set, the TypeScript

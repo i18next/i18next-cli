@@ -8,6 +8,8 @@ import { basename, extname, resolve, dirname, join, relative } from 'node:path'
 import { transform } from '@swc/core'
 import type { I18nextToolkitConfig, Logger } from './types.js'
 import { getOutputPath } from './utils/file-utils.js'
+import { JsonParser, JsonObjectNode } from '@croct/json5-parser'
+import yaml from 'yaml'
 import vm from 'node:vm'
 
 /**
@@ -57,6 +59,12 @@ async function loadFile (file: string) {
   }
 
   const content = await readFile(file, 'utf-8')
+  if (ext === '.yaml' || ext === '.yml') {
+    return yaml.parse(content)
+  }
+  if (ext === '.json5') {
+    return JsonParser.parse(content, JsonObjectNode).toJSON()
+  }
   return JSON.parse(content)
 }
 
