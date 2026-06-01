@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.58.2
+
+- fix: `instrument` no longer breaks multi-line imports when injecting the
+  `useTranslation` import. The insertion point was located with a per-line
+  regex (`/^import\s.+$/`), so a multi-line `import {\n  ...\n} from '...'`
+  matched only its first line (`import {`) and the new import was spliced
+  inside the braces, producing invalid code. The end of each import
+  statement is now found with a brace/string-aware scan.
+  Fixes [#259](https://github.com/i18next/i18next-cli/issues/259).
+
 ## 1.58.1
 
 - fix: `types` now accepts `.yaml`/`.yml` (and `.json5`) input files. The

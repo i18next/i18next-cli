@@ -390,18 +390,49 @@ function addImportStatements (
     insertPos = content.indexOf('\n') + 1
   }
 
-  // Find the end of the last import statement
-  const importRegex = /^import\s.+$/gm
+  // Find the end of the last import statement. Imports may span multiple lines
+  // (e.g. `import {\n  CCol,\n} from '...'`), so we can't treat each `import`
+  // line as a complete statement — we scan to the real end of each declaration.
+  const importStartRegex = /^import\b/gm
   let match: RegExpExecArray | null
-  while ((match = importRegex.exec(content)) !== null) {
-    const endOfImport = match.index + match[0].length
-    if (endOfImport > insertPos) {
-      const nextNewline = content.indexOf('\n', endOfImport)
-      insertPos = nextNewline !== -1 ? nextNewline + 1 : endOfImport
-    }
+  while ((match = importStartRegex.exec(content)) !== null) {
+    const endOfImport = findImportStatementEnd(content, match.index)
+    if (endOfImport > insertPos) insertPos = endOfImport
+    // Skip past this statement so we don't match `import` lines inside it.
+    importStartRegex.lastIndex = endOfImport
   }
 
   s.appendRight(insertPos, importStatement)
+}
+
+/**
+ * Returns the offset just past the end of the import statement that begins at
+ * `start`, handling multi-line imports with `{ ... }` clauses. The statement
+ * ends at the first newline or `;` at brace depth 0, after its module-specifier
+ * string has been closed.
+ */
+function findImportStatementEnd (content: string, start: number): number {
+  let depth = 0
+  let stringChar: string | null = null
+  let sawString = false
+  for (let i = start; i < content.length; i++) {
+    const ch = content[i]
+    if (stringChar !== null) {
+      if (ch === '\\') { i++; continue }
+      if (ch === stringChar) {
+        stringChar = null
+        if (depth === 0) sawString = true
+      }
+      continue
+    }
+    if (ch === '\'' || ch === '"' || ch === '`') { stringChar = ch; continue }
+    if (ch === '{' || ch === '(' || ch === '[') { depth++; continue }
+    if (ch === '}' || ch === ')' || ch === ']') { depth--; continue }
+    if (depth === 0 && sawString && (ch === '\n' || ch === ';')) {
+      return i + 1
+    }
+  }
+  return content.length
 }
 
 /**

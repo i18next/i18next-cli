@@ -176,6 +176,58 @@ describe('transformer', () => {
       expect(result.newContent).not.toContain('TODO')
     })
 
+    it('adds the import after a multi-line import without breaking it (issue #259)', () => {
+      const content = [
+        "import React from 'react'",
+        'import {',
+        '  CCol,',
+        '  CRow,',
+        "} from '@coreui/react'",
+        '',
+        'export function Dashboard () {',
+        '  const msg = "Welcome"',
+        '  return <CRow>{msg}</CRow>',
+        '}',
+        ''
+      ].join('\n')
+
+      const bodyStart = content.indexOf('{', content.indexOf('Dashboard'))
+      const offset = content.indexOf('Welcome')
+      const components: ComponentBoundary[] = [{
+        name: 'Dashboard',
+        bodyStart,
+        bodyEnd: content.lastIndexOf('}'),
+        hasUseTranslation: false
+      }]
+      const candidate: CandidateString = {
+        content: 'Welcome',
+        confidence: 0.8,
+        offset,
+        endOffset: offset + 'Welcome'.length,
+        type: 'string-literal',
+        file: 'test.tsx',
+        line: 8,
+        column: 14,
+        key: 'welcome',
+        insideComponent: 'Dashboard'
+      }
+
+      const result = transformFile(content, 'test.tsx', [candidate], {
+        isDryRun: false,
+        hasReact: true,
+        isPrimaryLanguageFile: true,
+        config: mockConfig,
+        components
+      })
+
+      // The useTranslation import must be added AFTER the multi-line import,
+      // never injected inside its braces.
+      expect(result.newContent).toContain("} from '@coreui/react'\nimport { useTranslation } from 'react-i18next'")
+      expect(result.newContent).not.toMatch(/import \{\nimport \{ useTranslation \}/)
+      // The original multi-line import stays intact.
+      expect(result.newContent).toContain('import {\n  CCol,\n  CRow,\n}')
+    })
+
     it('skips low-confidence candidates', () => {
       const content = 'const msg = "type"'
       const candidate: CandidateString = {
