@@ -59,16 +59,16 @@
     "@types/node": "^25.9.1",
     "@types/react": "^19.2.15",
     "@typescript-eslint/parser": "^8.60.0",
-    "@vitest/coverage-v8": "^4.1.7",
+    "@vitest/coverage-v8": "^4.1.8",
     "eslint": "^9.39.4",
-    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-import": "^2.32.0",
     "memfs": "^4.57.3",
     "neostandard": "^0.13.0",
-    "rollup": "^4.60.4",
+    "rollup": "^4.61.0",
     "typescript": "^6.0.3",
     "unplugin-swc": "^1.5.9",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.8"
   },
   "dependencies": {
     "@croct/json5-parser": "^0.2.2",
