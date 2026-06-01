@@ -1,8 +1,47 @@
 import type { Expression, JSXAttribute, JSXAttributeOrSpread, JSXElement, JSXElementChild, JSXElementName, JSXExpression, ObjectExpression } from '@swc/core'
 import type { I18nextToolkitConfig } from '../../types.js'
 import { getObjectPropValue, getObjectPropValueExpression, isSimpleTemplateLiteral } from './ast-utils.js'
+import { createRequire } from 'node:module'
 import type { JSXElementConstructor, ReactElement } from 'react'
-import { getDefaults, nodesToString } from 'react-i18next'
+
+/**
+ * react-i18next — and, transitively, the user's `i18next` — is loaded lazily
+ * and defensively. The CLI only needs `nodesToString`/`getDefaults` to
+ * serialize `<Trans>` children. Importing them at module scope means an
+ * incompatible react-i18next/i18next pair in the *user's* project (e.g.
+ * react-i18next@17.0.8 importing `keyFromSelector` from an older i18next that
+ * doesn't export it) throws while this module is being evaluated, which crashes
+ * *every* CLI command. By deferring the import until a `<Trans>` is actually
+ * serialized — and tolerating a load failure — unrelated commands keep working
+ * and Trans serialization degrades gracefully. See issue #260.
+ */
+interface ReactI18nextApi {
+  getDefaults: () => Record<string, any>
+  nodesToString: (nodes: Array<string | ReactElement>, options: Record<string, any>) => string
+}
+
+let cachedReactI18next: ReactI18nextApi | null | undefined
+function loadReactI18next (): ReactI18nextApi | null {
+  if (cachedReactI18next !== undefined) return cachedReactI18next
+  try {
+    const require = createRequire(import.meta.url)
+    cachedReactI18next = require('react-i18next') as ReactI18nextApi
+  } catch {
+    cachedReactI18next = null
+  }
+  return cachedReactI18next
+}
+
+let warnedReactI18nextUnavailable = false
+function warnReactI18nextUnavailable (): void {
+  if (warnedReactI18nextUnavailable) return
+  warnedReactI18nextUnavailable = true
+  console.warn(
+    "i18next-cli: could not load 'react-i18next' to serialize <Trans> children — " +
+    'skipping their default-value extraction. This usually means the installed ' +
+    "'react-i18next' and 'i18next' versions are incompatible. Other functionality is unaffected."
+  )
+}
 
 /**
  * Detects which `$$typeof` symbol react-i18next's `nodesToString` expects
@@ -12,11 +51,13 @@ import { getDefaults, nodesToString } from 'react-i18next'
  *
  * React 18 uses `Symbol.for('react.element')`, while React 19 uses
  * `Symbol.for('react.transitional.element')` for its element `$$typeof`.
- * By probing `nodesToString` at load time we ensure the fake elements we
- * build match its `isValidElement` check, regardless of which React it
- * resolved to.
+ * By probing `nodesToString` we ensure the fake elements we build match its
+ * `isValidElement` check, regardless of which React it resolved to. Resolved
+ * lazily (and cached) the first time we serialize a `<Trans>`.
  */
-const REACT_ELEMENT_TYPE: symbol = (() => {
+let cachedReactElementType: symbol | undefined
+function resolveReactElementType (rt: ReactI18nextApi): symbol {
+  if (cachedReactElementType !== undefined) return cachedReactElementType
   const candidates = [
     Symbol.for('react.element'), // React ≤ 18
     Symbol.for('react.transitional.element') // React 19
@@ -32,14 +73,15 @@ const REACT_ELEMENT_TYPE: symbol = (() => {
         key: null,
         ref: null
       }
-      const result = nodesToString([testEl], { ...getDefaults() })
-      if (result === '<0>x</0>') return sym
+      const result = rt.nodesToString([testEl as unknown as ReactElement], { ...rt.getDefaults() })
+      if (result === '<0>x</0>') { cachedReactElementType = sym; return sym }
     }
   } finally {
     console.warn = savedWarn
   }
+  cachedReactElementType = candidates[0]
   return candidates[0]
-})()
+}
 
 /** `React.Fragment` equivalent – same symbol across all React versions. */
 const REACT_FRAGMENT: symbol = Symbol.for('react.fragment')
@@ -61,7 +103,9 @@ function createElement (
     finalProps.children = children
   }
   return {
-    $$typeof: REACT_ELEMENT_TYPE,
+    // serializeJSXChildren() resolves and caches this before any element is
+    // built; the fallback only applies if createElement is ever reached first.
+    $$typeof: cachedReactElementType ?? Symbol.for('react.transitional.element'),
     type,
     props: finalProps,
     key: null,
@@ -559,9 +603,17 @@ function childrenHaveInlineCount (children: JSXElementChild[]): boolean {
 }
 
 function serializeJSXChildren (children: JSXElementChild[], config: I18nextToolkitConfig): string {
-  const i18nextOptions = { ...getDefaults() }
+  const rt = loadReactI18next()
+  if (!rt) {
+    warnReactI18nextUnavailable()
+    return ''
+  }
+  // Resolve the element `$$typeof` before swcChildrenToReactNodes() builds any
+  // elements via createElement().
+  resolveReactElementType(rt)
+  const i18nextOptions = { ...rt.getDefaults() }
   if (config.extract.transKeepBasicHtmlNodesFor) {
     i18nextOptions.transKeepBasicHtmlNodesFor = config.extract.transKeepBasicHtmlNodesFor
   }
-  return nodesToString(swcChildrenToReactNodes(children), i18nextOptions)
+  return rt.nodesToString(swcChildrenToReactNodes(children), i18nextOptions)
 }

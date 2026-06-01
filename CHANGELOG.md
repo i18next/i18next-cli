@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.58.3
+
+- fix: CLI commands no longer crash when the project has an incompatible
+  `react-i18next` / `i18next` pair. `react-i18next@17.0.8` imports
+  `keyFromSelector` from `i18next` (added in i18next 26.2.0); when an older
+  `i18next` was resolved (e.g. a stale transitive dependency), the extractor's
+  top-level `import … from 'react-i18next'` threw while loading, taking down
+  *every* command (`status`, `extract`, …). `react-i18next` is now loaded
+  lazily and defensively — only when serializing `<Trans>` children — so
+  unrelated commands always work and Trans serialization degrades gracefully
+  with a warning instead of crashing. `i18next` is also now declared as a
+  direct dependency (`^26.3.0`, matching react-i18next's peer requirement) so
+  package managers that don't auto-install peers (e.g. pnpm) get a compatible
+  copy. Fixes [#260](https://github.com/i18next/i18next-cli/issues/260).
+
 ## 1.58.2
 
 - fix: `instrument` no longer breaks multi-line imports when injecting the
