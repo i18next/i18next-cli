@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.59.1
+
+- fix: `loadTranslationFile` no longer silently treats an unparseable
+  JSON/JSON5/YAML translation file as empty. Previously a parse failure was
+  swallowed (logged as a warning) and returned as `null`, which callers coalesce
+  to `{}` — so re-running the extractor over a corrupt file (e.g. an `en.json`
+  with a leftover merge-conflict marker, a common hazard when a watcher
+  re-extracts on save) would overwrite it and silently destroy its contents.
+  Parsing a structured data file that exists on disk but cannot be parsed now
+  throws, stopping the command with an error instead of clobbering good data.
+  Loading `.ts`/`.js` resource files stays lenient (degrades to `null`) so this
+  does not regress [#59](https://github.com/i18next/i18next-cli/issues/59).
+  Thanks to [@TenPotatoes](https://github.com/TenPotatoes) for the report.
+  Closes [#264](https://github.com/i18next/i18next-cli/issues/264).
+
 ## 1.59.0
 
 - feat: add a `--ci` flag to the `types` command. It generates the TypeScript

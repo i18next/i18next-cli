@@ -7,6 +7,21 @@ import { JsonParser, JsonObjectNode } from '@croct/json5-parser'
 import yaml from 'yaml'
 
 /**
+ * Thrown when an existing translation file in a structured data format
+ * (JSON/JSON5/YAML) exists on disk but cannot be parsed. Callers should treat
+ * this as fatal rather than as an empty/missing file, since overwriting an
+ * unparseable file would silently destroy its contents (e.g. a merge conflict
+ * marker accidentally committed into an en.json).
+ */
+export class ParseTranslationFileError extends Error {
+  constructor (public readonly filePath: string, public readonly cause?: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    super(`Could not parse translation file ${filePath}: ${detail}`)
+    this.name = 'ParseTranslationFileError'
+  }
+}
+
+/**
  * Ensures that the directory for a given file path exists.
  * Creates all necessary parent directories recursively if they don't exist.
  *
@@ -113,21 +128,43 @@ export async function loadTranslationFile (filePath: string): Promise<Record<str
     return null // File doesn't exist
   }
 
-  try {
-    const ext = extname(fullPath).toLowerCase()
+  const ext = extname(fullPath).toLowerCase()
 
-    if (ext === '.json5') {
-      const content = await readFile(fullPath, 'utf-8')
+  // Structured data formats (JSON/JSON5/YAML): the file exists (it passed the
+  // access() check above) but could not be parsed. Treating this as `null` is
+  // dangerous: callers coalesce it to an empty object and may overwrite the
+  // existing file, silently destroying its contents (e.g. when a merge conflict
+  // marker breaks an en.json that a watcher then re-extracts). Fail loudly so
+  // the caller can stop instead of overwriting good data with nothing.
+  if (ext === '.json5') {
+    const content = await readFile(fullPath, 'utf-8')
+    try {
       // Parse as a JSON5 object node
       const node = JsonParser.parse(content, JsonObjectNode)
       return node.toJSON()
-    } else if (ext === '.yaml' || ext === '.yml') {
-      const content = await readFile(fullPath, 'utf-8')
+    } catch (error) {
+      throw new ParseTranslationFileError(filePath, error)
+    }
+  } else if (ext === '.yaml' || ext === '.yml') {
+    const content = await readFile(fullPath, 'utf-8')
+    try {
       return yaml.parse(content) as Record<string, any>
-    } else if (ext === '.json') {
-      const content = await readFile(fullPath, 'utf-8')
+    } catch (error) {
+      throw new ParseTranslationFileError(filePath, error)
+    }
+  } else if (ext === '.json') {
+    const content = await readFile(fullPath, 'utf-8')
+    try {
       return JSON.parse(content)
-    } else if (ext === '.ts' || ext === '.js') {
+    } catch (error) {
+      throw new ParseTranslationFileError(filePath, error)
+    }
+  } else if (ext === '.ts' || ext === '.js') {
+    // .ts/.js resource files are loaded via jiti, which can fail for reasons
+    // unrelated to corruption (e.g. a transitive import or a side-effectful
+    // module). This path has been deliberately lenient since #59, so keep
+    // degrading to `null` here rather than aborting the whole command.
+    try {
       // Load TypeScript path aliases for proper module resolution
       const aliases = await getTsConfigAliases()
 
@@ -138,13 +175,13 @@ export async function loadTranslationFile (filePath: string): Promise<Record<str
 
       const module = await jiti.import(fullPath, { default: true }) as unknown
       return module as Record<string, any> | null
+    } catch (error) {
+      console.warn(`Could not parse translation file ${filePath}:`, error)
+      return null
     }
-
-    return null // Unsupported file type
-  } catch (error) {
-    console.warn(`Could not parse translation file ${filePath}:`, error)
-    return null
   }
+
+  return null // Unsupported file type
 }
 
 // Helper to load raw JSON5 content for preservation

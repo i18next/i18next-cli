@@ -326,4 +326,40 @@ describe('reproducer: plural re-extract corruption', () => {
       },
     })
   })
+
+  it('errors (instead of silently overwriting) when an existing translation file fails to parse', async () => {
+    const component = `
+      import { useTranslation } from 'react-i18next';
+
+      export const ReactComponent = () => {
+        const { t } = useTranslation();
+        return <p>{t('myKey')}</p>;
+      };
+    `
+    await fs.writeFile(join(tempDir, 'components', 'ReactComponent.tsx'), component)
+
+    // Existing file with a merge-conflict marker that breaks JSON parsing.
+    const corrupt = `{
+  "myKey": "My old value that will be removed"
+  >>>>>>
+}`
+    await fs.writeFile(join(tempDir, 'locales', 'en.json'), corrupt, 'utf-8')
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        defaultNS: false,
+        outputFormat: 'json',
+        mergeNamespaces: false,
+        keySeparator: false,
+        input: normalizePath(join(tempDir, 'components/*.{ts,tsx,cts,mts}')),
+        output: normalizePath(join(tempDir, 'locales/{{language}}.json')),
+      },
+    }
+
+    await expect(runExtractor(config, { isDryRun: false })).rejects.toThrow(/Could not parse translation file/)
+
+    // The corrupt file must be left untouched, not overwritten with extracted keys.
+    expect(await fs.readFile(join(tempDir, 'locales', 'en.json'), 'utf-8')).toBe(corrupt)
+  })
 })
