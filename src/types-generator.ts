@@ -111,10 +111,10 @@ function getNamespaceFromPath (filePath: string, basePath: string): string {
  */
 export async function runTypesGenerator (
   config: I18nextToolkitConfig,
-  options: { quiet?: boolean, logger?: Logger } = {}
-) {
+  options: { quiet?: boolean, logger?: Logger, checkOnly?: boolean } = {}
+): Promise<{ changed: boolean, changedFiles: string[] }> {
   const internalLogger = options.logger ?? new ConsoleLogger()
-  const spinner = createSpinnerLike('Generating TypeScript types for translations...\n', { quiet: !!options.quiet, logger: options.logger })
+  const spinner = createSpinnerLike('Generating TypeScript types for translations...\n', { quiet: !!options.quiet || !!options.checkOnly, logger: options.logger })
 
   try {
     config.extract.primaryLanguage ||= config.locales[0] || 'en'
@@ -128,7 +128,7 @@ export async function runTypesGenerator (
 
     if (!config.types?.input || config.types?.input.length < 0) {
       console.log('No input defined!')
-      return
+      return { changed: false, changedFiles: [] }
     }
 
     const resourceFiles = await glob(config.types.input, { cwd: process.cwd() })
@@ -181,6 +181,29 @@ ${mergeResourcesAsInterface(resources, { optimize: !!enableSelector, indentation
 
     const outputPath = resolve(process.cwd(), config.types?.output || '')
     const resourcesOutputPath = resolve(process.cwd(), config.types.resourcesFile)
+
+    if (options.checkOnly) {
+      const changedFiles: string[] = []
+
+      let existingResources: string | null = null
+      try {
+        existingResources = await readFile(resourcesOutputPath, 'utf-8')
+      } catch {
+        existingResources = null
+      }
+      if (existingResources !== interfaceDefinition) {
+        changedFiles.push(config.types.resourcesFile)
+      }
+
+      try {
+        await access(outputPath)
+      } catch {
+        changedFiles.push(config.types.output || '')
+      }
+
+      return { changed: changedFiles.length > 0, changedFiles }
+    }
+
     await mkdir(dirname(resourcesOutputPath), { recursive: true })
     await writeFile(resourcesOutputPath, interfaceDefinition)
     logMessages.push(`  ${styleText('green', '✓')} Resources interface written to ${config.types.resourcesFile}`)
@@ -217,9 +240,11 @@ declare module 'i18next' {
     }
     spinner.succeed(styleText('bold', 'TypeScript definitions generated successfully.'))
     logMessages.forEach(msg => typeof internalLogger.info === 'function' ? internalLogger.info(msg) : console.log(msg))
+    return { changed: false, changedFiles: [] }
   } catch (error) {
     spinner.fail(styleText('red', 'Failed to generate TypeScript definitions.'))
     if (typeof internalLogger.error === 'function') internalLogger.error(error)
     else console.error(error)
+    return { changed: false, changedFiles: [] }
   }
 }
