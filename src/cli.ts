@@ -136,10 +136,29 @@ program
   .command('types')
   .description('Generate TypeScript definitions from translation resource files.')
   .option('-w, --watch', 'Watch for file changes and re-run the type generator.')
+  .option('--ci', 'Exit with a non-zero status code if type definitions are not up to date (check-only, no writes).')
   .option('-q, --quiet', 'Suppress spinner and output')
   .action(async (options) => {
     const cfgPath = program.opts().config
     const config = await ensureConfig(cfgPath)
+
+    if (options.ci && options.watch) {
+      console.error(styleText('red', '--ci and --watch cannot be used together'))
+      process.exit(1)
+    }
+
+    if (options.ci) {
+      const { changed, changedFiles } = await runTypesGenerator(config, { checkOnly: true })
+      if (changed) {
+        console.error(styleText('red', "❌ TypeScript definitions are out of date. Run 'i18next-cli types' and commit the changes."))
+        for (const file of changedFiles) {
+          console.error(`   ${file}`)
+        }
+        process.exit(1)
+      }
+      console.log(styleText('green', '✅ TypeScript definitions are up to date.'))
+      return
+    }
 
     const run = () => runTypesGenerator(config, { quiet: !!options.quiet })
     await run()
