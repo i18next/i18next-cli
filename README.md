@@ -263,6 +263,8 @@ npx i18next-cli types [options]
 
 **Options:**
 - `--watch, -w`: Re-run automatically when translation files change
+- `--ci`: Exit with a non-zero status if the generated TypeScript definitions are out of date (check-only, writes nothing). Cannot be combined with `--watch`.
+- `--quiet, -q`: Suppress spinner and non-essential output (for CI or scripting)
 
 ### `sync`
 Synchronizes secondary language files against your primary language file, adding missing keys and removing extraneous ones.
@@ -1323,6 +1325,14 @@ Use the `--ci` flag to fail builds when translations are outdated:
 # GitHub Actions example
 - name: Check translations
   run: npx i18next-cli extract --ci
+```
+
+Likewise, fail the build when the generated TypeScript definitions are out of date:
+
+```yaml
+# Fail the build if generated TypeScript definitions are out of date
+- name: Check i18n types
+  run: npx i18next-cli types --ci
 ```
 
 ## Watch Mode

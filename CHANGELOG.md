@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.59.0
+
+- feat: add a `--ci` flag to the `types` command. It generates the TypeScript
+  definitions in memory and compares them against what is on disk **without
+  writing anything**, exiting with a non-zero status code (and listing the
+  affected files) when they are out of date. This lets CI — and developers
+  locally / in pre-commit hooks — verify the committed `resources.d.ts` is up
+  to date with a single command instead of scripting `types` + `git diff`. A
+  missing main definition file (`i18next.d.ts`) is also treated as out of date;
+  its user-editable contents are not diffed. `--ci` cannot be combined with
+  `--watch`. Thanks to [@pjrobertson](https://github.com/pjrobertson) for the
+  contribution. Closes [#261](https://github.com/i18next/i18next-cli/issues/261).
+
 ## 1.58.3
 
 - fix: CLI commands no longer crash when the project has an incompatible
