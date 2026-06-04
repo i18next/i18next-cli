@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.60.0
+
+- feat: the `i18next-instrument-ignore` directive now suppresses the **entire
+  JSX element** that follows it (its opening tag, nested children, and closing
+  tag) for both the `lint` and `instrument` commands — not just the single
+  physical line after the comment. This makes one directive enough to ignore
+  multi-line elements (e.g. `<div … css={…}>…</div>`) and elements with nested
+  children. The `i18next-instrument-ignore-next-line` variant keeps its
+  line-precise behaviour, and the directive is now documented in the README.
+  Thanks to [@mindplay-dk](https://github.com/mindplay-dk) for the report
+  [#265](https://github.com/i18next/i18next-cli/issues/265).
+
 ## 1.59.1
 
 - fix: `loadTranslationFile` no longer silently treats an unparseable

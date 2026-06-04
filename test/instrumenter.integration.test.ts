@@ -815,6 +815,50 @@ export function MixedChars () {
     ).resolves.toBeDefined()
   })
 
+  it('a bare i18next-instrument-ignore directive suppresses a whole multi-line JSX element', async () => {
+    await fs.writeFile(
+      join(tempDir, 'src', 'components', 'Hero.tsx'),
+      [
+        "import React from 'react'",
+        '',
+        'export default function Hero() {',
+        '  return (',
+        '    <div>',
+        '      {/* i18next-instrument-ignore */}',
+        '      <div',
+        '        id="hero"',
+        '        className="center">',
+        '        Ignored heading',
+        '        <p>Ignored nested paragraph</p>',
+        '      </div>',
+        '      <p>Wrap me</p>',
+        '    </div>',
+        '  )',
+        '}',
+        ''
+      ].join('\n')
+    )
+
+    const config = makeConfig()
+    await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
+
+    const src = await readFile(join(tempDir, 'src', 'components', 'Hero.tsx'), 'utf-8')
+
+    // Everything inside the ignored multi-line element stays untouched
+    expect(src).toContain('Ignored heading')
+    expect(src).toContain('<p>Ignored nested paragraph</p>')
+    expect(src).not.toContain("'Ignored heading'")
+    expect(src).not.toContain("'Ignored nested paragraph'")
+
+    // The sibling element outside the ignored block is still wrapped
+    expect(src).toContain("t('wrapMe', 'Wrap me')")
+
+    const { parse } = await import('@swc/core')
+    await expect(
+      parse(src, { syntax: 'typescript', tsx: true })
+    ).resolves.toBeDefined()
+  })
+
   // ───────────────────────────────────────────────────────────────────────────
   // Template-literal interpolation: `${count}-day streak` → t() with {{count}}
   // ───────────────────────────────────────────────────────────────────────────

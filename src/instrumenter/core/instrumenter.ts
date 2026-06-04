@@ -13,7 +13,7 @@ import { generateKeyFromContent, createKeyRegistry } from './key-generator.js'
 import { createSpinnerLike } from '../../utils/wrap-ora.js'
 import { ConsoleLogger } from '../../utils/logger.js'
 import { ignoredAttributeSet } from '../../utils/jsx-attributes.js'
-import { normalizeASTSpans, findFirstTokenIndex } from '../../extractor/parsers/ast-utils.js'
+import { normalizeASTSpans, findFirstTokenIndex, buildByteToCharMap, convertSpansToCharIndices, collectIgnoredLineRanges } from '../../extractor/parsers/ast-utils.js'
 import { getOutputPath } from '../../utils/file-utils.js'
 
 /**
@@ -345,11 +345,13 @@ async function scanFileForCandidates (
 
     // Filter out candidates suppressed by ignore-comment directives.
     // Supported comments (line or block):
-    //   // i18next-instrument-ignore-next-line
-    //   // i18next-instrument-ignore
+    //   // i18next-instrument-ignore-next-line  → suppress the single next line
+    //   // i18next-instrument-ignore            → suppress the whole next JSX element
     //   /* i18next-instrument-ignore-next-line */
     //   /* i18next-instrument-ignore */
-    const ignoredLines = collectIgnoredLines(content)
+    // AST spans were normalised to char indices above, so the shared helper can
+    // resolve element line ranges directly.
+    const ignoredLines = collectIgnoredLineRanges(ast, content)
     if (ignoredLines.size > 0) {
       const keep: CandidateString[] = []
       for (const c of candidates) {
@@ -366,35 +368,6 @@ async function scanFileForCandidates (
   }
 
   return { candidates, components, languageChangeSites }
-}
-
-// ─── Ignore-comment helpers ──────────────────────────────────────────────────
-
-/**
- * Regex that matches a directive comment requesting the instrumenter to skip
- * the **next** line. Works with both line comments (`// ...`) and block
- * comments. The supported directives are:
- *
- *   i18next-instrument-ignore-next-line
- *   i18next-instrument-ignore
- */
-const IGNORE_RE = /i18next-instrument-ignore(?:-next-line)?/
-
-/**
- * Scans `content` for ignore-directive comments and returns a Set of 1-based
- * line numbers whose strings should be excluded from instrumentation.
- */
-function collectIgnoredLines (content: string): Set<number> {
-  const ignored = new Set<number>()
-  const lines = content.split('\n')
-  for (let i = 0; i < lines.length; i++) {
-    if (IGNORE_RE.test(lines[i])) {
-      // Directive on line i → suppress the *following* line (i + 1)
-      // We store 1-based line numbers, so the suppressed line is i + 2
-      ignored.add(i + 2)
-    }
-  }
-  return ignored
 }
 
 /**
@@ -2196,76 +2169,4 @@ async function runInstrumentOnResultPipeline (
     }
   }
   return candidates
-}
-
-// ─── Byte → char offset helpers ────────────────────────────────────────────
-
-/**
- * Builds a lookup table from UTF-8 byte offsets to JavaScript string character
- * indices (UTF-16 code-unit positions).
- *
- * SWC internally represents source as UTF-8 and reports AST spans as byte
- * offsets into that representation.  MagicString and all JavaScript String
- * methods operate on UTF-16 code-unit indices.  For files that contain only
- * ASCII characters the two coincide, so this function returns `null` as a
- * fast path.  For files with multi-byte characters (emoji, accented letters,
- * CJK, etc.) the returned array allows O(1) conversion of any byte offset.
- */
-function buildByteToCharMap (content: string): number[] | null {
-  // Fast path: pure ASCII means byte offset ≡ char index
-  // eslint-disable-next-line no-control-regex
-  if (!/[^\x00-\x7F]/.test(content)) return null
-
-  const map: number[] = []
-  let byteIdx = 0
-
-  for (let charIdx = 0; charIdx < content.length;) {
-    const cp = content.codePointAt(charIdx)!
-    const byteLen = cp <= 0x7F ? 1 : cp <= 0x7FF ? 2 : cp <= 0xFFFF ? 3 : 4
-    const charLen = cp > 0xFFFF ? 2 : 1 // surrogate pair
-
-    // Every byte belonging to this character maps to the same char index
-    for (let b = 0; b < byteLen; b++) {
-      map[byteIdx + b] = charIdx
-    }
-
-    byteIdx += byteLen
-    charIdx += charLen
-  }
-
-  // Sentinel so that span.end (one-past-the-last-byte) resolves correctly
-  map[byteIdx] = content.length
-
-  return map
-}
-
-/**
- * Recursively converts every `span.start` / `span.end` in an SWC AST from
- * UTF-8 byte offsets to JavaScript string character indices using the
- * pre-built lookup table.
- */
-function convertSpansToCharIndices (node: any, byteToChar: number[]): void {
-  if (!node || typeof node !== 'object') return
-
-  if (node.span && typeof node.span.start === 'number') {
-    const charStart = byteToChar[node.span.start]
-    const charEnd = byteToChar[node.span.end]
-    if (charStart !== undefined && charEnd !== undefined) {
-      node.span = { ...node.span, start: charStart, end: charEnd }
-    }
-  }
-
-  for (const key of Object.keys(node)) {
-    if (key === 'span') continue
-    const child = node[key]
-    if (Array.isArray(child)) {
-      for (const item of child) {
-        if (item && typeof item === 'object') {
-          convertSpansToCharIndices(item, byteToChar)
-        }
-      }
-    } else if (child && typeof child === 'object') {
-      convertSpansToCharIndices(child, byteToChar)
-    }
-  }
 }

@@ -7,6 +7,7 @@ import { styleText } from 'node:util'
 import { ConsoleLogger } from './utils/logger.js'
 import { createSpinnerLike } from './utils/wrap-ora.js'
 import { translatableAttributes, ignoredAttributeLowerSet, ignoredTags as sharedIgnoredTags, acceptedTags as sharedAcceptedTags } from './utils/jsx-attributes.js'
+import { findFirstTokenIndex, normalizeASTSpans, buildByteToCharMap, convertSpansToCharIndices, collectIgnoredLineRanges } from './extractor/parsers/ast-utils.js'
 import type { I18nextToolkitConfig, Logger, LintIssue, Plugin, LintPluginContext } from './types.js'
 
 /**
@@ -101,37 +102,6 @@ function isI18nextOptionKey (key: string): boolean {
   // defaultValue_one, defaultValue_other, defaultValue_many, etc.
   if (key.startsWith('defaultValue_')) return true
   return false
-}
-
-// ─── Ignore-comment helpers ──────────────────────────────────────────────────
-
-/**
- * Regex matching the shared ignore directive used by both the instrumenter and
- * the linter.  Supports both `-next-line` and inline variants, in line or block
- * comment form.
- *
- *   // i18next-instrument-ignore-next-line   → suppresses the following line
- *   // i18next-instrument-ignore             → suppresses the following line
- *   { /* i18next-instrument-ignore * / }     → same, block-comment form
- */
-const LINT_IGNORE_RE = /i18next-instrument-ignore(?:-next-line)?/
-
-/**
- * Scans `code` for ignore-directive comments and returns a Set of 1-based
- * line numbers whose issues should be suppressed.
- *
- * The directive always suppresses the **next** line (line N+1), matching the
- * behaviour of the instrumenter's `collectIgnoredLines`.
- */
-function collectLintIgnoredLines (code: string): Set<number> {
-  const ignored = new Set<number>()
-  const lines = code.split('\n')
-  for (let i = 0; i < lines.length; i++) {
-    if (LINT_IGNORE_RE.test(lines[i])) {
-      ignored.add(i + 2) // 1-based: directive is on line i+1, suppressed line is i+2
-    }
-  }
-  return ignored
 }
 
 // Helper to lint interpolation parameter errors in t() calls
@@ -434,6 +404,20 @@ export class Linter extends EventEmitter<LinterEventMap> {
           }
         }
 
+        // Normalise AST spans to file-relative character indices so the ignore
+        // directive can resolve the line range of the JSX element it precedes.
+        // (findHardcodedStrings/lintInterpolationParams locate issues via text
+        // search and don't read spans, so this only affects ignore handling.)
+        try {
+          const spanBase = ast.span.start - findFirstTokenIndex(code)
+          normalizeASTSpans(ast, spanBase)
+          const byteToChar = buildByteToCharMap(code)
+          if (byteToChar) convertSpansToCharIndices(ast, byteToChar)
+        } catch {
+          // If span normalisation fails for any reason, fall back to text-based
+          // issue detection without block-scoped ignore support.
+        }
+
         // Collect hardcoded string issues
         const hardcodedStrings = findHardcodedStrings(ast, code, config)
         // Collect interpolation parameter issues
@@ -441,8 +425,9 @@ export class Linter extends EventEmitter<LinterEventMap> {
         let allIssues: LintIssue[] = [...hardcodedStrings, ...interpolationIssues]
 
         // Filter issues suppressed by ignore-directive comments.
-        // The directive on line N suppresses all issues reported on line N+1.
-        const ignoredLines = collectLintIgnoredLines(code)
+        //   i18next-instrument-ignore-next-line → suppresses the single next line
+        //   i18next-instrument-ignore           → suppresses the whole next JSX element
+        const ignoredLines = collectIgnoredLineRanges(ast, code)
         if (ignoredLines.size > 0) {
           allIssues = allIssues.filter(issue => !ignoredLines.has(issue.line))
         }

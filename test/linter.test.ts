@@ -1593,6 +1593,90 @@ describe('Linter (core logic)', () => {
     expect(result.files['/src/App.tsx'][0].text).toBe('This line is NOT ignored and should be flagged')
   })
 
+  // ── block-scoped ignore directive (issue #265) ─────────────────────────────
+
+  it('should suppress a whole multi-line JSX element following a bare ignore directive', async () => {
+    const config: I18nextToolkitConfig = { ...mockConfig, lint: {} }
+    const sampleCode = [
+      '<>',
+      '{/* i18next-instrument-ignore */}',
+      '<div',
+      '  id="hero"',
+      '  className="center">',
+      "  Hi, I'm Bob* 👋",
+      '</div>',
+      '</>',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+  })
+
+  it('should suppress nested children of a JSX element following a bare ignore directive', async () => {
+    const config: I18nextToolkitConfig = { ...mockConfig, lint: {} }
+    const sampleCode = [
+      '<>',
+      '{/* i18next-instrument-ignore */}',
+      '<div>',
+      '  This will be ignored',
+      '  <p>and this nested one too</p>',
+      '</div>',
+      '<p>but this sibling is still flagged</p>',
+      '</>',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('but this sibling is still flagged')
+  })
+
+  it('should flag the same element when no ignore directive is present (control)', async () => {
+    const config: I18nextToolkitConfig = { ...mockConfig, lint: {} }
+    const sampleCode = [
+      '<>',
+      '<div',
+      '  id="hero">',
+      "  Hi, I'm Bob* 👋",
+      '</div>',
+      '</>',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx'][0].text).toBe("Hi, I'm Bob* 👋")
+  })
+
+  it('should NOT block-scope the -next-line variant on a multi-line element', async () => {
+    const config: I18nextToolkitConfig = { ...mockConfig, lint: {} }
+    // -next-line only suppresses the single line after the directive (the bare
+    // `<div` opening). The text on a later line of the same element stays flagged,
+    // proving -next-line is line-precise while the bare form is block-scoped.
+    const sampleCode = [
+      '<>',
+      '{/* i18next-instrument-ignore-next-line */}',
+      '<div',
+      '  id="hero">',
+      '  This child is on a later line and stays flagged',
+      '</div>',
+      '</>',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(false)
+    expect(result.files['/src/App.tsx']).toHaveLength(1)
+    expect(result.files['/src/App.tsx'][0].text).toBe('This child is on a later line and stays flagged')
+  })
+
   // --- Hardcoded string in JSX expression container (issue #244) ---
 
   it('should detect a hardcoded string inside a JSX expression container', async () => {

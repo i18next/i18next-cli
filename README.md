@@ -280,6 +280,8 @@ Analyzes your source code for internationalization issues like hardcoded strings
 npx i18next-cli lint
 ```
 
+To suppress warnings for code you intentionally aren't translating yet, use the [`i18next-instrument-ignore` directive](#suppressing-detection-with-i18next-instrument-ignore) — the same comment recognized by the `instrument` command.
+
 ### `instrument`
 
 Scans your source code for hardcoded user-facing strings and instruments them with i18next translation calls. This is useful for adding i18next instrumentation to an existing codebase that wasn't built with internationalization in mind. You can see this in action in [this video](https://youtu.be/aWZnZXwGg34) or in [this blog post](https://www.locize.com/blog/i18next-cli-instrument?utm_source=i18next_cli_readme&utm_medium=github&utm_campaign=readme).
@@ -436,6 +438,33 @@ The intended usage pattern is:
 4. Run the full test suite to catch any issues
 5. Manually fix any false positives or false negatives
 6. Run `extract` to finalize translation files
+
+#### Suppressing detection with `i18next-instrument-ignore`
+
+Both the `lint` and `instrument` commands honor an ignore comment so you can skip placeholder or intentionally-untranslated content. It works as a line or block comment, including the JSX `{/* ... */}` form, and comes in two variants:
+
+| Directive | Scope |
+| --- | --- |
+| `i18next-instrument-ignore` | The **entire JSX element** that begins on the next line — its opening tag, all nested children, and its closing tag. Falls back to a single line when the next line isn't a JSX element (e.g. a plain `t()` call). |
+| `i18next-instrument-ignore-next-line` | Only the **single line** immediately after the directive. |
+
+```jsx
+// Suppress a whole element (including multi-line opening tags and nested children)
+{/* i18next-instrument-ignore */}
+<div
+  css={css`text-align: center;`}>
+  Hi, I'm Bob 👋
+  <p>This nested text is ignored too</p>
+</div>
+
+// Suppress just one line
+{/* i18next-instrument-ignore-next-line */}
+<p>Only this line is ignored</p>
+
+// Also works for t() interpolation warnings in the linter
+// i18next-instrument-ignore
+const msg = t('Hello {{name}}!', { wrong: 'world' })
+```
 
 ### `migrate-config`
 Automatically migrates a legacy `i18next-parser.config.js` file to the new `i18next.config.ts` format.
