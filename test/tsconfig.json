@@ -1,0 +1,18 @@
+{
+  // Editor-only config so the IDE typechecks test files with Node globals
+  // (e.g. `process`) and the bundler-style module resolution that vitest/esbuild
+  // actually uses (extensionless relative imports, JSON imports). Tests are
+  // excluded from the root tsconfig and run via vitest, so this is not part of
+  // the build.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true,
+    "types": ["node"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["../node_modules"]
+}

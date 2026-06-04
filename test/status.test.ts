@@ -230,15 +230,15 @@ describe('status (detailed view)', () => {
     vi.restoreAllMocks()
   })
 
-  it('should show a warning when checking the primary language', async () => {
-    // no source keys => extractor returns zero keys
+  it('should report all keys present when checking the primary language with no missing keys', async () => {
+    // no source keys => extractor returns zero keys, so nothing can be absent
     vol.fromJSON({
       [resolve(process.cwd(), 'src/empty.ts')]: 'console.log(\'no keys\')',
     })
 
     await runStatus(mockConfig, { detail: 'en' })
 
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('is the primary language'))
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('All keys used in code are present'))
   })
 
   it('should show an error for an invalid locale', async () => {
@@ -819,5 +819,96 @@ describe('status (fallbackNS)', () => {
     // Should include the correct progress line for de (all keys present via fallbackNS)
     expect(logCalls).toContain('- de: [■■■■■■■■■■■■■■■■■■■■] 100% (3/3 keys)')
     expect(processExitSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('status (primary language check)', () => {
+  let consoleLogSpy: any
+  let processExitSpy: any
+
+  // Only the primary language, so the check is isolated from secondary languages.
+  const primaryOnlyConfig: I18nextToolkitConfig = {
+    locales: ['en'],
+    extract: {
+      input: ['src/**/*.{ts,tsx}'],
+      output: 'locales/{{language}}/{{namespace}}.json',
+    },
+  }
+
+  beforeEach(async () => {
+    vol.reset()
+    vi.clearAllMocks()
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async () => {
+      return Object.keys(vol.toJSON()).filter(p => p.includes('/src/'))
+    })
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('Process exit called')
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('should exit 1 and warn when a key is used in code but absent from the primary file', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/file.ts')]: `
+        import { t } from 'i18next'
+        t('present')
+        t('keywithtypo')
+      `,
+      [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify({ present: 'Hello' }),
+    })
+
+    try {
+      await runStatus(primaryOnlyConfig)
+    } catch (e) {
+      // expected: process.exit(1) throws in the test
+    }
+
+    const logCalls = consoleLogSpy.mock.calls.map((call: any[]) => call[0])
+    expect(logCalls.some((l: string) => l.includes('Primary language "en" is missing 1 key'))).toBe(true)
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('should NOT fail on empty placeholder values in the primary file', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/file.ts')]: `
+        import { t } from 'i18next'
+        t('present')
+        t('placeholder')
+      `,
+      // placeholder exists but is an empty string — a deliberate extract placeholder
+      [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify({ present: 'Hello', placeholder: '' }),
+    })
+
+    await runStatus(primaryOnlyConfig)
+
+    expect(processExitSpy).not.toHaveBeenCalled()
+  })
+
+  it('should list absent primary keys in the detailed view (status <primary>)', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/file.ts')]: `
+        import { t } from 'i18next'
+        t('present')
+        t('keywithtypo')
+      `,
+      [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify({ present: 'Hello' }),
+    })
+
+    try {
+      await runStatus(primaryOnlyConfig, { detail: 'en' })
+    } catch (e) {
+      // expected: process.exit(1) throws in the test
+    }
+
+    const logCalls = consoleLogSpy.mock.calls.map((call: any[]) => call[0])
+    expect(logCalls.some((l: string) => l.includes('keywithtypo') && l.includes('(absent)'))).toBe(true)
+    expect(logCalls.some((l: string) => l.includes('used in code but absent from the "en"'))).toBe(true)
+    expect(processExitSpy).toHaveBeenCalledWith(1)
   })
 })

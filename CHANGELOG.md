@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.61.0
+
+- feat: the `status` command now also checks the **primary language**. A key
+  that is used in your code but absent from the primary language's translation
+  files (a typo, or `extract` was never run) is reported and causes a non-zero
+  exit code, on both `status` and `status <primaryLanguage>`. Empty-string
+  placeholders written by `extract` are treated as present and do not fail the
+  check, so only genuinely missing keys are flagged (issue [#266](https://github.com/i18next/i18next-cli/issues/266)).
+
 ## 1.60.0
 
 - feat: the `i18next-instrument-ignore` directive now suppresses the **entire

@@ -40,6 +40,33 @@ function classifyValue (value: any): TranslationState {
 }
 
 /**
+ * Translation status data for a single locale.
+ */
+interface LocaleStatus {
+  /** Total number of extracted keys per locale */
+  totalKeys: number;
+  /** Total number of translated (non-empty) keys for this locale */
+  totalTranslated: number;
+  /** Keys present in the file but with an empty-string value */
+  totalEmpty: number;
+  /** Keys entirely absent from the translation file */
+  totalAbsent: number;
+  /** Map of namespace names to their translation details for this locale */
+  namespaces: Map<string, {
+    /** Total number of keys in this namespace */
+    totalKeys: number;
+    /** Number of translated keys in this namespace */
+    translatedKeys: number;
+    /** Keys present but empty in this namespace */
+    emptyKeys: number;
+    /** Keys absent from the file in this namespace */
+    absentKeys: number;
+    /** Detailed status for each key in this namespace */
+    keyDetails: Array<{ key: string; state: TranslationState }>;
+  }>;
+}
+
+/**
  * Structured report containing all translation status data.
  */
 interface StatusReport {
@@ -47,30 +74,15 @@ interface StatusReport {
   totalBaseKeys: number;
   /** Map of namespace names to their extracted keys */
   keysByNs: Map<string, ExtractedKey[]>;
-  /** Map of locale codes to their translation status data */
-  locales: Map<string, {
-    /** Total number of extracted keys per locale */
-    totalKeys: number;
-    /** Total number of translated (non-empty) keys for this locale */
-    totalTranslated: number;
-    /** Keys present in the file but with an empty-string value */
-    totalEmpty: number;
-    /** Keys entirely absent from the translation file */
-    totalAbsent: number;
-    /** Map of namespace names to their translation details for this locale */
-    namespaces: Map<string, {
-      /** Total number of keys in this namespace */
-      totalKeys: number;
-      /** Number of translated keys in this namespace */
-      translatedKeys: number;
-      /** Keys present but empty in this namespace */
-      emptyKeys: number;
-      /** Keys absent from the file in this namespace */
-      absentKeys: number;
-      /** Detailed status for each key in this namespace */
-      keyDetails: Array<{ key: string; state: TranslationState }>;
-    }>;
-  }>;
+  /**
+   * Status of the primary language itself. Unlike secondary languages, an
+   * empty-string value here is treated as present (it is a deliberate
+   * placeholder written by `extract`); only genuinely absent keys — used in
+   * code but missing from the primary translation file — are flagged.
+   */
+  primary?: LocaleStatus;
+  /** Map of secondary locale codes to their translation status data */
+  locales: Map<string, LocaleStatus>;
 }
 
 /**
@@ -106,6 +118,11 @@ export async function runStatus (config: I18nextToolkitConfig, options: StatusOp
         hasMissing = true
         break
       }
+    }
+    // The primary language fails the check only on absent keys (used in code but
+    // missing from the translation file); empty placeholders are tolerated.
+    if (!hasMissing && report.primary && report.primary.totalAbsent > 0) {
+      hasMissing = true
     }
     if (hasMissing) {
       spinner.fail('Error: Incomplete translations detected.')
@@ -269,7 +286,14 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
     if (nestedRefKeys.length > 0) nestedReferenceKeysByNs.set(ns, nestedRefKeys)
   }
 
-  for (const locale of secondaryLanguages) {
+  // The primary language is checked first so that keys used in code but absent
+  // from the primary translation file (e.g. a typo, or `extract` never run) are
+  // surfaced as well. For the primary, an empty value is a deliberate
+  // placeholder and counts as present — only truly absent keys are flagged.
+  const localesToCheck = [primaryLanguage, ...secondaryLanguages.filter((l: string) => l !== primaryLanguage)]
+
+  for (const locale of localesToCheck) {
+    const isPrimary = locale === primaryLanguage
     let totalTranslatedForLocale = 0
     let totalEmptyForLocale = 0
     let totalAbsentForLocale = 0
@@ -346,12 +370,18 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
 
         // Only fall back when the key is genuinely absent from the primary file.
         // An empty string is intentional (placeholder from extract) — don't hide it.
+        let state = primaryState
         if (primaryState === 'absent' && fallbackTranslations) {
           const fallbackValue = getNestedValue(fallbackTranslations, key, sep)
-          return classifyValue(fallbackValue)
+          state = classifyValue(fallbackValue)
         }
 
-        return primaryState
+        // For the primary language the file itself is the source of values, so an
+        // empty placeholder still means the key is present. Only a truly absent
+        // key (used in code, missing from the file) is a problem here.
+        if (isPrimary && state === 'empty') return 'translated'
+
+        return state
       }
 
       const processedKeys = new Set<string>()
@@ -441,13 +471,18 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
       totalAbsentForLocale += absentInNs
       totalKeysForLocale += totalInNs
     }
-    report.locales.set(locale, {
+    const localeStatus: LocaleStatus = {
       totalKeys: totalKeysForLocale,
       totalTranslated: totalTranslatedForLocale,
       totalEmpty: totalEmptyForLocale,
       totalAbsent: totalAbsentForLocale,
       namespaces,
-    })
+    }
+    if (isPrimary) {
+      report.primary = localeStatus
+    } else {
+      report.locales.set(locale, localeStatus)
+    }
   }
   return report
 }
@@ -494,16 +529,13 @@ async function displayStatusReport (report: StatusReport, config: I18nextToolkit
  *   ✗  red    — absent from file entirely (structural problem)
  */
 async function displayDetailedLocaleReport (report: StatusReport, config: I18nextToolkitConfig, locale: string, namespaceFilter?: string, hideTranslated?: boolean) {
-  if (locale === config.extract.primaryLanguage) {
-    console.log(styleText('yellow', `Locale "${locale}" is the primary language. All keys are considered present.`))
-    return
-  }
   if (!config.locales.includes(locale)) {
     console.error(styleText('red', `Error: Locale "${locale}" is not defined in your configuration.`))
     return
   }
 
-  const localeData = report.locales.get(locale)
+  const isPrimary = locale === config.extract.primaryLanguage
+  const localeData = isPrimary ? report.primary : report.locales.get(locale)
 
   if (!localeData) {
     console.error(styleText('red', `Error: Locale "${locale}" is not a valid secondary language.`))
@@ -547,8 +579,14 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
 
   const missingCount = totalKeysForLocale - localeData.totalTranslated
   if (missingCount > 0) {
-    const summaryBreakdown = buildBreakdown(localeData.totalEmpty, localeData.totalAbsent)
-    console.log(styleText(['yellow', 'bold'], `\nSummary: Found ${missingCount} incomplete translations for "${locale}" — ${summaryBreakdown}.`))
+    if (isPrimary) {
+      console.log(styleText(['red', 'bold'], `\nSummary: Found ${missingCount} key(s) used in code but absent from the "${locale}" translation files. Run "i18next-cli extract" to add them.`))
+    } else {
+      const summaryBreakdown = buildBreakdown(localeData.totalEmpty, localeData.totalAbsent)
+      console.log(styleText(['yellow', 'bold'], `\nSummary: Found ${missingCount} incomplete translations for "${locale}" — ${summaryBreakdown}.`))
+    }
+  } else if (isPrimary) {
+    console.log(styleText(['green', 'bold'], `\nSummary: 🎉 All keys used in code are present in the "${locale}" translation files.`))
   } else {
     console.log(styleText(['green', 'bold'], `\nSummary: 🎉 All keys are translated for "${locale}".`))
   }
@@ -587,6 +625,12 @@ async function displayNamespaceSummaryReport (report: StatusReport, config: I18n
     }
   }
 
+  const primaryNsData = report.primary?.namespaces.get(namespace)
+  if (primaryNsData && primaryNsData.absentKeys > 0) {
+    const { primaryLanguage } = config.extract
+    console.log(styleText(['red', 'bold'], `\n⚠ Primary language "${primaryLanguage}" is missing ${primaryNsData.absentKeys} key(s) that are used in code.`))
+  }
+
   await printLocizeFunnel()
 }
 
@@ -618,6 +662,11 @@ async function displayOverallSummaryReport (report: StatusReport, config: I18nex
     const breakdown = buildBreakdown(localeData.totalEmpty, localeData.totalAbsent)
     const suffix = breakdown ? `  — ${breakdown}` : ''
     console.log(`- ${locale}: ${bar} ${percentage}% (${localeData.totalTranslated}/${localeData.totalKeys} keys)${suffix}`)
+  }
+
+  if (report.primary && report.primary.totalAbsent > 0) {
+    console.log(styleText(['red', 'bold'], `\n⚠ Primary language "${primaryLanguage}" is missing ${report.primary.totalAbsent} key(s) that are used in code.`))
+    console.log(styleText('red', `  Run "i18next-cli status ${primaryLanguage}" for details, or "i18next-cli extract" to add them.`))
   }
 
   await printLocizeFunnel()

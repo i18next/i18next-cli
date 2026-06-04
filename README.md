@@ -204,6 +204,8 @@ npx i18next-cli extract --watch --with-types
 
 Displays a health check of your project's translation status. Can run without a config file. Exits with a non-zero status code when translations are missing.
 
+The primary language is checked too: any key used in your code but absent from the primary language's translation files (a typo, or `extract` was never run) is reported and causes a non-zero exit code. Empty-string placeholders written by `extract` are considered present and do not fail the check. Running `npx i18next-cli status <primaryLanguage>` shows the absent keys in detail.
+
 **Options:**
 - `--namespace <ns>, -n <ns>`: Filter the report by a specific namespace.
 - `--hide-translated`: Hide already translated keys in the detailed view, showing only missing translations.

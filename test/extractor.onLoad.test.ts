@@ -335,6 +335,9 @@ describe('runStatus: non-JS/TS file handling (issue #217)', () => {
           t('svelte.subtitle', 'Welcome')
         </script>
       `,
+      [resolve('/', 'locales/en/translation.json')]: JSON.stringify({
+        svelte: { title: 'Home', subtitle: 'Welcome' },
+      }),
       [resolve('/', 'locales/de/translation.json')]: JSON.stringify({
         svelte: { title: 'Startseite', subtitle: 'Willkommen' },
       }),
@@ -406,6 +409,9 @@ describe('runStatus: non-JS/TS file handling (issue #217)', () => {
           t('button.cancel', 'Cancel')
         </script>
       `,
+      [resolve('/', 'locales/en/translation.json')]: JSON.stringify({
+        button: { save: 'Save', cancel: 'Cancel' },
+      }),
       [resolve('/', 'locales/de/translation.json')]: JSON.stringify({
         button: { save: 'Speichern', cancel: 'Abbrechen' },
       }),
