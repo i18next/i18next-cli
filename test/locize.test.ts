@@ -56,6 +56,44 @@ describe('locize', () => {
     expect(syncOptions).toEqual(expect.objectContaining({ stdio: 'pipe' }))
   })
 
+  it('should forward --reference-language-only false when --src-lng-only is "false"', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    await runLocizeSync(mockConfig, { srcLngOnly: 'false' })
+    const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+    const syncArgs = syncCall![1] as string[]
+    const idx = syncArgs.findIndex(a => a === '--reference-language-only')
+    expect(idx).toBeGreaterThan(-1)
+    expect(syncArgs[idx + 1]).toBe('false')
+  })
+
+  it('should forward --reference-language-only true when --src-lng-only is "true"', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    await runLocizeSync(mockConfig, { srcLngOnly: 'true' })
+    const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+    const syncArgs = syncCall![1] as string[]
+    const idx = syncArgs.findIndex(a => a === '--reference-language-only')
+    expect(idx).toBeGreaterThan(-1)
+    expect(syncArgs[idx + 1]).toBe('true')
+  })
+
+  it('should forward the boolean from config (sourceLanguageOnly: false)', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    await runLocizeSync({ ...mockConfig, locize: { ...mockConfig.locize, sourceLanguageOnly: false } })
+    const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+    const syncArgs = syncCall![1] as string[]
+    const idx = syncArgs.findIndex(a => a === '--reference-language-only')
+    expect(idx).toBeGreaterThan(-1)
+    expect(syncArgs[idx + 1]).toBe('false')
+  })
+
+  it('should not forward --reference-language-only when --src-lng-only is omitted', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    await runLocizeSync(mockConfig)
+    const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+    const syncArgs = syncCall![1] as string[]
+    expect(syncArgs).not.toContain('--reference-language-only')
+  })
+
   it('should exit gracefully if locize-cli is not found', async () => {
     const error: any = new Error('Not found')
     error.code = 'ENOENT'

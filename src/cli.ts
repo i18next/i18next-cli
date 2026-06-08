@@ -310,7 +310,7 @@ program
   .command('locize-sync')
   .description('Synchronize local translations with your Locize project.')
   .option('--update-values', 'Update values of existing translations on Locize.')
-  .option('--src-lng-only', 'Check for changes in source language only.')
+  .option('--src-lng-only <true|false>', 'Check for changes in source language only. (default: true)')
   .option('--compare-mtime', 'Compare modification times when syncing.')
   .option('--dry-run', 'Run the command without making any changes.')
   .option('--cdn-type <standard|pro>', 'Specify the cdn endpoint that should be used (depends on which cdn type you\'ve in your locize project)')

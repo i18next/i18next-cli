@@ -543,7 +543,7 @@ npx i18next-cli locize-sync [options]
 
 **Options:**
 - `--update-values`: Update values of existing translations on locize
-- `--src-lng-only`: Check for changes in source language only
+- `--src-lng-only <true|false>`: Check for changes in source language only (default: `true`). Pass `--src-lng-only false` to sync all languages
 - `--compare-mtime`: Compare modification times when syncing
 - `--dry-run`: Run the command without making any changes
 

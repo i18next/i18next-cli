@@ -170,8 +170,14 @@ function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: a
   if (command === 'sync') {
     const updateValues = cliOptions.updateValues ?? locizeConfig.updateValues
     if (updateValues) commandArgs.push('--update-values', 'true')
+    // `--reference-language-only` defaults to `true` in locize-cli, so we only
+    // forward it when explicitly set – passing `false` is the whole point, as it
+    // is the only way to opt out of the source-language-only behavior.
     const srcLngOnly = cliOptions.srcLngOnly ?? locizeConfig.sourceLanguageOnly
-    if (srcLngOnly) commandArgs.push('--reference-language-only', 'true')
+    if (srcLngOnly !== undefined) {
+      const referenceLanguageOnly = srcLngOnly === true || srcLngOnly === 'true'
+      commandArgs.push('--reference-language-only', String(referenceLanguageOnly))
+    }
     const compareMtime = cliOptions.compareMtime ?? locizeConfig.compareModificationTime
     if (compareMtime) commandArgs.push('--compare-modification-time', 'true')
     const dryRun = cliOptions.dryRun ?? locizeConfig.dryRun

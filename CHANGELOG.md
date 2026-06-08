@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.61.1
+
+- fix: `locize-sync --src-lng-only` is now a `<true|false>` parameter instead of
+  a bare flag. locize-cli's underlying `--reference-language-only` already
+  defaults to `true`, so the old flag could only re-assert the default and there
+  was no way to opt out. You can now pass `--src-lng-only false` (or set
+  `locize: { sourceLanguageOnly: false }` in your config) to sync **all**
+  languages instead of the source language only. When the option is omitted,
+  nothing is forwarded and locize-cli's `true` default still applies
+  (issue [#267](https://github.com/i18next/i18next-cli/issues/267)).
+
 ## 1.61.0
 
 - feat: the `status` command now also checks the **primary language**. A key
