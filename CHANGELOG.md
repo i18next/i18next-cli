@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exit code, on both `status` and `status <primaryLanguage>`. Empty-string
   placeholders written by `extract` are treated as present and do not fail the
   check, so only genuinely missing keys are flagged (issue [#266](https://github.com/i18next/i18next-cli/issues/266)).
+  - Upgrade note: if you previously added a "dummy" primary language so that
+    your real languages would all be checked as secondaries, you can remove it
+    now. The primary language is checked natively, so the dummy locale would
+    otherwise be reported as missing every key.
 
 ## 1.60.0
 
