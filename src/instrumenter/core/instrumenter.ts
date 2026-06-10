@@ -1632,8 +1632,8 @@ const I18N_INIT_FILE_NAMES = [
  * Searches the common locations (`src/` and the project root) for an existing
  * i18n initialization file.
  *
- * @returns The path of the first init file found (relative to cwd, always
- *          POSIX-style separators for stable display/comparison), or null.
+ * @returns The path of the first init file found (relative to cwd, native
+ *          platform separators), or null.
  */
 export async function findExistingI18nInitFile (): Promise<string | null> {
   const cwd = process.cwd()
@@ -1641,7 +1641,7 @@ export async function findExistingI18nInitFile (): Promise<string | null> {
   for (const dir of searchDirs) {
     for (const name of I18N_INIT_FILE_NAMES) {
       if (await fileExists(join(cwd, dir, name))) {
-        return join(dir, name).replace(/\\/g, '/')
+        return join(dir, name)
       }
     }
   }
