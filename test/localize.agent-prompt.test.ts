@@ -38,7 +38,9 @@ describe('AGENT_PROMPT', () => {
   })
 
   it('matches the snapshot embedded in the README', async () => {
-    const readme = await readFile(resolve(__dirname, '..', 'README.md'), 'utf-8')
+    // Normalize CRLF first — on Windows the README may be checked out with
+    // autocrlf line endings.
+    const readme = (await readFile(resolve(__dirname, '..', 'README.md'), 'utf-8')).replace(/\r\n/g, '\n')
     const snapshot = readme.match(/<summary>Agent prompt \(snapshot\)<\/summary>\s*```text\n([\s\S]*?)```/)
     expect(snapshot, 'README must contain the agent-prompt snapshot block').not.toBeNull()
     expect(snapshot![1].trim()).toBe(AGENT_PROMPT.trim())
