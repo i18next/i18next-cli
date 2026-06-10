@@ -15,7 +15,13 @@ export default {
       dir: 'dist/cjs',
       preserveModules: true,
       // file: pkg.main,
-      format: 'cjs'
+      format: 'cjs',
+      // Several externalized dependencies (ora, inquirer, …) are ESM-only.
+      // Node >=22 can require() them, but gets the module *namespace* back —
+      // rollup's default interop ('default') would call the namespace itself
+      // (e.g. `ora()` → "ora is not a function"). 'auto' emits a helper that
+      // detects the __esModule marker and unwraps `.default` at runtime.
+      interop: 'auto'
     },
     {
       dir: 'dist/esm',

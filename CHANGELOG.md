@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by default for new Locize projects and only fires when the reference
   language is updated; the translation itself happens asynchronously on the
   Locize side.
+- fix: the CJS build (`dist/cjs`) crashed with `ora is not a function` on any
+  spinner-using command (and similarly for other default-imported ESM-only
+  dependencies such as `inquirer`). Node's `require(esm)` returns the module
+  *namespace*, but rollup's default interop called it directly. The CJS output
+  now uses `interop: 'auto'`, which unwraps `.default` at runtime via the
+  `__esModule` marker. The published `bin` (ESM) was never affected.
 
 ## 1.61.1
 
