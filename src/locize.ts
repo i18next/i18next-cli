@@ -142,12 +142,30 @@ export class LocizeCommandError extends Error {
   }
 }
 
+/** Prefixed Locize token formats (PATs and the newer api-keys). */
+const SECRET_PREFIXES = ['lz_pat_', 'lz_api_']
+const PREFIXED_VISIBLE_RANDOM_CHARS = 4
+const PREFIXED_VISIBLE_END_CHARS = 4
+
 /**
- * Masks an API key for safe console output, preserving only the first
- * and last 3 characters while replacing everything in between.
+ * Masks an API key / PAT for safe console output, mirroring Locize's own
+ * maskSecret format:
+ * - prefixed tokens: `lz_pat_4xK9****************************oZ1i`
+ * - legacy UUID keys: first and last 3 characters visible
  */
-export function maskApiKey (apiKey: string): string { // TODO: Locize now also uses PATs as api-keys: /Users/adrai/Projects/locize/locize-app/lib/apikey/lib/maskSecret.js
-  if (!apiKey || apiKey.length <= 6) return apiKey
+export function maskApiKey (apiKey: string): string {
+  if (!apiKey) return apiKey
+
+  const matchedPrefix = SECRET_PREFIXES.find(p => apiKey.startsWith(p))
+  if (matchedPrefix) {
+    const visibleStart = matchedPrefix.length + PREFIXED_VISIBLE_RANDOM_CHARS
+    const start = apiKey.substring(0, visibleStart)
+    const end = apiKey.substring(apiKey.length - PREFIXED_VISIBLE_END_CHARS)
+    const middle = apiKey.substring(visibleStart, apiKey.length - PREFIXED_VISIBLE_END_CHARS)
+    return `${start}${middle.replace(/[0-9a-zA-Z]/g, '*')}${end}`
+  }
+
+  if (apiKey.length <= 6) return apiKey
   const first3 = apiKey.substring(0, 3)
   const last3 = apiKey.substring(apiKey.length - 3)
   const middle = apiKey.substring(3, apiKey.length - 3)

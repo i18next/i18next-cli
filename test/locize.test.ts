@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { runLocizeSync, LocizeCommandError } from '../src/locize'
+import { runLocizeSync, LocizeCommandError, maskApiKey } from '../src/locize'
 import { pathEndsWith } from './utils/path'
 import type { I18nextToolkitConfig } from '../src/types'
 import { execa } from 'execa'
@@ -231,6 +231,38 @@ describe('locize', () => {
 
       await runLocizeSync(mockConfig)
       expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+  })
+
+  describe('maskApiKey', () => {
+    it('masks legacy UUID keys keeping the first and last 3 characters', () => {
+      const key = '181f1234-abcd-ef01-2345-67890b9420f1'
+      const masked = maskApiKey(key)
+      expect(masked.startsWith('181')).toBe(true)
+      expect(masked.endsWith('0f1')).toBe(true)
+      expect(masked).toHaveLength(key.length)
+      // everything between is masked except the dashes
+      expect(masked.slice(3, -3)).toMatch(/^[*-]+$/)
+    })
+
+    it('masks lz_pat_ tokens keeping the prefix + 4 chars and the last 4', () => {
+      const masked = maskApiKey('lz_pat_4xK9mNqR2vBpW7tHsL3cYdE8fUjAoZ1i')
+      expect(masked.startsWith('lz_pat_4xK9')).toBe(true)
+      expect(masked.endsWith('oZ1i')).toBe(true)
+      expect(masked.slice(11, -4)).toMatch(/^\*+$/)
+      expect(masked).toHaveLength('lz_pat_4xK9mNqR2vBpW7tHsL3cYdE8fUjAoZ1i'.length)
+    })
+
+    it('masks lz_api_ tokens the same way', () => {
+      const masked = maskApiKey('lz_api_4xK9mNqR2vBpW7tHsL3cYdE8fUjAoZ1i')
+      expect(masked.startsWith('lz_api_4xK9')).toBe(true)
+      expect(masked.endsWith('oZ1i')).toBe(true)
+      expect(masked.slice(11, -4)).toMatch(/^\*+$/)
+    })
+
+    it('returns very short non-prefixed values unchanged', () => {
+      expect(maskApiKey('abc123')).toBe('abc123')
+      expect(maskApiKey('')).toBe('')
     })
   })
 })
