@@ -10,6 +10,7 @@ const mockRunInit = vi.fn()
 const mockRunMigrator = vi.fn()
 const mockRunLocizeSync = vi.fn()
 const mockRunRenameKey = vi.fn()
+const mockRunLocalize = vi.fn()
 
 // Mock the modules that contain the service functions
 vi.mock('../src/status', () => ({ runStatus: mockRunStatus }))
@@ -21,6 +22,7 @@ vi.mock('../src/init', () => ({ runInit: mockRunInit }))
 vi.mock('../src/migrator', () => ({ runMigrator: mockRunMigrator }))
 vi.mock('../src/locize', () => ({ runLocizeSync: mockRunLocizeSync }))
 vi.mock('../src/rename-key', () => ({ runRenameKey: mockRunRenameKey }))
+vi.mock('../src/localize/index', () => ({ runLocalize: mockRunLocalize }))
 
 // Mock config loaders as they are a common dependency
 const mockEnsureConfig = vi.fn()
@@ -216,6 +218,48 @@ describe('CLI command parsing and dispatching', () => {
       expect.anything(),
       expect.objectContaining({ dryRun: true, updateValues: true })
     )
+  })
+
+  it('should forward the auto-translate options on "locize-sync"', async () => {
+    vi.resetModules()
+    process.argv = ['node', 'cli.ts', 'locize-sync', '--auto-translate', 'true', '--auto-translate-review', 'true', '--auto-translate-languages', 'de,fr']
+    mockEnsureConfig.mockResolvedValue({})
+    await import('../src/cli')
+    expect(mockRunLocizeSync).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        autoTranslate: 'true',
+        autoTranslateReview: 'true',
+        autoTranslateLanguages: 'de,fr',
+      })
+    )
+  })
+
+  it('should parse the "localize" command and forward its options', async () => {
+    vi.resetModules()
+    process.argv = ['node', 'cli.ts', 'localize', '--dry-run', '--skip-instrument', '--yes', '--cdn-type', 'pro']
+    await import('../src/cli')
+    expect(mockRunLocalize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dryRun: true,
+        skipInstrument: true,
+        yes: true,
+        cdnType: 'pro',
+      }),
+      undefined
+    )
+  })
+
+  it('should parse "localize --print-agent-prompt" without loading a config', async () => {
+    vi.resetModules()
+    process.argv = ['node', 'cli.ts', 'localize', '--print-agent-prompt']
+    await import('../src/cli')
+    expect(mockRunLocalize).toHaveBeenCalledWith(
+      expect.objectContaining({ printAgentPrompt: true }),
+      undefined
+    )
+    expect(mockEnsureConfig).not.toHaveBeenCalled()
+    expect(mockLoadConfig).not.toHaveBeenCalled()
   })
 
   it('should parse the "extract --sync-primary" command and pass syncPrimaryWithDefaults option', async () => {

@@ -17,6 +17,7 @@ import { runStatus } from './status.js'
 import { runLocizeSync, runLocizeDownload, runLocizeMigrate } from './locize.js'
 import { runRenameKey } from './rename-key.js'
 import { runInstrumenter } from './instrumenter/index.js'
+import { runLocalize } from './localize/index.js'
 import { getNestedKeys, getNestedValue } from './utils/nested-object.js'
 import type { I18nextToolkitConfig, TranslationResult } from './types.js'
 
@@ -307,6 +308,29 @@ program
   })
 
 program
+  .command('localize')
+  .description('One command from hardcoded strings to a fully localized app: detect, instrument, extract, connect to Locize, auto-translate, deliver.')
+  .option('--dry-run', 'Preview every step; nothing is written or pushed.')
+  .option('-y, --yes', 'Accept defaults; auto-approve instrumentation candidates (no per-string prompts).')
+  .option('--ci', 'Non-interactive: never open a browser or prompt; instrument is skipped (combine with --yes to force non-interactive instrumentation).')
+  .option('--skip-instrument', 'Skip the code-instrumentation step (use when your code already calls t()).')
+  .option('--skip-translate', 'Sync to Locize but do not request AI auto-translation.')
+  .option('--skip-locize', 'Stop after extraction (local files only; steps 5-6 skipped).')
+  .option('--namespace <ns>', 'Target namespace for instrumented keys (forwarded to instrument).')
+  .option('--update-values', 'Also update existing translation values on Locize (forwarded to sync).')
+  .option('--cdn-type <standard|pro>', 'Specify the cdn endpoint that should be used (depends on which cdn type you\'ve in your Locize project)')
+  .option('--print-agent-prompt', 'Print a copy-paste prompt for AI coding agents (Claude Code, Cursor) that performs the same steps, then exit.')
+  .action(async (options) => {
+    try {
+      const cfgPath = program.opts().config
+      await runLocalize(options, cfgPath)
+    } catch (error) {
+      console.error(styleText('red', 'Error running localize command:'), error)
+      process.exit(1)
+    }
+  })
+
+program
   .command('locize-sync')
   .description('Synchronize local translations with your Locize project.')
   .option('--update-values', 'Update values of existing translations on Locize.')
@@ -314,6 +338,9 @@ program
   .option('--compare-mtime', 'Compare modification times when syncing.')
   .option('--dry-run', 'Run the command without making any changes.')
   .option('--cdn-type <standard|pro>', 'Specify the cdn endpoint that should be used (depends on which cdn type you\'ve in your locize project)')
+  .option('--auto-translate <true|false>', 'Trigger AI/MT auto-translation of newly synced keys (requires auto-translation enabled in your Locize project; on by default for new projects).')
+  .option('--auto-translate-review <true|false>', 'Route auto-translated segments through the review workflow for languages that have review enabled.')
+  .option('--auto-translate-languages <lng1,lng2>', 'Restrict auto-translation to these target languages (comma separated; defaults to all languages).')
   .action(async (options) => {
     const cfgPath = program.opts().config
     const config = await ensureConfig(cfgPath)

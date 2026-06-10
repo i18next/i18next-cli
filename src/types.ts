@@ -343,6 +343,19 @@ export interface I18nextToolkitConfig {
 
     /** Preview changes without making them */
     dryRun?: boolean;
+
+    /**
+     * Request AI/MT auto-translation of newly synced keys (sync only).
+     * Requires auto-translation to be enabled in your Locize project settings
+     * (on by default for new projects).
+     */
+    autoTranslate?: boolean;
+
+    /** Route auto-translated segments through the review workflow for languages that have review enabled (sync only) */
+    autoTranslateReview?: boolean;
+
+    /** Restrict auto-translation to these target languages (sync only; defaults to all languages) */
+    autoTranslateLanguages?: string[];
   };
 }
 

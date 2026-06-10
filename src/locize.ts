@@ -126,10 +126,27 @@ LOCIZE_API_KEY=${answers.apiKey}
 }
 
 /**
+ * Error thrown by {@link runLocizeCommand} when `throwOnError` is set,
+ * carrying the captured output of the failed locize-cli invocation so
+ * orchestrating commands (e.g. `localize`) can inspect and react to it.
+ */
+export class LocizeCommandError extends Error {
+  stdout: string
+  stderr: string
+
+  constructor (message: string, output: { stdout?: string, stderr?: string } = {}) {
+    super(message)
+    this.name = 'LocizeCommandError'
+    this.stdout = output.stdout || ''
+    this.stderr = output.stderr || ''
+  }
+}
+
+/**
  * Masks an API key for safe console output, preserving only the first
  * and last 3 characters while replacing everything in between.
  */
-function maskApiKey (apiKey: string): string {
+export function maskApiKey (apiKey: string): string { // TODO: Locize now also uses PATs as api-keys: /Users/adrai/Projects/locize/locize-app/lib/apikey/lib/maskSecret.js
   if (!apiKey || apiKey.length <= 6) return apiKey
   const first3 = apiKey.substring(0, 3)
   const last3 = apiKey.substring(apiKey.length - 3)
@@ -182,6 +199,19 @@ function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: a
     if (compareMtime) commandArgs.push('--compare-modification-time', 'true')
     const dryRun = cliOptions.dryRun ?? locizeConfig.dryRun
     if (dryRun) commandArgs.push('--dry', 'true')
+    const autoTranslate = cliOptions.autoTranslate ?? locizeConfig.autoTranslate
+    if (autoTranslate !== undefined) {
+      commandArgs.push('--auto-translate', String(autoTranslate === true || autoTranslate === 'true'))
+    }
+    const autoTranslateReview = cliOptions.autoTranslateReview ?? locizeConfig.autoTranslateReview
+    if (autoTranslateReview !== undefined) {
+      commandArgs.push('--auto-translate-review', String(autoTranslateReview === true || autoTranslateReview === 'true'))
+    }
+    const autoTranslateLanguages = cliOptions.autoTranslateLanguages ?? locizeConfig.autoTranslateLanguages
+    if (autoTranslateLanguages) {
+      const languages = Array.isArray(autoTranslateLanguages) ? autoTranslateLanguages.join(',') : String(autoTranslateLanguages)
+      if (languages) commandArgs.push('--auto-translate-languages', languages)
+    }
   }
 
   // Derive a sensible base path for locize from the configured output.
@@ -253,8 +283,17 @@ function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: a
  * ```
  */
 async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', config: I18nextToolkitConfig, cliOptions: any = {}) {
+  const throwOnError = !!cliOptions.throwOnError
+
   const resolved = await resolveLocizeBin()
   if (!resolved) {
+    const installHint = 'Error: `locize-cli` command not found.\n' +
+      'Please install it to use the Locize integration:\n' +
+      '  npm install -g locize-cli\n' +
+      'Or make sure npx is available so it can be fetched on demand.'
+    if (throwOnError) {
+      throw new LocizeCommandError(installHint)
+    }
     console.error(styleText('red', 'Error: `locize-cli` command not found.'))
     console.log(styleText('yellow', 'Please install it to use the Locize integration:'))
     console.log(styleText('cyan', '  npm install -g locize-cli'))
@@ -278,6 +317,12 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
     if (result?.stdout) console.log(result.stdout) // Print captured output on success
   } catch (error: any) {
     const stderr = error.stderr || ''
+    if (throwOnError) {
+      // Orchestrating callers (e.g. `localize`) handle credentials and
+      // messaging themselves — no interactive retry, no process.exit.
+      spinner.fail(styleText('red', `Error executing 'locize ${command}'.`))
+      throw new LocizeCommandError(stderr || error.stdout || error.message, { stdout: error.stdout, stderr })
+    }
     if (stderr.includes('missing required argument')) {
       // 2. Auth failure, trigger interactive setup
       spinner.stop()

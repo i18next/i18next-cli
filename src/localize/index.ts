@@ -1,0 +1,5 @@
+export { runLocalize } from './localize.js'
+export type { LocalizeOptions } from './localize.js'
+export { detectStack, hasStackPlugin } from './detect.js'
+export type { DetectedStack, DetectedFramework } from './detect.js'
+export { AGENT_PROMPT } from './agent-prompt.js'

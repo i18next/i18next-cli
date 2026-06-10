@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.62.0
+
+- feat: new **`localize`** supercommand — one command from hardcoded strings to
+  a fully localized app. It orchestrates the existing pieces in six steps:
+  detect (framework, TypeScript, existing i18next setup) → configuration
+  (`init` wizard on a missing config) → `instrument` (interactive by default,
+  with a dirty-git-tree guard and a Next.js App Router warning) → `extract` →
+  connect Locize (config / `LOCIZE_PROJECTID`+`LOCIZE_API_KEY` env vars /
+  guided signup) → `locize-sync --auto-translate true`, then waits for the
+  asynchronous AI translations to arrive, downloads them and prints the
+  `i18next-locize-backend` CDN wiring snippet. Safe to re-run (idempotent at
+  every step). Flags: `--dry-run`, `-y/--yes`, `--ci` (skips instrument unless
+  combined with `--yes`), `--skip-instrument`, `--skip-translate`,
+  `--skip-locize`, `--namespace <ns>`, `--update-values`,
+  `--cdn-type <standard|pro>`. Non-React stacks degrade gracefully: with a
+  configured stack plugin (e.g. `i18next-cli-vue`,
+  `i18next-cli-plugin-svelte`) the full flow runs; without one the instrument
+  step is skipped with guidance and the remaining steps still run. Apps using
+  inlang Paraglide are detected and never instrumented. Also exported as
+  `runLocalize()` for programmatic use.
+- feat: `localize --print-agent-prompt` prints a copy-paste prompt for AI
+  coding agents (Claude Code, Cursor, …) that performs the same steps via the
+  individual CLI commands — version-matched to the installed CLI.
+- feat: `locize-sync` gained `--auto-translate <true|false>`,
+  `--auto-translate-review <true|false>` and
+  `--auto-translate-languages <lng1,lng2>` pass-through flags (with matching
+  `locize.autoTranslate`, `locize.autoTranslateReview` and
+  `locize.autoTranslateLanguages` config options). Auto-translation is enabled
+  by default for new Locize projects and only fires when the reference
+  language is updated; the translation itself happens asynchronously on the
+  Locize side.
+
 ## 1.61.1
 
 - fix: `locize-sync --src-lng-only` is now a `<true|false>` parameter instead of

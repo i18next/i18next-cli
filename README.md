@@ -58,6 +58,8 @@ npm install --save-dev i18next-cli
 
 ## Quick Start
 
+> **Zero-to-localized in one command:** starting from an app with hardcoded strings (e.g. generated with v0, Lovable, Bolt or Cursor)? Run `npx i18next-cli localize` — it detects your setup, wraps hardcoded strings in `t()` calls, extracts keys, connects to [Locize](https://www.locize.com) and AI-translates your app. See [the `localize` command](#localize). The steps below are the manual path.
+
 ### 1. Initialize Configuration
 
 Create a configuration interactively:
@@ -468,6 +470,100 @@ Both the `lint` and `instrument` commands honor an ignore comment so you can ski
 const msg = t('Hello {{name}}!', { wrong: 'world' })
 ```
 
+### `localize`
+
+One command from hardcoded strings to a fully localized app: detect, instrument, extract, connect to [Locize](https://www.locize.com), AI-auto-translate, deliver. Built for taking a mono-lingual app (often AI-generated via v0/Lovable/Bolt/Cursor) to fully localized in one sitting.
+
+```bash
+npx i18next-cli localize
+```
+
+The command walks through six steps:
+
+1. **Detect** — framework (React/Next.js natively; see below for other stacks), TypeScript, existing i18next setup.
+2. **Configuration** — uses your `i18next.config.ts`, or starts the [`init`](#init) wizard if none exists.
+3. **Instrument** — wraps hardcoded strings in `t()` calls / `<Trans>` components (interactive by default — [instrument](#instrument) is an assistant, review each change). Skipped automatically if your code can't be instrumented; a dirty git tree prompts for confirmation first.
+4. **Extract** — extracts all translation keys into your locale files.
+5. **Connect Locize** — uses `locize.projectId`/`locize.apiKey` from your config or the `LOCIZE_PROJECTID`/`LOCIZE_API_KEY` environment variables; otherwise it opens the signup page and asks you to paste them (the one manual step). Auto-translate and Quality Estimation are on by default for new Locize projects.
+6. **Translate & deliver** — syncs your keys with `--auto-translate`, waits for the AI translations to arrive, downloads them, and prints the [i18next-locize-backend](https://github.com/locize/i18next-locize-backend) CDN wiring snippet (so translation fixes go live without redeploying your app).
+
+**Options:**
+- `--dry-run`: Preview every step; nothing is written or pushed
+- `-y, --yes`: Accept defaults; auto-approve instrumentation candidates (no per-string prompts)
+- `--ci`: Non-interactive; never opens a browser or prompts. Instrumentation is **skipped** in CI (it rewrites source files and needs human review) unless combined with `--yes`
+- `--skip-instrument`: Skip the code-instrumentation step (your code already calls `t()`)
+- `--skip-translate`: Sync to Locize but don't request AI auto-translation
+- `--skip-locize`: Stop after extraction (local files only)
+- `--namespace <ns>`: Target namespace for instrumented keys
+- `--update-values`: Also update existing translation values on Locize
+- `--cdn-type <standard|pro>`: Locize CDN endpoint type
+- `--print-agent-prompt`: Print a copy-paste prompt for AI coding agents, then exit (see below)
+
+**Behavior matrix:**
+
+| Step | interactive (default) | `--yes` | `--ci` | `--dry-run` |
+|---|---|---|---|---|
+| Instrument | per-string prompts | auto-approve | skipped (force with `--yes`) | candidate preview |
+| Connect Locize | browser + paste credentials | same | env vars required, else exit 1 | report only |
+| Sync + translate | runs | runs | runs | `--dry` forwarded |
+| Poll + download | watches translations arrive | same | single download, no wait | skipped |
+
+**Safe to re-run:** the command is idempotent. Already-wrapped strings are not re-instrumented, extraction is deterministic, and syncing never overwrites translations edited remotely (no `--update-values` unless you pass it; locize-cli's `--reference-language-only` default keeps target languages safe).
+
+> **Next.js App Router:** instrument injects `useTranslation()`, which is client-only. Review the diff for server components — add `'use client'` or switch those to a server-side `t()` pattern.
+
+**Non-React stacks (Vue, Svelte, …):** the instrument step transforms React/JSX out of the box. For other stacks, add a plugin that covers your file type (community: [i18next-cli-vue](https://github.com/PBK-B/i18next-cli-vue), [i18next-cli-plugin-svelte](https://github.com/dreamscached/i18next-cli-plugin-svelte) — or write your own via the [Plugin System](#plugin-system) `instrumentOnLoad`/`onLoad` hooks). With a matching plugin configured, `localize` runs the full flow; without one, the instrument step is skipped with guidance and the remaining steps (extract → Locize → auto-translate) still run.
+
+**Agent prompt:** the same flow is available as a copy-paste prompt for AI coding agents (Claude Code, Cursor, …):
+
+```bash
+npx i18next-cli localize --print-agent-prompt
+```
+
+This prints step-by-step instructions an agent can follow using the individual CLI commands — version-matched to your installed CLI, so it never drifts from what the supercommand does. Prefer the command output over the copy below, which is a snapshot for reference:
+
+<details>
+<summary>Agent prompt (snapshot)</summary>
+
+```text
+You are localizing this app with i18next + Locize. Execute these steps in order,
+verifying each before continuing. Use `npx i18next-cli` for all commands.
+
+1. Detect: confirm this is a React/Next.js project (check package.json).
+   - If Vue/Svelte: install a stack plugin (`i18next-cli-vue` /
+     `i18next-cli-plugin-svelte`) and add it to the `plugins` array of
+     i18next.config.ts, or write one via the plugin hooks
+     (instrumentOnLoad/onLoad) instead of wrapping strings manually.
+   - If the app uses inlang Paraglide (`@inlang/paraglide-js`), STOP —
+     instrumenting i18next calls would conflict; ask the user how to proceed.
+2. Config: if no i18next.config.{ts,js} exists, run `npx i18next-cli init`
+   and answer the prompts (pick Locize as backend if the user wants managed
+   translations and AI auto-translate).
+3. Instrument: run `npx i18next-cli instrument --dry-run` and review the
+   planned changes; then `npx i18next-cli instrument` to apply. Inspect the
+   git diff carefully: fix any t() wrapping inside Next.js *server components*
+   (add 'use client' or refactor to a server-side t() pattern). Commit.
+4. Extract: run `npx i18next-cli extract`. Verify the locale JSON files were
+   written (check the extract.output path in the config).
+5. Locize: ask the user for LOCIZE_PROJECTID and LOCIZE_API_KEY (they create
+   the project at https://www.locize.app/register?from=i18next_cli__agent-prompt
+   and add their target languages — auto-translation and quality estimation
+   are enabled by default for new projects; translations run once the project
+   is subscribed or an AI/MT provider is configured). Export both as
+   environment variables.
+6. Translate & deliver:
+   `npx i18next-cli locize-sync --auto-translate true`
+   then `npx i18next-cli locize-download` to pull the AI translations, and
+   `npx i18next-cli status` — confirm all languages are (near) 100%.
+   AI translation is asynchronous; if targets are still empty, wait a minute
+   and re-run locize-download.
+7. Optionally switch runtime loading to i18next-locize-backend (CDN delivery,
+   so translation fixes go live without redeploying). NEVER put the API key
+   in client-side code — the CDN only needs the project ID.
+```
+
+</details>
+
 ### `migrate-config`
 Automatically migrates a legacy `i18next-parser.config.js` file to the new `i18next.config.ts` format.
 
@@ -546,6 +642,26 @@ npx i18next-cli locize-sync [options]
 - `--src-lng-only <true|false>`: Check for changes in source language only (default: `true`). Pass `--src-lng-only false` to sync all languages
 - `--compare-mtime`: Compare modification times when syncing
 - `--dry-run`: Run the command without making any changes
+- `--auto-translate <true|false>`: Trigger AI/MT auto-translation of newly synced keys. Requires auto-translation in your Locize project (enabled by default for new projects; runs once the project is subscribed or an AI/MT provider is configured)
+- `--auto-translate-review <true|false>`: Route auto-translated segments through the review workflow for languages that have review enabled
+- `--auto-translate-languages <lng1,lng2>`: Restrict auto-translation to these target languages (defaults to all)
+
+The same options can be set persistently in the `locize` block of your config:
+
+```typescript
+export default defineConfig({
+  // ...
+  locize: {
+    projectId: '...',
+    apiKey: process.env.LOCIZE_API_KEY,
+    autoTranslate: true,
+    autoTranslateReview: false,
+    autoTranslateLanguages: ['de', 'fr'],
+  },
+});
+```
+
+> **Note:** auto-translation only fires when the **reference language** is updated, and the translation itself happens asynchronously on the Locize side — run `locize-download` (or let [`localize`](#localize) wait for you) to pull the results.
 
 **Interactive Setup:** If your locize credentials are missing or invalid, the toolkit will guide you through an interactive setup process to configure your Project ID, API Key, and version.
 
@@ -1599,6 +1715,7 @@ class I18nextExtractionPlugin {
 - `runSyncer(config)` - Sync translation files
 - `runStatus(config, options?)` - Get translation status
 - `runTypesGenerator(config)` - Generate types
+- `runLocalize(options?, configPath?)` - The full [`localize`](#localize) flow (detect → instrument → extract → Locize sync with auto-translate → download)
 
 ### Advanced Usage
 

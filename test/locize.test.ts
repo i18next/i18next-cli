@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { runLocizeSync } from '../src/locize'
+import { runLocizeSync, LocizeCommandError } from '../src/locize'
 import { pathEndsWith } from './utils/path'
 import type { I18nextToolkitConfig } from '../src/types'
 import { execa } from 'execa'
@@ -127,5 +127,110 @@ describe('locize', () => {
     expect(secondCallArgs).toContain('new-project-id')
     expect(secondCallArgs).toContain('new-api-key')
     expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  describe('auto-translate passthrough', () => {
+    const getSyncArgs = () => {
+      const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+      return syncCall![1] as string[]
+    }
+
+    it('forwards --auto-translate true from CLI options', async () => {
+      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      await runLocizeSync(mockConfig, { autoTranslate: true })
+      const args = getSyncArgs()
+      const idx = args.findIndex(a => a === '--auto-translate')
+      expect(idx).toBeGreaterThan(-1)
+      expect(args[idx + 1]).toBe('true')
+    })
+
+    it('forwards --auto-translate false when explicitly disabled', async () => {
+      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      await runLocizeSync(mockConfig, { autoTranslate: 'false' })
+      const args = getSyncArgs()
+      const idx = args.findIndex(a => a === '--auto-translate')
+      expect(idx).toBeGreaterThan(-1)
+      expect(args[idx + 1]).toBe('false')
+    })
+
+    it('does not forward --auto-translate when omitted', async () => {
+      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      await runLocizeSync(mockConfig)
+      expect(getSyncArgs()).not.toContain('--auto-translate')
+    })
+
+    it('reads autoTranslate and autoTranslateReview from config', async () => {
+      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      mockConfig.locize = { ...mockConfig.locize, autoTranslate: true, autoTranslateReview: true }
+      await runLocizeSync(mockConfig)
+      const args = getSyncArgs()
+      expect(args[args.findIndex(a => a === '--auto-translate') + 1]).toBe('true')
+      expect(args[args.findIndex(a => a === '--auto-translate-review') + 1]).toBe('true')
+    })
+
+    it('CLI option takes precedence over config for autoTranslate', async () => {
+      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      mockConfig.locize = { ...mockConfig.locize, autoTranslate: true }
+      await runLocizeSync(mockConfig, { autoTranslate: 'false' })
+      const args = getSyncArgs()
+      expect(args[args.findIndex(a => a === '--auto-translate') + 1]).toBe('false')
+    })
+
+    it('joins autoTranslateLanguages array into a comma-separated list', async () => {
+      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      mockConfig.locize = { ...mockConfig.locize, autoTranslateLanguages: ['de', 'fr'] }
+      await runLocizeSync(mockConfig)
+      const args = getSyncArgs()
+      expect(args[args.findIndex(a => a === '--auto-translate-languages') + 1]).toBe('de,fr')
+    })
+  })
+
+  describe('throwOnError', () => {
+    it('throws a LocizeCommandError instead of exiting on command failure', async () => {
+      const cmdError: any = new Error('boom')
+      cmdError.stderr = 'auto-translation is not enabled for this project'
+      vi.mocked(execa)
+        .mockResolvedValueOnce({ stdout: 'v1.0.0', stderr: '' } as any) // version check
+        .mockRejectedValueOnce(cmdError)
+
+      await expect(runLocizeSync(mockConfig, { throwOnError: true })).rejects.toThrow(LocizeCommandError)
+      expect(exitSpy).not.toHaveBeenCalled()
+      expect(inquirer.prompt).not.toHaveBeenCalled() // no interactive credential retry
+    })
+
+    it('exposes stderr on the thrown error', async () => {
+      const cmdError: any = new Error('boom')
+      cmdError.stderr = 'machine translation not activated'
+      vi.mocked(execa)
+        .mockResolvedValueOnce({ stdout: 'v1.0.0', stderr: '' } as any)
+        .mockRejectedValueOnce(cmdError)
+
+      try {
+        await runLocizeSync(mockConfig, { throwOnError: true })
+        expect.unreachable('should have thrown')
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(LocizeCommandError)
+        expect(error.stderr).toContain('machine translation not activated')
+      }
+    })
+
+    it('throws (not exits) when the locize-cli binary is missing', async () => {
+      const error: any = new Error('Not found')
+      error.code = 'ENOENT'
+      vi.mocked(execa).mockRejectedValue(error)
+      await expect(runLocizeSync(mockConfig, { throwOnError: true })).rejects.toThrow(/locize-cli/)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('still exits without throwOnError (standalone command behavior unchanged)', async () => {
+      const cmdError: any = new Error('boom')
+      cmdError.stderr = 'some other failure'
+      vi.mocked(execa)
+        .mockResolvedValueOnce({ stdout: 'v1.0.0', stderr: '' } as any)
+        .mockRejectedValueOnce(cmdError)
+
+      await runLocizeSync(mockConfig)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
   })
 })

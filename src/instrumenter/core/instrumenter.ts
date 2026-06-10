@@ -1509,7 +1509,7 @@ async function getSourceFilesForInstrumentation (config: I18nextToolkitConfig): 
 /**
  * Checks if the project uses React.
  */
-async function isProjectUsingReact (): Promise<boolean> {
+export async function isProjectUsingReact (): Promise<boolean> {
   try {
     const packageJsonPath = process.cwd() + '/package.json'
     const content = await readFile(packageJsonPath, 'utf-8')
@@ -1523,7 +1523,7 @@ async function isProjectUsingReact (): Promise<boolean> {
 
 // ── Project environment detection ───────────────────────────────────────
 
-type ProjectEnvironment = 'browser' | 'node-server' | 'edge' | 'unknown'
+export type ProjectEnvironment = 'browser' | 'node-server' | 'edge' | 'unknown'
 
 /** Well-known frontend framework packages (presence → browser environment). */
 const FRONTEND_FRAMEWORKS = [
@@ -1562,7 +1562,7 @@ const SERVER_FRAMEWORKS = [
  *   3. Node.js server framework   → `'node-server'`
  *   4. Fallback                   → `'unknown'`
  */
-async function detectProjectEnvironment (): Promise<ProjectEnvironment> {
+export async function detectProjectEnvironment (): Promise<ProjectEnvironment> {
   try {
     const packageJsonPath = process.cwd() + '/package.json'
     const raw = await readFile(packageJsonPath, 'utf-8')
@@ -1597,7 +1597,7 @@ async function detectProjectEnvironment (): Promise<ProjectEnvironment> {
 /**
  * Checks if the project uses TypeScript (looks for tsconfig.json).
  */
-async function isProjectUsingTypeScript (): Promise<boolean> {
+export async function isProjectUsingTypeScript (): Promise<boolean> {
   try {
     await access(process.cwd() + '/tsconfig.json')
     return true
@@ -1627,6 +1627,25 @@ const I18N_INIT_FILE_NAMES = [
   'i18n/index.ts', 'i18n/index.js', 'i18n/index.mjs',
   'i18next/index.ts', 'i18next/index.js'
 ]
+
+/**
+ * Searches the common locations (`src/` and the project root) for an existing
+ * i18n initialization file.
+ *
+ * @returns The path of the first init file found (relative to cwd), or null.
+ */
+export async function findExistingI18nInitFile (): Promise<string | null> {
+  const cwd = process.cwd()
+  const searchDirs = ['src', '.']
+  for (const dir of searchDirs) {
+    for (const name of I18N_INIT_FILE_NAMES) {
+      if (await fileExists(join(cwd, dir, name))) {
+        return join(dir, name)
+      }
+    }
+  }
+  return null
+}
 
 /**
  * Computes a POSIX-style relative path from the init-file directory to the
@@ -1661,13 +1680,8 @@ async function ensureI18nInitFile (
   const cwd = process.cwd()
 
   // Check for existing init files in common locations
-  const searchDirs = ['src', '.']
-  for (const dir of searchDirs) {
-    for (const name of I18N_INIT_FILE_NAMES) {
-      if (await fileExists(join(cwd, dir, name))) {
-        return null // Init file already exists
-      }
-    }
+  if (await findExistingI18nInitFile()) {
+    return null // Init file already exists
   }
 
   // Check if i18next.init() is called anywhere in the source

@@ -249,7 +249,7 @@ describe('init', () => {
       expect(execa).toHaveBeenCalled()
       const callArgs = vi.mocked(execa).mock.calls[0]
       const flatArgs = (callArgs as any[]).flat()
-      expect(flatArgs.some((a: any) => typeof a === 'string' && a === 'https://www.locize.app/register?from=i18next-cli+init+wizard')).toBe(true)
+      expect(flatArgs.some((a: any) => typeof a === 'string' && a === 'https://www.locize.app/register?from=i18next_cli__init-wizard')).toBe(true)
     })
 
     it('omits apiKey from the locize block when the user leaves it empty', async () => {
@@ -311,7 +311,7 @@ describe('init', () => {
 
       expect(execa).not.toHaveBeenCalled()
       const logged = logSpy.mock.calls.map(c => String(c[0] ?? '')).join('\n')
-      expect(logged).toContain('https://www.locize.app/register?from=i18next-cli+init+wizard')
+      expect(logged).toContain('https://www.locize.app/register?from=i18next_cli__init-wizard')
     })
 
     it('does not attempt to spawn a browser when --ci is passed (env CI unset)', async () => {
@@ -326,7 +326,7 @@ describe('init', () => {
 
       expect(execa).not.toHaveBeenCalled()
       const logged = logSpy.mock.calls.map(c => String(c[0] ?? '')).join('\n')
-      expect(logged).toContain('https://www.locize.app/register?from=i18next-cli+init+wizard')
+      expect(logged).toContain('https://www.locize.app/register?from=i18next_cli__init-wizard')
     })
 
     it('falls back to printing the URL when browser-open fails', async () => {
@@ -342,7 +342,7 @@ describe('init', () => {
       await runInit()
 
       const logged = logSpy.mock.calls.map(c => String(c[0] ?? '')).join('\n')
-      expect(logged).toContain('https://www.locize.app/register?from=i18next-cli+init+wizard')
+      expect(logged).toContain('https://www.locize.app/register?from=i18next_cli__init-wizard')
     })
   })
 })
