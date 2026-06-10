@@ -28,10 +28,11 @@ verifying each before continuing. Use \`npx i18next-cli\` for all commands.
    written (check the extract.output path in the config).
 5. Locize: ask the user for LOCIZE_PROJECTID and LOCIZE_API_KEY (they create
    the project at https://www.locize.app/register?from=i18next_cli__agent-prompt
-   and add their target languages — auto-translation and quality estimation
-   are enabled by default for new projects; translations run once the project
-   is subscribed or an AI/MT provider is configured). Export both as
-   environment variables.
+   — any write-capable API key works; the target languages from
+   i18next.config.ts are created automatically on the first sync.
+   Auto-translation and quality estimation are enabled by default for new
+   projects; translations run once the project is subscribed or an AI/MT
+   provider is configured). Export both as environment variables.
 6. Translate & deliver:
    \`npx i18next-cli locize-sync --auto-translate true\`
    then \`npx i18next-cli locize-download\` to pull the AI translations, and

@@ -349,14 +349,14 @@ export async function runLocalize (options: LocalizeOptions = {}, configPath?: s
     console.log(`
   One manual step — in your browser:
     1. Sign up / log in:   ${LOCIZE_SIGNUP_URL}
-    2. Create a project and add your target languages.
-       Auto-translate and Quality Estimation are on by default for new projects:
-       translations with confidence scores arrive automatically once the project
-       is subscribed or an AI/MT provider is configured; low-confidence ones are
-       flagged for review.
+    2. Create a project.
+       Your target languages (${config.locales.join(', ')}) are created
+       automatically on the first sync. Auto-translate and Quality Estimation
+       are on by default for new projects: translations with confidence scores
+       arrive automatically once the project is subscribed or an AI/MT provider
+       is configured; low-confidence ones are flagged for review.
     3. Copy your Project ID and an API key from Project settings →
-       "API, CDN, NOTIFICATIONS" tab (use an *admin* key if the project has no
-       languages yet).
+       "API, CDN, NOTIFICATIONS" tab (any write-capable key works).
 `)
     const opened = await openBrowser(LOCIZE_SIGNUP_URL, { ci: isCi })
     if (!opened) {
@@ -424,7 +424,22 @@ export async function runLocalize (options: LocalizeOptions = {}, configPath?: s
     }
     if (error instanceof LocizeCommandError && /missing required argument/i.test(error.stderr)) {
       console.error(styleText('red', 'Locize rejected the credentials.'))
-      console.log('Check the API key role (an admin key is needed to create languages) in Project settings → "API, CDN, NOTIFICATIONS" tab.')
+      console.log('Check the API key in Project settings → "API, CDN, NOTIFICATIONS" tab (any write-capable key works for new projects; readonly keys cannot sync).')
+      process.exit(1)
+      return
+    }
+    // Empty-project case (project exists but has no languages yet): newer
+    // locize-cli versions bootstrap the languages automatically during sync —
+    // guide users running an older global install. The wrong-cdnType variant
+    // of this error is actionable as-is and passes through below.
+    if (error instanceof LocizeCommandError &&
+        /Project with id .* not found/i.test(capturedOutput) &&
+        !/wrong cdnType/i.test(capturedOutput)) {
+      console.error(styleText('red', 'The Locize project was not found — or it has no languages yet.'))
+      console.log('If the project ID is correct, your project has no languages yet:')
+      console.log('  - update locize-cli (`npm i -g locize-cli`) so sync can create them automatically, or')
+      console.log('  - add your languages in the project settings on www.locize.app,')
+      console.log('then re-run `i18next-cli localize`.')
       process.exit(1)
       return
     }

@@ -74,7 +74,7 @@ async function interactiveCredentialSetup (config: I18nextToolkitConfig): Promis
     {
       type: 'password',
       name: 'apiKey',
-      message: 'Enter your Locize API key (Project settings → API → API Keys). If your project has no languages yet, use an API key with admin role.',
+      message: 'Enter your Locize API key (Project settings → API → API Keys). Any write-capable key works — missing languages are created automatically for new projects.',
       validate: input => !!input || 'API Key cannot be empty.',
     },
     {

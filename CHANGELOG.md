@@ -42,6 +42,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *namespace*, but rollup's default interop called it directly. The CJS output
   now uses `interop: 'auto'`, which unwraps `.default` at runtime via the
   `__esModule` marker. The published `bin` (ESM) was never affected.
+- feat: `localize` maps the "project not found" sync error on a project
+  without languages to actionable guidance (update locize-cli — newer versions
+  create the languages automatically during sync — or add languages in the
+  project settings).
+- docs/copy: new Locize projects no longer require adding target languages in
+  the UI or an admin-scoped API key — any write-capable key works and the
+  languages from your config are created automatically during the first sync
+  (locize-cli ≥ 12.3 together with the corresponding Locize API update). The
+  `localize` step-5 copy, the credential prompts and the agent prompt reflect
+  this.
 - fix: the `locize-*` commands now resolve credentials from the
   `LOCIZE_PROJECTID`/`LOCIZE_PID`, `LOCIZE_API_KEY`/`LOCIZE_KEY`,
   `LOCIZE_VERSION` and `LOCIZE_API_ENDPOINT` environment variables (after CLI

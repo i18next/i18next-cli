@@ -484,7 +484,7 @@ The command walks through six steps:
 2. **Configuration** — uses your `i18next.config.ts`, or starts the [`init`](#init) wizard if none exists.
 3. **Instrument** — wraps hardcoded strings in `t()` calls / `<Trans>` components (interactive by default — [instrument](#instrument) is an assistant, review each change). Skipped automatically if your code can't be instrumented; a dirty git tree prompts for confirmation first.
 4. **Extract** — extracts all translation keys into your locale files.
-5. **Connect Locize** — uses `locize.projectId`/`locize.apiKey` from your config or the `LOCIZE_PROJECTID`/`LOCIZE_API_KEY` environment variables; otherwise it opens the signup page and asks you to paste them (the one manual step). Auto-translate and Quality Estimation are on by default for new Locize projects.
+5. **Connect Locize** — uses `locize.projectId`/`locize.apiKey` from your config or the `LOCIZE_PROJECTID`/`LOCIZE_API_KEY` environment variables; otherwise it opens the signup page and asks you to paste them (the one manual step). Any write-capable API key works: your target languages are created automatically on the first sync (locize-cli ≥ 12.3), and auto-translate + Quality Estimation are on by default for new Locize projects.
 6. **Translate & deliver** — syncs your keys with `--auto-translate`, waits for the AI translations to arrive, downloads them, and prints the [i18next-locize-backend](https://github.com/locize/i18next-locize-backend) CDN wiring snippet (so translation fixes go live without redeploying your app).
 
 **Options:**
@@ -547,10 +547,11 @@ verifying each before continuing. Use `npx i18next-cli` for all commands.
    written (check the extract.output path in the config).
 5. Locize: ask the user for LOCIZE_PROJECTID and LOCIZE_API_KEY (they create
    the project at https://www.locize.app/register?from=i18next_cli__agent-prompt
-   and add their target languages — auto-translation and quality estimation
-   are enabled by default for new projects; translations run once the project
-   is subscribed or an AI/MT provider is configured). Export both as
-   environment variables.
+   — any write-capable API key works; the target languages from
+   i18next.config.ts are created automatically on the first sync.
+   Auto-translation and quality estimation are enabled by default for new
+   projects; translations run once the project is subscribed or an AI/MT
+   provider is configured). Export both as environment variables.
 6. Translate & deliver:
    `npx i18next-cli locize-sync --auto-translate true`
    then `npx i18next-cli locize-download` to pull the AI translations, and

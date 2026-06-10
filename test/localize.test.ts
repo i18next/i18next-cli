@@ -263,6 +263,29 @@ describe('runLocalize', () => {
     expect(logged).toMatch(/EDITOR, TM\/MT\/AI, ORDERING/)
   })
 
+  it('maps the empty-project sync error to actionable guidance', async () => {
+    vi.mocked(runLocizeSync).mockRejectedValue(
+      new LocizeCommandError('failed', { stderr: 'Error: Project with id "pid" not found — or it has no languages yet!' })
+    )
+    const logSpy = vi.mocked(console.log)
+    await runLocalize({ ci: true, yes: true })
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    const logged = logSpy.mock.calls.map(c => String(c[0] ?? '')).join('\n')
+    expect(logged).toContain('npm i -g locize-cli')
+    expect(runLocizeSync).toHaveBeenCalledTimes(1) // not misread as AI-not-enabled
+  })
+
+  it('passes the wrong-cdnType variant of the not-found error through unchanged', async () => {
+    // runLocizeCommand builds the message from stderr, so both carry the hint
+    const stderr = 'Error: Project with id "pid" not found! It seems you\'re using the wrong cdnType.'
+    vi.mocked(runLocizeSync).mockRejectedValue(new LocizeCommandError(stderr, { stderr }))
+    const errorSpy = vi.mocked(console.error)
+    await runLocalize({ ci: true, yes: true })
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    const errors = errorSpy.mock.calls.map(c => c.join(' ')).join('\n')
+    expect(errors).toContain('wrong cdnType')
+  })
+
   it('does not misclassify unrelated sync failures as AI-not-enabled', async () => {
     vi.mocked(runLocizeSync).mockRejectedValue(new LocizeCommandError('boom', { stderr: 'connection refused' }))
     await runLocalize({ ci: true, yes: true })
