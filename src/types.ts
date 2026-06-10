@@ -329,6 +329,9 @@ export interface I18nextToolkitConfig {
     /** Version to sync with (default: 'latest') */
     version?: string;
 
+    /** Override the Locize API endpoint (default: https://api.locize.app) */
+    apiEndpoint?: string;
+
     /** Whether to update existing translation values on Locize */
     updateValues?: boolean;
 

@@ -191,13 +191,19 @@ function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: a
 
   const commandArgs: string[] = [command]
 
-  const projectId = cliOptions.projectId ?? locizeConfig.projectId
+  // Resolve credentials explicitly (CLI option → config → env var) and always
+  // forward them as flags. locize-cli would pick env vars up itself, but its
+  // own precedence puts a ~/.locize config file ABOVE the environment — a
+  // stale ~/.locize would silently redirect the run to another project.
+  const projectId = cliOptions.projectId ?? locizeConfig.projectId ?? process.env.LOCIZE_PROJECTID ?? process.env.LOCIZE_PID
   if (projectId) commandArgs.push('--project-id', projectId)
-  const apiKey = cliOptions.apiKey ?? locizeConfig.apiKey
+  const apiKey = cliOptions.apiKey ?? locizeConfig.apiKey ?? process.env.LOCIZE_API_KEY ?? process.env.LOCIZE_KEY
   if (apiKey) commandArgs.push('--api-key', apiKey)
-  const version = cliOptions.version ?? locizeConfig.version
+  const version = cliOptions.version ?? locizeConfig.version ?? process.env.LOCIZE_VERSION ?? process.env.LOCIZE_VER
   if (version) commandArgs.push('--ver', version)
-  const cdnType = cliOptions.cdnType ?? locizeConfig.cdnType
+  const apiEndpoint = cliOptions.apiEndpoint ?? locizeConfig.apiEndpoint ?? process.env.LOCIZE_API_ENDPOINT
+  if (apiEndpoint) commandArgs.push('--api-endpoint', apiEndpoint)
+  const cdnType = cliOptions.cdnType ?? locizeConfig.cdnType ?? process.env.LOCIZE_CDN_TYPE
   if (cdnType) commandArgs.push('--cdn-type', cdnType)
   // TODO: there might be more configurable locize-cli options in future
 

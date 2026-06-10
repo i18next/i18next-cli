@@ -42,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *namespace*, but rollup's default interop called it directly. The CJS output
   now uses `interop: 'auto'`, which unwraps `.default` at runtime via the
   `__esModule` marker. The published `bin` (ESM) was never affected.
+- fix: the `locize-*` commands now resolve credentials from the
+  `LOCIZE_PROJECTID`/`LOCIZE_PID`, `LOCIZE_API_KEY`/`LOCIZE_KEY`,
+  `LOCIZE_VERSION` and `LOCIZE_API_ENDPOINT` environment variables (after CLI
+  options and the `locize` config block) and always forward them as explicit
+  flags. Previously the env vars were left for locize-cli to pick up — but
+  locize-cli prefers a `~/.locize` config file over the environment, so a
+  stale `~/.locize` could silently redirect a sync/migrate to a different
+  project or API endpoint. A new `locize.apiEndpoint` config option is also
+  available for staging/self-hosted setups.
 
 ## 1.61.1
 

@@ -234,6 +234,60 @@ describe('locize', () => {
     })
   })
 
+  describe('credential resolution', () => {
+    const getSyncArgs = () => {
+      const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+      return syncCall![1] as string[]
+    }
+
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    it('falls back to LOCIZE_PROJECTID / LOCIZE_API_KEY env vars and forwards them as flags', async () => {
+      // Explicit flags matter: locize-cli itself prefers a ~/.locize config
+      // file over env vars, so a stale ~/.locize would otherwise hijack the run.
+      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      vi.stubEnv('LOCIZE_PROJECTID', 'env-project-id')
+      vi.stubEnv('LOCIZE_API_KEY', 'env-api-key')
+      delete mockConfig.locize
+      await runLocizeSync(mockConfig)
+      const args = getSyncArgs()
+      expect(args[args.findIndex(a => a === '--project-id') + 1]).toBe('env-project-id')
+      expect(args[args.findIndex(a => a === '--api-key') + 1]).toBe('env-api-key')
+    })
+
+    it('config takes precedence over env vars', async () => {
+      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      vi.stubEnv('LOCIZE_PROJECTID', 'env-project-id')
+      await runLocizeSync(mockConfig) // config has projectId: 'test-project-id'
+      const args = getSyncArgs()
+      expect(args[args.findIndex(a => a === '--project-id') + 1]).toBe('test-project-id')
+    })
+
+    it('forwards apiEndpoint from config / LOCIZE_API_ENDPOINT env', async () => {
+      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      mockConfig.locize = { ...mockConfig.locize, apiEndpoint: 'https://api-dev.locize.app' }
+      await runLocizeSync(mockConfig)
+      let args = getSyncArgs()
+      expect(args[args.findIndex(a => a === '--api-endpoint') + 1]).toBe('https://api-dev.locize.app')
+
+      vi.mocked(execa).mockClear()
+      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      delete mockConfig.locize!.apiEndpoint
+      vi.stubEnv('LOCIZE_API_ENDPOINT', 'https://api-staging.locize.app')
+      await runLocizeSync(mockConfig)
+      args = getSyncArgs()
+      expect(args[args.findIndex(a => a === '--api-endpoint') + 1]).toBe('https://api-staging.locize.app')
+    })
+
+    it('does not forward --api-endpoint when unset', async () => {
+      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      await runLocizeSync(mockConfig)
+      expect(getSyncArgs()).not.toContain('--api-endpoint')
+    })
+  })
+
   describe('maskApiKey', () => {
     it('masks legacy UUID keys keeping the first and last 3 characters', () => {
       const key = '181f1234-abcd-ef01-2345-67890b9420f1'
