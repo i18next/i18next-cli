@@ -116,6 +116,26 @@ describe('init --inlang (inlang project scaffold)', () => {
     expect(settings['plugin.inlang.i18next'].pathPattern).toBe('./locales/{locale}.json')
   })
 
+  it('normalizes Windows path separators in detected output templates', async () => {
+    vol.fromJSON({
+      '/public/locales/en/common.json': '{}',
+      '/public/locales/en/app.json': '{}',
+    })
+    vi.mocked(inquirer.prompt).mockResolvedValue({
+      ...baseAnswers,
+      output: 'public\\locales\\{{language}}\\{{namespace}}.json',
+      inlang: true,
+    })
+
+    await runInit()
+
+    const settings = await readJson('project.inlang/settings.json')
+    expect(settings['plugin.inlang.i18next'].pathPattern).toStrictEqual({
+      app: './public/locales/{locale}/app.json',
+      common: './public/locales/{locale}/common.json',
+    })
+  })
+
   it('supports the {{lng}} placeholder alias', async () => {
     vol.fromJSON({ '/locales/en/main.json': '{}' })
     vi.mocked(inquirer.prompt).mockResolvedValue({

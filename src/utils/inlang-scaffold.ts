@@ -52,8 +52,10 @@ export async function scaffoldInlangProject (options: InlangScaffoldOptions): Pr
     return
   }
 
-  // {{lng}} is a supported alias for {{language}}
-  const template = output.replace(/\{\{lng\}\}/g, '{{language}}')
+  // Normalize Windows separators (heuristic-detected templates may be built
+  // with path.join) — settings.json patterns must be POSIX for portability.
+  // {{lng}} is a supported alias for {{language}}.
+  const template = output.replace(/\\/g, '/').replace(/\{\{lng\}\}/g, '{{language}}')
 
   if (!template.endsWith('.json')) {
     console.log('⚠️  Skipping inlang setup: the inlang i18next plugin supports JSON resource files only, but extract.output points to non-JSON files.')
@@ -93,8 +95,9 @@ export async function scaffoldInlangProject (options: InlangScaffoldOptions): Pr
 
 /**
  * Converts an i18next-cli output template into an inlang `pathPattern`:
- * `{{language}}` becomes `{locale}` and the path is made explicitly relative,
- * as required by the plugin's settings schema.
+ * `{{language}}` becomes `{locale}`, and relative paths are prefixed with
+ * `./` as required by the plugin's settings schema (which also permits
+ * `../`-relative and absolute paths, so those pass through unchanged).
  */
 function toInlangPattern (template: string): string {
   const pattern = template.replace(/\{\{language\}\}/g, '{locale}')
