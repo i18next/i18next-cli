@@ -203,7 +203,8 @@ program
   .command('init')
   .description('Create a new i18next.config.ts/js file with an interactive setup wizard.')
   .option('--ci', 'Skip the browser launch when a backend (e.g. Locize) is selected. The signup URL is printed instead.')
-  .action((options) => runInit({ ci: !!options.ci }))
+  .option('--inlang', 'Also scaffold an inlang project (project.inlang/settings.json) so inlang tooling (Sherlock, Fink, Paraglide) works on the translation files. Skips the corresponding wizard question.')
+  .action((options) => runInit({ ci: !!options.ci, inlang: !!options.inlang }))
 
 program
   .command('lint')

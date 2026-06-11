@@ -118,6 +118,13 @@ npx i18next-cli init
   also auto-detects `CI=true` and falls back to printing the URL on headless
   Linux (no `DISPLAY`/`WAYLAND_DISPLAY`), so this flag is rarely needed
   explicitly.
+- `--inlang`: Also scaffold an [inlang](https://inlang.com) project
+  (`project.inlang/settings.json`) so inlang tooling — the
+  [Sherlock](https://inlang.com/m/r7kp499g/app-inlang-ideExtension) VS Code
+  extension, the [Fink](https://fink.inlang.com) web editor for translators,
+  and the [Paraglide](https://inlang.com/m/gerre34r/library-inlang-paraglideJs)
+  compiler — works directly on your translation files. Skips the
+  corresponding wizard question.
 
 The wizard asks for the config file type, locales, source-file glob, output
 path, and finally **"Translation backend?"** with three options:
@@ -130,6 +137,23 @@ path, and finally **"Translation backend?"** with three options:
   works out of the box. The API key prompt can be left empty (read-only
   mode); add it later via a `LOCIZE_API_KEY` environment variable.
 - **Other / skip** — same as "Local files only" for the wizard's purposes.
+
+The wizard then offers to **set up inlang tooling** (default: no — or pass
+`--inlang` to skip the question). If accepted, it scaffolds a
+`project.inlang/settings.json` that points the
+[inlang i18next plugin](https://inlang.com/m/3i8bor92/plugin-inlang-i18next)
+at your existing translation files: `baseLocale`/`locales` come from your
+config, and `pathPattern` is derived from `extract.output` (the namespaced
+object form when your layout uses `{{namespace}}`, with namespaces discovered
+from the primary language's files; a plain pattern otherwise). It also adds
+the Sherlock extension to `.vscode/extensions.json` recommendations (merging
+comment-aware, never clobbering existing entries). Your i18next JSON files
+remain the single source of truth — inlang tools read and write them in
+place, so there is no second catalog to drift. An existing
+`project.inlang/settings.json` is never overwritten; re-running `init` is
+safe. Requires JSON resource files. The plugin is pinned to an exact verified
+version (`@inlang/plugin-i18next@6.2.0`) — bump the `modules` URL in
+`settings.json` to pick up newer plugin releases.
 
 ### `extract`
 Parses source files, extracts keys, and updates your JSON translation files.
