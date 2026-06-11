@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.63.1
+
+- fix: `init --inlang` now pins `@inlang/plugin-i18next@6.2.1` (was 6.2.0).
+  6.2.1 restores Sherlock (inlang VS Code extension) inline annotations,
+  hovers, and message extraction for i18next projects, which were silently
+  broken by the plugin's static ide-extension `meta` shadowing Sherlock's
+  settings-injecting `addCustomApi` migration (reported and fixed upstream in
+  [opral/inlang#4368](https://github.com/opral/inlang/issues/4368)). Projects
+  already scaffolded with 6.2.0 can simply bump the `modules` URL in
+  `project.inlang/settings.json`.
+
 ## 1.63.0
 
 - feat: **`init --inlang`** — `init` can now scaffold a ready-made

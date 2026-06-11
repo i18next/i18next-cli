@@ -152,7 +152,7 @@ remain the single source of truth — inlang tools read and write them in
 place, so there is no second catalog to drift. An existing
 `project.inlang/settings.json` is never overwritten; re-running `init` is
 safe. Requires JSON resource files. The plugin is pinned to an exact verified
-version (`@inlang/plugin-i18next@6.2.0`) — bump the `modules` URL in
+version (`@inlang/plugin-i18next@6.2.1`) — bump the `modules` URL in
 `settings.json` to pick up newer plugin releases. Only `settings.json` is
 scaffolded by design: `project.inlang/` is the
 [unpacked (git-friendly)](https://inlang.com/docs/unpacked-project) project

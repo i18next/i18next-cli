@@ -6,12 +6,13 @@ import { parse, modify, applyEdits, type ParseError } from 'jsonc-parser'
  * The plugin that teaches inlang tools (Sherlock, Fink, Paraglide) to read and
  * write i18next JSON resource files directly.
  *
- * Pinned to an exact version on purpose: 6.2.0 is the first release with
- * verified round-trip support for plurals, context, `_zero` and ordinal keys,
- * and jsDelivr serves floating range URLs (`@6`) from edge caches that can
- * lag releases by days. Bump deliberately when newer verified versions ship.
+ * Pinned to an exact version on purpose: 6.2.1 is the first release with
+ * verified round-trip support for plurals, context, `_zero` and ordinal keys
+ * AND working Sherlock inline annotations, and jsDelivr serves floating range
+ * URLs (`@6`) from edge caches that can lag releases by days. Bump
+ * deliberately when newer verified versions ship.
  */
-const INLANG_PLUGIN_MODULE = 'https://cdn.jsdelivr.net/npm/@inlang/plugin-i18next@6.2.0/dist/index.js'
+const INLANG_PLUGIN_MODULE = 'https://cdn.jsdelivr.net/npm/@inlang/plugin-i18next@6.2.1/dist/index.js'
 
 /** VS Code marketplace id of the inlang Sherlock extension. */
 const SHERLOCK_EXTENSION_ID = 'inlang.vs-code-extension'

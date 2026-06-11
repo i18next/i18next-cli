@@ -63,7 +63,7 @@ describe('init --inlang (inlang project scaffold)', () => {
       $schema: 'https://inlang.com/schema/project-settings',
       baseLocale: 'en',
       locales: ['en', 'de'],
-      modules: ['https://cdn.jsdelivr.net/npm/@inlang/plugin-i18next@6.2.0/dist/index.js'],
+      modules: ['https://cdn.jsdelivr.net/npm/@inlang/plugin-i18next@6.2.1/dist/index.js'],
       'plugin.inlang.i18next': {
         pathPattern: {
           app: './public/locales/{locale}/app.json',
