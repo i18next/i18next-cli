@@ -3,6 +3,7 @@ import { writeFile, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { detectConfig } from './heuristic-config.js'
 import { openBrowser, promptLocizeCredentials } from './utils/locize-onboarding.js'
+import { scaffoldInlangProject } from './utils/inlang-scaffold.js'
 
 const LOCIZE_SIGNUP_URL = 'https://www.locize.app/register?from=i18next_cli__init-wizard'
 
@@ -93,7 +94,7 @@ async function isTypeScriptProject (): Promise<boolean> {
  * // - i18next.config.js (JavaScript ESM/CommonJS)
  * ```
  */
-export async function runInit (options: { ci?: boolean } = {}) {
+export async function runInit (options: { ci?: boolean, inlang?: boolean } = {}) {
   console.log('Welcome to the i18next-cli setup wizard!')
   console.log('Scanning your project for a recommended configuration...')
 
@@ -156,6 +157,14 @@ export async function runInit (options: { ci?: boolean } = {}) {
         { name: 'Other / skip', value: 'other' },
       ],
       default: 'local',
+    },
+    {
+      type: 'confirm',
+      name: 'inlang',
+      message: 'Also set up inlang tooling (Sherlock VS Code extension, Fink editor, Paraglide) on these translation files?',
+      default: false,
+      // Skip the question when already requested via the --inlang flag.
+      when: () => !options.inlang,
     },
   ])
 
@@ -253,6 +262,14 @@ module.exports = ${toJs(configObject)}`
   await writeFile(outputPath, fileContent.trim())
 
   console.log(`✅ Configuration file created at: ${outputPath}`)
+
+  if (options.inlang || answers.inlang) {
+    await scaffoldInlangProject({
+      locales: answers.locales,
+      primaryLanguage: answers.locales[0],
+      output: answers.output,
+    })
+  }
 
   if (locizeConfig) {
     console.log('\nNext steps for Locize:')
