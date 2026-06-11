@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.63.0
+
+- feat: **`init --inlang`** — `init` can now scaffold a ready-made
+  [inlang](https://inlang.com) project so inlang tooling (the
+  [Sherlock](https://inlang.com/m/r7kp499g/app-inlang-ideExtension) VS Code
+  extension, the [Fink](https://fink.inlang.com) web editor for translators,
+  and the [Paraglide](https://inlang.com/m/gerre34r/library-inlang-paraglideJs)
+  compiler) works directly on your existing translation files — the i18next
+  JSON stays the single source of truth, the scaffold is just the adapter.
+  The wizard asks (default: no), or pass `--inlang` to skip the question.
+  It emits a `project.inlang/settings.json` with `baseLocale`/`locales` from
+  your config and `plugin.inlang.i18next.pathPattern` derived from
+  `extract.output`: the namespaced object form when the layout uses
+  `{{namespace}}` (namespace names discovered from the primary language's
+  existing files, `translation` fallback on fresh projects), a plain pattern
+  for single-file layouts; the `{{lng}}` alias and Windows path separators
+  are normalized, and non-JSON layouts are skipped with a notice. It also
+  adds the Sherlock extension to `.vscode/extensions.json` recommendations —
+  created when missing, otherwise merged JSONC-aware (comments preserved,
+  nothing clobbered, unparseable files left untouched with a notice).
+  Idempotent: an existing `project.inlang/settings.json` is never
+  overwritten. Only `settings.json` is scaffolded by design — the directory
+  is the [unpacked (git-friendly)](https://inlang.com/docs/unpacked-project)
+  project form, and inlang tools generate and manage its remaining files
+  (`.gitignore`, `README.md`, `cache/`) on first use. The plugin module is
+  pinned to the exact verified `@inlang/plugin-i18next@6.2.0` (the first
+  release with full round-trip support for plurals, context, `_zero` and
+  ordinal keys) rather than a floating range: jsDelivr serves range aliases
+  like `@6` from edge caches that can lag releases by days and differ between
+  locations, which would make scaffolded projects non-reproducible across a
+  team — bump the `modules` URL in `settings.json` to pick up newer plugin
+  releases deliberately.
+
 ## 1.62.0
 
 - feat: new **`localize`** supercommand — one command from hardcoded strings to
