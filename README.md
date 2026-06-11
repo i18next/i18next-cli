@@ -153,7 +153,12 @@ place, so there is no second catalog to drift. An existing
 `project.inlang/settings.json` is never overwritten; re-running `init` is
 safe. Requires JSON resource files. The plugin is pinned to an exact verified
 version (`@inlang/plugin-i18next@6.2.0`) — bump the `modules` URL in
-`settings.json` to pick up newer plugin releases.
+`settings.json` to pick up newer plugin releases. Only `settings.json` is
+scaffolded by design: `project.inlang/` is the
+[unpacked (git-friendly)](https://inlang.com/docs/unpacked-project) project
+form, and inlang tools generate and manage its remaining files (`.gitignore`,
+`README.md`, `cache/`) on first use — so expect a few new files there after
+opening the project with Sherlock or Paraglide.
 
 ### `extract`
 Parses source files, extracts keys, and updates your JSON translation files.
