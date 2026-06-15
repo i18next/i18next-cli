@@ -773,8 +773,11 @@ export default defineConfig({
     mergeNamespaces: false, 
     
     // Translation functions to detect. Defaults to ['t', '*.t'].
-    // Supports wildcards for suffixes.
-    functions: ['t', '*.t', 'i18next.t'],
+    // Supports a leading wildcard to match any object (suffix match), e.g.
+    // '*.t' matches `i18n.t` / `this._i18n.t`, and a trailing wildcard to match
+    // any method on an object (prefix match), e.g. 'tProps.*' matches
+    // `tProps.label` / `tProps.title`.
+    functions: ['t', '*.t', 'i18next.t', 'tProps.*'],
     
     // React components to analyze
     transComponents: ['Trans', 'Translation'],

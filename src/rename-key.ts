@@ -375,6 +375,10 @@ function replaceKeyWithRegex (
       const suffix = fnPattern.slice(2)
       return `\\b[\\w$]+\\.${escapeRegex(suffix)}`
     }
+    if (fnPattern.endsWith('.*')) {
+      const prefix = fnPattern.slice(0, -2)
+      return `\\b${escapeRegex(prefix)}\\.[\\w$]+`
+    }
     return `\\b${escapeRegex(fnPattern)}`
   }
 

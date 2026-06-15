@@ -185,6 +185,37 @@ describe('runRenameKey', () => {
       expect(updatedCode).toContain("ctx.t('new.key')")
       expect(updatedCode).toContain("app.translate('new.key')")
     })
+
+    it('should handle trailing wildcard function patterns (e.g. "tProps.*")', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          functions: ['t', 'tProps.*']
+        }
+      }
+
+      await writeFile(
+        join(testDir, 'test.ts'),
+        "tProps.label('old.key')\ntProps.title('old.key')\nother.label('old.key')"
+      )
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/translation.json'),
+        JSON.stringify({ old: { key: 'Old Value' } })
+      )
+
+      const result = await runRenameKey(config, 'old.key', 'new.key')
+
+      expect(result.success).toBe(true)
+
+      const updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      expect(updatedCode).toContain("tProps.label('new.key')")
+      expect(updatedCode).toContain("tProps.title('new.key')")
+      // A different object must NOT be renamed
+      expect(updatedCode).toContain("other.label('old.key')")
+    })
   })
 
   describe('JSX components', () => {

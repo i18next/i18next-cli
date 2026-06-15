@@ -1899,6 +1899,43 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should handle suffix wildcard patterns (e.g. "tProps.*") in the functions array', async () => {
+      const sampleCode = `
+      // These should be matched by 'tProps.*'
+      tProps.label('Dashboard');
+      tProps.title('Settings');
+
+      // Plain 't' is still matched
+      t('key.simple');
+
+      // Deeper nesting should NOT be matched by 'tProps.*'
+      tProps.nested.deep('key.ignored.nested');
+
+      // A different object should be ignored
+      other.label('key.ignored.other');
+    `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const customConfig: I18nextToolkitConfig = {
+        ...mockConfig,
+        extract: {
+          ...mockConfig.extract,
+          keySeparator: false,
+          functions: ['t', 'tProps.*'],
+        },
+      }
+
+      const results = await extract(customConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(translationFile!.newTranslations).toEqual({
+        Dashboard: 'Dashboard',
+        Settings: 'Settings',
+        'key.simple': 'key.simple',
+      })
+    })
+
     it('should treat empty string context as "no context" like i18next does', async () => {
       const sampleCode = `
       const test = false;

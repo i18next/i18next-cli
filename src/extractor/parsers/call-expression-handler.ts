@@ -4,6 +4,7 @@ import { ExpressionResolver } from './expression-resolver.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
 import { parseNestedReferences } from '../../utils/nesting.js'
 import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset } from './ast-utils.js'
+import { matchesFunctionPattern } from '../utils/function-matcher.js'
 
 // Helper to escape regex characters
 const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -90,18 +91,11 @@ export class CallExpressionHandler {
     let isFunctionToParse = scopeInfo !== undefined // A scoped variable (from useTranslation, etc.) is always parsed.
     if (!isFunctionToParse) {
       for (const pattern of configuredFunctions) {
-        if (pattern.startsWith('*.')) {
-          // Handle wildcard suffix (e.g., '*.t' matches 'i18n.t')
-          if (functionName.endsWith(pattern.substring(1))) {
-            isFunctionToParse = true
-            break
-          }
-        } else {
-          // Handle exact match
-          if (pattern === functionName) {
-            isFunctionToParse = true
-            break
-          }
+        // Supports exact ('t', 'i18next.t'), prefix wildcards ('*.t' -> 'i18n.t')
+        // and suffix wildcards ('tProps.*' -> 'tProps.label').
+        if (matchesFunctionPattern(functionName, pattern)) {
+          isFunctionToParse = true
+          break
         }
       }
     }

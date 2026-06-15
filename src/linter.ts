@@ -8,6 +8,7 @@ import { ConsoleLogger } from './utils/logger.js'
 import { createSpinnerLike } from './utils/wrap-ora.js'
 import { translatableAttributes, ignoredAttributeLowerSet, ignoredTags as sharedIgnoredTags, acceptedTags as sharedAcceptedTags } from './utils/jsx-attributes.js'
 import { findFirstTokenIndex, normalizeASTSpans, buildByteToCharMap, convertSpansToCharIndices, collectIgnoredLineRanges } from './extractor/parsers/ast-utils.js'
+import { matchesFunctionPattern } from './extractor/utils/function-matcher.js'
 import type { I18nextToolkitConfig, Logger, LintIssue, Plugin, LintPluginContext } from './types.js'
 
 /**
@@ -151,23 +152,54 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
 
   // Modularized CallExpression handler
   function handleCallExpression (node: any, ancestors: any[]) {
+    // Build the full dotted callee name (e.g. 'i18n.t', 'tProps.label') as well as
+    // the bare last segment ('t', 'label') so both exact and wildcard patterns match.
     let calleeName = ''
+    let fullCalleeName = ''
     if (node.callee) {
-      if (node.callee.type === 'Identifier' && node.callee.value) {
-        calleeName = node.callee.value
-      } else if (node.callee.type === 'Identifier' && node.callee.name) {
-        calleeName = node.callee.name
-      } else if (node.callee.type === 'MemberExpression' && node.callee.property?.type === 'Identifier') {
-        calleeName = node.callee.property.value || node.callee.property.name
+      if (node.callee.type === 'Identifier') {
+        calleeName = node.callee.value || node.callee.name || ''
+        fullCalleeName = calleeName
+      } else if (node.callee.type === 'MemberExpression') {
+        const parts: string[] = []
+        let current: any = node.callee
+        let computed = false
+        while (current?.type === 'MemberExpression') {
+          if (current.property?.type === 'Identifier') {
+            parts.unshift(current.property.value || current.property.name)
+          } else {
+            computed = true
+            break
+          }
+          current = current.object
+        }
+        if (!computed) {
+          if (current?.type === 'ThisExpression') {
+            parts.unshift('this')
+          } else if (current?.type === 'Identifier') {
+            parts.unshift(current.value || current.name)
+          } else {
+            parts.length = 0
+          }
+        }
+        if (node.callee.property?.type === 'Identifier') {
+          calleeName = node.callee.property.value || node.callee.property.name
+        }
+        fullCalleeName = parts.length ? parts.join('.') : calleeName
       }
     }
     const fnPatterns = config.extract.functions || ['t', '*.t']
     let matches = false
     for (const pattern of fnPatterns) {
-      if (pattern.startsWith('*.')) {
-        if (calleeName === pattern.slice(2)) matches = true
-      } else {
-        if (calleeName === pattern) matches = true
+      if (matchesFunctionPattern(fullCalleeName, pattern)) {
+        matches = true
+        break
+      }
+      // Backwards-compatible: '*.X' also matches a call whose last segment is X
+      // (covers computed member expressions where the full chain is unavailable).
+      if (pattern.startsWith('*.') && calleeName === pattern.slice(2)) {
+        matches = true
+        break
       }
     }
     if (matches) {
