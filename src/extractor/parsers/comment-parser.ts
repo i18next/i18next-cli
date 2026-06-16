@@ -147,13 +147,17 @@ export function extractKeysFromComments (
 
       // 5. Handle context and count combinations based on disablePlurals setting
       if (config.extract.disablePlurals) {
-        // When plurals are disabled, ignore count for key generation
+        // When plurals are disabled, ignore count for key generation. We still
+        // tag the key with `hasCount` (when a count was present) so `status` can
+        // recognise it as count-driven; file generation ignores the flag under
+        // disablePlurals (see translation-manager).
+        const countMeta = count ? { hasCount: true, isOrdinal } : {}
         if (context) {
           // Only generate context variants (no base key when context is static)
-          pluginContext.addKey({ key: `${key}_${context}`, ns, defaultValue: defaultValue ?? key })
+          pluginContext.addKey({ key: `${key}_${context}`, ns, defaultValue: defaultValue ?? key, ...countMeta })
         } else {
           // Simple key (ignore count)
-          pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })
+          pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key, ...countMeta })
         }
       } else {
         // Original plural handling logic when plurals are enabled

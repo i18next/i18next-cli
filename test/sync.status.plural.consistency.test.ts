@@ -190,16 +190,19 @@ describe('sync + status plural consistency (issue #220)', () => {
     expect(esAfterSync?.detail?.comments?.title_other).toBe('{{count}} comentarios')
   })
 
-  it('status exits 1 when _many is present but empty (untranslated placeholder)', async () => {
-    // This documents correct behaviour: an empty _many means a translator needs
-    // to fill it in.  status correctly flags that with exit 1.
+  it('status exits 0 when only the optional French _many placeholder is empty (#270)', async () => {
+    // #270: French `_many` is only selected by Intl.PluralRules for counts
+    // ≥ 1,000,000, so it is an OPTIONAL category. When the required forms
+    // (`_one`/`_other`) are translated, an empty `_many` placeholder — the kind
+    // `extract` writes and `sync` preserves (#215/#220) — must NOT fail the
+    // check. It is surfaced as a soft "optional plural form" note instead.
     const config = makeConfig()
 
     const frWithEmptyMany = {
       detail: {
         comments: {
           title_one: '{{count}} commentaire',
-          title_many: '',    // present but empty — needs translation
+          title_many: '',    // optional category, empty → soft note, not a failure
           title_other: '{{count}} commentaires',
         },
       },
@@ -208,7 +211,7 @@ describe('sync + status plural consistency (issue #220)', () => {
       detail: {
         comments: {
           title_one: '{{count}} comentario',
-          title_many: '',    // present but empty — needs translation
+          title_many: '',    // optional category, empty → soft note, not a failure
           title_other: '{{count}} comentarios',
         },
       },
@@ -228,8 +231,8 @@ describe('sync + status plural consistency (issue #220)', () => {
 
     try { await runStatus(config) } catch { /* process.exit throws */ }
 
-    // Correct: _many is present but empty → translator still needs to fill it in
-    expect(processExitSpy).toHaveBeenCalledWith(1)
+    // The required forms are translated and `_many` is optional → no failure.
+    expect(processExitSpy).not.toHaveBeenCalled()
   })
 
   it('status exits 0 after sync when all source-code keys are fully translated, including preserved _many', async () => {
@@ -442,21 +445,27 @@ describe('extract plural suffix generation for secondary locales (issue #220)', 
   })
 
   // -------------------------------------------------------------------------
-  // Test 10 — the new absent/empty distinction: verify that the report
-  // correctly classifies keys as absent vs empty so the improved display
-  // has accurate data to work with.
+  // Test 10 — the absent/empty distinction for REQUIRED plural forms, plus the
+  // optional-category handling for French `_many` (issue #270).
+  //
+  // `_one`/`_other` are required for French, so a missing/empty one is a real
+  // problem (absent vs untranslated). `_many`, however, is only selected by
+  // Intl.PluralRules for counts ≥ 1,000,000, so a missing/empty `_many` is an
+  // optional soft note — it must NOT be reported as "absent" and must NOT fail
+  // the check on its own.
   // -------------------------------------------------------------------------
 
-  it('status report correctly distinguishes absent keys from empty (untranslated) keys', async () => {
+  it('distinguishes absent vs untranslated for required forms while treating French _many as optional (#270)', async () => {
     const config = makeConfig()
 
-    // fr has title_one translated, title_other empty, title_many absent entirely
+    // fr: title_one empty (untranslated), title_other absent (required →
+    // structurally missing), title_many absent (optional → soft note only).
     const frMixed = {
       detail: {
         comments: {
-          title_one: '{{count}} commentaire',  // translated
-          title_other: '',                      // empty placeholder
-          // title_many intentionally absent    // structurally missing
+          title_one: '',                         // empty placeholder (untranslated)
+          // title_other intentionally absent    // required → absent
+          // title_many intentionally absent     // optional → soft note
         },
       },
     }
@@ -487,13 +496,16 @@ describe('extract plural suffix generation for secondary locales (issue #220)', 
 
     try { await runStatus(config) } catch { /* process.exit throws */ }
 
-    // exit 1 was called (some keys are non-translated)
+    // exit 1 was called (required forms are non-translated)
     expect(processExitSpy).toHaveBeenCalledWith(1)
 
-    // The updated output must mention both "untranslated" and "absent"
-    // somewhere in the console output to confirm the distinction is shown.
+    // The updated output must mention both "untranslated" (title_one) and
+    // "absent" (title_other) so the distinction for required forms is shown.
     const allOutput = consoleLogs.join('\n')
-    expect(allOutput).toMatch(/untranslated/)
-    expect(allOutput).toMatch(/absent/)
+    // Exactly one untranslated (title_one) and one absent (title_other). The
+    // optional `title_many` must NOT be counted — otherwise this would read
+    // "2 absent" and the fr total would be 3 keys instead of 2.
+    expect(allOutput).toMatch(/1 untranslated, 1 absent/)
+    expect(allOutput).toMatch(/\(0\/2 keys\)/)
   })
 })

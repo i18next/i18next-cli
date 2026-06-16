@@ -31,12 +31,60 @@ interface StatusOptions {
  * - `absent`:     key is not present in the file at all
  *                 (structural problem — `extract` or `sync` may not have run)
  */
-type TranslationState = 'translated' | 'empty' | 'absent'
+type TranslationState = 'translated' | 'empty' | 'absent' | 'optional'
 
 function classifyValue (value: any): TranslationState {
   if (value === undefined || value === null) return 'absent'
   if (value === '') return 'empty'
   return 'translated'
+}
+
+/**
+ * Representative counts used to decide which CLDR plural categories a locale can
+ * actually reach in normal usage: small integers (the common case), a handful
+ * of larger integers, and common decimals (so categories that only fire for
+ * fractional display values — e.g. Polish/Russian `other` — stay required).
+ *
+ * Any category NOT produced by these counts is treated as "optional". The prime
+ * example is French `many`, which `Intl.PluralRules` only selects for values
+ * ≥ 1,000,000 — the i18next runtime can technically request it, but real apps
+ * almost never hit those values (and the runtime falls back to the base key
+ * when the variant is missing), so a missing `_many` should be a soft note
+ * rather than a hard "missing key" failure.
+ */
+const REPRESENTATIVE_COUNTS: number[] = (() => {
+  const counts: number[] = []
+  for (let n = 0; n <= 20; n++) counts.push(n)
+  counts.push(100, 101, 1000, 1001, 10000)
+  counts.push(0.5, 1.1, 1.5, 2.5, 3.5)
+  return counts
+})()
+
+const optionalCategoriesCache = new Map<string, Set<string>>()
+
+/**
+ * Returns the CLDR plural categories for a locale that are NOT reachable by any
+ * representative count (see {@link REPRESENTATIVE_COUNTS}). These are reported
+ * by `status` as optional: a missing variant is a soft note instead of a hard
+ * absence, mirroring how the i18next runtime resolves such forms.
+ */
+function getOptionalPluralCategories (locale: string, isOrdinal: boolean): Set<string> {
+  const type = isOrdinal ? 'ordinal' : 'cardinal'
+  const cacheKey = `${locale}|${type}`
+  const cached = optionalCategoriesCache.get(cacheKey)
+  if (cached) return cached
+
+  let optional: Set<string>
+  try {
+    const rules = safePluralRules(locale, { type })
+    const all = rules.resolvedOptions().pluralCategories
+    const reachable = new Set(REPRESENTATIVE_COUNTS.map(n => rules.select(n)))
+    optional = new Set(all.filter(c => !reachable.has(c)))
+  } catch {
+    optional = new Set()
+  }
+  optionalCategoriesCache.set(cacheKey, optional)
+  return optional
 }
 
 /**
@@ -51,6 +99,12 @@ interface LocaleStatus {
   totalEmpty: number;
   /** Keys entirely absent from the translation file */
   totalAbsent: number;
+  /**
+   * Optional plural variants missing from the file (e.g. French `_many`).
+   * These are reported for visibility but excluded from totals so they never
+   * affect completion percentages or the command's pass/fail result.
+   */
+  totalOptional: number;
   /** Map of namespace names to their translation details for this locale */
   namespaces: Map<string, {
     /** Total number of keys in this namespace */
@@ -61,6 +115,8 @@ interface LocaleStatus {
     emptyKeys: number;
     /** Keys absent from the file in this namespace */
     absentKeys: number;
+    /** Optional plural variants missing from the file in this namespace */
+    optionalKeys: number;
     /** Detailed status for each key in this namespace */
     keyDetails: Array<{ key: string; state: TranslationState }>;
   }>;
@@ -297,6 +353,7 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
     let totalTranslatedForLocale = 0
     let totalEmptyForLocale = 0
     let totalAbsentForLocale = 0
+    let totalOptionalForLocale = 0
     let totalKeysForLocale = 0
     const namespaces = new Map<string, any>()
 
@@ -339,6 +396,7 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
       let translatedInNs = 0
       let emptyInNs = 0
       let absentInNs = 0
+      let optionalInNs = 0
       let totalInNs = 0
       const keyDetails: Array<{ key: string; state: TranslationState }> = []
 
@@ -412,30 +470,75 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
             // Only count this key if it's a plural form used by this locale
             if (localePluralCategories.includes(category) && !processedKeys.has(baseKey)) {
               processedKeys.add(baseKey)
-              totalInNs++
               const state = resolveAndClassify(baseKey)
-              if (state === 'translated') translatedInNs++
-              else if (state === 'empty') emptyInNs++
-              else absentInNs++
-              keyDetails.push({ key: baseKey, state })
+              const optionalCategories = getOptionalPluralCategories(locale, isOrdinalVariant)
+              // An optional category (e.g. French `_many`) is a soft note whenever
+              // it isn't translated — whether absent or an empty placeholder that
+              // `extract` wrote. It is never a hard failure. See #270 and
+              // getOptionalPluralCategories.
+              if (state !== 'translated' && optionalCategories.has(category)) {
+                optionalInNs++
+                keyDetails.push({ key: baseKey, state: 'optional' })
+              } else {
+                totalInNs++
+                if (state === 'translated') translatedInNs++
+                else if (state === 'empty') emptyInNs++
+                else absentInNs++
+                keyDetails.push({ key: baseKey, state })
+              }
             }
           } else {
-            // This is a base plural key without expanded variants
-            // Expand it according to THIS locale's plural rules
+            // This is a base plural key without expanded variants. Mirror the
+            // i18next runtime, where t(key, { count }) resolves `key + suffix`
+            // and falls back to the bare `key`. A family is therefore satisfied
+            // either by its plural variants OR by a bare key (the convention
+            // used when `disablePlurals` is enabled and no variants are written).
             const localePluralCategories = getLocalePluralCategories(locale, isOrdinal || false)
+            const optionalCategories = getOptionalPluralCategories(locale, isOrdinal || false)
 
-            for (const category of localePluralCategories) {
-              const pluralKey = isOrdinal
+            const variants = localePluralCategories.map(category => ({
+              category,
+              pluralKey: isOrdinal
                 ? `${baseKey}${pluralSeparator}ordinal${pluralSeparator}${category}`
-                : `${baseKey}${pluralSeparator}${category}`
-              if (processedKeys.has(pluralKey)) continue
-              processedKeys.add(pluralKey)
+                : `${baseKey}${pluralSeparator}${category}`,
+            }))
+
+            const anyVariantPresent = variants.some(({ pluralKey }) => resolveAndClassify(pluralKey) !== 'absent')
+            const bareState = resolveAndClassify(baseKey)
+
+            if (!anyVariantPresent && bareState !== 'absent' && !processedKeys.has(baseKey)) {
+              // Convention (a): only the bare key exists (typical under
+              // disablePlurals, or single-"other" languages). The runtime
+              // resolves count via the bare key, so it satisfies the family on
+              // its own — don't demand plural variants that were never written.
+              processedKeys.add(baseKey)
               totalInNs++
-              const state = resolveAndClassify(pluralKey)
-              if (state === 'translated') translatedInNs++
-              else if (state === 'empty') emptyInNs++
+              if (bareState === 'translated') translatedInNs++
+              else if (bareState === 'empty') emptyInNs++
               else absentInNs++
-              keyDetails.push({ key: pluralKey, state })
+              keyDetails.push({ key: baseKey, state: bareState })
+            } else {
+              // Convention (b): plural variants exist (or the family is missing
+              // entirely). Evaluate each CLDR category — a missing variant is a
+              // hard absence only when the category is required for this locale;
+              // optional categories (e.g. French `_many`) downgrade to a soft note.
+              for (const { category, pluralKey } of variants) {
+                if (processedKeys.has(pluralKey)) continue
+                processedKeys.add(pluralKey)
+                const state = resolveAndClassify(pluralKey)
+                // An optional category (e.g. French `_many`) is a soft note
+                // whenever it isn't translated — never a hard failure. See #270.
+                if (state !== 'translated' && optionalCategories.has(category)) {
+                  optionalInNs++
+                  keyDetails.push({ key: pluralKey, state: 'optional' })
+                  continue
+                }
+                totalInNs++
+                if (state === 'translated') translatedInNs++
+                else if (state === 'empty') emptyInNs++
+                else absentInNs++
+                keyDetails.push({ key: pluralKey, state })
+              }
             }
           }
         } else {
@@ -465,10 +568,11 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
         keyDetails.push({ key: variantKey, state })
       }
 
-      namespaces.set(ns, { totalKeys: totalInNs, translatedKeys: translatedInNs, emptyKeys: emptyInNs, absentKeys: absentInNs, keyDetails })
+      namespaces.set(ns, { totalKeys: totalInNs, translatedKeys: translatedInNs, emptyKeys: emptyInNs, absentKeys: absentInNs, optionalKeys: optionalInNs, keyDetails })
       totalTranslatedForLocale += translatedInNs
       totalEmptyForLocale += emptyInNs
       totalAbsentForLocale += absentInNs
+      totalOptionalForLocale += optionalInNs
       totalKeysForLocale += totalInNs
     }
     const localeStatus: LocaleStatus = {
@@ -476,6 +580,7 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
       totalTranslated: totalTranslatedForLocale,
       totalEmpty: totalEmptyForLocale,
       totalAbsent: totalAbsentForLocale,
+      totalOptional: totalOptionalForLocale,
       namespaces,
     }
     if (isPrimary) {
@@ -571,6 +676,8 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
         console.log(`  ${styleText('green', '✓')} ${key}`)
       } else if (state === 'empty') {
         console.log(`  ${styleText('yellow', '~')} ${key}  ${styleText('yellow', '(untranslated)')}`)
+      } else if (state === 'optional') {
+        console.log(`  ${styleText('gray', '○')} ${key}  ${styleText('gray', '(optional plural form)')}`)
       } else {
         console.log(`  ${styleText('red', '✗')} ${key}  ${styleText('red', '(absent)')}`)
       }

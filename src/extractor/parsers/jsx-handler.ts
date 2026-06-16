@@ -405,12 +405,16 @@ export class JSXHandler {
         } else if (hasCount) {
           // Check if plurals are disabled
           if (this.config.extract.disablePlurals) {
-            // When plurals are disabled, just add the base keys (no plural forms)
+            // When plurals are disabled, just add the base keys (no plural forms).
+            // We keep `hasCount` so `status` recognises the key as count-driven and
+            // accepts the file's plural variants (or bare key); file generation
+            // ignores it under disablePlurals (see translation-manager).
             extractedKeys.forEach(extractedKey => {
               this.pluginContext.addKey({
                 key: extractedKey.key,
                 ns: extractedKey.ns,
                 defaultValue: extractedKey.defaultValue,
+                hasCount: true,
                 locations: extractedKey.locations
               })
             })

@@ -455,8 +455,11 @@ function buildNewTranslationsForNs (
       return false
     }
 
-    if (!hasCount) {
-      // Non-plural keys are always included
+    if (!hasCount || config.extract.disablePlurals) {
+      // Non-plural keys are always included. Under `disablePlurals`, count keys
+      // are emitted as plain keys (no plural expansion) but still carry
+      // `hasCount` so `status` can recognise them — they must bypass the
+      // plural-form filtering below and always be included, exactly as before.
       return true
     }
 

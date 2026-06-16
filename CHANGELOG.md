@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.64.1
+
+- fix(status): align plural reporting with the i18next runtime
+  ([#270](https://github.com/i18next/i18next-cli/issues/270)).
+  - Plural categories that `Intl.PluralRules` only selects for out-of-range
+    values (e.g. French `_many`, which fires only for counts ≥ 1,000,000) are
+    now treated as **optional**: a missing or empty variant is shown as a soft
+    "optional plural form" note instead of a hard "missing key" error, so it no
+    longer fails the check. Categories reachable by typical counts (including
+    decimals, e.g. Polish/Russian `other`) remain required.
+  - With `disablePlurals: true`, a key used with `count` is now considered
+    satisfied when either its plural variants (`_one`/`_other`) **or** the bare
+    key exist — mirroring the runtime's `key + suffix → key` resolution chain —
+    instead of demanding the literal bare key.
+
 ## 1.64.0
 
 - feat: `extract.functions` now supports trailing wildcards to match any method

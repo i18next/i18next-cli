@@ -364,11 +364,16 @@ export class CallExpressionHandler {
           // Check if plurals are disabled FIRST, before any plural optimization paths
           if (this.config.extract.disablePlurals) {
             // When plurals are disabled, treat count as a regular option (for interpolation only)
-            // Still handle context normally
+            // Still handle context normally. We keep `hasCount`/`isOrdinal` on the
+            // emitted key so `status` knows it is count-driven and can accept the
+            // file's plural variants (or the bare key) instead of demanding the
+            // literal base key. File generation ignores these flags under
+            // disablePlurals (see translation-manager), so output is unchanged.
+            const countMeta = hasCount ? { hasCount: true, isOrdinal: isOrdinalByKey } : {}
             if (keysWithContext.length > 0) {
-              keysWithContext.forEach(this.pluginContext.addKey)
+              keysWithContext.forEach(k => this.pluginContext.addKey({ ...k, ...countMeta }))
             } else {
-              this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
+              this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase, ...countMeta })
             }
 
             continue // This key is fully handled
