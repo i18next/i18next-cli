@@ -168,20 +168,44 @@ export async function runStatus (config: I18nextToolkitConfig, options: StatusOp
     const report = await generateStatusReport(config)
     spinner.succeed('Analysis complete.')
     await displayStatusReport(report, config, options)
+
+    // When a specific locale is requested (`status <locale>`), the pass/fail
+    // result must reflect THAT locale only — otherwise the displayed summary
+    // (which is scoped to the requested locale) can contradict the exit code
+    // by failing on an unrelated secondary language. See issue #271.
+    const scopedLocale = options.detail && config.locales.includes(options.detail)
+      ? options.detail
+      : undefined
+
     let hasMissing = false
-    for (const [, localeData] of report.locales.entries()) {
-      if (localeData.totalTranslated < localeData.totalKeys) {
+    if (scopedLocale) {
+      if (scopedLocale === config.extract.primaryLanguage) {
+        // The primary language fails only on absent keys (used in code but
+        // missing from the file); empty placeholders are deliberate.
+        hasMissing = !!report.primary && report.primary.totalAbsent > 0
+      } else {
+        const localeData = report.locales.get(scopedLocale)
+        hasMissing = !!localeData && localeData.totalTranslated < localeData.totalKeys
+      }
+    } else {
+      for (const [, localeData] of report.locales.entries()) {
+        if (localeData.totalTranslated < localeData.totalKeys) {
+          hasMissing = true
+          break
+        }
+      }
+      // The primary language fails the check only on absent keys (used in code but
+      // missing from the translation file); empty placeholders are tolerated.
+      if (!hasMissing && report.primary && report.primary.totalAbsent > 0) {
         hasMissing = true
-        break
       }
     }
-    // The primary language fails the check only on absent keys (used in code but
-    // missing from the translation file); empty placeholders are tolerated.
-    if (!hasMissing && report.primary && report.primary.totalAbsent > 0) {
-      hasMissing = true
-    }
     if (hasMissing) {
-      spinner.fail('Error: Incomplete translations detected.')
+      // Name the locale when the check is scoped so the failure reason is clear
+      // (the displayed summary already explains what is missing for it).
+      spinner.fail(scopedLocale
+        ? `Error: Incomplete translations detected for "${scopedLocale}".`
+        : 'Error: Incomplete translations detected.')
       process.exit(1)
     }
   } catch (error) {

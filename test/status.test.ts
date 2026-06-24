@@ -912,3 +912,76 @@ describe('status (primary language check)', () => {
     expect(processExitSpy).toHaveBeenCalledWith(1)
   })
 })
+
+describe('status (scoped pass/fail per requested locale, issue #271)', () => {
+  let consoleLogSpy: any
+  let processExitSpy: any
+
+  // Primary fully translated, secondary left as empty placeholders.
+  const config: I18nextToolkitConfig = {
+    locales: ['en-AU', 'de-DE'],
+    extract: {
+      input: ['src/**/*.{ts,tsx}'],
+      output: 'locales/{{language}}/{{namespace}}.json',
+      primaryLanguage: 'en-AU',
+      secondaryLanguages: ['de-DE'],
+    },
+  }
+
+  beforeEach(async () => {
+    vol.reset()
+    vi.clearAllMocks()
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async () => {
+      return Object.keys(vol.toJSON()).filter(p => p.includes('/src/'))
+    })
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('Process exit called')
+    })
+
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/file.ts')]: `
+        import { t } from 'i18next'
+        t('hello')
+        t('world')
+      `,
+      // en-AU (primary) fully translated
+      [resolve(process.cwd(), 'locales/en-AU/translation.json')]: JSON.stringify({ hello: 'Hello', world: 'World' }),
+      // de-DE (secondary) empty placeholders
+      [resolve(process.cwd(), 'locales/de-DE/translation.json')]: JSON.stringify({ hello: '', world: '' }),
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('does NOT exit 1 when the requested (primary) locale is complete, even if a secondary is empty', async () => {
+    await runStatus(config, { detail: 'en-AU', hideTranslated: true })
+
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('All keys used in code are present'))
+    expect(processExitSpy).not.toHaveBeenCalled()
+  })
+
+  it('exits 1 and names the locale when the requested (secondary) locale is incomplete', async () => {
+    try {
+      await runStatus(config, { detail: 'de-DE', hideTranslated: true })
+    } catch (e) {
+      // expected: process.exit(1) throws in the test
+    }
+
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('still exits 1 in the global view when any secondary is incomplete', async () => {
+    try {
+      await runStatus(config)
+    } catch (e) {
+      // expected: process.exit(1) throws in the test
+    }
+
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+})

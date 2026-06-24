@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.64.2
+
+- fix(status): scope the pass/fail result to the requested locale
+  ([#271](https://github.com/i18next/i18next-cli/issues/271)).
+  - `status <locale>` now exits based on **that locale only**, instead of always
+    evaluating every secondary language. Previously, running e.g.
+    `status en-AU` on a fully-translated primary could print "🎉 All keys
+    present" and still exit `1` because an unrelated secondary (e.g. an empty
+    `de-DE`) was incomplete — a summary that contradicted the exit code.
+  - When the requested locale is the primary, the check still fails only on
+    *absent* keys (empty placeholders are tolerated); for a secondary it fails
+    on any untranslated/absent key. The global view (`status` with no locale)
+    is unchanged.
+  - The failure message now names the locale when scoped
+    (`Error: Incomplete translations detected for "de-DE".`) so the reason is
+    no longer hidden.
+
 ## 1.64.1
 
 - fix(status): align plural reporting with the i18next runtime
