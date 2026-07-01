@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.65.0
+
+- fix(extract): respect `fallbackNS` — keys already translated in a fallback
+  namespace are no longer duplicated into the requesting namespace's file
+  ([#272](https://github.com/i18next/i18next-cli/issues/272)).
+  - Such keys are now attributed to the fallback namespace instead, so
+    `removeUnusedKeys` no longer prunes them from the fallback file (previously
+    a key like `cancel` living only in the fallback namespace was **deleted**
+    there and re-created in every namespace that used it).
+  - A key that already has a non-empty value in the requesting namespace's own
+    file is treated as an intentional per-namespace override and keeps being
+    extracted there, mirroring the i18next runtime lookup order (requested
+    namespace first, then the fallback chain). Empty-string placeholders left
+    behind by previous extract runs are cleaned up.
+  - Keys not found in any fallback namespace are still added to the requesting
+    namespace, like the i18next `saveMissing` behavior.
+- feat(extract): `fallbackNS` now also accepts an array of namespaces (looked
+  up in order, like the i18next runtime option) — supported by `extract`,
+  `status`, and the TypeScript types generator.
+
 ## 1.64.2
 
 - fix(status): scope the pass/fail result to the requested locale

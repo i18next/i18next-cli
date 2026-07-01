@@ -235,6 +235,10 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
   const { allKeys: allExtractedKeys } = await findKeys(config)
   const { secondaryLanguages, keySeparator = '.', defaultNS = 'translation', mergeNamespaces = false, pluralSeparator = '_', contextSeparator = '_', fallbackNS } = config.extract
   const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
+  // Normalize fallbackNS like the i18next runtime: string | string[] -> string[]
+  const fallbackNamespaces = !fallbackNS
+    ? []
+    : (Array.isArray(fallbackNS) ? fallbackNS : [fallbackNS]).filter((ns): ns is string => typeof ns === 'string' && ns.length > 0)
 
   const keysByNs = new Map<string, ExtractedKey[]>()
   for (const key of allExtractedKeys.values()) {
@@ -404,16 +408,17 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
         ? (mergedTranslations?.[ns] ?? mergedTranslations ?? {})
         : await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, locale, ns))) || {}
 
-      // Load fallbackNS translations if configured
-      let fallbackTranslations: any
-      if (fallbackNS && ns !== fallbackNS) {
+      // Load fallbackNS translations if configured (looked up in order, like the i18next runtime)
+      const fallbackTranslationsList: any[] = []
+      for (const fallbackNs of fallbackNamespaces) {
+        if (ns === fallbackNs) continue
         if (mergeNamespaces) {
-          // In merged mode, fallbackNS keys are in mergedTranslations under fallbackNS
-          fallbackTranslations = mergedTranslations?.[fallbackNS] ?? mergedTranslations ?? {}
+          // In merged mode, fallbackNS keys are in mergedTranslations under the fallback namespace
+          fallbackTranslationsList.push(mergedTranslations?.[fallbackNs] ?? mergedTranslations ?? {})
         } else {
-          fallbackTranslations = await loadTranslationFile(
-            resolve(process.cwd(), getOutputPath(config.extract.output, locale, fallbackNS))
-          ) || {}
+          fallbackTranslationsList.push(await loadTranslationFile(
+            resolve(process.cwd(), getOutputPath(config.extract.output, locale, fallbackNs))
+          ) || {})
         }
       }
 
@@ -453,9 +458,14 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
         // Only fall back when the key is genuinely absent from the primary file.
         // An empty string is intentional (placeholder from extract) — don't hide it.
         let state = primaryState
-        if (primaryState === 'absent' && fallbackTranslations) {
-          const fallbackValue = getNestedValue(fallbackTranslations, key, sep)
-          state = classifyValue(fallbackValue)
+        if (primaryState === 'absent') {
+          for (const fallbackTranslations of fallbackTranslationsList) {
+            const fallbackState = classifyValue(getNestedValue(fallbackTranslations, key, sep))
+            if (fallbackState !== 'absent') {
+              state = fallbackState
+              break
+            }
+          }
         }
 
         // For the primary language the file itself is the source of values, so an

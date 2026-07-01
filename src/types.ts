@@ -42,8 +42,13 @@ export interface I18nextToolkitConfig {
      */
     defaultNS?: string | false;
 
-    /** Namespace to use as fallback when a key is missing in the current namespace for a locale. */
-    fallbackNS?: string | false;
+    /**
+     * Namespace(s) to use as fallback when a key is missing in the current namespace for a locale
+     * (like the i18next runtime option, a string or an array of namespaces looked up in order).
+     * When set, `extract` will not add a key to another namespace's file if it is already
+     * translated in a fallback namespace, and `status` counts such keys as translated.
+     */
+    fallbackNS?: string | string[] | false;
 
     /** Separator for nested keys, or false for flat keys (default: '.') */
     keySeparator?: string | false | null;

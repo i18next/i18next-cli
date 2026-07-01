@@ -1081,6 +1081,126 @@ function buildNewTranslationsForNs (
 }
 
 /**
+ * Moves extracted keys that are already translated in a fallback namespace out
+ * of their extracted namespace bucket and into the fallback namespace bucket.
+ *
+ * Mirrors the i18next runtime lookup order: the requested namespace wins when
+ * it has a value for the key, otherwise the fallback namespaces are consulted
+ * in order (`fallbackNS` may be a string or an array of strings).
+ *
+ * Existence is decided against the primary language files on disk:
+ * - A key that already has a non-empty value in its own namespace file is an
+ *   intentional per-namespace override and stays where it was extracted.
+ * - Otherwise, the first fallback namespace containing a non-empty value for
+ *   the key claims it. The key is re-bucketed there so `removeUnusedKeys`
+ *   treats it as used and preserves it.
+ * - Keys found in no fallback namespace are new and stay in their extracted
+ *   namespace, matching the i18next `saveMissing` behavior.
+ */
+async function reattributeFallbackNsKeys (
+  keysByNS: Map<string, ExtractedKey[]>,
+  noNsToken: string,
+  config: I18nextToolkitConfig,
+  primaryLanguage: string
+): Promise<void> {
+  const rawFallbackNS = config.extract.fallbackNS
+  const fallbackNamespaces = !rawFallbackNS
+    ? []
+    : (Array.isArray(rawFallbackNS) ? rawFallbackNS : [rawFallbackNS]).filter((ns): ns is string => typeof ns === 'string' && ns.length > 0)
+  if (fallbackNamespaces.length === 0) return
+
+  const keySeparator = config.extract.keySeparator ?? '.'
+  const pluralSeparator = config.extract.pluralSeparator ?? '_'
+
+  // Same merged-output detection as the per-locale loop in getTranslations.
+  const shouldMerge = config.extract.mergeNamespaces || (typeof config.extract.output === 'string' ? !config.extract.output.includes('{{namespace}}') : false)
+  const mergedPrimaryFile: Record<string, any> | null = shouldMerge
+    ? (await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, primaryLanguage))) || {})
+    : null
+
+  const catalogCache = new Map<string, Record<string, any>>()
+  const loadPrimaryCatalog = async (ns: string, isFallback: boolean): Promise<Record<string, any>> => {
+    const cacheKey = `${isFallback ? 'fb' : 'own'}:${ns}`
+    let catalog = catalogCache.get(cacheKey)
+    if (!catalog) {
+      if (mergedPrimaryFile) {
+        // In merged mode the fallback keys may live at the top level when the
+        // file is not namespaced (same resolution as the status command).
+        catalog = mergedPrimaryFile[ns] ?? (isFallback ? mergedPrimaryFile : {})
+      } else {
+        catalog = await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, primaryLanguage, ns))) || {}
+      }
+      catalogCache.set(cacheKey, catalog!)
+    }
+    return catalog!
+  }
+
+  // Plural categories of the primary language, used to recognise a base
+  // count-key (e.g. "item") through its expanded variants ("item_one", …).
+  const primaryCardinalCategories = safePluralRules(primaryLanguage, { type: 'cardinal' }).resolvedOptions().pluralCategories
+  const primaryOrdinalCategories = safePluralRules(primaryLanguage, { type: 'ordinal' }).resolvedOptions().pluralCategories
+
+  const hasTranslation = (catalog: Record<string, any>, extractedKey: ExtractedKey): boolean => {
+    const isTranslated = (value: unknown): boolean =>
+      value !== undefined && value !== null && value !== ''
+    if (isTranslated(getNestedValue(catalog, extractedKey.key, keySeparator))) return true
+    if (extractedKey.hasCount && !config.extract.disablePlurals && !extractedKey.isExpandedPlural) {
+      const categories = extractedKey.isOrdinal ? primaryOrdinalCategories : primaryCardinalCategories
+      return categories.some(category => {
+        const variant = extractedKey.isOrdinal
+          ? `${extractedKey.key}${pluralSeparator}ordinal${pluralSeparator}${category}`
+          : `${extractedKey.key}${pluralSeparator}${category}`
+        return isTranslated(getNestedValue(catalog, variant, keySeparator))
+      })
+    }
+    return false
+  }
+
+  for (const [nsKey, nsKeys] of [...keysByNS.entries()]) {
+    if (nsKey === noNsToken || fallbackNamespaces.includes(nsKey)) continue
+
+    const ownCatalog = await loadPrimaryCatalog(nsKey, false)
+    const keptKeys: ExtractedKey[] = []
+
+    for (const extractedKey of nsKeys) {
+      // A key with a real value in its own namespace file is an intentional
+      // per-namespace override — keep extracting it into that namespace.
+      if (hasTranslation(ownCatalog, extractedKey)) {
+        keptKeys.push(extractedKey)
+        continue
+      }
+
+      let claimedBy: string | undefined
+      for (const fallbackNs of fallbackNamespaces) {
+        if (hasTranslation(await loadPrimaryCatalog(fallbackNs, true), extractedKey)) {
+          claimedBy = fallbackNs
+          break
+        }
+      }
+
+      if (claimedBy) {
+        if (!keysByNS.has(claimedBy)) keysByNS.set(claimedBy, [])
+        keysByNS.get(claimedBy)!.push({ ...extractedKey, ns: claimedBy, nsIsImplicit: false })
+      } else {
+        keptKeys.push(extractedKey)
+      }
+    }
+
+    if (keptKeys.length !== nsKeys.length) {
+      if (keptKeys.length > 0) {
+        keysByNS.set(nsKey, keptKeys)
+      } else {
+        // Every key moved to a fallback namespace: drop the bucket so a brand
+        // new (empty) namespace file is not created. If the file already
+        // exists on disk it is still processed via the on-disk namespace scan
+        // and cleaned up by `removeUnusedKeys`.
+        keysByNS.delete(nsKey)
+      }
+    }
+  }
+}
+
+/**
  * Processes extracted translation keys and generates translation files for all configured locales.
  *
  * This function:
@@ -1159,6 +1279,14 @@ export async function getTranslations (
   for (const ns of ignoreNamespaces) {
     keysByNS.delete(ns)
   }
+
+  // Respect fallbackNS (#272): a key extracted for another namespace that is
+  // already translated in a fallback namespace resolves at runtime through the
+  // fallback chain, so it must not be duplicated into that namespace's file.
+  // Re-attribute such keys to the fallback namespace bucket instead — this both
+  // suppresses the duplicate and marks the key as "used" in the fallback
+  // namespace so `removeUnusedKeys` does not prune it there.
+  await reattributeFallbackNsKeys(keysByNS, NO_NS_TOKEN, config, primaryLanguage)
 
   const results: TranslationResult[] = []
   const userIgnore = Array.isArray(config.extract.ignore)

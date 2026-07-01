@@ -820,6 +820,59 @@ describe('status (fallbackNS)', () => {
     expect(logCalls).toContain('- de: [■■■■■■■■■■■■■■■■■■■■] 100% (3/3 keys)')
     expect(processExitSpy).not.toHaveBeenCalled()
   })
+
+  it('should support an array of fallback namespaces looked up in order', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/app.tsx')]: `
+        import { useTranslation } from 'react-i18next'
+        export default function App() {
+          const { t } = useTranslation('feature')
+          return (
+            <div>
+              <p>{t('feature-specific')}</p>
+              <p>{t('ok')}</p>
+              <p>{t('cancel')}</p>
+            </div>
+          )
+        }
+      `,
+      [resolve(process.cwd(), 'locales/en/common.json')]: JSON.stringify({
+        ok: 'OK',
+      }),
+      [resolve(process.cwd(), 'locales/en/shared.json')]: JSON.stringify({
+        cancel: 'Cancel',
+      }),
+      [resolve(process.cwd(), 'locales/en/feature.json')]: JSON.stringify({
+        'feature-specific': 'This is a feature-specific string',
+      }),
+      [resolve(process.cwd(), 'locales/de/common.json')]: JSON.stringify({
+        ok: 'OK',
+      }),
+      [resolve(process.cwd(), 'locales/de/shared.json')]: JSON.stringify({
+        cancel: 'Abbrechen',
+      }),
+      [resolve(process.cwd(), 'locales/de/feature.json')]: JSON.stringify({
+        'feature-specific': 'Das ist ein feature-spezifischer Text',
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        fallbackNS: ['common', 'shared'],
+      },
+    }
+
+    await runStatus(config)
+
+    const logCalls = consoleLogSpy.mock.calls.map((call: any[]) => call[0])
+    expect(logCalls).toContain('🔑 Keys Found:         3')
+    // All keys resolve either directly or via one of the fallback namespaces
+    expect(logCalls).toContain('- de: [■■■■■■■■■■■■■■■■■■■■] 100% (3/3 keys)')
+    expect(processExitSpy).not.toHaveBeenCalled()
+  })
 })
 
 describe('status (primary language check)', () => {
