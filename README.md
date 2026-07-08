@@ -58,7 +58,7 @@ npm install --save-dev i18next-cli
 
 ## Quick Start
 
-> **Zero-to-localized in one command:** starting from an app with hardcoded strings (e.g. generated with v0, Lovable, Bolt or Cursor)? Run `npx i18next-cli localize` — it detects your setup, wraps hardcoded strings in `t()` calls, extracts keys, connects to [Locize](https://www.locize.com) and AI-translates your app. See [the `localize` command](#localize). The steps below are the manual path.
+> **Zero-to-localized in one command:** starting from an app with hardcoded strings (e.g. generated with v0, Lovable, Bolt or Cursor)? Run `npx i18next-cli localize` — it detects your setup, wraps hardcoded strings in `t()` calls, extracts keys, connects to [Locize](https://www.locize.com) and AI-translates your app. See [the `localize` command](#localize). Working with an AI coding agent (Claude Code, Cursor, ...)? `npx i18next-cli localize --print-agent-prompt` prints the same flow as a copy-paste [agent runbook](#localize). The steps below are the manual path.
 
 ### 1. Initialize Configuration
 
