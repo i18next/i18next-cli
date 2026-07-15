@@ -1433,6 +1433,43 @@ button:
 
 > **💡 Note:** Both `.yaml` and `.yml` extensions are supported and preserved. The `outputFormat: 'yaml'` option is optional when using these extensions - the format is automatically inferred from the file extension.
 
+### Code-Splitting Translations (one namespace per route)
+
+A common concern with runtime i18n is "you ship every language and every namespace to the client". You don't have to: the i18next runtime loads translations **per namespace, per language**, so namespace granularity is your code-splitting boundary. The runtime core itself is ~13.5 kB gzipped; what grows with your app is translation payload, and that is entirely controlled by how you slice namespaces.
+
+The recipe:
+
+1. **One namespace per route/feature** — scope keys via `useTranslation('checkout')`, `t('checkout:title')`, or the `ns` option. The extractor detects the namespace from your code and writes one file per namespace and language:
+
+```typescript
+export default defineConfig({
+  locales: ['en', 'de'],
+  extract: {
+    input: 'src/**/*.{ts,tsx}',
+    output: 'src/locales/{{language}}/{{namespace}}.json',
+  }
+});
+```
+
+2. **Lazy-load namespaces with dynamic imports** — each namespace + language pair becomes its own chunk that the bundler code-splits automatically:
+
+```javascript
+import i18next from 'i18next';
+import resourcesToBackend from 'i18next-resources-to-backend';
+
+i18next
+  .use(resourcesToBackend((lng, ns) => import(`./locales/${lng}/${ns}.json`)))
+  .init({
+    fallbackLng: 'en',
+    defaultNS: 'app',
+    ns: ['app'], // only the app-shell namespace loads upfront
+  });
+```
+
+3. **Load on demand** — `useTranslation('checkout')` (react-i18next) or `i18next.loadNamespaces('checkout')` fetches exactly that chunk when the route renders. The initial payload contains only the namespaces the entry route uses, in the active language; other languages transfer nothing until switched to.
+
+Prefer not to bundle translations at all? Serve the same per-namespace files from any static host/CDN via [`i18next-http-backend`](https://github.com/i18next/i18next-http-backend), or directly from the Locize CDN via [`i18next-locize-backend`](https://github.com/locize/i18next-locize-backend) — same wire profile, plus translation updates without redeploying.
+
 ### Merging Namespaces
 
 You can also combine all namespaces into a single file per language. This is useful for reducing the number of network requests in some application setups.
