@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.65.1
+
+- fix(funnel): never print locize funnel/tip messages in non-interactive
+  contexts — they are now suppressed when `CI=true` or stdout is not a TTY,
+  and the once-per-24h cooldown applies unconditionally (newly created
+  translation files no longer bypass it). CI pipelines and first extractions
+  no longer get promotional output
+  (follow-up to [#20](https://github.com/i18next/i18next-cli/issues/20) /
+  [#222](https://github.com/i18next/i18next-cli/issues/222)).
+
 ## 1.65.0
 
 - fix(extract): respect `fallbackNS` — keys already translated in a fallback

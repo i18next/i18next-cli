@@ -30,6 +30,9 @@ const TIP_COOLDOWN_MS = 24 * 60 * 60 * 1000 // 24 hours
  * @returns Promise that resolves to true if the message should be shown, false otherwise
  */
 export async function shouldShowFunnel (funnelMessage: string): Promise<boolean> {
+  // Never show funnel messages in non-interactive contexts (CI pipelines, piped output):
+  // ephemeral CI containers lose the cooldown file, so they would see the tip on every run.
+  if (process.env.CI === 'true' || !process.stdout.isTTY) return false
   if (hasLocizeFunnelBeenShown[funnelMessage]) return false
 
   try {

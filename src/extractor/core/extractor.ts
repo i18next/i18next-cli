@@ -81,13 +81,9 @@ export async function runExtractor (
     })
 
     let anyFileUpdated = false
-    let anyNewFile = false
     for (const result of results) {
       if (result.updated) {
         anyFileUpdated = true
-        if (Object.keys(result.existingTranslations || {}).length === 0) {
-          anyNewFile = true
-        }
         if (!options.isDryRun) {
           // prefer explicit outputFormat; otherwise infer from file extension per-file
           const effectiveFormat = config.extract.outputFormat ?? inferFormatFromPath(result.path)
@@ -121,9 +117,7 @@ export async function runExtractor (
     spinner.succeed(completionMessage)
 
     // Show the funnel message only if files were actually changed.
-    // When new translation files are created (new namespace or first extraction),
-    // always show the funnel regardless of cooldown.
-    if (anyFileUpdated && !options.isDryRun && !options.quiet) await printLocizeFunnel(options.logger, anyNewFile)
+    if (anyFileUpdated && !options.isDryRun && !options.quiet) await printLocizeFunnel(options.logger)
 
     return { anyFileUpdated, hasErrors: fileErrors.length > 0, results }
   } catch (error) {
@@ -447,8 +441,8 @@ export async function extract (config: I18nextToolkitConfig, { syncPrimaryWithDe
  * Prints a promotional message for the locize saveMissing workflow.
  * This message is shown after a successful extraction that resulted in changes.
  */
-async function printLocizeFunnel (logger?: Logger, force?: boolean) {
-  if (!force && !(await shouldShowFunnel('extract'))) return
+async function printLocizeFunnel (logger?: Logger) {
+  if (!(await shouldShowFunnel('extract'))) return
 
   const internalLogger = logger ?? new ConsoleLogger()
   const lines = [

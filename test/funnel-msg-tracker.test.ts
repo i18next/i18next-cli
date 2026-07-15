@@ -9,10 +9,15 @@ vi.mock('node:fs/promises', async () => {
 })
 
 describe('funnel-msg-tracker', () => {
+  const originalIsTTY = process.stdout.isTTY
+
   beforeEach(() => {
     vol.reset()
     vi.clearAllMocks()
     vi.useFakeTimers()
+    // Simulate an interactive terminal (funnels are suppressed in CI / non-TTY contexts)
+    vi.stubEnv('CI', '')
+    process.stdout.isTTY = true
     // Reset the state for the specific funnel before each test
     reset('test-funnel')
     reset('extract-funnel')
@@ -21,10 +26,22 @@ describe('funnel-msg-tracker', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllEnvs()
+    process.stdout.isTTY = originalIsTTY
   })
 
   it('should return true if the tip has never been shown', async () => {
     expect(await shouldShowFunnel('test-funnel')).toBe(true)
+  })
+
+  it('should return false when running in CI', async () => {
+    vi.stubEnv('CI', 'true')
+    expect(await shouldShowFunnel('test-funnel')).toBe(false)
+  })
+
+  it('should return false when stdout is not a TTY', async () => {
+    process.stdout.isTTY = false
+    expect(await shouldShowFunnel('test-funnel')).toBe(false)
   })
 
   it('should return false if the tip was shown recently (in-memory check)', async () => {
