@@ -604,6 +604,8 @@ npx i18next-cli migrate-config
 npx i18next-cli migrate-config i18next-parser.config.mjs
 ```
 
+> ℹ️ Coming from `i18next-parser`? Note that i18next-cli requires **Node.js >= 22** (i18next-parser still ran on Node 18/20), so CI images may need a runtime bump alongside the config migration.
+
 ### `rename-key`
 
 Safely refactor translation keys across your entire codebase. This command updates both source files and translation files atomically.
@@ -1330,13 +1332,35 @@ export default defineConfig({
 }
 ```
 
-### Dynamic Key Preservation
+### Dynamic Keys
 
-Use `preservePatterns` to maintain dynamically generated keys:
+Many "dynamic" keys don't need any configuration: since v1.49 the extractor
+performs TypeScript type-aware resolution of **finite** dynamic keys and
+expands every possible variant automatically ([#210](https://github.com/i18next/i18next-cli/issues/210)):
+
+```typescript
+// Template literals with unions / ternaries / nullish coalescing:
+t(`state.${isDone ? 'done' : 'notDone'}.title`)   // -> state.done.title + state.notDone.title
+type Status = 'active' | 'inactive'
+declare const status: Status
+t(`status.${status}`)                             // -> status.active + status.inactive
+
+// `as const` maps and arrays (also when imported from another file):
+const KEYS = ['a', 'b'] as const
+KEYS.map((k) => t(`item.${k}`))                   // -> item.a + item.b
+const MAP = { ok: 'result.ok', err: 'result.err' } as const
+t(MAP[someCondition ? 'ok' : 'err'])              // -> result.ok + result.err
+
+// Helper-function return types and `satisfies`-constrained values
+```
+
+Only keys that are **truly runtime-dynamic** (e.g. built from API data) cannot
+be statically resolved by any tool. For those, use `preservePatterns` to keep
+the existing entries in your translation files:
 
 ```typescript
 // Code like this:
-const key = `user.${role}.permission`;
+const key = `user.${role}.permission`; // role comes from the server
 t(key);
 
 // With this config:

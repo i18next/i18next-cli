@@ -116,8 +116,13 @@ export interface I18nextToolkitConfig {
      */
     preserveContextVariants?: boolean;
 
-    /** Whether to sort keys alphabetically in output files, or a comparator function to customize the order (default: true) */
-    sort?: boolean | ((a: ExtractedKey, b: ExtractedKey) => number);
+    /**
+     * Whether to sort keys alphabetically in output files, or a comparator function to customize the order (default: true).
+     * The string preset 'locize' mirrors the key order of locize-published files (plain UTF-16 code-unit sort,
+     * as used when locize publishes namespaces), so `extract` followed by `locize-sync`/`locize-download`
+     * round-trips without spurious reorder diffs.
+     */
+    sort?: boolean | 'locize' | ((a: ExtractedKey, b: ExtractedKey) => number);
 
     /** Number of spaces for JSON indentation (default: 2) */
     indentation?: number | string;

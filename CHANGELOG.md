@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 1.65.1
+## 1.66.0
 
 - fix(funnel): never print locize funnel/tip messages in non-interactive
   contexts — they are now suppressed when `CI=true` or stdout is not a TTY,
@@ -14,6 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer get promotional output
   (follow-up to [#20](https://github.com/i18next/i18next-cli/issues/20) /
   [#222](https://github.com/i18next/i18next-cli/issues/222)).
+- feat(extract): new `sort: 'locize'` preset that mirrors the key order of
+  locize-published files (plain UTF-16 code-unit sort, case-sensitive, no
+  canonical plural-form reordering), making `extract` followed by
+  `locize-sync`/`locize-download` round-trip without spurious reorder diffs
+  (follow-up to [#106](https://github.com/i18next/i18next-cli/issues/106)).
+- test(locize): assert `--cdn-type` is forwarded to `download` and `migrate`,
+  guarding against the [#156](https://github.com/i18next/i18next-cli/issues/156)
+  class of regression.
+- docs(readme): new "Dynamic Keys" section documenting the built-in TS
+  type-aware resolution of finite dynamic keys shipped in v1.49
+  ([#210](https://github.com/i18next/i18next-cli/issues/210)) with
+  `preservePatterns` reserved for truly runtime-dynamic keys; note in
+  `migrate-config` that i18next-cli requires Node.js >= 22 (i18next-parser
+  still supported Node 18/20).
 
 ## 1.65.0
 

@@ -56,6 +56,24 @@ describe('locize', () => {
     expect(syncOptions).toEqual(expect.objectContaining({ stdio: 'pipe' }))
   })
 
+  it('should forward --cdn-type to download and migrate, not only sync', async () => {
+    // Guards the #156 class of bug: the option was once forwarded for sync only.
+    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    mockConfig.locize!.cdnType = 'pro'
+    const { runLocizeDownload, runLocizeMigrate } = await import('../src/locize')
+
+    await runLocizeDownload(mockConfig)
+    const downloadCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('download'))
+    expect(downloadCall).toBeDefined()
+    expect(downloadCall![1] as string[]).toEqual(expect.arrayContaining(['--cdn-type', 'pro']))
+
+    vi.mocked(execa).mockClear()
+    await runLocizeMigrate(mockConfig)
+    const migrateCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('migrate'))
+    expect(migrateCall).toBeDefined()
+    expect(migrateCall![1] as string[]).toEqual(expect.arrayContaining(['--cdn-type', 'pro']))
+  })
+
   it('should forward --reference-language-only false when --src-lng-only is "false"', async () => {
     vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
     await runLocizeSync(mockConfig, { srcLngOnly: 'false' })

@@ -181,6 +181,22 @@ function sortObject (obj: any, config?: I18nextToolkitConfig, customSort?: (a: s
 }
 
 /**
+ * Recursively sorts object keys in plain UTF-16 code-unit order
+ * (Array.prototype.sort without comparator) — the exact order locize uses
+ * when publishing namespace files.
+ */
+function sortObjectCodeUnit (obj: any): any {
+  if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
+    return obj
+  }
+  const sorted: Record<string, any> = {}
+  for (const key of Object.keys(obj).sort()) {
+    sorted[key] = sortObjectCodeUnit(obj[key])
+  }
+  return sorted
+}
+
+/**
  * A helper function to build a new translation object for a single namespace.
  * This centralizes the core logic of merging keys.
  */
@@ -1026,6 +1042,14 @@ function buildNewTranslationsForNs (
   // This correctly handles both top-level and nested keys.
   if (sort === true) {
     return sortObject(newTranslations, config)
+  }
+  // 'locize' preset: mirror the key order of locize-published files, which sort
+  // flat keys with Array.prototype.sort (UTF-16 code-unit order) before
+  // unflattening. Unlike the default sort, this is case-sensitive and applies
+  // no canonical plural-form ordering, so extract → locize-sync/-download
+  // round-trips without spurious reorder diffs.
+  if (sort === 'locize') {
+    return sortObjectCodeUnit(newTranslations)
   }
   // Custom sort function logic remains as a future enhancement if needed,
   // but for now, this robustly handles the most common `sort: true` case.
