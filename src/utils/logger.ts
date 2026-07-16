@@ -37,7 +37,7 @@ export class ConsoleLogger implements Logger {
    * @param message - The error message to log
    * @param more - Optional additional detail (e.g. a caught error).
    */
-  error (message: string | unknown, more?: unknown): void {
+  error (message: unknown, more?: unknown): void {
     if (more === undefined) { console.error(message) } else { console.error(message, more) }
   }
 }
