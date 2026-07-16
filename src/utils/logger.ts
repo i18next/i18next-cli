@@ -24,13 +24,20 @@ export class ConsoleLogger implements Logger {
    * Logs a warning message to the console.
    *
    * @param message - The warning message to log
+   * @param more - Optional additional detail (e.g. a caught error). Forwarded to
+   *   `console.warn` so thrown errors surfaced by plugin hooks are not swallowed.
    */
-  warn (message: string): void { console.warn(message) }
+  warn (message: string, more?: unknown): void {
+    if (more === undefined) { console.warn(message) } else { console.warn(message, more) }
+  }
 
   /**
    * Logs an error message to the console.
    *
    * @param message - The error message to log
+   * @param more - Optional additional detail (e.g. a caught error).
    */
-  error (message: string): void { console.error(message) }
+  error (message: string | unknown, more?: unknown): void {
+    if (more === undefined) { console.error(message) } else { console.error(message, more) }
+  }
 }
