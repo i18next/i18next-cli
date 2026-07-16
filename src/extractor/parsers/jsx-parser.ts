@@ -361,6 +361,8 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
     if (!keyExpression) return null
   }
 
+  if (!keyExpression && !serialized.trim()) return null
+
   // If no explicit defaults provided and we have a processed key, use it as default value
   // This matches the behavior of other similar tests in the codebase
   if (!defaultsAttr && processedKeyValue && !serialized.trim()) {

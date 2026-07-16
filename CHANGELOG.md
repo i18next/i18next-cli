@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.66.2
+
+- fix(extract): ignore `<Trans>` components that have neither an `i18nKey`
+  expression nor non-whitespace children, preventing `<Trans />` and
+  spread-only variants from creating an empty-string translation key
+  ([#274](https://github.com/i18next/i18next-cli/issues/274)).
+
 ## 1.66.1
 
 - fix(logger): `ConsoleLogger.warn`/`error` no longer swallow their optional

@@ -106,6 +106,8 @@ describe('extractor: empty key prevention', () => {
             {/* These should be ignored */}
             <Trans i18nKey="">Empty key</Trans>
             <Trans i18nKey="   ">Whitespace key</Trans>
+            <Trans />
+            <Trans {...props} />
             
             {/* These should be extracted */}
             <Trans i18nKey="valid.key">Valid translation</Trans>
