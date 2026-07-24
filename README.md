@@ -317,7 +317,7 @@ npx i18next-cli lint
 
 - **Hardcoded strings** *(error)* — user-facing text in JSX elements and attributes that isn't wrapped in `t()`/`<Trans>`.
 - **Interpolation parameters** *(error)* — mismatches between `{{placeholders}}` in a translation and the params passed to `t()` (missing or unused). Toggle with `lint.checkInterpolationParams` (default: `true`).
-- **String concatenation** *(warning by default)* — translated strings glued together with `+`, or a sentence split across multiple `<Trans>` components. This breaks in languages that reorder or inflect the pieces; use a single key with placeholders instead. Configure with `lint.checkConcatenation`: `'warn'` / `true` (default) reports it without failing the run, `'error'` makes it fail (exit non-zero, useful for CI), and `'off'` / `false` disables it.
+- **String concatenation** *(warning by default)* — translated strings glued together with `+`, or a sentence split across multiple adjacent translations (`<Trans>` components and/or `{t()}` expressions rendered as siblings). This breaks in languages that reorder or inflect the pieces; use a single key with placeholders instead. Configure with `lint.checkConcatenation`: `'warn'` / `true` (default) reports it without failing the run, `'error'` makes it fail (exit non-zero, useful for CI), and `'off'` / `false` disables it.
 
   ```jsx
   // ⚠️ Flagged — word order can't be translated

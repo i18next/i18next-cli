@@ -326,8 +326,10 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
  * Flags two patterns:
  *   JS  — a `+` expression where an operand is a t() call:
  *           t('greeting') + ', ' + name
- *   JSX — a sentence split across ≥2 <Trans> components joined by literal text:
- *           <p><Trans>Hello</Trans> and <Trans>World</Trans></p>
+ *   JSX — a sentence split across ≥2 adjacent translation units (a <Trans>
+ *         component or a `{t(...)}` expression) rendered as direct siblings:
+ *           <p><Trans>Hello</Trans> <Trans>World</Trans></p>
+ *           <p><Trans>new</Trans>{t('cat')}</p>
  *
  * The fix in both cases is a single key with placeholders:
  *   t('greeting', { name })  /  <Trans i18nKey="greeting">Hello {{name}}</Trans>
@@ -400,27 +402,30 @@ function lintConcatenation (ast: any, code: string, config: I18nextToolkitConfig
       }
     }
 
-    // JSX: a sentence split across ≥2 <Trans> components joined by literal text.
+    // JSX: a sentence split across ≥2 adjacent translation units rendered as
+    // direct siblings — a <Trans> component or a `{t(...)}` expression. Covers
+    // <Trans>…</Trans><Trans>…</Trans>, <Trans>…</Trans>{t(…)} and {t(…)}{t(…)}.
     if ((node.type === 'JSXElement' || node.type === 'JSXFragment') && Array.isArray(node.children)) {
-      let transCount = 0
-      let firstTrans: any = null
-      let hasLiteralText = false
+      let unitCount = 0
+      let firstUnit: any = null
       for (const child of node.children) {
         if (!child || typeof child !== 'object') continue
+        let isUnit = false
         if (child.type === 'JSXElement') {
           const name = getJsxName(child)
-          if (name && transComponents.has(name.toLowerCase())) {
-            transCount++
-            if (!firstTrans) firstTrans = child
-          }
-        } else if (child.type === 'JSXText' && child.value.trim() !== '') {
-          hasLiteralText = true
+          isUnit = !!name && transComponents.has(name.toLowerCase())
+        } else if (child.type === 'JSXExpressionContainer') {
+          isUnit = isTranslationCall(child.expression, config)
+        }
+        if (isUnit) {
+          unitCount++
+          if (!firstUnit) firstUnit = child
         }
       }
-      if (transCount >= 2 && hasLiteralText && firstTrans) {
+      if (unitCount >= 2 && firstUnit) {
         issues.push({
-          text: 'Avoid splitting a sentence across multiple <Trans> components. Use a single <Trans> with placeholders instead.',
-          line: lineOf(firstTrans),
+          text: 'Avoid splitting text across multiple translations (<Trans> or t()). Use a single translation with placeholders instead.',
+          line: lineOf(firstUnit),
           type: 'concatenation',
           severity,
         })

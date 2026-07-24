@@ -1804,8 +1804,37 @@ describe('Linter (core logic)', () => {
       expect(issues).toHaveLength(0)
     })
 
-    it('does NOT flag two adjacent <Trans> separated only by whitespace', async () => {
+    // Issue #275 follow-up cases 3 & 4: ≥2 adjacent translation units (Trans or {t()}).
+
+    it('flags two adjacent <Trans> separated only by whitespace', async () => {
       const issues = await concatIssues('const el = <p><Trans>A</Trans> <Trans>B</Trans></p>')
+      expect(issues).toHaveLength(1)
+    })
+
+    it('flags a <Trans> adjacent to a {t()} expression', async () => {
+      const issues = await concatIssues('const el = <div><Trans>new</Trans>{t("cat")}</div>')
+      expect(issues).toHaveLength(1)
+    })
+
+    it('flags two adjacent {t()} expressions', async () => {
+      const issues = await concatIssues('const el = <div>{t("a")}{t("b")}</div>')
+      expect(issues).toHaveLength(1)
+    })
+
+    it('does NOT flag a single {t()} expression on its own', async () => {
+      const issues = await concatIssues('const el = <div>{t("only")}</div>')
+      expect(issues).toHaveLength(0)
+    })
+
+    it('does NOT flag a single <Trans> next to punctuation (cases 1 & 2 deferred)', async () => {
+      const dash = await concatIssues('const el = <div>- <Trans>abc</Trans></div>')
+      const colon = await concatIssues('const el = <div><Trans>abc</Trans>:</div>')
+      expect(dash).toHaveLength(0)
+      expect(colon).toHaveLength(0)
+    })
+
+    it('does NOT flag a translation next to a non-translation expression', async () => {
+      const issues = await concatIssues('const el = <div>{t("greeting")} {userName}</div>')
       expect(issues).toHaveLength(0)
     })
 

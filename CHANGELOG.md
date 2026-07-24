@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.67.2
+
+- fix(lint): broaden the `checkConcatenation` JSX detection to flag any ≥2 adjacent
+  translation units rendered as direct siblings — a `<Trans>` component or a
+  `{t(...)}` expression. This now catches `<Trans>…</Trans>{t('…')}`,
+  `{t('a')}{t('b')}` and two `<Trans>` separated only by whitespace, in addition to
+  the previous "`<Trans>` … text … `<Trans>`" case. Single translations next to
+  plain literal text or punctuation are still not flagged
+  ([#275](https://github.com/i18next/i18next-cli/issues/275)).
+
 ## 1.67.1
 
 - feat(lint): `lint.checkConcatenation` now accepts a severity level in addition to
