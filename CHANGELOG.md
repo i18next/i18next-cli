@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.67.0
+
+- feat(lint): detect string concatenation involving translated strings, an i18n
+  anti-pattern that breaks in languages which reorder or inflect the pieces. The
+  linter now flags JavaScript concatenation where an operand is a `t()` call
+  (e.g. `t('greeting') + ', ' + name`) and sentences split across multiple
+  `<Trans>` components joined by literal text
+  (e.g. `<p><Trans>…</Trans> and <Trans>…</Trans></p>`). It deliberately does not
+  flag `t()` used only as a nested call argument (e.g. `arr.indexOf(t('x')) + 1`)
+  or concatenation inside `t()` arguments (e.g. `t('prefix.' + suffix)`). Enabled
+  by default; disable with `lint.checkConcatenation: false`
+  ([#275](https://github.com/i18next/i18next-cli/issues/275)).
+- feat(lint): lint issues now carry an optional `severity` (`'error'` | `'warning'`).
+  Concatenation issues are reported as **warnings** — they are printed but do not
+  fail the run (the `lint` command exits non-zero only when there are errors), so
+  adding this check does not break existing CI pipelines. Hardcoded-string and
+  interpolation issues remain errors. Plugins may set `severity` on the issues
+  they emit (defaults to `'error'` when omitted).
+
 ## 1.66.2
 
 - fix(extract): ignore `<Trans>` components that have neither an `i18nKey`

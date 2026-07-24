@@ -307,11 +307,29 @@ npx i18next-cli sync
 ```
 
 ### `lint`
-Analyzes your source code for internationalization issues like hardcoded strings. Can run without a config file.
+Analyzes your source code for internationalization issues. Can run without a config file.
 
 ```bash
 npx i18next-cli lint
 ```
+
+**What it checks:**
+
+- **Hardcoded strings** *(error)* — user-facing text in JSX elements and attributes that isn't wrapped in `t()`/`<Trans>`.
+- **Interpolation parameters** *(error)* — mismatches between `{{placeholders}}` in a translation and the params passed to `t()` (missing or unused). Toggle with `lint.checkInterpolationParams` (default: `true`).
+- **String concatenation** *(warning)* — translated strings glued together with `+`, or a sentence split across multiple `<Trans>` components. This breaks in languages that reorder or inflect the pieces; use a single key with placeholders instead. Reported as a **warning** — it is printed but does **not** fail the run / CI (exit code stays `0` unless there are errors). Toggle with `lint.checkConcatenation` (default: `true`).
+
+  ```jsx
+  // ⚠️ Flagged — word order can't be translated
+  t('greeting') + ', ' + name
+  <p><Trans>Hello</Trans> and <Trans>World</Trans></p>
+
+  // ✅ Preferred — one key, placeholders
+  t('greeting', { name }) // "Hello, {{name}}"
+  <Trans i18nKey="greeting">Hello {{name}}</Trans>
+  ```
+
+  The linter exits non-zero only when it finds **errors**; a run with only warnings succeeds.
 
 To suppress warnings for code you intentionally aren't translating yet, use the [`i18next-instrument-ignore` directive](#suppressing-detection-with-i18next-instrument-ignore) — the same comment recognized by the `instrument` command.
 
@@ -927,6 +945,10 @@ export default defineConfig({
 
     /** Enable linting for interpolation parameter errors in translation calls (default: true) */
     checkInterpolationParams: true,
+
+    /** Enable linting for string concatenation involving translated strings (default: true).
+     * Reported as a warning — it does not fail the run / CI. */
+    checkConcatenation: true,
   },
   
   // TypeScript type generation

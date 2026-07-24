@@ -7,7 +7,7 @@ import { styleText } from 'node:util'
 import { ConsoleLogger } from './utils/logger.js'
 import { createSpinnerLike } from './utils/wrap-ora.js'
 import { translatableAttributes, ignoredAttributeLowerSet, ignoredTags as sharedIgnoredTags, acceptedTags as sharedAcceptedTags } from './utils/jsx-attributes.js'
-import { findFirstTokenIndex, normalizeASTSpans, buildByteToCharMap, convertSpansToCharIndices, collectIgnoredLineRanges } from './extractor/parsers/ast-utils.js'
+import { findFirstTokenIndex, normalizeASTSpans, buildByteToCharMap, convertSpansToCharIndices, collectIgnoredLineRanges, lineColumnFromOffset } from './extractor/parsers/ast-utils.js'
 import { matchesFunctionPattern } from './extractor/utils/function-matcher.js'
 import type { I18nextToolkitConfig, Logger, LintIssue, Plugin, LintPluginContext } from './types.js'
 
@@ -105,6 +105,62 @@ function isI18nextOptionKey (key: string): boolean {
   return false
 }
 
+// Builds the full dotted callee name (e.g. 'i18n.t', 'tProps.label') and the
+// bare last segment ('t', 'label') for a CallExpression, so both exact and
+// wildcard function patterns can be matched against it.
+function getCalleeNames (node: any): { calleeName: string, fullCalleeName: string } {
+  let calleeName = ''
+  let fullCalleeName = ''
+  if (node.callee) {
+    if (node.callee.type === 'Identifier') {
+      calleeName = node.callee.value || node.callee.name || ''
+      fullCalleeName = calleeName
+    } else if (node.callee.type === 'MemberExpression') {
+      const parts: string[] = []
+      let current: any = node.callee
+      let computed = false
+      while (current?.type === 'MemberExpression') {
+        if (current.property?.type === 'Identifier') {
+          parts.unshift(current.property.value || current.property.name)
+        } else {
+          computed = true
+          break
+        }
+        current = current.object
+      }
+      if (!computed) {
+        if (current?.type === 'ThisExpression') {
+          parts.unshift('this')
+        } else if (current?.type === 'Identifier') {
+          parts.unshift(current.value || current.name)
+        } else {
+          parts.length = 0
+        }
+      }
+      if (node.callee.property?.type === 'Identifier') {
+        calleeName = node.callee.property.value || node.callee.property.name
+      }
+      fullCalleeName = parts.length ? parts.join('.') : calleeName
+    }
+  }
+  return { calleeName, fullCalleeName }
+}
+
+// Returns true when a CallExpression's callee matches one of the configured
+// translation functions (config.extract.functions, default ['t', '*.t']).
+function isTranslationCall (node: any, config: I18nextToolkitConfig): boolean {
+  if (!node || node.type !== 'CallExpression') return false
+  const { calleeName, fullCalleeName } = getCalleeNames(node)
+  const fnPatterns = config.extract.functions || ['t', '*.t']
+  for (const pattern of fnPatterns) {
+    if (matchesFunctionPattern(fullCalleeName, pattern)) return true
+    // Backwards-compatible: '*.X' also matches a call whose last segment is X
+    // (covers computed member expressions where the full chain is unavailable).
+    if (pattern.startsWith('*.') && calleeName === pattern.slice(2)) return true
+  }
+  return false
+}
+
 // Helper to lint interpolation parameter errors in t() calls
 function lintInterpolationParams (ast: any, code: string, config: I18nextToolkitConfig, translationValues?: Map<string, string>): LintIssue[] {
   const issues: LintIssue[] = []
@@ -152,57 +208,7 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
 
   // Modularized CallExpression handler
   function handleCallExpression (node: any, ancestors: any[]) {
-    // Build the full dotted callee name (e.g. 'i18n.t', 'tProps.label') as well as
-    // the bare last segment ('t', 'label') so both exact and wildcard patterns match.
-    let calleeName = ''
-    let fullCalleeName = ''
-    if (node.callee) {
-      if (node.callee.type === 'Identifier') {
-        calleeName = node.callee.value || node.callee.name || ''
-        fullCalleeName = calleeName
-      } else if (node.callee.type === 'MemberExpression') {
-        const parts: string[] = []
-        let current: any = node.callee
-        let computed = false
-        while (current?.type === 'MemberExpression') {
-          if (current.property?.type === 'Identifier') {
-            parts.unshift(current.property.value || current.property.name)
-          } else {
-            computed = true
-            break
-          }
-          current = current.object
-        }
-        if (!computed) {
-          if (current?.type === 'ThisExpression') {
-            parts.unshift('this')
-          } else if (current?.type === 'Identifier') {
-            parts.unshift(current.value || current.name)
-          } else {
-            parts.length = 0
-          }
-        }
-        if (node.callee.property?.type === 'Identifier') {
-          calleeName = node.callee.property.value || node.callee.property.name
-        }
-        fullCalleeName = parts.length ? parts.join('.') : calleeName
-      }
-    }
-    const fnPatterns = config.extract.functions || ['t', '*.t']
-    let matches = false
-    for (const pattern of fnPatterns) {
-      if (matchesFunctionPattern(fullCalleeName, pattern)) {
-        matches = true
-        break
-      }
-      // Backwards-compatible: '*.X' also matches a call whose last segment is X
-      // (covers computed member expressions where the full chain is unavailable).
-      if (pattern.startsWith('*.') && calleeName === pattern.slice(2)) {
-        matches = true
-        break
-      }
-    }
-    if (matches) {
+    if (isTranslationCall(node, config)) {
       // Support both .expression and direct node for arguments
       const arg0raw = node.arguments?.[0]
       const arg1raw = node.arguments?.[1]
@@ -308,6 +314,125 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
     }
   }
 
+  return issues
+}
+
+/**
+ * Detects string concatenation involving translated strings — an i18n
+ * anti-pattern because word order and grammar differ across languages, so
+ * gluing translated fragments together produces ungrammatical output in
+ * languages that reorder, inflect, or gender the pieces.
+ *
+ * Flags two patterns:
+ *   JS  — a `+` expression where an operand is a t() call:
+ *           t('greeting') + ', ' + name
+ *   JSX — a sentence split across ≥2 <Trans> components joined by literal text:
+ *           <p><Trans>Hello</Trans> and <Trans>World</Trans></p>
+ *
+ * The fix in both cases is a single key with placeholders:
+ *   t('greeting', { name })  /  <Trans i18nKey="greeting">Hello {{name}}</Trans>
+ *
+ * Enabled by default; disable via `lint.checkConcatenation: false`.
+ */
+function lintConcatenation (ast: any, code: string, config: I18nextToolkitConfig): LintIssue[] {
+  const issues: LintIssue[] = []
+  if (config.lint?.checkConcatenation === false) return issues
+
+  const transComponents = new Set((config.extract.transComponents || ['Trans']).map(s => s.toLowerCase()))
+
+  const lineOf = (node: any): number => {
+    const start = node?.span?.start
+    if (typeof start === 'number') {
+      const pos = lineColumnFromOffset(code, start)
+      if (pos) return pos.line
+    }
+    // ponytail: span normalisation failed (also degrades ignore handling); coarse line 1.
+    return 1
+  }
+
+  // Is `node` a translated-string operand of a concatenation? True when it is a
+  // t() call, or a `+` chain that itself contains one. Deliberately does NOT
+  // descend into other call/member expressions, so `arr.indexOf(t('x')) + 1`
+  // (numeric +, t() used only as a lookup argument) is not flagged.
+  const isTranslatedConcatOperand = (node: any): boolean => {
+    let n = node?.expression ?? node
+    // Unwrap parenthesis / TS assertion wrappers.
+    while (n && (n.type === 'ParenthesisExpression' || n.type === 'TsAsExpression' || n.type === 'TsNonNullExpression' || n.type === 'TsConstAssertion')) {
+      n = n.expression
+    }
+    if (!n) return false
+    if (isTranslationCall(n, config)) return true
+    if (n.type === 'BinaryExpression' && n.operator === '+') {
+      return isTranslatedConcatOperand(n.left) || isTranslatedConcatOperand(n.right)
+    }
+    return false
+  }
+
+  const getJsxName = (el: any): string | null => {
+    const nameNode = el?.opening?.name ?? el?.name
+    if (!nameNode) return null
+    if (nameNode.type === 'JSXIdentifier' || nameNode.type === 'Identifier') return nameNode.value ?? nameNode.name ?? null
+    // e.g. Foo.Trans → use the last segment
+    if (nameNode.type === 'JSXMemberExpression') return nameNode.property?.value ?? nameNode.property?.name ?? null
+    return null
+  }
+
+  const walk = (node: any, parent: any) => {
+    if (!node || typeof node !== 'object') return
+
+    // JS: `+` concatenation involving a t() call. Only report the outermost `+`
+    // of a chain (skip when the parent is also a `+`) so one chain = one issue.
+    if (node.type === 'BinaryExpression' && node.operator === '+') {
+      const parentIsPlus = parent?.type === 'BinaryExpression' && parent.operator === '+'
+      if (!parentIsPlus && (isTranslatedConcatOperand(node.left) || isTranslatedConcatOperand(node.right))) {
+        issues.push({
+          text: 'Avoid string concatenation in translations. Use a single string with placeholders instead.',
+          line: lineOf(node),
+          type: 'concatenation',
+          severity: 'warning',
+        })
+      }
+    }
+
+    // JSX: a sentence split across ≥2 <Trans> components joined by literal text.
+    if ((node.type === 'JSXElement' || node.type === 'JSXFragment') && Array.isArray(node.children)) {
+      let transCount = 0
+      let firstTrans: any = null
+      let hasLiteralText = false
+      for (const child of node.children) {
+        if (!child || typeof child !== 'object') continue
+        if (child.type === 'JSXElement') {
+          const name = getJsxName(child)
+          if (name && transComponents.has(name.toLowerCase())) {
+            transCount++
+            if (!firstTrans) firstTrans = child
+          }
+        } else if (child.type === 'JSXText' && child.value.trim() !== '') {
+          hasLiteralText = true
+        }
+      }
+      if (transCount >= 2 && hasLiteralText && firstTrans) {
+        issues.push({
+          text: 'Avoid splitting a sentence across multiple <Trans> components. Use a single <Trans> with placeholders instead.',
+          line: lineOf(firstTrans),
+          type: 'concatenation',
+          severity: 'warning',
+        })
+      }
+    }
+
+    for (const key of Object.keys(node)) {
+      if (key === 'span') continue
+      const child = node[key]
+      if (Array.isArray(child)) {
+        for (const item of child) walk(item, node)
+      } else if (child && typeof child === 'object') {
+        walk(child, node)
+      }
+    }
+  }
+
+  walk(ast, null)
   return issues
 }
 
@@ -454,7 +579,9 @@ export class Linter extends EventEmitter<LinterEventMap> {
         const hardcodedStrings = findHardcodedStrings(ast, code, config)
         // Collect interpolation parameter issues
         const interpolationIssues = lintInterpolationParams(ast, code, config, translationValues)
-        let allIssues: LintIssue[] = [...hardcodedStrings, ...interpolationIssues]
+        // Collect string-concatenation issues
+        const concatenationIssues = lintConcatenation(ast, code, config)
+        let allIssues: LintIssue[] = [...hardcodedStrings, ...interpolationIssues, ...concatenationIssues]
 
         // Filter issues suppressed by ignore-directive comments.
         //   i18next-instrument-ignore-next-line → suppresses the single next line
@@ -472,7 +599,10 @@ export class Linter extends EventEmitter<LinterEventMap> {
       }
 
       const files = Object.fromEntries(issuesByFile.entries())
-      const data = { success: totalIssues === 0, message: totalIssues > 0 ? `Linter found ${totalIssues} potential issues.` : 'No issues found.', files }
+      // `success` reflects errors only — warning-severity issues (e.g. string
+      // concatenation) are reported but do not fail the run / CI.
+      const errorCount = Array.from(issuesByFile.values()).flat().filter(i => i.severity !== 'warning').length
+      const data = { success: errorCount === 0, message: totalIssues > 0 ? `Linter found ${totalIssues} potential issues.` : 'No issues found.', files }
       this.emit('done', data)
       return data
     } catch (error) {
@@ -594,24 +724,32 @@ export async function runLinterCli (
     spinner.text = event.message
   })
   try {
-    const { success, message, files } = await linter.run()
-    if (!success) {
-      spinner.fail(styleText(['red', 'bold'], message))
+    const { message, files } = await linter.run()
+    const fileEntries = Object.entries(files)
+    const allIssues = fileEntries.flatMap(([, issues]) => issues)
+    const hasErrors = allIssues.some(i => i.severity !== 'warning')
+    const hasWarnings = allIssues.some(i => i.severity === 'warning')
 
-      // Print detailed report after spinner fails
-      for (const [file, issues] of Object.entries(files)) {
-        if (internalLogger.info) internalLogger.info(styleText('yellow', `\n${file}`))
-        else console.log(styleText('yellow', `\n${file}`))
-        issues.forEach(({ text, line, type }) => {
-          const label = type === 'interpolation' ? 'Interpolation issue' : 'Found hardcoded string'
-          if (typeof internalLogger.info === 'function') internalLogger.info(`  ${styleText('gray', `${line}:`)} ${styleText('red', 'Error:')} ${label}: "${text}"`)
-          else console.log(`  ${styleText('gray', `${line}:`)} ${styleText('red', 'Error:')} ${label}: "${text}"`)
-        })
-      }
-      process.exit(1)
-    } else {
-      spinner.succeed(styleText(['green', 'bold'], message))
+    // Summary line: fail on errors, warn when only warnings, succeed when clean.
+    if (hasErrors) spinner.fail(styleText(['red', 'bold'], message))
+    else if (hasWarnings) spinner.warn(styleText(['yellow', 'bold'], message))
+    else spinner.succeed(styleText(['green', 'bold'], message))
+
+    // Detailed report — colour each line by severity (red Error / yellow Warning).
+    for (const [file, issues] of fileEntries) {
+      if (internalLogger.info) internalLogger.info(styleText('yellow', `\n${file}`))
+      else console.log(styleText('yellow', `\n${file}`))
+      issues.forEach(({ text, line, type, severity }) => {
+        const label = type === 'interpolation' ? 'Interpolation issue' : type === 'concatenation' ? 'String concatenation' : 'Found hardcoded string'
+        const tag = severity === 'warning' ? styleText('yellow', 'Warning:') : styleText('red', 'Error:')
+        const detail = `  ${styleText('gray', `${line}:`)} ${tag} ${label}: "${text}"`
+        if (typeof internalLogger.info === 'function') internalLogger.info(detail)
+        else console.log(detail)
+      })
     }
+
+    // Only errors fail the process; warning-only runs exit 0.
+    if (hasErrors) process.exit(1)
   } catch (error) {
     const wrappedError = linter.wrapError(error)
     spinner.fail(wrappedError.message)

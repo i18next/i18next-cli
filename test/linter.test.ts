@@ -1,6 +1,6 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { Linter, runLinter } from '../src/linter'
+import { Linter, runLinter, runLinterCli } from '../src/linter'
 import type { I18nextToolkitConfig } from '../src/index'
 
 // --- MOCKS ---
@@ -1717,5 +1717,139 @@ describe('Linter (core logic)', () => {
 
     expect(result.success).toBe(true)
     expect(result.message).toContain('No issues found.')
+  })
+
+  // --- String concatenation in translations (issue #275) ---
+
+  describe('string concatenation (issue #275)', () => {
+    const concatConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract, functions: ['t', '*.t'] },
+      lint: {},
+    }
+    // Returns only the concatenation-typed issues for a source snippet.
+    const concatIssues = async (code: string) => {
+      vol.fromJSON({ '/src/App.tsx': code })
+      const result = await runLinter(concatConfig)
+      return (result.files['/src/App.tsx'] ?? []).filter(i => i.type === 'concatenation')
+    }
+
+    it('flags two t() calls concatenated with +', async () => {
+      const issues = await concatIssues("const s = t('a') + t('b')")
+      expect(issues).toHaveLength(1)
+      expect(issues[0].type).toBe('concatenation')
+      expect(issues[0].severity).toBe('warning')
+      expect(issues[0].text).toContain('Avoid string concatenation')
+    })
+
+    it('flags a t() call concatenated with a literal and a variable', async () => {
+      const issues = await concatIssues("const s = t('greeting') + ', ' + name")
+      expect(issues).toHaveLength(1)
+    })
+
+    it('flags a t() call at the end of a concatenation chain', async () => {
+      const issues = await concatIssues("const s = count + ' ' + t('items')")
+      expect(issues).toHaveLength(1)
+    })
+
+    it('reports a chain of three concatenated t() calls only once', async () => {
+      const issues = await concatIssues("const s = t('a') + t('b') + t('c')")
+      expect(issues).toHaveLength(1)
+    })
+
+    it('reports the correct line number', async () => {
+      const code = [
+        'const a = 1',
+        'const b = 2',
+        "const s = t('a') + t('b')",
+      ].join('\n')
+      const issues = await concatIssues(code)
+      expect(issues).toHaveLength(1)
+      expect(issues[0].line).toBe(3)
+    })
+
+    it('does NOT flag t() used only as a nested call argument (numeric +)', async () => {
+      const issues = await concatIssues("const i = arr.indexOf(t('x')) + 1")
+      expect(issues).toHaveLength(0)
+    })
+
+    it('does NOT flag concatenation inside t() arguments (dynamic key)', async () => {
+      const issues = await concatIssues("const s = t('prefix.' + suffix)")
+      expect(issues).toHaveLength(0)
+    })
+
+    it('does NOT flag plain concatenation with no t() call', async () => {
+      const issues = await concatIssues("const s = 'a' + 'b'; const n = 1 + 2")
+      expect(issues).toHaveLength(0)
+    })
+
+    it('does NOT flag a clean t() call with placeholders', async () => {
+      const issues = await concatIssues("const s = t('greeting', { name })")
+      expect(issues).toHaveLength(0)
+    })
+
+    it('flags a sentence split across multiple <Trans> components joined by text', async () => {
+      const issues = await concatIssues('const el = <p><Trans>Hello</Trans> and <Trans>World</Trans></p>')
+      expect(issues).toHaveLength(1)
+      expect(issues[0].text).toContain('<Trans>')
+    })
+
+    it('does NOT flag <Trans> components in separate parent elements', async () => {
+      const issues = await concatIssues('const el = <div><div><Trans>A</Trans></div><div><Trans>B</Trans></div></div>')
+      expect(issues).toHaveLength(0)
+    })
+
+    it('does NOT flag a single <Trans> next to literal text', async () => {
+      const issues = await concatIssues('const el = <p>Welcome <Trans>back</Trans></p>')
+      expect(issues).toHaveLength(0)
+    })
+
+    it('does NOT flag two adjacent <Trans> separated only by whitespace', async () => {
+      const issues = await concatIssues('const el = <p><Trans>A</Trans> <Trans>B</Trans></p>')
+      expect(issues).toHaveLength(0)
+    })
+
+    it('can be disabled via lint.checkConcatenation: false', async () => {
+      vol.fromJSON({ '/src/App.tsx': "const s = t('a') + t('b')" })
+      const result = await runLinter({
+        ...mockConfig,
+        extract: { ...mockConfig.extract, functions: ['t', '*.t'] },
+        lint: { checkConcatenation: false },
+      })
+      expect(result.success).toBe(true)
+      expect(result.message).toContain('No issues found.')
+    })
+
+    it('does NOT fail the run (success stays true) for concatenation-only warnings', async () => {
+      vol.fromJSON({ '/src/App.tsx': "const s = t('a') + t('b')" })
+      const result = await runLinter(concatConfig)
+      // Warning is reported (file present) but the run succeeds — CI must not fail.
+      expect(result.success).toBe(true)
+      expect(result.files['/src/App.tsx'].some(i => i.type === 'concatenation')).toBe(true)
+      expect(result.message).toContain('Linter found')
+    })
+
+    it('DOES fail the run when an error-severity issue is also present', async () => {
+      // Hardcoded string (error) + concatenation (warning) → run fails on the error.
+      vol.fromJSON({ '/src/App.tsx': "const el = <p>Hardcoded here</p>; const s = t('a') + t('b')" })
+      const result = await runLinter(concatConfig)
+      expect(result.success).toBe(false)
+    })
+
+    it('reports concatenation as a Warning (not Error) and does not exit the process', async () => {
+      const logs: string[] = []
+      const logger = { info: (m: string) => { logs.push(m) }, warn: (m: string) => { logs.push(m) }, error: (m: string) => { logs.push(m) } }
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((() => undefined) as any))
+      vol.fromJSON({ '/src/App.tsx': "const s = t('a') + t('b')" })
+
+      await runLinterCli(concatConfig, { logger: logger as any })
+
+      const output = logs.join('\n')
+      expect(output).toContain('Warning:')
+      expect(output).toContain('String concatenation')
+      expect(output).not.toContain('Error:')
+      expect(exitSpy).not.toHaveBeenCalled()
+      exitSpy.mockRestore()
+    })
   })
 })
