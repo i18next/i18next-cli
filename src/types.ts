@@ -268,13 +268,18 @@ export interface I18nextToolkitConfig {
     /** Enable linting for interpolation parameter errors in translation calls (default: true) */
     checkInterpolationParams?: boolean;
 
-    /** Enable linting for string concatenation involving translated strings (default: true).
+    /** Lint for string concatenation involving translated strings (default: `'warn'`).
      *
      * Flags patterns like `t('greeting') + ', ' + name` and sentences split across
      * multiple `<Trans>` components joined by literal text, which break in languages
      * that reorder or inflect the pieces. Use a single key with placeholders instead.
+     *
+     * Accepts a severity level or a boolean:
+     * - `'error'` — report as an error; the `lint` command exits non-zero (fails CI).
+     * - `'warn'` / `true` — report as a warning; printed but does not fail the run.
+     * - `'off'` / `false` — disable the check.
      */
-    checkConcatenation?: boolean;
+    checkConcatenation?: boolean | 'off' | 'warn' | 'error';
   };
 
   /** Configuration options for TypeScript type generation */

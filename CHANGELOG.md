@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.67.1
+
+- feat(lint): `lint.checkConcatenation` now accepts a severity level in addition to
+  a boolean: `'error'` reports concatenation issues as errors so the `lint` command
+  exits non-zero (fails CI), `'warn'` (or `true`, the default) reports them as
+  non-failing warnings, and `'off'` (or `false`) disables the check. Previously the
+  concatenation check could only warn; making it fail the build required a custom
+  plugin ([#275](https://github.com/i18next/i18next-cli/issues/275)).
+
 ## 1.67.0
 
 - feat(lint): detect string concatenation involving translated strings, an i18n

@@ -332,11 +332,17 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
  * The fix in both cases is a single key with placeholders:
  *   t('greeting', { name })  /  <Trans i18nKey="greeting">Hello {{name}}</Trans>
  *
- * Enabled by default; disable via `lint.checkConcatenation: false`.
+ * Severity is controlled by `lint.checkConcatenation`: 'warn' (default) reports
+ * without failing the run, 'error' makes it fail (exit non-zero), 'off'/false
+ * disables it.
  */
 function lintConcatenation (ast: any, code: string, config: I18nextToolkitConfig): LintIssue[] {
   const issues: LintIssue[] = []
-  if (config.lint?.checkConcatenation === false) return issues
+  // Resolve the check's severity. Default 'warn'. `false`/'off' disable it;
+  // `'error'` makes concatenation fail the run (exit non-zero); `true`/'warn' warn.
+  const setting = config.lint?.checkConcatenation
+  if (setting === false || setting === 'off') return issues
+  const severity: 'error' | 'warning' = setting === 'error' ? 'error' : 'warning'
 
   const transComponents = new Set((config.extract.transComponents || ['Trans']).map(s => s.toLowerCase()))
 
@@ -389,7 +395,7 @@ function lintConcatenation (ast: any, code: string, config: I18nextToolkitConfig
           text: 'Avoid string concatenation in translations. Use a single string with placeholders instead.',
           line: lineOf(node),
           type: 'concatenation',
-          severity: 'warning',
+          severity,
         })
       }
     }
@@ -416,7 +422,7 @@ function lintConcatenation (ast: any, code: string, config: I18nextToolkitConfig
           text: 'Avoid splitting a sentence across multiple <Trans> components. Use a single <Trans> with placeholders instead.',
           line: lineOf(firstTrans),
           type: 'concatenation',
-          severity: 'warning',
+          severity,
         })
       }
     }

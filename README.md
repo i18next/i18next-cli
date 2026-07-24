@@ -317,7 +317,7 @@ npx i18next-cli lint
 
 - **Hardcoded strings** *(error)* — user-facing text in JSX elements and attributes that isn't wrapped in `t()`/`<Trans>`.
 - **Interpolation parameters** *(error)* — mismatches between `{{placeholders}}` in a translation and the params passed to `t()` (missing or unused). Toggle with `lint.checkInterpolationParams` (default: `true`).
-- **String concatenation** *(warning)* — translated strings glued together with `+`, or a sentence split across multiple `<Trans>` components. This breaks in languages that reorder or inflect the pieces; use a single key with placeholders instead. Reported as a **warning** — it is printed but does **not** fail the run / CI (exit code stays `0` unless there are errors). Toggle with `lint.checkConcatenation` (default: `true`).
+- **String concatenation** *(warning by default)* — translated strings glued together with `+`, or a sentence split across multiple `<Trans>` components. This breaks in languages that reorder or inflect the pieces; use a single key with placeholders instead. Configure with `lint.checkConcatenation`: `'warn'` / `true` (default) reports it without failing the run, `'error'` makes it fail (exit non-zero, useful for CI), and `'off'` / `false` disables it.
 
   ```jsx
   // ⚠️ Flagged — word order can't be translated
@@ -946,9 +946,10 @@ export default defineConfig({
     /** Enable linting for interpolation parameter errors in translation calls (default: true) */
     checkInterpolationParams: true,
 
-    /** Enable linting for string concatenation involving translated strings (default: true).
-     * Reported as a warning — it does not fail the run / CI. */
-    checkConcatenation: true,
+    /** Lint string concatenation involving translated strings (default: 'warn').
+     * 'warn'/true reports without failing the run, 'error' fails the run (exit non-zero,
+     * good for CI), 'off'/false disables it. */
+    checkConcatenation: 'warn',
   },
   
   // TypeScript type generation

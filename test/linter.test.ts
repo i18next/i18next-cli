@@ -1836,6 +1836,61 @@ describe('Linter (core logic)', () => {
       expect(result.success).toBe(false)
     })
 
+    it("checkConcatenation: 'error' promotes issues to error severity and fails the run", async () => {
+      vol.fromJSON({ '/src/App.tsx': "const s = t('a') + t('b')" })
+      const result = await runLinter({
+        ...mockConfig,
+        extract: { ...mockConfig.extract, functions: ['t', '*.t'] },
+        lint: { checkConcatenation: 'error' },
+      })
+      const issues = (result.files['/src/App.tsx'] ?? []).filter(i => i.type === 'concatenation')
+      expect(issues).toHaveLength(1)
+      expect(issues[0].severity).toBe('error')
+      expect(result.success).toBe(false)
+    })
+
+    it("checkConcatenation: 'warn' reports as a non-failing warning", async () => {
+      vol.fromJSON({ '/src/App.tsx': "const s = t('a') + t('b')" })
+      const result = await runLinter({
+        ...mockConfig,
+        extract: { ...mockConfig.extract, functions: ['t', '*.t'] },
+        lint: { checkConcatenation: 'warn' },
+      })
+      const issues = (result.files['/src/App.tsx'] ?? []).filter(i => i.type === 'concatenation')
+      expect(issues[0].severity).toBe('warning')
+      expect(result.success).toBe(true)
+    })
+
+    it("checkConcatenation: 'off' disables the check", async () => {
+      vol.fromJSON({ '/src/App.tsx': "const s = t('a') + t('b')" })
+      const result = await runLinter({
+        ...mockConfig,
+        extract: { ...mockConfig.extract, functions: ['t', '*.t'] },
+        lint: { checkConcatenation: 'off' },
+      })
+      expect(result.success).toBe(true)
+      expect(result.message).toContain('No issues found.')
+    })
+
+    it("checkConcatenation: 'error' makes the CLI print Error and exit the process", async () => {
+      const logs: string[] = []
+      const logger = { info: (m: string) => { logs.push(m) }, warn: (m: string) => { logs.push(m) }, error: (m: string) => { logs.push(m) } }
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((() => undefined) as any))
+      vol.fromJSON({ '/src/App.tsx': "const s = t('a') + t('b')" })
+
+      await runLinterCli({
+        ...mockConfig,
+        extract: { ...mockConfig.extract, functions: ['t', '*.t'] },
+        lint: { checkConcatenation: 'error' },
+      }, { logger: logger as any })
+
+      const output = logs.join('\n')
+      expect(output).toContain('Error:')
+      expect(output).toContain('String concatenation')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      exitSpy.mockRestore()
+    })
+
     it('reports concatenation as a Warning (not Error) and does not exit the process', async () => {
       const logs: string[] = []
       const logger = { info: (m: string) => { logs.push(m) }, warn: (m: string) => { logs.push(m) }, error: (m: string) => { logs.push(m) } }
