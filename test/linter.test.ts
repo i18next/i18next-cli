@@ -1838,6 +1838,78 @@ describe('Linter (core logic)', () => {
       expect(issues).toHaveLength(0)
     })
 
+    // Issue #275 cases 1 & 2: punctuation glued onto a translation (opt-in).
+
+    describe('checkPunctuationConcatenation (opt-in)', () => {
+      const punctIssues = async (code: string, setting: any = 'warn') => {
+        vol.fromJSON({ '/src/App.tsx': code })
+        const result = await runLinter({
+          ...mockConfig,
+          extract: { ...mockConfig.extract, functions: ['t', '*.t'] },
+          lint: { checkPunctuationConcatenation: setting },
+        })
+        return (result.files['/src/App.tsx'] ?? []).filter(i => i.type === 'concatenation')
+      }
+
+      it('is off by default', async () => {
+        const issues = await concatIssues('const el = <div><Trans>abc</Trans>:</div>')
+        expect(issues).toHaveLength(0)
+      })
+
+      it('flags a trailing colon after <Trans>', async () => {
+        const issues = await punctIssues('const el = <div><Trans>abc</Trans>:</div>')
+        expect(issues).toHaveLength(1)
+        expect(issues[0].severity).toBe('warning')
+        expect(issues[0].text).toContain('punctuation')
+      })
+
+      it('flags a leading dash before <Trans>', async () => {
+        const issues = await punctIssues('const el = <div>- <Trans>abc</Trans></div>')
+        expect(issues).toHaveLength(1)
+      })
+
+      it('flags punctuation next to a {t()} expression', async () => {
+        const issues = await punctIssues('const el = <div>{t("label")}:</div>')
+        expect(issues).toHaveLength(1)
+      })
+
+      it('reports the line the punctuation is on, not the parent tag', async () => {
+        const code = ['const el = (', '  <div>', '    - <Trans>abc</Trans>', '  </div>', ')'].join('\n')
+        const issues = await punctIssues(code)
+        expect(issues).toHaveLength(1)
+        expect(issues[0].line).toBe(3)
+      })
+
+      it("supports 'error' severity", async () => {
+        const issues = await punctIssues('const el = <div><Trans>abc</Trans>:</div>', 'error')
+        expect(issues[0].severity).toBe('error')
+      })
+
+      it('does NOT flag punctuation with no adjacent translation', async () => {
+        const issues = await punctIssues('const el = <div><span>x</span>:</div>')
+        expect(issues).toHaveLength(0)
+      })
+
+      it('does not double-report when the element already has 2+ translations', async () => {
+        // The sibling-units rule already covers this; only one issue should surface.
+        const issues = await punctIssues('const el = <div><Trans>a</Trans>: <Trans>b</Trans></div>')
+        expect(issues).toHaveLength(1)
+      })
+
+      it('can be suppressed with an ignore directive', async () => {
+        const code = [
+          'const el = (',
+          '  <div>',
+          '    {/* i18next-instrument-ignore-next-line */}',
+          '    <Trans>abc</Trans>:',
+          '  </div>',
+          ')',
+        ].join('\n')
+        const issues = await punctIssues(code)
+        expect(issues).toHaveLength(0)
+      })
+    })
+
     it('can be disabled via lint.checkConcatenation: false', async () => {
       vol.fromJSON({ '/src/App.tsx': "const s = t('a') + t('b')" })
       const result = await runLinter({

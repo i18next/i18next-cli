@@ -280,6 +280,19 @@ export interface I18nextToolkitConfig {
      * - `'off'` / `false` — disable the check.
      */
     checkConcatenation?: boolean | 'off' | 'warn' | 'error';
+
+    /** Lint punctuation concatenated onto a translation (default: `'off'`).
+     *
+     * Flags a literal punctuation sibling next to a `<Trans>` or `{t(...)}`, e.g.
+     * `<label><Trans>Email</Trans>:</label>` or `<div>- <Trans>item</Trans></div>`.
+     * Punctuation spacing and form differ across languages (French requires a
+     * narrow no-break space before `:`, CJK uses fullwidth forms, RTL reorders),
+     * so it belongs inside the translation or in semantic markup.
+     *
+     * Opt-in, since keeping punctuation out of the translation is often deliberate.
+     * Accepts the same values as {@link checkConcatenation}; defaults to `'off'`.
+     */
+    checkPunctuationConcatenation?: boolean | 'off' | 'warn' | 'error';
   };
 
   /** Configuration options for TypeScript type generation */

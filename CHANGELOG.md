@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.67.3
+
+- feat(lint): new opt-in `lint.checkPunctuationConcatenation` flags punctuation glued
+  onto a translation, e.g. `<label><Trans>Email</Trans>:</label>` or
+  `<div>- <Trans>item</Trans></div>`. Punctuation spacing and form differ across
+  languages (French needs a narrow no-break space before `:`, CJK uses fullwidth `：`,
+  RTL reorders), so it belongs inside the translation or in semantic markup. Accepts
+  the same values as `checkConcatenation` (`'warn'` / `'error'` / `'off'` / boolean)
+  and defaults to `'off'`, since keeping punctuation out of a translation is often
+  deliberate. Individual occurrences can be suppressed with the
+  `i18next-instrument-ignore` directive
+  ([#275](https://github.com/i18next/i18next-cli/issues/275)).
+
 ## 1.67.2
 
 - fix(lint): broaden the `checkConcatenation` JSX detection to flag any ≥2 adjacent

@@ -323,13 +323,26 @@ npx i18next-cli lint
   // ⚠️ Flagged — word order can't be translated
   t('greeting') + ', ' + name
   <p><Trans>Hello</Trans> and <Trans>World</Trans></p>
+  <p><Trans>new</Trans>{t('cat')}</p>
 
   // ✅ Preferred — one key, placeholders
   t('greeting', { name }) // "Hello, {{name}}"
   <Trans i18nKey="greeting">Hello {{name}}</Trans>
   ```
 
-  The linter exits non-zero only when it finds **errors**; a run with only warnings succeeds.
+- **Punctuation concatenation** *(off by default)* — punctuation glued onto a translation, e.g. `<label><Trans>Email</Trans>:</label>` or `<div>- <Trans>item</Trans></div>`. Punctuation spacing and form differ across languages (French needs a narrow no-break space before `:`, CJK uses fullwidth `：`, RTL reorders), so it belongs inside the translation or in semantic markup (a real `<ul>/<li>` for bullets). This is **opt-in**, since keeping punctuation out of a translation is often deliberate. Enable with `lint.checkPunctuationConcatenation`: `'warn'`, `'error'`, or `'off'` / `false` (default).
+
+  ```jsx
+  // ⚠️ Flagged when enabled
+  <label><Trans>Email</Trans>:</label>
+  <div>- <Trans>item</Trans></div>
+
+  // ✅ Preferred
+  <label><Trans i18nKey="emailLabel">Email:</Trans></label>
+  <ul><li><Trans>item</Trans></li></ul>
+  ```
+
+  The linter exits non-zero only when it finds **errors**; a run with only warnings succeeds. Individual spots can be excused with the [`i18next-instrument-ignore` directive](#suppressing-detection-with-i18next-instrument-ignore).
 
 To suppress warnings for code you intentionally aren't translating yet, use the [`i18next-instrument-ignore` directive](#suppressing-detection-with-i18next-instrument-ignore) — the same comment recognized by the `instrument` command.
 
@@ -950,6 +963,10 @@ export default defineConfig({
      * 'warn'/true reports without failing the run, 'error' fails the run (exit non-zero,
      * good for CI), 'off'/false disables it. */
     checkConcatenation: 'warn',
+
+    /** Lint punctuation glued onto a translation, e.g. <Trans>Email</Trans>: (default: 'off').
+     * Opt-in; accepts the same values as checkConcatenation. */
+    checkPunctuationConcatenation: 'off',
   },
   
   // TypeScript type generation

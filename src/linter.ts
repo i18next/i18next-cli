@@ -317,6 +317,12 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
   return issues
 }
 
+// Literal text that is punctuation only (no letters/digits). Covers ASCII, the
+// CJK fullwidth forms and Arabic variants, since those are exactly the marks whose
+// spacing/shape differ per language (French narrow no-break space before ':',
+// fullwidth '：' in CJK, RTL reordering).
+const PUNCTUATION_ONLY_RE = /^[:.!?,;\-–—…·/|&()[\]{}"'«»„“”‘’：．！？，；、。〜～؛،؟]+$/
+
 /**
  * Detects string concatenation involving translated strings — an i18n
  * anti-pattern because word order and grammar differ across languages, so
@@ -334,17 +340,29 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
  * The fix in both cases is a single key with placeholders:
  *   t('greeting', { name })  /  <Trans i18nKey="greeting">Hello {{name}}</Trans>
  *
- * Severity is controlled by `lint.checkConcatenation`: 'warn' (default) reports
- * without failing the run, 'error' makes it fail (exit non-zero), 'off'/false
- * disables it.
+ * Additionally, when `lint.checkPunctuationConcatenation` is enabled (opt-in,
+ * default 'off'), flags punctuation glued onto a translation:
+ *   <label><Trans>Email</Trans>:</label>   /   <div>- <Trans>item</Trans></div>
+ *
+ * Severity for both is controlled by their config option: 'warn' reports without
+ * failing the run, 'error' makes it fail (exit non-zero), 'off'/false disables it.
  */
 function lintConcatenation (ast: any, code: string, config: I18nextToolkitConfig): LintIssue[] {
   const issues: LintIssue[] = []
-  // Resolve the check's severity. Default 'warn'. `false`/'off' disable it;
-  // `'error'` makes concatenation fail the run (exit non-zero); `true`/'warn' warn.
+  // Resolve each check's severity independently. `false`/'off' disable a check;
+  // `'error'` makes it fail the run (exit non-zero); `true`/'warn' warn.
+  // checkConcatenation defaults to on ('warn'); checkPunctuationConcatenation
+  // defaults to off (opt-in), since punctuation outside a translation is often
+  // deliberate and flagging it by default would be noisy.
   const setting = config.lint?.checkConcatenation
-  if (setting === false || setting === 'off') return issues
+  const concatEnabled = setting !== false && setting !== 'off'
   const severity: 'error' | 'warning' = setting === 'error' ? 'error' : 'warning'
+
+  const punctSetting = config.lint?.checkPunctuationConcatenation
+  const punctEnabled = punctSetting === true || punctSetting === 'warn' || punctSetting === 'error'
+  const punctSeverity: 'error' | 'warning' = punctSetting === 'error' ? 'error' : 'warning'
+
+  if (!concatEnabled && !punctEnabled) return issues
 
   const transComponents = new Set((config.extract.transComponents || ['Trans']).map(s => s.toLowerCase()))
 
@@ -356,6 +374,19 @@ function lintConcatenation (ast: any, code: string, config: I18nextToolkitConfig
     }
     // ponytail: span normalisation failed (also degrades ignore handling); coarse line 1.
     return 1
+  }
+
+  // A JSXText span starts right after the preceding tag, so it can begin on an
+  // earlier line than its visible text. Skip the leading whitespace to report the
+  // line the punctuation actually sits on.
+  const lineOfText = (node: any): number => {
+    const start = node?.span?.start
+    if (typeof start === 'number' && typeof node.value === 'string') {
+      const offset = node.value.length - node.value.trimStart().length
+      const pos = lineColumnFromOffset(code, start + offset)
+      if (pos) return pos.line
+    }
+    return lineOf(node)
   }
 
   // Is `node` a translated-string operand of a concatenation? True when it is a
@@ -390,7 +421,7 @@ function lintConcatenation (ast: any, code: string, config: I18nextToolkitConfig
 
     // JS: `+` concatenation involving a t() call. Only report the outermost `+`
     // of a chain (skip when the parent is also a `+`) so one chain = one issue.
-    if (node.type === 'BinaryExpression' && node.operator === '+') {
+    if (concatEnabled && node.type === 'BinaryExpression' && node.operator === '+') {
       const parentIsPlus = parent?.type === 'BinaryExpression' && parent.operator === '+'
       if (!parentIsPlus && (isTranslatedConcatOperand(node.left) || isTranslatedConcatOperand(node.right))) {
         issues.push({
@@ -406,29 +437,50 @@ function lintConcatenation (ast: any, code: string, config: I18nextToolkitConfig
     // direct siblings — a <Trans> component or a `{t(...)}` expression. Covers
     // <Trans>…</Trans><Trans>…</Trans>, <Trans>…</Trans>{t(…)} and {t(…)}{t(…)}.
     if ((node.type === 'JSXElement' || node.type === 'JSXFragment') && Array.isArray(node.children)) {
-      let unitCount = 0
-      let firstUnit: any = null
-      for (const child of node.children) {
-        if (!child || typeof child !== 'object') continue
-        let isUnit = false
+      const children = node.children.filter((c: any) => c && typeof c === 'object')
+      const isUnit = (child: any): boolean => {
         if (child.type === 'JSXElement') {
           const name = getJsxName(child)
-          isUnit = !!name && transComponents.has(name.toLowerCase())
-        } else if (child.type === 'JSXExpressionContainer') {
-          isUnit = isTranslationCall(child.expression, config)
+          return !!name && transComponents.has(name.toLowerCase())
         }
-        if (isUnit) {
-          unitCount++
-          if (!firstUnit) firstUnit = child
-        }
+        if (child.type === 'JSXExpressionContainer') return isTranslationCall(child.expression, config)
+        return false
       }
-      if (unitCount >= 2 && firstUnit) {
+
+      const units = children.filter(isUnit)
+      let reportedHere = false
+      if (concatEnabled && units.length >= 2) {
         issues.push({
           text: 'Avoid splitting text across multiple translations (<Trans> or t()). Use a single translation with placeholders instead.',
-          line: lineOf(firstUnit),
+          line: lineOf(units[0]),
           type: 'concatenation',
           severity,
         })
+        reportedHere = true
+      }
+
+      // Punctuation glued onto a translation, e.g. `<Trans>Email</Trans>:` or
+      // `- <Trans>item</Trans>`. Skipped when the element was already reported
+      // above, so one problem yields one issue. Opt-in via config.
+      if (punctEnabled && !reportedHere) {
+        for (let i = 0; i < children.length; i++) {
+          const child = children[i]
+          if (child.type !== 'JSXText') continue
+          const trimmed = child.value.trim()
+          if (!trimmed || !PUNCTUATION_ONLY_RE.test(trimmed)) continue
+          // Only flag when it actually abuts a translation (previous or next
+          // non-blank sibling), not when it merely shares a parent.
+          const prev = children.slice(0, i).reverse().find((c: any) => c.type !== 'JSXText' || c.value.trim())
+          const next = children.slice(i + 1).find((c: any) => c.type !== 'JSXText' || c.value.trim())
+          const neighbour = [prev, next].find(c => c && isUnit(c))
+          if (!neighbour) continue
+          issues.push({
+            text: `Avoid concatenating punctuation ("${trimmed}") with a translation. Include it in the translation string or use semantic markup, since punctuation spacing and form differ across languages.`,
+            line: lineOfText(child),
+            type: 'concatenation',
+            severity: punctSeverity,
+          })
+        }
       }
     }
 
