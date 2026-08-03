@@ -516,4 +516,91 @@ describe('extractor: finite dynamic key resolution (issue #210)', () => {
       expect(translationFile!.newTranslations).toHaveProperty('tabs.billing')
     })
   })
+  // ─── Interface-typed function parameters (issue #210 follow-up) ──────────────
+
+  describe('function parameters typed by an interface / object type', () => {
+    it('should resolve a destructured prop typed by an interface member', async () => {
+      const sampleCode = `
+        type ChangeType = "all" | "next" | "this";
+        interface IProps { size: ChangeType; }
+        function getSomething({ size }: IProps): string {
+          return t(\`some_\${size}\`);
+        }
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile).toBeDefined()
+      expect(Object.keys(translationFile!.newTranslations)).toEqual(
+        expect.arrayContaining(['some_all', 'some_next', 'some_this'])
+      )
+    })
+
+    it('should resolve a renamed destructured prop', async () => {
+      const sampleCode = `
+        interface IProps { size: 'a' | 'b'; }
+        const render = ({ size: s }: IProps) => t(\`opt_\${s}\`);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(Object.keys(translationFile!.newTranslations)).toEqual(
+        expect.arrayContaining(['opt_a', 'opt_b'])
+      )
+    })
+
+    it('should resolve member access on an interface-typed parameter', async () => {
+      const sampleCode = `
+        type ChangeType = "all" | "next";
+        interface IProps { size: ChangeType; }
+        function getSomething(props: IProps): string {
+          return t(\`some_\${props.size}\`);
+        }
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(Object.keys(translationFile!.newTranslations)).toEqual(
+        expect.arrayContaining(['some_all', 'some_next'])
+      )
+    })
+
+    it('should resolve an object type alias and inline type literal', async () => {
+      const sampleCode = `
+        type Props = { size: 'x' | 'y' };
+        const a = ({ size }: Props) => t(\`alias_\${size}\`);
+        const b = ({ tone }: { tone: 'warm' | 'cold' }) => t(\`inline_\${tone}\`);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(Object.keys(translationFile!.newTranslations)).toEqual(
+        expect.arrayContaining(['alias_x', 'alias_y', 'inline_warm', 'inline_cold'])
+      )
+    })
+
+    it('should not leak the binding outside the function scope', async () => {
+      const sampleCode = `
+        interface IProps { size: 'a' | 'b'; }
+        function inner({ size }: IProps) { return t(\`in_\${size}\`); }
+        t(\`out_\${size}\`);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+      const keys = Object.keys(translationFile!.newTranslations)
+
+      expect(keys).toEqual(expect.arrayContaining(['in_a', 'in_b']))
+      expect(keys.some(k => k.startsWith('out_'))).toBe(false)
+    })
+  })
 })

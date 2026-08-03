@@ -34,6 +34,15 @@ export class ExpressionResolver {
   // callback parameters while the callback body is being walked.
   private temporaryVariables: Map<string, string[]> = new Map()
 
+  // Shared (cross-file) table for object-shaped types: interfaces and object
+  // type aliases. Maps typeName -> { memberName: possible string values }.
+  // e.g. `interface IProps { size: ChangeType }` -> { IProps: { size: ['all','next'] } }
+  private objectTypeTable: Map<string, Record<string, string[]>> = new Map()
+
+  // Temporary per-scope bindings for identifiers holding an object-shaped type,
+  // e.g. `function f(props: IProps)` -> { props: { size: ['all','next'] } }.
+  private temporaryObjectVariables: Map<string, Record<string, string[]>> = new Map()
+
   constructor (hooks: ASTVisitorHooks) {
     this.hooks = hooks
   }
@@ -227,6 +236,12 @@ export class ExpressionResolver {
       // SWC puts the actual type in `.typeAnnotation`
       const tsType = node.typeAnnotation ?? node.typeAnn
       if (!tsType) return
+      // `type IProps = { size: ChangeType }` — object shape, not a string union.
+      if (tsType.type === 'TsTypeLiteral') {
+        const members = this.collectObjectTypeMembers(tsType.members)
+        if (members) this.objectTypeTable.set(name, members)
+        return
+      }
       const vals = this.resolvePossibleStringValuesFromType(tsType)
       if (vals.length > 0) {
         this.typeAliasTable.set(name, vals)
@@ -236,6 +251,73 @@ export class ExpressionResolver {
     } catch {
       // noop
     }
+  }
+
+  /**
+   * Capture a TypeScript interface so that parameters typed by it
+   * (`function f({ size }: IProps)` / `f(props: IProps)`) can resolve their
+   * members to string-literal unions.
+   *
+   * SWC node shape: `TsInterfaceDeclaration` with `body.body` members.
+   */
+  captureInterfaceDeclaration (node: any): void {
+    try {
+      const name: string | undefined = node?.id?.type === 'Identifier' ? node.id.value : undefined
+      if (!name) return
+      const members = this.collectObjectTypeMembers(node?.body?.body)
+      if (members) this.objectTypeTable.set(name, members)
+    } catch {
+      // noop
+    }
+  }
+
+  /**
+   * Build `{ memberName: possibleStringValues }` for an object-shaped type
+   * (interface body or object type-literal members). Only members whose type
+   * resolves to a finite string set are kept; returns undefined when none do.
+   */
+  private collectObjectTypeMembers (members: any[]): Record<string, string[]> | undefined {
+    if (!Array.isArray(members)) return undefined
+    const map: Record<string, string[]> = {}
+    for (const m of members) {
+      if (!m || m.type !== 'TsPropertySignature') continue
+      const memberName = m.key?.type === 'Identifier' ? m.key.value : m.key?.type === 'StringLiteral' ? m.key.value : undefined
+      if (!memberName) continue
+      const tsType = m.typeAnnotation?.typeAnnotation ?? m.typeAnnotation
+      if (!tsType) continue
+      const vals = this.resolvePossibleStringValuesFromType(tsType)
+      if (vals.length > 0) map[memberName] = vals
+    }
+    return Object.keys(map).length > 0 ? map : undefined
+  }
+
+  /**
+   * Resolve a type annotation that refers to an object shape (interface, object
+   * type alias, or inline type literal) to its member → string values map.
+   */
+  public resolveTypeMembers (tsType: any): Record<string, string[]> | undefined {
+    try {
+      if (!tsType) return undefined
+      if (tsType.type === 'TsTypeLiteral') {
+        return this.collectObjectTypeMembers(tsType.members)
+      }
+      if (tsType.type === 'TsTypeReference' && tsType.typeName?.type === 'Identifier') {
+        return this.objectTypeTable.get(tsType.typeName.value)
+      }
+    } catch {}
+    return undefined
+  }
+
+  /**
+   * Temporarily bind an identifier to an object-shaped type's members, so that
+   * `props.size` inside the function body resolves to the member's values.
+   */
+  public setTemporaryObjectVariable (name: string, members: Record<string, string[]>): void {
+    this.temporaryObjectVariables.set(name, members)
+  }
+
+  public deleteTemporaryObjectVariable (name: string): void {
+    this.temporaryObjectVariables.delete(name)
   }
 
   /**
@@ -567,6 +649,16 @@ export class ExpressionResolver {
         const prop = expression.property
         // only handle simple identifier base + simple property (Identifier or computed StringLiteral)
         if (obj.type === 'Identifier') {
+          // Parameter typed by an interface / object type: `props.size`
+          const objMembers = this.temporaryObjectVariables.get(obj.value)
+          if (objMembers) {
+            const propName = prop.type === 'Identifier'
+              ? prop.value
+              : prop.type === 'Computed' && prop.expression?.type === 'StringLiteral'
+                ? prop.expression.value
+                : undefined
+            if (propName && objMembers[propName]) return objMembers[propName]
+          }
           const baseVar = this.variableTable.get(obj.value)
           const baseShared = this.sharedEnumTable.get(obj.value)
           const base = baseVar ?? baseShared

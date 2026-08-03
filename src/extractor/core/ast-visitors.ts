@@ -138,6 +138,13 @@ export class ASTVisitors {
         // Type aliases → ExpressionResolver.sharedTypeAliasTable
         this.expressionResolver.captureTypeAliasDeclaration(node)
         break
+      case 'TsInterfaceDeclaration':
+      case 'TSInterfaceDeclaration':
+      case 'TsInterfaceDecl':
+        // Interfaces → ExpressionResolver.objectTypeTable, so params typed by
+        // them (`{ size }: IProps`) resolve to their string-literal unions.
+        this.expressionResolver.captureInterfaceDeclaration(node)
+        break
       case 'FunctionDeclaration':
       case 'FnDecl':
         // Return-type annotations or inferred return values for t(fn()) patterns
@@ -193,6 +200,7 @@ export class ASTVisitors {
     let isNewScope = false
     let isNewClassScope = false
     let paramTemporaries: string[] | undefined
+    let paramObjectTemporaries: string[] | undefined
 
     // ENTER CLASS SCOPE for class declarations / expressions and pre-register
     // class field initializers so that later `this.<field>` references inside
@@ -245,6 +253,30 @@ export class ASTVisitors {
         // handle common param shapes: Identifier, AssignmentPattern (default), RestElement ignored
         let ident: any
         if (!p) continue
+
+        // Destructured object param: `function f({ size }: IProps)`.
+        // Bind each destructured local name to its interface member's values.
+        const pat = p.pat ?? p.pattern ?? p
+        if (pat.type === 'ObjectPattern') {
+          const patType = pat.typeAnnotation?.typeAnnotation ?? pat.typeAnnotation
+          const members = this.expressionResolver.resolveTypeMembers(patType)
+          if (members) {
+            for (const prop of (pat.properties ?? [])) {
+              // `{ size }` / `{ size = 'all' }` → AssignmentPatternProperty (local name is the key)
+              // `{ size: s }` / `{ size: s = 'all' }` → KeyValuePatternProperty
+              const memberName = prop?.key?.value
+              let localNode = prop?.type === 'KeyValuePatternProperty' ? prop.value : prop?.key
+              if (localNode?.type === 'AssignmentPattern') localNode = localNode.left
+              const localName = localNode?.type === 'Identifier' ? localNode.value : undefined
+              if (!memberName || !localName || !members[memberName]) continue
+              this.expressionResolver.setTemporaryVariable(localName, members[memberName])
+              if (!paramTemporaries) paramTemporaries = []
+              paramTemporaries.push(localName)
+            }
+          }
+          continue
+        }
+
         // direct identifier (arrow fn params etc)
         if (p.type === 'Identifier') ident = p
         // default params: (x = ...) -> AssignmentPattern.left
@@ -374,6 +406,14 @@ export class ASTVisitors {
             this.expressionResolver.setTemporaryVariable(paramKey, paramVals)
             if (!paramTemporaries) paramTemporaries = []
             paramTemporaries.push(paramKey)
+          } else {
+            // Object-shaped param (`props: IProps`) so `props.size` resolves.
+            const members = this.expressionResolver.resolveTypeMembers(typeAnn)
+            if (members) {
+              this.expressionResolver.setTemporaryObjectVariable(paramKey, members)
+              if (!paramObjectTemporaries) paramObjectTemporaries = []
+              paramObjectTemporaries.push(paramKey)
+            }
           }
         }
       }
@@ -401,6 +441,11 @@ export class ASTVisitors {
       case 'TSTypeAliasDeclaration':
       case 'TsTypeAliasDecl':
         this.expressionResolver.captureTypeAliasDeclaration(node)
+        break
+      case 'TsInterfaceDeclaration':
+      case 'TSInterfaceDeclaration':
+      case 'TsInterfaceDecl':
+        this.expressionResolver.captureInterfaceDeclaration(node)
         break
       // pattern 3: capture function return types so `t(fn())` can be resolved
       case 'FunctionDeclaration':
@@ -585,6 +630,11 @@ export class ASTVisitors {
       if (paramTemporaries) {
         for (const name of paramTemporaries) {
           this.expressionResolver.deleteTemporaryVariable(name)
+        }
+      }
+      if (paramObjectTemporaries) {
+        for (const name of paramObjectTemporaries) {
+          this.expressionResolver.deleteTemporaryObjectVariable(name)
         }
       }
       this.scopeManager.exitScope()
