@@ -402,6 +402,9 @@ function addImportStatements (
     importStartRegex.lastIndex = endOfImport
   }
 
+  // Last import may end at EOF without a trailing newline
+  if (insertPos > 0 && content[insertPos - 1] !== '\n') importStatement = `\n${importStatement}`
+
   s.appendRight(insertPos, importStatement)
 }
 
@@ -429,7 +432,11 @@ function findImportStatementEnd (content: string, start: number): number {
     if (ch === '{' || ch === '(' || ch === '[') { depth++; continue }
     if (ch === '}' || ch === ')' || ch === ']') { depth--; continue }
     if (depth === 0 && sawString && (ch === '\n' || ch === ';')) {
-      return i + 1
+      if (ch === '\n') return i + 1
+      // Terminated by `;` — consume the rest of the line so the next statement
+      // is inserted on its own line rather than appended after the semicolon.
+      const newlinePos = content.indexOf('\n', i)
+      return newlinePos === -1 ? content.length : newlinePos + 1
     }
   }
   return content.length

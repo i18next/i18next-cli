@@ -451,6 +451,21 @@ The instrumenter uses confidence heuristics to avoid transforming:
 - HTML attribute values that appear technical
 - Template literals with only expressions (no static text)
 - Strings already inside `t()` calls or `<Trans>` components
+- **Module-scope strings** — anything outside a function body, e.g. a top-level config/registry array:
+  ```ts
+  export const SETTINGS_SECTIONS = [
+    { id: 'appearance', label: 'Appearance' }, // left untouched
+  ]
+  ```
+  A `t()` call there would be evaluated once, when the module is first imported — possibly before i18next
+  is initialized, and never again when the language changes. Move the text into a component, or expose the
+  registry as a hook that calls `useTranslation()` internally:
+  ```ts
+  export const useSettingsSections = () => {
+    const { t } = useTranslation()
+    return [{ id: 'appearance', label: t('appearance', 'Appearance') }]
+  }
+  ```
 
 **Auto-injection:**
 

@@ -228,6 +228,37 @@ describe('transformer', () => {
       expect(result.newContent).toContain('import {\n  CCol,\n  CRow,\n}')
     })
 
+    it('puts the new import on its own line after a semicolon-terminated import', () => {
+      const content = [
+        'import { BellIcon } from "./icons";',
+        'export function label () {',
+        '  return "Theme and display preferences";',
+        '}'
+      ].join('\n')
+      const offset = content.indexOf('Theme')
+      const candidate: CandidateString = {
+        content: 'Theme and display preferences',
+        confidence: 0.9,
+        offset,
+        endOffset: offset + 'Theme and display preferences'.length,
+        type: 'string-literal',
+        file: 'test.tsx',
+        line: 3,
+        column: 10,
+        key: 'theme'
+      }
+
+      const result = transformFile(content, 'test.tsx', [candidate], {
+        isDryRun: false,
+        hasReact: true,
+        isPrimaryLanguageFile: true,
+        config: mockConfig
+      })
+
+      expect(result.newContent).not.toContain('";import')
+      expect(result.newContent).toContain("\nimport i18next from 'i18next'")
+    })
+
     it('skips low-confidence candidates', () => {
       const content = 'const msg = "type"'
       const candidate: CandidateString = {

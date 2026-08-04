@@ -90,6 +90,17 @@ export async function runInstrumenter (
         // Run instrumentOnResult plugin pipeline
         candidates = await runInstrumentOnResultPipeline(file, candidates, plugins, logger)
 
+        if (scanResult.moduleScopeSkipped > 0) {
+          totalCandidates += scanResult.moduleScopeSkipped
+          totalSkipped += scanResult.moduleScopeSkipped
+          logger.warn(
+            `${file}: skipped ${scanResult.moduleScopeSkipped} module-scope string(s). ` +
+            'A t() call there runs once at import time — before i18next may be initialized — and never updates on language change. ' +
+            'Move the text into a component/hook (e.g. a useSections() hook calling useTranslation()), or read the key at render time. ' +
+            'See: https://www.locize.com/blog/how-to-use-i18next-t-outside-react-components/'
+          )
+        }
+
         if (candidates.length === 0 && languageChangeSites.length === 0) {
           continue
         }
@@ -254,6 +265,7 @@ async function scanFileForCandidates (
   const candidates: CandidateString[] = []
   const components: ComponentBoundary[] = []
   const languageChangeSites: LanguageChangeSite[] = []
+  let moduleScopeSkipped = 0
   const fileExt = extname(file).toLowerCase()
   const isTypeScriptFile = ['.ts', '.tsx', '.mts', '.cts'].includes(fileExt)
   const isTSX = fileExt === '.tsx'
@@ -303,6 +315,10 @@ async function scanFileForCandidates (
     // Detect React function component boundaries
     detectComponentBoundaries(ast, content, components)
 
+    // Collect function spans so module-scope strings can be excluded below
+    const functionSpans: Array<{ start: number, end: number }> = []
+    collectFunctionSpans(ast, functionSpans)
+
     // Visit AST to find string literals
     visitNodeForStrings(ast, content, file, config, candidates)
 
@@ -323,6 +339,19 @@ async function scanFileForCandidates (
           break
         }
       }
+    }
+
+    // Drop module-scope candidates: wrapping them yields a t() call evaluated
+    // once at import time — possibly before i18next is initialized, and never
+    // re-evaluated on language change. See issue #278.
+    const moduleScoped = candidates.filter(
+      c => !functionSpans.some(span => c.offset >= span.start && c.endOffset <= span.end)
+    )
+    if (moduleScoped.length > 0) {
+      moduleScopeSkipped = moduleScoped.length
+      const keep = candidates.filter(c => !moduleScoped.includes(c))
+      candidates.length = 0
+      candidates.push(...keep)
     }
 
     // Annotate language change sites with their enclosing component (if any)
@@ -359,7 +388,47 @@ async function scanFileForCandidates (
     // Silently skip files that can't be parsed
   }
 
-  return { candidates, components, languageChangeSites }
+  return { candidates, components, languageChangeSites, moduleScopeSkipped }
+}
+
+/**
+ * Node types whose span delimits deferred (call-time) evaluation. A string
+ * outside all of them is evaluated when the module is first imported.
+ */
+const FUNCTION_NODE_TYPES = new Set([
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ArrowFunctionExpression',
+  'ClassMethod',
+  'PrivateMethod',
+  'MethodProperty',
+  'GetterProperty',
+  'SetterProperty',
+  'Constructor'
+])
+
+/**
+ * Recursively collects the spans of every function-like node in the AST.
+ */
+function collectFunctionSpans (node: any, spans: Array<{ start: number, end: number }>): void {
+  if (!node || typeof node !== 'object') return
+
+  if (FUNCTION_NODE_TYPES.has(node.type) && node.span) {
+    spans.push({ start: node.span.start, end: node.span.end })
+    // No need to recurse: nested functions are inside this span already.
+    return
+  }
+
+  for (const key in node) {
+    const value = node[key]
+    if (value && typeof value === 'object') {
+      if (Array.isArray(value)) {
+        value.forEach(item => collectFunctionSpans(item, spans))
+      } else {
+        collectFunctionSpans(value, spans)
+      }
+    }
+  }
 }
 
 /**

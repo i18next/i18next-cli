@@ -1106,13 +1106,12 @@ export function MixedChars () {
       [
         "import React from 'react'",
         '',
-        'const FILTER_OPTIONS: { key: string; label: string }[] = [',
-        "  { key: 'all', label: 'All' },",
-        "  { key: 'active', label: 'Active' },",
-        "  { key: 'completed', label: 'Completed' },",
-        ']',
-        '',
         'export function FilterBar () {',
+        '  const FILTER_OPTIONS: { key: string; label: string }[] = [',
+        "    { key: 'all', label: 'All' },",
+        "    { key: 'active', label: 'Active' },",
+        "    { key: 'completed', label: 'Completed' },",
+        '  ]',
         '  return (',
         '    <ul>',
         '      {FILTER_OPTIONS.map(opt => <li key={opt.key}>{opt.label}</li>)}',
@@ -1150,8 +1149,9 @@ export function MixedChars () {
   // ───────────────────────────────────────────────────────────────────────────
   // Warning for i18next.t() in React files
   // ───────────────────────────────────────────────────────────────────────────
-  it('warns when i18next.t() is used outside a component in a .tsx file', async () => {
-    // Module-level translatable strings in a .tsx file → will get i18next.t() instead of hook-based t()
+  it('leaves module-scope strings untouched and warns about them', async () => {
+    // A module-level registry: a t() call here would run once at import time
+    // and never update on language change → must be skipped (issue #278)
     await fs.writeFile(
       join(tempDir, 'src', 'components', 'OutsideModule.tsx'),
       [
@@ -1173,14 +1173,48 @@ export function MixedChars () {
       ].join('\n')
     )
 
+    const warnings: string[] = []
+    const capturingLogger: Logger = { info () {}, warn (msg: any) { warnings.push(String(msg)) }, error () {} }
+
+    const config = makeConfig()
+    await runInstrumenter(config, { isDryRun: false, quiet: true }, capturingLogger)
+
+    // File must be left as-is — no i18next.t() at module scope
+    const src = await readFile(join(tempDir, 'src', 'components', 'OutsideModule.tsx'), 'utf-8')
+    expect(src).toContain("label: 'Dashboard Overview'")
+    expect(src).not.toContain('i18next.t(')
+
+    const moduleScopeWarning = warnings.find(w => w.includes('module-scope string'))
+    expect(moduleScopeWarning).toBeDefined()
+    expect(moduleScopeWarning).toContain('OutsideModule.tsx')
+  })
+
+  it('warns when i18next.t() is used outside a component in a .tsx file', async () => {
+    // Strings inside a plain helper function (not a component) → i18next.t()
+    await fs.writeFile(
+      join(tempDir, 'src', 'components', 'OutsideHelper.tsx'),
+      [
+        "import React from 'react'",
+        '',
+        'export function formatGreeting () {',
+        "  return 'Welcome to your dashboard'",
+        '}',
+        '',
+        'export function Nav () {',
+        '  return <p>{formatGreeting()}</p>',
+        '}',
+        ''
+      ].join('\n')
+    )
+
     const config = makeConfig()
     const results = await runInstrumenter(config, { isDryRun: false, quiet: true }, silentLogger)
 
     // Find the result for our test file
-    const fileResult = results.files.find(f => f.file.includes('OutsideModule.tsx'))
+    const fileResult = results.files.find(f => f.file.includes('OutsideHelper.tsx'))
     expect(fileResult).toBeDefined()
 
-    // At least one candidate should be outside a component (module-level)
+    // At least one candidate should be outside a component (helper function)
     const outsideCandidates = fileResult!.candidates.filter(c => !c.insideComponent)
     expect(outsideCandidates.length).toBeGreaterThanOrEqual(1)
 

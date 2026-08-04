@@ -1228,6 +1228,8 @@ export interface FileScanResult {
   components: ComponentBoundary[]
   /** Detected language-change call sites */
   languageChangeSites: LanguageChangeSite[]
+  /** Number of candidates dropped because they live at module scope */
+  moduleScopeSkipped: number
 }
 
 /**

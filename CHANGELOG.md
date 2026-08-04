@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.67.7
+
+- fix(instrument): skip module-scope strings instead of wrapping them in a `t()` call. A
+  top-level config/registry literal (`export const SECTIONS = [{ label: 'Appearance' }]`)
+  used to be rewritten to `i18next.t(...)` — evaluated once when the module is first
+  imported, so it may run before i18next is initialized and never updates on language
+  change. Such candidates are now left untouched and reported with a warning pointing at
+  the hook alternative. Strings inside plain (non-component) functions are still
+  instrumented with `i18next.t()` as before
+  ([#278](https://github.com/i18next/i18next-cli/issues/278)).
+- fix(instrument): a generated `import i18next from 'i18next'` is no longer appended to the
+  same line as a semicolon-terminated import
+  (`import { X } from "./x";import i18next from 'i18next'`). The insertion point now moves
+  past the end of the line, and a leading newline is added when the last import ends at
+  EOF without one ([#278](https://github.com/i18next/i18next-cli/issues/278)).
+
 ## 1.67.6
 
 - fix(lint): a directory whose name matches the input globs (e.g. a folder called
