@@ -7,7 +7,7 @@ import { styleText } from 'node:util'
 import { ConsoleLogger } from './utils/logger.js'
 import { createSpinnerLike } from './utils/wrap-ora.js'
 import { translatableAttributes, ignoredAttributeLowerSet, ignoredTags as sharedIgnoredTags, acceptedTags as sharedAcceptedTags } from './utils/jsx-attributes.js'
-import { findFirstTokenIndex, normalizeASTSpans, buildByteToCharMap, convertSpansToCharIndices, collectIgnoredLineRanges, lineColumnFromOffset } from './extractor/parsers/ast-utils.js'
+import { normalizeSpansToCharIndices, collectIgnoredLineRanges, lineColumnFromOffset } from './extractor/parsers/ast-utils.js'
 import { matchesFunctionPattern } from './extractor/utils/function-matcher.js'
 import type { I18nextToolkitConfig, Logger, LintIssue, Plugin, LintPluginContext } from './types.js'
 
@@ -629,10 +629,7 @@ export class Linter extends EventEmitter<LinterEventMap> {
         // (findHardcodedStrings/lintInterpolationParams locate issues via text
         // search and don't read spans, so this only affects ignore handling.)
         try {
-          const spanBase = ast.span.start - findFirstTokenIndex(code)
-          normalizeASTSpans(ast, spanBase)
-          const byteToChar = buildByteToCharMap(code)
-          if (byteToChar) convertSpansToCharIndices(ast, byteToChar)
+          normalizeSpansToCharIndices(ast, code)
         } catch {
           // If span normalisation fails for any reason, fall back to text-based
           // issue detection without block-scoped ignore support.

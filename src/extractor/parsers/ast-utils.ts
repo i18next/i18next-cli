@@ -170,6 +170,23 @@ export function convertSpansToCharIndices (node: any, byteToChar: number[]): voi
   }
 }
 
+/**
+ * Normalises every span in a freshly parsed SWC AST to a file-relative UTF-16
+ * character index — the unit JavaScript strings, MagicString and
+ * `lineColumnFromOffset` all use.
+ *
+ * Combines the two steps that must always happen together: subtracting SWC's
+ * accumulated base (which is expressed in UTF-8 *bytes*, hence the
+ * `Buffer.byteLength` of the leading trivia) and converting the remaining byte
+ * offsets to char indices.
+ */
+export function normalizeSpansToCharIndices (ast: any, code: string): void {
+  const firstTokenByteIdx = Buffer.byteLength(code.slice(0, findFirstTokenIndex(code)), 'utf8')
+  normalizeASTSpans(ast, ast.span.start - firstTokenByteIdx)
+  const byteToChar = buildByteToCharMap(code)
+  if (byteToChar) convertSpansToCharIndices(ast, byteToChar)
+}
+
 // ─── Ignore-comment helpers ──────────────────────────────────────────────────
 
 /**

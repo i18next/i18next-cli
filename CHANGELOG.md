@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.67.5
+
+- fix(extract): correct `line`/`column` in plugin location metadata for files containing
+  multi-byte characters (em dashes, accented letters, CJK, emoji). SWC reports AST spans
+  as UTF-8 byte offsets, but the extractor treated them as JavaScript string indices, so
+  every multi-byte character shifted all following locations. The span base was also
+  computed by mixing a byte offset with a character index, which additionally skewed
+  locations in files whose leading comments contain multi-byte characters — that part
+  affected the linter and instrumenter too
+  ([#276](https://github.com/i18next/i18next-cli/issues/276)).
+
 ## 1.67.4
 
 - fix(extract): resolve finite string-literal unions that reach a key through an

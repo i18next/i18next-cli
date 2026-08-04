@@ -13,7 +13,7 @@ import { generateKeyFromContent, createKeyRegistry } from './key-generator.js'
 import { createSpinnerLike } from '../../utils/wrap-ora.js'
 import { ConsoleLogger } from '../../utils/logger.js'
 import { ignoredAttributeSet } from '../../utils/jsx-attributes.js'
-import { normalizeASTSpans, findFirstTokenIndex, buildByteToCharMap, convertSpansToCharIndices, collectIgnoredLineRanges } from '../../extractor/parsers/ast-utils.js'
+import { normalizeSpansToCharIndices, collectIgnoredLineRanges } from '../../extractor/parsers/ast-utils.js'
 import { getOutputPath } from '../../utils/file-utils.js'
 
 /**
@@ -294,19 +294,11 @@ async function scanFileForCandidates (
       }
     }
 
-    // Normalize spans
-    const firstTokenIdx = findFirstTokenIndex(content)
-    const spanBase = ast.span.start - firstTokenIdx
-    normalizeASTSpans(ast, spanBase)
-
-    // Convert byte offsets → char indices for files with multi-byte characters.
-    // SWC reports spans as UTF-8 byte offsets, but JavaScript strings and
-    // MagicString use UTF-16 code-unit indices. Without this conversion,
-    // every emoji / accented char / CJK char shifts all subsequent offsets.
-    const byteToChar = buildByteToCharMap(content)
-    if (byteToChar) {
-      convertSpansToCharIndices(ast, byteToChar)
-    }
+    // Normalize spans to file-relative char indices. SWC reports spans as UTF-8
+    // byte offsets, but JavaScript strings and MagicString use UTF-16 code-unit
+    // indices — without the conversion every emoji / accented char / CJK char
+    // shifts all subsequent offsets.
+    normalizeSpansToCharIndices(ast, content)
 
     // Detect React function component boundaries
     detectComponentBoundaries(ast, content, components)
