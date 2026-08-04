@@ -1494,7 +1494,9 @@ async function getSourceFilesForInstrumentation (config: I18nextToolkitConfig): 
 
   return await glob(config.extract.input, {
     ignore: [...defaultIgnore, ...userIgnore],
-    cwd: process.cwd()
+    cwd: process.cwd(),
+    // A directory named e.g. `abc.tsx` matches the input globs
+    nodir: true
   })
 }
 

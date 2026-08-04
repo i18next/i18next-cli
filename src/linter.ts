@@ -553,7 +553,9 @@ export class Linter extends EventEmitter<LinterEventMap> {
         : config.lint?.ignore ? [config.lint.ignore] : []
 
       const sourceFiles = await glob(config.extract.input, {
-        ignore: [...defaultIgnore, ...extractIgnore, ...lintIgnore]
+        ignore: [...defaultIgnore, ...extractIgnore, ...lintIgnore],
+        // A directory named e.g. `abc.tsx` matches the input globs; reading it throws EISDIR
+        nodir: true
       })
       this.emit('progress', { message: `Analyzing ${sourceFiles.length} source files...` })
       // Load translation values once so the interpolation linter can resolve lookup keys

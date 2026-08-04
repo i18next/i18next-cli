@@ -149,5 +149,7 @@ async function processSourceFiles (config: I18nextToolkitConfig): Promise<string
     // Combine default ignore patterns with user-configured ones
     ignore: [...defaultIgnore, ...userIgnore],
     cwd: process.cwd(),
+    // A directory named e.g. `abc.tsx` matches the input globs
+    nodir: true,
   })
 }

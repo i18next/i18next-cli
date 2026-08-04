@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.67.6
+
+- fix(lint): a directory whose name matches the input globs (e.g. a folder called
+  `abc.tsx`) no longer aborts the run with `EISDIR: illegal operation on a directory,
+  read`. Source-file globs now pass `nodir: true`, which also covers the extractor and
+  the instrumenter ([#277](https://github.com/i18next/i18next-cli/issues/277)).
+
 ## 1.67.5
 
 - fix(extract): correct `line`/`column` in plugin location metadata for files containing
