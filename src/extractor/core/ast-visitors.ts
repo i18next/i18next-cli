@@ -201,6 +201,7 @@ export class ASTVisitors {
     let isNewClassScope = false
     let paramTemporaries: string[] | undefined
     let paramObjectTemporaries: string[] | undefined
+    let paramArrayTemporaries: string[] | undefined
 
     // ENTER CLASS SCOPE for class declarations / expressions and pre-register
     // class field initializers so that later `this.<field>` references inside
@@ -413,6 +414,15 @@ export class ASTVisitors {
               this.expressionResolver.setTemporaryObjectVariable(paramKey, members)
               if (!paramObjectTemporaries) paramObjectTemporaries = []
               paramObjectTemporaries.push(paramKey)
+            } else {
+              // Array-of-object param (`items: IProps[]`) so the callback
+              // parameter of `items.map(...)` can be bound to the element type.
+              const elementMembers = this.expressionResolver.resolveArrayElementMembers(typeAnn)
+              if (elementMembers) {
+                this.expressionResolver.setArrayElementMembers(paramKey, elementMembers)
+                if (!paramArrayTemporaries) paramArrayTemporaries = []
+                paramArrayTemporaries.push(paramKey)
+              }
             }
           }
         }
@@ -485,6 +495,10 @@ export class ASTVisitors {
       if (info) {
         this.expressionResolver.setTemporaryVariable(info.paramName, info.values)
         arrayCallbackCleanup = () => this.expressionResolver.deleteTemporaryVariable(info.paramName)
+      } else {
+        // `items.map(({ size }) => ...)` / `items.map(item => ...t(`${item.size}`))`
+        // where `items` is typed as an array of an object shape.
+        arrayCallbackCleanup = this.tryBindObjectArrayCallback(node)
       }
     }
 
@@ -637,6 +651,11 @@ export class ASTVisitors {
           this.expressionResolver.deleteTemporaryObjectVariable(name)
         }
       }
+      if (paramArrayTemporaries) {
+        for (const name of paramArrayTemporaries) {
+          this.expressionResolver.deleteArrayElementMembers(name)
+        }
+      }
       this.scopeManager.exitScope()
     }
 
@@ -700,6 +719,63 @@ export class ASTVisitors {
             }
           }
         }
+      }
+
+      return undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * If `node` is `items.map(cb)` (or forEach/flatMap/…) where `items` is typed
+   * as an array of an object shape (`items: IProps[]`), binds the callback
+   * parameter to the element type for the duration of the callback body:
+   *
+   *   items.map(({ size }) => t(`some|${size}`))   → `size` bound to the union
+   *   items.map(item => t(`some|${item.size}`))    → `item` bound to the members
+   *
+   * Returns a cleanup function, or undefined when nothing was bound.
+   */
+  private tryBindObjectArrayCallback (node: any): (() => void) | undefined {
+    try {
+      const callee = node.callee
+      if (callee?.type !== 'MemberExpression') return undefined
+      const prop = callee.property
+      if (prop?.type !== 'Identifier') return undefined
+      if (!['map', 'forEach', 'flatMap', 'filter', 'find', 'some', 'every'].includes(prop.value)) return undefined
+      if (callee.object?.type !== 'Identifier') return undefined
+
+      const members = this.expressionResolver.getArrayElementMembers(callee.object.value)
+      if (!members) return undefined
+
+      const callbackArg = node.arguments?.[0]?.expression
+      const params: any[] = callbackArg?.params ?? callbackArg?.parameters ?? []
+      const firstParam = params[0]
+      if (!firstParam) return undefined
+
+      const pat = firstParam.pat ?? firstParam.pattern ?? firstParam
+
+      // Destructured element: `({ size }) => …` / `({ size: s }) => …`
+      if (pat.type === 'ObjectPattern') {
+        const bound: string[] = []
+        for (const patProp of (pat.properties ?? [])) {
+          const memberName = patProp?.key?.value
+          let localNode = patProp?.type === 'KeyValuePatternProperty' ? patProp.value : patProp?.key
+          if (localNode?.type === 'AssignmentPattern') localNode = localNode.left
+          const localName = localNode?.type === 'Identifier' ? localNode.value : undefined
+          if (!memberName || !localName || !members[memberName]) continue
+          this.expressionResolver.setTemporaryVariable(localName, members[memberName])
+          bound.push(localName)
+        }
+        if (bound.length === 0) return undefined
+        return () => bound.forEach(name => this.expressionResolver.deleteTemporaryVariable(name))
+      }
+
+      // Whole element: `item => …` so `item.size` resolves
+      if (pat.type === 'Identifier') {
+        this.expressionResolver.setTemporaryObjectVariable(pat.value, members)
+        return () => this.expressionResolver.deleteTemporaryObjectVariable(pat.value)
       }
 
       return undefined

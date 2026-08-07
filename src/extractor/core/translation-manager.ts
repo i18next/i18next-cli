@@ -108,69 +108,54 @@ function sortObject (obj: any, config?: I18nextToolkitConfig, customSort?: (a: s
   // Define the canonical order for plural forms
   const ordinalPluralOrder = pluralForms.map(form => `ordinal${pluralSeparator}${form}`)
 
-  const keys = Object.keys(obj).sort((a, b) => {
-    // Helper function to extract base key and form info
-    const getKeyInfo = (key: string) => {
-      // Handle ordinal plurals: key_ordinal_form or key_context_ordinal_form
-      for (const form of ordinalPluralOrder) {
-        if (key.endsWith(`${pluralSeparator}${form}`)) {
-          const base = key.slice(0, -(pluralSeparator.length + form.length))
-          return { base, form, isOrdinal: true, isPlural: true, fullKey: key }
-        }
+  // Helper function to extract base key and its rank within that base.
+  // Rank orders the variants of one base key: the plain key first, then the
+  // cardinal plural forms in canonical order, then the ordinal ones.
+  const getKeyInfo = (key: string) => {
+    // Handle ordinal plurals: key_ordinal_form or key_context_ordinal_form
+    for (const form of ordinalPluralOrder) {
+      if (key.endsWith(`${pluralSeparator}${form}`)) {
+        const base = key.slice(0, -(pluralSeparator.length + form.length))
+        return { base, rank: pluralForms.length + ordinalPluralOrder.indexOf(form) }
       }
-      // Handle cardinal plurals: key_form or key_context_form
-      for (const form of pluralForms) {
-        if (key.endsWith(`${pluralSeparator}${form}`)) {
-          const base = key.slice(0, -(pluralSeparator.length + form.length))
-          return { base, form, isOrdinal: false, isPlural: true, fullKey: key }
-        }
-      }
-      return { base: key, form: '', isOrdinal: false, isPlural: false, fullKey: key }
     }
-
-    const aInfo = getKeyInfo(a)
-    const bInfo = getKeyInfo(b)
-
-    // If both are plural forms
-    if (aInfo.isPlural && bInfo.isPlural) {
-      // First compare by base key
-      const baseComparison = customSort
-        ? customSort(aInfo.base, bInfo.base)
-        : aInfo.base.localeCompare(bInfo.base, undefined, { sensitivity: 'base' })
-      if (baseComparison !== 0) {
-        return baseComparison
+    // Handle cardinal plurals: key_form or key_context_form
+    for (const form of pluralForms) {
+      if (key.endsWith(`${pluralSeparator}${form}`)) {
+        const base = key.slice(0, -(pluralSeparator.length + form.length))
+        return { base, rank: pluralForms.indexOf(form) }
       }
-
-      // Same base key - now sort by plural form order
-      // Ordinal forms come after cardinal forms
-      if (aInfo.isOrdinal !== bInfo.isOrdinal) {
-        return aInfo.isOrdinal ? 1 : -1
-      }
-
-      // Both same type (cardinal or ordinal), sort by canonical order
-      const orderArray = aInfo.isOrdinal ? ordinalPluralOrder : pluralForms
-      const aIndex = orderArray.indexOf(aInfo.form)
-      const bIndex = orderArray.indexOf(bInfo.form)
-
-      if (aIndex !== -1 && bIndex !== -1) {
-        return aIndex - bIndex
-      }
-
-      // Fallback to alphabetical if forms not found in order array
-      return aInfo.form.localeCompare(bInfo.form)
     }
+    return { base: key, rank: -1 }
+  }
 
-    // Use custom sort if provided, otherwise default sorting
-    if (customSort) {
-      return customSort(a, b)
-    }
-
+  const compareKeys = (a: string, b: string) => {
+    if (customSort) return customSort(a, b)
     // Default: case-insensitive, then by case
     const caseInsensitiveComparison = a.localeCompare(b, undefined, { sensitivity: 'base' })
     if (caseInsensitiveComparison === 0) {
       return a.localeCompare(b, undefined, { sensitivity: 'case' })
     }
     return caseInsensitiveComparison
+  }
+
+  const keys = Object.keys(obj).sort((a, b) => {
+    const aInfo = getKeyInfo(a)
+    const bInfo = getKeyInfo(b)
+
+    // Always compare by base key first. Comparing base keys for plural/plural
+    // pairs but full keys for every other pair made the comparator
+    // intransitive, so the result depended on the input order and `extract`
+    // was not idempotent (#279).
+    if (aInfo.base !== bInfo.base) {
+      const baseComparison = compareKeys(aInfo.base, bInfo.base)
+      if (baseComparison !== 0) return baseComparison
+    }
+
+    // Same base key: plain key, cardinal plurals, then ordinal plurals
+    if (aInfo.rank !== bInfo.rank) return aInfo.rank - bInfo.rank
+
+    return compareKeys(a, b)
   })
 
   for (const key of keys) {

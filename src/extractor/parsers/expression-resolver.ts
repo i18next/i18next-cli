@@ -43,6 +43,11 @@ export class ExpressionResolver {
   // e.g. `function f(props: IProps)` -> { props: { size: ['all','next'] } }.
   private temporaryObjectVariables: Map<string, Record<string, string[]>> = new Map()
 
+  // Identifiers holding an array of an object-shaped type, e.g.
+  // `items: IProps[]` -> { items: { size: ['all','next'] } }, so that the
+  // callback parameter of `items.map(...)` can be bound to the element type.
+  private arrayElementMembers: Map<string, Record<string, string[]>> = new Map()
+
   constructor (hooks: ASTVisitorHooks) {
     this.hooks = hooks
   }
@@ -54,6 +59,7 @@ export class ExpressionResolver {
     this.variableTable.clear()
     this.typeAliasTable.clear()
     this.temporaryVariables.clear()
+    this.arrayElementMembers.clear()
   }
 
   /**
@@ -110,6 +116,14 @@ export class ExpressionResolver {
       // only handle simple identifier bindings like `const x = ...`
       if (node.id.type !== 'Identifier') return
       const name = node.id.value
+
+      // `const items: IProps[] = …` → remember the element's member map so
+      // `items.map(({ size }) => …)` can bind the callback parameter.
+      const idTypeAnnotation = this.extractTypeAnnotation(node.id)
+      if (idTypeAnnotation) {
+        const elementMembers = this.resolveArrayElementMembers(idTypeAnnotation)
+        if (elementMembers) this.arrayElementMembers.set(name, elementMembers)
+      }
 
       // pattern 1:
       // Handle `declare const x: 'a' | 'b'` and `declare const x: SomeUnion`
@@ -306,6 +320,43 @@ export class ExpressionResolver {
       }
     } catch {}
     return undefined
+  }
+
+  /**
+   * Resolve a type annotation for an array of an object shape (`IProps[]`,
+   * `Array<IProps>`, `ReadonlyArray<IProps>`) to the element's member map, so
+   * that `items.map(({ size }) => …)` can bind the callback parameter.
+   */
+  public resolveArrayElementMembers (tsType: any): Record<string, string[]> | undefined {
+    try {
+      if (!tsType) return undefined
+      if (tsType.type === 'TsArrayType') {
+        return this.resolveTypeMembers(tsType.elemType)
+      }
+      if (tsType.type === 'TsTypeReference' && tsType.typeName?.type === 'Identifier') {
+        const name = tsType.typeName.value
+        if (name !== 'Array' && name !== 'ReadonlyArray') return undefined
+        const arg = tsType.typeParams?.params?.[0] ?? tsType.typeArguments?.params?.[0]
+        return this.resolveTypeMembers(arg)
+      }
+    } catch {}
+    return undefined
+  }
+
+  /**
+   * Bind an identifier to the member map of its array element type
+   * (`items: IProps[]`).
+   */
+  public setArrayElementMembers (name: string, members: Record<string, string[]>): void {
+    this.arrayElementMembers.set(name, members)
+  }
+
+  public getArrayElementMembers (name: string): Record<string, string[]> | undefined {
+    return this.arrayElementMembers.get(name)
+  }
+
+  public deleteArrayElementMembers (name: string): void {
+    this.arrayElementMembers.delete(name)
   }
 
   /**

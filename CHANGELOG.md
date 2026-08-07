@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.67.8
+
+- fix(extract): make the key sort order transitive, so `extract` is idempotent. The
+  comparator compared base keys for plural/plural pairs but full keys for every other
+  pair, which produced a cycle (`foo_solved < foo_zero < foo_one < foo_other < foo_solved`)
+  for a key that has both plural forms and a context variant in a locale with a `zero`
+  plural (lv, ru, pl, lt, uk, …). The resulting order then depended on the input order, so
+  the same file flipped key order back and forth on every extract/download cycle. Keys are
+  now always compared by base key first, then by variant rank (plain key, cardinal plurals,
+  ordinal plurals) ([#279](https://github.com/i18next/i18next-cli/issues/279)).
+- feat(extract): resolve finite string-literal unions through the element type of an
+  iterated array. `function f(items: IProps[])` with
+  ``items.map(({ size }) => t(`some_${size}`))`` now expands to one key per union member,
+  as does member access on the callback element (``items.forEach(item =>
+  t(`some_${item.size}`))``) and a typed array variable (`const items: IProps[] = …`).
+  Covers `T[]`, `Array<T>` and `ReadonlyArray<T>` for `map`/`forEach`/`flatMap`/`filter`/
+  `find`/`some`/`every` ([#210](https://github.com/i18next/i18next-cli/issues/210)).
+
 ## 1.67.7
 
 - fix(instrument): skip module-scope strings instead of wrapping them in a `t()` call. A

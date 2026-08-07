@@ -603,4 +603,73 @@ describe('extractor: finite dynamic key resolution (issue #210)', () => {
       expect(keys.some(k => k.startsWith('out_'))).toBe(false)
     })
   })
+
+  // ─── Array-of-interface parameters iterated with .map() (issue #210) ─────────
+
+  describe('array element types in iteration callbacks', () => {
+    it('should resolve a destructured element of an IProps[] parameter', async () => {
+      const sampleCode = `
+        type ChangeType = "all" | "next" | "this";
+        interface IProps { size: ChangeType; }
+        function getSomething(items: IProps[]): string[] {
+          return items.map(({ size }) => t(\`some_\${size}\`));
+        }
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(Object.keys(translationFile!.newTranslations)).toEqual(
+        expect.arrayContaining(['some_all', 'some_next', 'some_this'])
+      )
+    })
+
+    it('should resolve member access on the callback element', async () => {
+      const sampleCode = `
+        interface IProps { size: 'a' | 'b'; }
+        const render = (items: Array<IProps>) => items.forEach(item => t(\`opt_\${item.size}\`));
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(Object.keys(translationFile!.newTranslations)).toEqual(
+        expect.arrayContaining(['opt_a', 'opt_b'])
+      )
+    })
+
+    it('should resolve elements of a typed array variable', async () => {
+      const sampleCode = `
+        interface IProps { size: 'a' | 'b'; }
+        const items: IProps[] = getItems();
+        const out = items.map(({ size }) => t(\`var_\${size}\`));
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(Object.keys(translationFile!.newTranslations)).toEqual(
+        expect.arrayContaining(['var_a', 'var_b'])
+      )
+    })
+
+    it('should not leak the element binding outside the callback', async () => {
+      const sampleCode = `
+        interface IProps { size: 'a' | 'b'; }
+        function inner(items: IProps[]) { return items.map(({ size }) => t(\`in_\${size}\`)); }
+        t(\`out_\${size}\`);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+      const keys = Object.keys(translationFile!.newTranslations)
+
+      expect(keys).toEqual(expect.arrayContaining(['in_a', 'in_b']))
+      expect(keys.some(k => k.startsWith('out_'))).toBe(false)
+    })
+  })
 })
