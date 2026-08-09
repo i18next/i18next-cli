@@ -39,6 +39,7 @@ export interface I18nextToolkitConfig {
     /**
      * Default namespace when none is specified (default: 'translation').
      * Set to false will not generate any namespace, useful if i.e. the output is a single language json with 1 namespace (and no nesting).
+     * When false, the `types` command derives `defaultNS` from the generated resource namespaces, since i18next's type system cannot express `defaultNS: false`.
      */
     defaultNS?: string | false;
 

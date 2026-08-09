@@ -290,6 +290,8 @@ Namespace Progress: [■■■■■■■■■■■■■■■■□□□�
 ### `types`
 Generates TypeScript definitions from your translation files for full type-safety and autocompletion.
 
+> **Note:** When `extract.defaultNS` is set to `false`, the generated `defaultNS` is derived from your resource files (i18next's type system cannot express `defaultNS: false`). Adjust the generated `i18next.d.ts` if your runtime i18next config uses a different default namespace.
+
 ```bash
 npx i18next-cli types [options]
 ```
