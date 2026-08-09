@@ -221,7 +221,30 @@ ${mergeResourcesAsInterface(resources, { optimize: !!enableSelector, indentation
       const importPath = relative(dirname(outputPath), resourcesOutputPath)
         .replace(/\\/g, '/').replace(/\.d\.ts$/, '') // Make it a valid module path
 
-      const defaultNS = config.extract.defaultNS === false ? 'false' : `'${config.extract.defaultNS || 'translation'}'`
+      // i18next's type system cannot resolve keys for `defaultNS: false` —
+      // `t()` would silently accept any string. When `extract.defaultNS` is
+      // disabled, derive the default namespace from the generated resources
+      // instead, so the generated types stay self-consistent.
+      let defaultNS = `'${config.extract.defaultNS || 'translation'}'`
+      if (config.extract.defaultNS === false) {
+        const resourceNamespaces = [...new Set(resources.map(r => r.name))].filter(ns => !ns.startsWith('..')).sort()
+        // Files named after locales (e.g. locales/en.json) carry no namespace
+        // information. A single one is still a usable default, but multiple
+        // would turn sibling languages into namespaces — keep `false` then.
+        const onlyLocaleNames = resourceNamespaces.length > 1 && resourceNamespaces.every(ns => config.locales.includes(ns))
+        if (resourceNamespaces.length === 0) {
+          defaultNS = 'false'
+        } else if (onlyLocaleNames) {
+          internalLogger.warn(styleText('yellow', 'Warning: extract.defaultNS is disabled and your resource files are named after locales, so no namespace could be derived for the generated definitions — defaultNS stays false and t() will not be type-checked. Consider adjusting types.input or types.basePath.'))
+          defaultNS = 'false'
+        } else {
+          // Unprefixed keys resolve against a single default namespace, so a
+          // single name is emitted; prefer the conventional 'translation'.
+          const effectiveDefault = resourceNamespaces.includes('translation') ? 'translation' : resourceNamespaces[0]
+          internalLogger.warn(styleText('yellow', `Warning: extract.defaultNS is disabled, so defaultNS was derived from your resource files ('${effectiveDefault}'). Adjust the generated definitions if your runtime i18next config uses a different default namespace.`))
+          defaultNS = `'${effectiveDefault}'`
+        }
+      }
       const fallbackNS = config.extract.fallbackNS === false
         ? 'false'
         : Array.isArray(config.extract.fallbackNS)
