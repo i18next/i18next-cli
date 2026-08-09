@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.67.9
+
+- fix(types): derive `defaultNS` from the generated resources when `extract.defaultNS` is
+  `false`. i18next's type system cannot express `defaultNS: false` — `DefaultNamespace =
+  TypeOptions['defaultNS']` feeds `Ns extends Namespace`, so emitting `false` made every
+  `t()` call silently accept any string and the generated definitions checked nothing. The
+  namespace is now taken from the keys of the generated `Resources` interface (deduplicated
+  and sorted, preferring `'translation'`, and preferring a namespace inside `types.basePath`
+  over one resolved outside of it), with a warning naming the pick. `false` is still emitted
+  when the resource files are named after locales (`en.json` + `de.json`), where deriving
+  would turn sibling languages into namespaces. Only affects `i18next.d.ts` on first
+  creation; `resources.d.ts` and `--ci` behavior are unchanged
+  ([#280](https://github.com/i18next/i18next-cli/pull/280)).
+
 ## 1.67.8
 
 - fix(extract): make the key sort order transitive, so `extract` is idempotent. The

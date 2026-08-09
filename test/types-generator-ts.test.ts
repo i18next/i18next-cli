@@ -219,6 +219,65 @@ export default {
     expect(content).toContain("defaultNS: 'common';")
   })
 
+  it('should keep defaultNS: false when only some language files are listed in locales', async () => {
+    const { glob } = await import('glob')
+    ;(glob as any).mockResolvedValue(['/locales/de.json', '/locales/en.json'])
+
+    vol.fromJSON({
+      '/locales/de.json': JSON.stringify({ hello: 'welt' }),
+      '/locales/en.json': JSON.stringify({ hello: 'world' }),
+    })
+
+    const config = {
+      locales: ['en'],
+      extract: {
+        defaultNS: false,
+      },
+      types: {
+        input: ['locales/*.json'],
+        output: 'src/types/i18next.d.ts',
+        resourcesFile: 'src/types/resources.d.ts',
+      },
+    }
+
+    await runTypesGenerator(config as any)
+
+    const outputPath = resolve(process.cwd(), config.types.output)
+    const content = await vol.promises.readFile(outputPath, 'utf-8')
+
+    expect(content).toContain('defaultNS: false;')
+  })
+
+  it('should prefer a namespace inside types.basePath over one resolved outside of it', async () => {
+    const { glob } = await import('glob')
+    ;(glob as any).mockResolvedValue(['/locales/shared.json', '/locales/en/common.json'])
+
+    vol.fromJSON({
+      '/locales/shared.json': JSON.stringify({ hello: 'world' }),
+      '/locales/en/common.json': JSON.stringify({ hello: 'world' }),
+    })
+
+    const config = {
+      locales: ['en'],
+      extract: {
+        defaultNS: false,
+      },
+      types: {
+        input: ['locales/**/*.json'],
+        basePath: '/locales/{{language}}',
+        output: 'src/types/i18next.d.ts',
+        resourcesFile: 'src/types/resources.d.ts',
+      },
+    }
+
+    await runTypesGenerator(config as any)
+
+    const outputPath = resolve(process.cwd(), config.types.output)
+    const content = await vol.promises.readFile(outputPath, 'utf-8')
+
+    expect(content).toContain("defaultNS: 'common';")
+  })
+
   it('should keep defaultNS: false when resources are keyed per language file', async () => {
     const { glob } = await import('glob')
     ;(glob as any).mockResolvedValue(['/locales/de.json', '/locales/en.json'])

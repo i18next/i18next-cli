@@ -227,11 +227,20 @@ ${mergeResourcesAsInterface(resources, { optimize: !!enableSelector, indentation
       // instead, so the generated types stay self-consistent.
       let defaultNS = `'${config.extract.defaultNS || 'translation'}'`
       if (config.extract.defaultNS === false) {
-        const resourceNamespaces = [...new Set(resources.map(r => r.name))].filter(ns => !ns.startsWith('..')).sort()
+        const sortedNamespaces = [...new Set(resources.map(r => r.name))].sort()
+        // Namespaces resolved outside types.basePath already warn above; rank
+        // them last so a valid sibling wins the pick, but keep them derivable —
+        // they are real keys of the generated Resources interface.
+        const resourceNamespaces = [
+          ...sortedNamespaces.filter(ns => !ns.startsWith('..')),
+          ...sortedNamespaces.filter(ns => ns.startsWith('..')),
+        ]
         // Files named after locales (e.g. locales/en.json) carry no namespace
         // information. A single one is still a usable default, but multiple
         // would turn sibling languages into namespaces — keep `false` then.
-        const onlyLocaleNames = resourceNamespaces.length > 1 && resourceNamespaces.every(ns => config.locales.includes(ns))
+        // A single locale-named sibling is enough to tell the layout apart:
+        // types.input may well match more languages than `locales` lists.
+        const onlyLocaleNames = resourceNamespaces.length > 1 && resourceNamespaces.some(ns => config.locales.includes(ns))
         if (resourceNamespaces.length === 0) {
           defaultNS = 'false'
         } else if (onlyLocaleNames) {
