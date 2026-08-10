@@ -31,7 +31,7 @@ export {
 
 export { runLinter, recommendedAcceptedTags, recommendedAcceptedAttributes } from './linter.js'
 export { runSyncer } from './syncer.js'
-export { runStatus } from './status.js'
+export { runStatus, runUnusedReport } from './status.js'
 export { runTypesGenerator } from './types-generator.js'
 export { runRenameKey } from './rename-key.js'
 export { runInstrumenter, writeExtractedKeys } from './instrumenter/index.js'

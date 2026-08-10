@@ -13,7 +13,7 @@ import { runSyncer } from './syncer.js'
 import { runMigrator } from './migrator.js'
 import { runInit } from './init.js'
 import { runLinterCli } from './linter.js'
-import { runStatus } from './status.js'
+import { runStatus, runUnusedReport } from './status.js'
 import { runLocizeSync, runLocizeDownload, runLocizeMigrate } from './locize.js'
 import { runRenameKey } from './rename-key.js'
 import { runInstrumenter } from './instrumenter/index.js'
@@ -116,6 +116,7 @@ program
   .description('Display translation status. Provide a locale for a detailed key-by-key view.')
   .option('-n, --namespace <ns>', 'Filter the status report by a specific namespace')
   .option('--hide-translated', 'Hide already translated keys in the detailed view')
+  .option('--unused', 'Report only unused translation keys (read-only; exits 1 when any are found)')
   .action(async (locale, options) => {
     const cfgPath = program.opts().config
     let config = await loadConfig(cfgPath)
@@ -129,6 +130,10 @@ program
       }
       console.log(styleText('green', 'Project structure detected successfully!'))
       config = detected as I18nextToolkitConfig
+    }
+    if (options.unused) {
+      await runUnusedReport(config, { locale, namespace: options.namespace })
+      return
     }
     await runStatus(config, { detail: locale, namespace: options.namespace, hideTranslated: !!options.hideTranslated })
   })

@@ -1,9 +1,9 @@
 import { styleText } from 'node:util'
 import ora from 'ora'
 import { resolve } from 'node:path'
-import { findKeys } from './extractor.js'
+import { findKeys, runExtractor } from './extractor.js'
 import { getNestedValue, getNestedKeys } from './utils/nested-object.js'
-import type { I18nextToolkitConfig, ExtractedKey } from './types.js'
+import type { I18nextToolkitConfig, ExtractedKey, TranslationResult } from './types.js'
 import { getOutputPath, loadTranslationFile } from './utils/file-utils.js'
 import { safePluralRules } from './utils/plural-rules.js'
 import { isContextVariantOfAcceptingKey } from './utils/context-variants.js'
@@ -840,6 +840,103 @@ function generateProgressBarText (percentage: number): string {
   const filledBars = Math.floor((percentage / 100) * totalBars)
   const emptyBars = totalBars - filledBars
   return `[${styleText('green', ''.padStart(filledBars, '■'))}${''.padStart(emptyBars, '□')}]`
+}
+
+/**
+ * Options for the unused-keys report.
+ */
+interface UnusedOptions {
+  /** Restrict the report to a single locale */
+  locale?: string;
+  /** Restrict the report to a single namespace */
+  namespace?: string;
+}
+
+/**
+ * Reports translation keys that exist in the translation files but are no
+ * longer used in the source code (see issue #281).
+ *
+ * "Unused" is defined as "what `extract` with `removeUnusedKeys` would delete":
+ * the report runs the extractor in dry-run mode and diffs the existing key set
+ * against the pruned result. This inherits all of extract's edge-case handling
+ * (plural variants, context variants, `preservePatterns`, `ignoreNamespaces`)
+ * instead of re-implementing usedness detection that could drift from it.
+ *
+ * The command never writes any files and exits with a non-zero status code
+ * when unused keys are found, so it can serve as a dedicated CI check
+ * alongside `status <locale>` (missing translations).
+ */
+export async function runUnusedReport (config: I18nextToolkitConfig, options: UnusedOptions = {}) {
+  if (options.locale && !config.locales.includes(options.locale)) {
+    console.error(styleText('red', `Error: Locale "${options.locale}" is not defined in your configuration.`))
+    process.exit(1)
+    return
+  }
+
+  // Work on a copy with `removeUnusedKeys` forced on: the dry-run diff below
+  // derives "unused" from what extract would prune, which requires pruning to
+  // be active regardless of the user's config. The caller's config object
+  // stays untouched.
+  const cfg: I18nextToolkitConfig = { ...config, extract: { ...config.extract, removeUnusedKeys: true } }
+
+  const spinner = ora('Analyzing project for unused translation keys...\n').start()
+  let extraction: { results: TranslationResult[]; hasErrors: boolean }
+  try {
+    extraction = await runExtractor(cfg, { isDryRun: true, quiet: true })
+    spinner.succeed('Analysis complete.')
+  } catch (error) {
+    spinner.fail('Failed to analyze unused translation keys.')
+    console.error(error)
+    process.exit(1)
+    return
+  }
+  const { results, hasErrors } = extraction
+
+  const rawSep = cfg.extract.keySeparator
+  const keySeparator: string | false = rawSep === false ? false : (rawSep ?? '.')
+
+  let totalUnused = 0
+  for (const result of results) {
+    if (options.locale && result.locale !== options.locale) continue
+    if (options.namespace && result.namespace && result.namespace !== options.namespace) continue
+
+    const keptKeys = new Set(getNestedKeys(result.newTranslations || {}, keySeparator))
+    const unusedKeys = getNestedKeys(result.existingTranslations || {}, keySeparator)
+      .filter(key => !keptKeys.has(key))
+      .sort()
+    if (unusedKeys.length === 0) continue
+
+    totalUnused += unusedKeys.length
+    const label = result.namespace ? `${result.locale}/${result.namespace}` : result.locale
+    console.log(styleText(['cyan', 'bold'], `\n[${label}] ${result.path}`))
+    for (const key of unusedKeys) {
+      console.log(`  ${styleText('red', '✗')} ${key}`)
+    }
+  }
+
+  if (hasErrors) {
+    console.log(styleText(['yellow', 'bold'], '\n⚠ Some source files could not be parsed — keys used only in those files may be falsely reported as unused.'))
+  }
+
+  if (totalUnused > 0) {
+    console.log(styleText(['yellow', 'bold'], `\nSummary: Found ${totalUnused} unused key(s)${options.locale ? ` for "${options.locale}"` : ''}. No files were modified.`))
+    console.log(`Run ${styleText('cyan', 'npx i18next-cli extract')} to remove them.`)
+  } else {
+    console.log(styleText(['green', 'bold'], '\nSummary: 🎉 No unused keys found.'))
+  }
+
+  // Static analysis has an inherent blind spot for dynamically constructed
+  // keys, so this link doubles as an accuracy disclaimer. Gated like the other
+  // funnel messages (never in CI/non-TTY, 24h cooldown).
+  if (await shouldShowFunnel('status-unused')) {
+    console.log(styleText('gray', "\nℹ Static analysis cannot detect dynamically constructed keys (e.g. t('error.' + code))."))
+    console.log(styleText('gray', '  To find keys that are truly unused at runtime, see https://www.locize.com/docs/guides/find-unused-translations'))
+    await recordFunnelShown('status-unused')
+  }
+
+  if (totalUnused > 0 || hasErrors) {
+    process.exit(1)
+  }
 }
 
 async function printLocizeFunnel () {

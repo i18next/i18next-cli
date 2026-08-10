@@ -240,6 +240,7 @@ The primary language is checked too: any key used in your code but absent from t
 **Options:**
 - `--namespace <ns>, -n <ns>`: Filter the report by a specific namespace.
 - `--hide-translated`: Hide already translated keys in the detailed view, showing only missing translations.
+- `--unused`: Report only unused translation keys — keys present in your translation files that are no longer used in your source code (i.e. what `extract` with `removeUnusedKeys` would delete). Never modifies any files and exits with a non-zero status code when unused keys are found, so it can serve as a dedicated CI check alongside the regular missing-translations check. Note that static analysis cannot detect dynamically constructed keys (e.g. ``t(`error.${code}`)``); to find keys that are truly unused at runtime, see [find unused translations with locize](https://www.locize.com/docs/guides/find-unused-translations).
 
 **Usage Examples:**
 
@@ -261,6 +262,12 @@ npx i18next-cli status de --hide-translated
 
 # Combine options to see only missing translations in a specific namespace
 npx i18next-cli status de --namespace common --hide-translated
+
+# Report only unused keys across all locales (read-only, exits 1 when any are found)
+npx i18next-cli status --unused
+
+# Report only unused keys in the 'en' files — e.g. as a separate CI check
+npx i18next-cli status en --unused
 ```
 
 The detailed view provides a rich, at-a-glance summary for each namespace, followed by a list of every key and its translation status.

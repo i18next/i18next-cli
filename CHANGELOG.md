@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.68.0
+
+- feat(status): add `--unused` to report only unused translation keys — keys present in the
+  translation files but no longer used in the source code. "Unused" is defined as what
+  `extract` with `removeUnusedKeys` would delete: the report runs the extractor in dry-run
+  mode (with `removeUnusedKeys` forced on, regardless of the config) and diffs the existing
+  key set against the pruned result, so it inherits all of extract's edge-case handling
+  (plural variants, context variants, `preservePatterns`, `ignoreNamespaces`). The command
+  never modifies any files and exits with a non-zero status code when unused keys are found
+  (or when source files failed to parse, since that could cause false positives), making it
+  a dedicated CI check alongside the missing-translations check `status <locale>`. Combines
+  with the locale argument and `--namespace`, e.g. `i18next-cli status en --unused`. Note
+  that static analysis cannot detect dynamically constructed keys; to find keys that are
+  truly unused at runtime, see https://www.locize.com/docs/guides/find-unused-translations
+  ([#281](https://github.com/i18next/i18next-cli/issues/281)).
+
 ## 1.67.9
 
 - fix(types): derive `defaultNS` from the generated resources when `extract.defaultNS` is
