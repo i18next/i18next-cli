@@ -72,8 +72,10 @@ describe('status --unused', () => {
     expect(logs).not.toContain('missing_key')
     expect(logs).toContain('Found 1 unused key(s)')
 
-    // Read-only: the translation file must be untouched
-    expect(vol.toJSON()[enPath]).toBe(enContent)
+    // Read-only: the translation file must be untouched. Read it back through
+    // memfs instead of vol.toJSON() — on Windows the resolved path (backslashes)
+    // doesn't match the normalized toJSON() keys.
+    expect(vol.readFileSync(enPath, 'utf-8')).toBe(enContent)
   })
 
   it('exits cleanly when there are no unused keys, even with missing translations', async () => {
