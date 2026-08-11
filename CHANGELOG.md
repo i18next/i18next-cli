@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.69.0
+
+- feat(lint): support `acceptedTags: 'all'` to lint every JSX tag, including custom
+  components, instead of the recommended built-in tag list. Useful together with
+  `acceptedAttributes` in codebases with many custom JSX elements where maintaining an
+  explicit tag accept-list is impractical. `ignoredTags` and `transComponents` still take
+  precedence, and the default behavior when `acceptedTags` is unset is unchanged
+  ([#282](https://github.com/i18next/i18next-cli/issues/282)).
+
 ## 1.68.0
 
 - feat(status): add `--unused` to report only unused translation keys — keys present in the

@@ -871,7 +871,10 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
   const ignoredAttributes = new Set([...defaultIgnoredAttributes, ...customIgnoredAttributes])
   const lintAcceptedTags = config?.lint?.acceptedTags ? config.lint.acceptedTags : null
   const extractAcceptedTags = config?.extract?.acceptedTags ? config.extract.acceptedTags : null
-  const acceptedTagsList = (lintAcceptedTags ?? extractAcceptedTags ?? recommendedAcceptedTags)?.map((s: string) => s.toLowerCase()) ?? null
+  const rawAcceptedTags = lintAcceptedTags ?? extractAcceptedTags ?? recommendedAcceptedTags
+  // 'all' disables tag filtering entirely: lint text and attributes in every tag (ignoredTags still win)
+  const acceptAllTags = rawAcceptedTags === 'all'
+  const acceptedTagsList = acceptAllTags ? null : (rawAcceptedTags?.map((s: string) => s.toLowerCase()) ?? null)
   const lintAcceptedAttrs = config?.lint?.acceptedAttributes ? config.lint.acceptedAttributes : null
   const extractAcceptedAttrs = config?.extract?.acceptedAttributes ? config.extract.acceptedAttributes : null
   const acceptedAttributesList = (lintAcceptedAttrs ?? extractAcceptedAttrs ?? recommendedAcceptedAttributes)?.map((s: string) => s.toLowerCase()) ?? null
@@ -990,7 +993,8 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
     if (node.type === 'JSXText') {
       // If acceptedAttributesSet exists but acceptedTagsSet does not, we're in attribute-only mode:
       // do not collect JSXText nodes when attribute-only mode is active.
-      if (acceptedAttributesSet && !acceptedTagsSet) {
+      // (acceptedTags: 'all' is not attribute-only mode — it lints text in every tag.)
+      if (acceptedAttributesSet && !acceptedTagsSet && !acceptAllTags) {
         // attribute-only mode: skip JSXText
       } else {
         const isIgnored = isWithinIgnoredElement(currentAncestors)
@@ -1055,7 +1059,7 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
       if (isJsxChildExpression && !insideIgnored) {
         // Respect attribute-only mode: when acceptedAttributes is set without acceptedTags,
         // only attribute strings are linted — skip JSX child text.
-        if (!(acceptedAttributesSet && !acceptedTagsSet)) {
+        if (!(acceptedAttributesSet && !acceptedTagsSet && !acceptAllTags)) {
           const text = node.value.trim()
           if (text && text.length > 1 && text !== '...' && !isUrlOrPath(text) && isNaN(Number(text)) && !text.startsWith('{{')) {
             nodesToLint.push(node)

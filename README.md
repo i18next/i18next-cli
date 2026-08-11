@@ -968,7 +968,8 @@ export default defineConfig({
     /** Optional accept-list of JSX attribute names to exclusively lint (takes precedence over ignoredAttributes). */
     acceptedAttributes: ['title'],
 
-    /** Optional accept-list of JSX tag names to exclusively lint (takes precedence over ignoredTags). */
+    /** Optional accept-list of JSX tag names to exclusively lint (takes precedence over ignoredTags).
+     * Pass 'all' to lint every tag (including custom JSX components); ignoredTags still apply. */
     acceptedTags: ['p'],
 
     // Optional custom JSX attributes to ignore during linting

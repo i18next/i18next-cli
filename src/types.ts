@@ -100,8 +100,10 @@ export interface I18nextToolkitConfig {
      * If not provided (and no `extract.acceptedTags` is set), the linter will fall back to a recommended
      * built-in accepted-list of common content-bearing tags (e.g. `p`, `span`, `div`, `button`, `label`, ...).
      * See README for the exact recommended list.
+     *
+     * Pass `'all'` to lint every tag (including custom JSX components); `ignoredTags` still apply.
      */
-    acceptedTags?: string[];
+    acceptedTags?: string[] | 'all';
 
     /** HTML tags to preserve in Trans component serialization (default: ['br', 'strong', 'i']) */
     transKeepBasicHtmlNodesFor?: string[];
@@ -260,8 +262,10 @@ export interface I18nextToolkitConfig {
      * If not provided (and no `extract.acceptedTags` is set), the linter will fall back to a recommended
      * built-in accepted-list of common content-bearing tags (e.g. `p`, `span`, `div`, `button`, `label`, ...).
      * See README for the exact recommended list.
+     *
+     * Pass `'all'` to lint every tag (including custom JSX components); `ignoredTags` still apply.
      */
-    acceptedTags?: string[];
+    acceptedTags?: string[] | 'all';
 
     /** Glob pattern(s) for files to ignore during lint (in addition to those defined during extract) */
     ignore?: string | string[];

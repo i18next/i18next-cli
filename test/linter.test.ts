@@ -707,6 +707,33 @@ describe('Linter (core logic)', () => {
     expect(result.files['/src/App.tsx'][1].text).toBe('Text')
   })
 
+  it("acceptedTags: 'all' should lint text and accepted attributes in every tag, including custom components", async () => {
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract },
+      lint: {
+        acceptedTags: 'all',
+        acceptedAttributes: ['title'],
+      },
+    }
+
+    const sampleCode = `
+      <MyCustomComponent title="Custom title">
+        Custom component text
+        <code>ignored technical text</code>
+      </MyCustomComponent>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(customConfig)
+
+    expect(result.success).toBe(false)
+    // Custom component's title attribute and text are reported; ignoredTags (code) still win
+    expect(result.files['/src/App.tsx']).toHaveLength(2)
+    expect(result.files['/src/App.tsx'][0].text).toBe('Custom title')
+    expect(result.files['/src/App.tsx'][1].text).toBe('Custom component text')
+  })
+
   it('ignoredTags should override acceptedAttributes (being inside an ignored tag prevents reporting even for accepted attrs)', async () => {
     const customConfig: I18nextToolkitConfig = {
       ...mockConfig,
