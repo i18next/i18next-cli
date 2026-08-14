@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.69.2
+
+- fix: support the AST shape of `@swc/core` 1.16, which types function, arrow and method
+  bodies as `FunctionBody` instead of `BlockStatement` (plain blocks like `if (x) { … }` are
+  unchanged). Every "is this a function body?" check silently went false, which broke selector
+  calls with a block body (`t($ => { return $.a.b })`), return-type inference from a function
+  body (finite dynamic keys), and React component-boundary detection in the instrumenter — so
+  `useTranslation()` / `<Trans>` were no longer injected. Both node types are now accepted.
+
 ## 1.69.1
 
 - fix(lint): report hardcoded strings at the line where they actually occur. Line numbers were

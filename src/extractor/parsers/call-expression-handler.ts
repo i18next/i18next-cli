@@ -724,8 +724,9 @@ export class CallExpressionHandler {
     let body = node.body
 
     // Handle block bodies, e.g., $ => { return $.key; }
-    if (body.type === 'BlockStatement') {
-      const returnStmt = body.stmts.find(s => s.type === 'ReturnStatement')
+    // swc >=1.16 types function bodies as 'FunctionBody'; older versions used 'BlockStatement'.
+    if (body.type === 'BlockStatement' || (body.type as string) === 'FunctionBody') {
+      const returnStmt = (body as any).stmts.find((s: any) => s.type === 'ReturnStatement')
       if (returnStmt?.type === 'ReturnStatement' && returnStmt.argument) {
         body = returnStmt.argument
       } else {

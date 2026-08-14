@@ -465,7 +465,7 @@ function detectComponentBoundaries (
   // FunctionDeclaration with uppercase name
   if (node.type === 'FunctionDeclaration' && node.identifier?.value && /^[A-Z]/.test(node.identifier.value)) {
     const body = node.body
-    if (body?.type === 'BlockStatement' && body.span) {
+    if (isBlockBody(body) && body.span) {
       components.push({
         name: node.identifier.value,
         bodyStart: body.span.start,
@@ -482,7 +482,7 @@ function detectComponentBoundaries (
   // VariableDeclarator path (e.g. `const Foo = function Foo() {}`).
   if (node.type === 'FunctionExpression' && node.identifier?.value && /^[A-Z]/.test(node.identifier.value)) {
     const body = node.body
-    if (body?.type === 'BlockStatement' && body.span) {
+    if (isBlockBody(body) && body.span) {
       const alreadyRegistered = components.some(
         c => c.bodyStart === body.span.start && c.bodyEnd === body.span.end
       )
@@ -540,8 +540,15 @@ function detectComponentBoundaries (
 }
 
 /**
+ * swc >=1.16 types function bodies as 'FunctionBody'; older versions used 'BlockStatement'.
+ */
+function isBlockBody (body: any): boolean {
+  return body?.type === 'BlockStatement' || body?.type === 'FunctionBody'
+}
+
+/**
  * Helper: extracts a ComponentBoundary from an ArrowFunctionExpression or FunctionExpression
- * that has a BlockStatement body.
+ * that has a block body.
  */
 function addComponentFromFunctionNode (
   name: string,

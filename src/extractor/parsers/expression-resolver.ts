@@ -460,9 +460,10 @@ export class ExpressionResolver {
       }
     }
 
-    // Arrow functions with an expression body (no BlockStatement) — `() => expr` —
-    // have their return expression directly as `body`.
-    if (body.type !== 'BlockStatement') {
+    // Arrow functions with an expression body (no block) — `() => expr` —
+    // have their return expression directly as `body`. swc >=1.16 types function
+    // bodies as 'FunctionBody'; older versions used 'BlockStatement'.
+    if (body.type !== 'BlockStatement' && body.type !== 'FunctionBody') {
       const vals = this.resolvePossibleStringValuesFromExpression(body)
       if (vals.length > 0) return Array.from(new Set(vals))
       return []
@@ -622,7 +623,7 @@ export class ExpressionResolver {
       try {
         let body: any = expression.body
         // Handle block body with return statement
-        if (body.type === 'BlockStatement') {
+        if (body.type === 'BlockStatement' || body.type === 'FunctionBody') {
           const returnStmt = body.stmts.find((s: any) => s.type === 'ReturnStatement')
           if (returnStmt?.type === 'ReturnStatement' && returnStmt.argument) {
             body = returnStmt.argument
