@@ -598,7 +598,15 @@ The command walks through six steps:
 
 **Non-React stacks (Vue, Svelte, …):** the instrument step transforms React/JSX out of the box. For other stacks, add a plugin that covers your file type (community: [i18next-cli-vue](https://github.com/PBK-B/i18next-cli-vue), [i18next-cli-plugin-svelte](https://github.com/dreamscached/i18next-cli-plugin-svelte) — or write your own via the [Plugin System](#plugin-system) `instrumentOnLoad`/`onLoad` hooks). With a matching plugin configured, `localize` runs the full flow; without one, the instrument step is skipped with guidance and the remaining steps (extract → Locize → auto-translate) still run.
 
-**Agent prompt:** the same flow is available as a copy-paste prompt for AI coding agents (Claude Code, Cursor, …):
+**Agent Skill (recommended):** install the flow as a skill and your agent picks it up on its own, no copy-pasting:
+
+```bash
+npx skills add i18next/i18next-cli
+```
+
+Then just ask it to *"add i18n to this project"*. See [`skills/i18next-localization`](./skills/i18next-localization/SKILL.md) — it ships in this repo, so it stays version-matched to the commands it drives.
+
+**Agent prompt:** the same flow is also available as a copy-paste prompt for AI coding agents (Claude Code, Cursor, …):
 
 ```bash
 npx i18next-cli localize --print-agent-prompt
