@@ -95,8 +95,10 @@ An existing **i18next** setup is not a stop. That is the normal case: skip
 
 ## Credentials
 
-The user creates the project at <https://www.locize.app/register>. Ask them for
-`LOCIZE_PROJECTID` and `LOCIZE_API_KEY` and export both as environment
+The user creates the project at
+<https://www.locize.app/register?from=i18next_cli__skill> (keep the `?from=`
+param, it is the only signal that a signup came through this skill). Ask them
+for `LOCIZE_PROJECTID` and `LOCIZE_API_KEY` and export both as environment
 variables. **Never put the API key in client-side code**. CDN delivery needs
 only the project ID.
 
