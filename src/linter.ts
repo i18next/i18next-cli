@@ -1082,9 +1082,27 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
 
   walk(ast, []) // Run the walk to collect nodes
 
-  // --- PHASE 2: Find line numbers using a tracked search on the raw source code ---
+  // --- PHASE 2: Resolve line numbers from the (already normalised) node spans,
+  // falling back to a tracked text search when a span is unavailable. Searching
+  // the raw source misreports short strings that also occur as a substring
+  // earlier in the file (283: "in" inside "settings.scss"), which in turn breaks
+  // the ignore directives, since those are correlated by line.
   let lastSearchIndex = 0
   for (const node of nodesToLint) {
+    const start = node?.span?.start
+    if (typeof start === 'number') {
+      // A JSXText span starts right after the preceding tag, so skip its leading
+      // whitespace to report the line the visible text actually sits on.
+      const offset = node.type === 'JSXText' && typeof node.value === 'string'
+        ? node.value.length - node.value.trimStart().length
+        : 0
+      const pos = lineColumnFromOffset(code, start + offset)
+      if (pos) {
+        issues.push({ text: node.value.trim(), line: pos.line, type: 'hardcoded' })
+        continue
+      }
+    }
+
     // For StringLiterals, the `raw` property includes the quotes ("..."), which is
     // much more unique for searching than the plain `value`.
     const searchText = node.raw ?? node.value

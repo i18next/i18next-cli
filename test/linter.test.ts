@@ -1746,6 +1746,42 @@ describe('Linter (core logic)', () => {
     expect(result.message).toContain('No issues found.')
   })
 
+  // --- Line reporting for short strings (issue #283) ---
+
+  it('reports the real line of a short hardcoded string that also occurs earlier as a substring', async () => {
+    const sampleCode = [
+      "import './settings.scss';",
+      '',
+      'export const App = () => (',
+      '  <span>in</span>',
+      ');',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(mockConfig)
+
+    expect(result.files['/src/App.tsx']).toEqual([
+      expect.objectContaining({ text: 'in', line: 4, type: 'hardcoded' }),
+    ])
+  })
+
+  it('honours i18next-instrument-ignore-next-line for such a string', async () => {
+    const sampleCode = [
+      "import './settings.scss';",
+      '',
+      'export const App = () => (',
+      '  // i18next-instrument-ignore-next-line',
+      '  <span>in</span>',
+      ');',
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(mockConfig)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+  })
+
   // --- String concatenation in translations (issue #275) ---
 
   describe('string concatenation (issue #275)', () => {

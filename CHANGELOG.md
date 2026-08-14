@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.69.1
+
+- fix(lint): report hardcoded strings at the line where they actually occur. Line numbers were
+  resolved by searching the raw source text, so a short string was reported at the first place
+  it appeared as a substring anywhere in the file — e.g. `<span>in</span>` on line 4 was reported
+  on line 1 because of `import './settings.scss'`. Lines are now taken from the AST node's span,
+  falling back to the text search only when no span is available. This also fixes
+  `i18next-instrument-ignore` / `i18next-instrument-ignore-next-line` being ignored for such
+  strings, since the directives suppress issues by line
+  ([#283](https://github.com/i18next/i18next-cli/issues/283)).
+
 ## 1.69.0
 
 - feat(lint): support `acceptedTags: 'all'` to lint every JSX tag, including custom
