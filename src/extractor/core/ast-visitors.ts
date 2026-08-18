@@ -616,13 +616,13 @@ export class ASTVisitors {
 
     const extractStringLiteralValue = (node: any): string | undefined => {
       if (!node) return undefined
-      // Union (`'a' | 'b'`), local alias, or generic constrained to those: use the
-      // first member. Mirrors i18next's type-level behaviour (first ns wins).
+      // Union (`'a' | 'b'`) or generic constrained to one (`<Ns extends 'a' | 'b'>`):
+      // use the first member, mirroring i18next's type-level behaviour (first ns wins).
+      // Named aliases (`TFunction<Namespace>`) are deliberately NOT resolved: an
+      // app-wide `Namespace` union would otherwise "win" with an arbitrary first entry.
       if (node.type === 'TsUnionType') return extractStringLiteralValue(node.types?.[0])
       if (node.type === 'TsTypeReference' && node.typeName?.type === 'Identifier') {
-        const constraint = typeParamConstraints[node.typeName.value]
-        if (constraint) return extractStringLiteralValue(constraint)
-        return this.expressionResolver.resolveTypeToStringValues(node)[0]
+        return extractStringLiteralValue(typeParamConstraints[node.typeName.value])
       }
       // Handle: typeof SomeConst  → TsTypeQuery { exprName: { value: 'SomeConst' } }
       if (node?.type === 'TsTypeQuery') {
@@ -722,6 +722,9 @@ export class ASTVisitors {
   /** `{ name, typeNode }` for every property of an object-shaped type annotation. */
   private getObjectTypeMembers (tsType: any): Array<{ name: string; typeNode: any }> {
     if (!tsType) return []
+    // `A & { t: TFunction<'ns'> }` / `(A)` → union of the constituents' members
+    if (tsType.type === 'TsIntersectionType') return (tsType.types ?? []).flatMap((t: any) => this.getObjectTypeMembers(t))
+    if (tsType.type === 'TsParenthesizedType') return this.getObjectTypeMembers(tsType.typeAnnotation)
     let members: any[] | undefined
     if (tsType.type === 'TsTypeLiteral') members = tsType.members
     else if (tsType.type === 'TsTypeReference' && tsType.typeName?.type === 'Identifier') {

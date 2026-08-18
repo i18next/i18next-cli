@@ -452,16 +452,22 @@ describe('extractor: advanced t features', () => {
         .toEqual({ welcome: 'Welcome', login: 'Login' })
     })
 
-    it('should resolve union / generic-constrained / aliased TFunction namespaces to the first member (#284)', async () => {
+    it('should resolve union / generic-constrained TFunction namespaces to the first member, but not named aliases (#284)', async () => {
       const sampleCode = `
         import type { TFunction } from 'i18next';
-        type Ns = 'ns-alias' | 'other';
+        type Namespace = 'ns-alias' | 'other';
+        type Base = { id: string };
         const A = ({ t }: { t: TFunction<'ns-union' | 'other'> }) => t('a', 'A');
         function B<Ns extends 'ns-generic' | 'other'>(props: { t: TFunction<Ns> }) { return props.t('b', 'B'); }
         const C = <Ns extends 'ns-generic2' | 'other'>({ t }: { t: TFunction<Ns> }) => t('c', 'C');
-        const D = (t: TFunction<Ns>) => t('d', 'D');
+        // named alias (could be an app-wide union): not guessed, falls back to defaultNS
+        const D = (t: TFunction<Namespace>) => t('d', 'D');
+        const D2 = <Ns extends Namespace>(t: TFunction<Ns>) => t('d2', 'D2');
         interface P { t: TFunction<'ns-props'> }
         const E = (props: P) => props.t('e', 'E');
+        // overload + implementation with intersection type and optional t
+        function F<Ns extends 'ns-inter' | 'other'>(props: Base & { t: TFunction<Ns> }): string
+        function F<Ns extends 'ns-inter' | 'other' | 'more'>({ t, id }: Base & { t?: TFunction<Ns>; removeFile?: () => void }) { return t('f', 'F'); }
       `
       vol.fromJSON({ '/src/App.tsx': sampleCode })
 
@@ -470,8 +476,10 @@ describe('extractor: advanced t features', () => {
       expect(ns('ns-union')).toEqual({ a: 'A' })
       expect(ns('ns-generic')).toEqual({ b: 'B' })
       expect(ns('ns-generic2')).toEqual({ c: 'C' })
-      expect(ns('ns-alias')).toEqual({ d: 'D' })
       expect(ns('ns-props')).toEqual({ e: 'E' })
+      expect(ns('ns-inter')).toEqual({ f: 'F' })
+      expect(ns('ns-alias')).toBeUndefined()
+      expect(ns('translation')).toEqual({ d: 'D', d2: 'D2' })
       expect(ns('other')).toBeUndefined()
     })
 

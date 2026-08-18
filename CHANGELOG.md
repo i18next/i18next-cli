@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.70.3
+
+- fix: `TFunction<Ns>` members are now found inside intersection types
+  (`Base & { t?: TFunction<Ns> }`), including optional `t?:` and overload implementation
+  signatures ([#284](https://github.com/i18next/i18next-cli/issues/284)).
+- fix: named type aliases (`TFunction<Namespace>`, `<Ns extends Namespace>`) are no longer
+  resolved to their first member. Introduced in 1.70.2, this could attribute keys to an arbitrary
+  namespace when the alias is an app-wide union. Inline unions and literal generic constraints still
+  resolve to the first member.
+
 ## 1.70.2
 
 - fix: namespace detection for union / generic / array forms
