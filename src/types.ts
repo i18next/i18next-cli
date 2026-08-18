@@ -300,6 +300,18 @@ export interface I18nextToolkitConfig {
     checkPunctuationConcatenation?: boolean | 'off' | 'warn' | 'error';
   };
 
+  /** Configuration options for the `status` command */
+  status?: {
+    /**
+     * Glob patterns for keys that `status` should not report (e.g. keys that are
+     * intentionally empty in some locales). Same shape as `extract.preservePatterns`;
+     * a `ns:` prefix restricts the pattern to one namespace (`common:help.*-href`),
+     * otherwise it matches the key in every namespace. Only affects `status`;
+     * `extract` still writes and keeps these keys.
+     */
+    ignoreKeys?: string[];
+  };
+
   /** Configuration options for TypeScript type generation */
   types?: {
     /**

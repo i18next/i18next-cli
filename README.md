@@ -240,6 +240,7 @@ The primary language is checked too: any key used in your code but absent from t
 **Options:**
 - `--namespace <ns>, -n <ns>`: Filter the report by a specific namespace.
 - `--hide-translated`: Hide already translated keys in the detailed view, showing only missing translations.
+- `status.ignoreKeys` (config): glob patterns for keys that should not be reported (and don't fail the check), e.g. keys that are intentionally left empty in some locales. Optional `ns:` prefix (`common:help.*-href`). Only affects `status`.
 - `--unused`: Report only unused translation keys — keys present in your translation files that are no longer used in your source code (i.e. what `extract` with `removeUnusedKeys` would delete). Never modifies any files and exits with a non-zero status code when unused keys are found, so it can serve as a dedicated CI check alongside the regular missing-translations check. Note that static analysis cannot detect dynamically constructed keys (e.g. ``t(`error.${code}`)``); to find keys that are truly unused at runtime, see [find unused translations with locize](https://www.locize.com/docs/guides/find-unused-translations).
 
 **Usage Examples:**
@@ -1000,6 +1001,14 @@ export default defineConfig({
     /** Lint punctuation glued onto a translation, e.g. <Trans>Email</Trans>: (default: 'off').
      * Opt-in; accepts the same values as checkConcatenation. */
     checkPunctuationConcatenation: 'off',
+  },
+
+  // `status` command
+  status: {
+    // Glob patterns for keys that `status` should not report, e.g. keys that are
+    // intentionally empty in some locales. Same shape as `preservePatterns`; a `ns:`
+    // prefix limits the pattern to one namespace. Only affects `status`, not `extract`.
+    ignoreKeys: ['*-href', 'common:empty-table-subtitle'], // Optional
   },
   
   // TypeScript type generation

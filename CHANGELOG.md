@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.71.0
+
+- feat: new `status.ignoreKeys` config option: glob patterns (same shape as `preservePatterns`,
+  optional `ns:` prefix) for keys that `status` should not report or fail on, e.g. keys that are
+  intentionally empty in some locales. Only affects `status`; `extract` is unchanged
+  ([#284](https://github.com/i18next/i18next-cli/issues/284)).
+
 ## 1.70.4
 
 - feat: `useTranslation(ns)` where `ns` is a function parameter now resolves to the parameter's

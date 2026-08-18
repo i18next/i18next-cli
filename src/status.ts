@@ -10,6 +10,11 @@ import { isContextVariantOfAcceptingKey } from './utils/context-variants.js'
 import { parseNestedReferences } from './utils/nesting.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 
+function globToRegex (glob: string): RegExp {
+  const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`^${escaped.replace(/\*/g, '.*')}$`)
+}
+
 /**
  * Options for configuring the status report display.
  */
@@ -251,6 +256,22 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
   const ignoreNamespaces = new Set(config.extract.ignoreNamespaces ?? [])
   for (const ns of ignoreNamespaces) {
     keysByNs.delete(ns)
+  }
+
+  // Filter out ignored keys (`status.ignoreKeys`, glob, optional `ns:` prefix)
+  const nsSep: string | false = config.extract.nsSeparator ?? ':'
+  const ignoreKeyMatchers = (config.status?.ignoreKeys ?? []).map((pattern) => {
+    const sepAt = nsSep ? pattern.indexOf(nsSep) : -1
+    const ns = sepAt > 0 ? pattern.slice(0, sepAt) : undefined
+    const re = globToRegex(sepAt > 0 && nsSep ? pattern.slice(sepAt + nsSep.length) : pattern)
+    return (k: ExtractedKey, keyNs: string) => (ns === undefined || ns === keyNs) && re.test(k.key)
+  })
+  if (ignoreKeyMatchers.length > 0) {
+    for (const [ns, keys] of keysByNs) {
+      const kept = keys.filter(k => !ignoreKeyMatchers.some(m => m(k, ns)))
+      if (kept.length === 0) keysByNs.delete(ns)
+      else keysByNs.set(ns, kept)
+    }
   }
 
   // Count total keys after filtering
