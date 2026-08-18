@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.71.0
+
+- feat: further namespace detection improvements
+  ([#284](https://github.com/i18next/i18next-cli/issues/284)):
+  - `ReturnType<typeof useTranslation<'ns', 'keyPrefix'>>['t']` on parameters (plain and
+    destructured) is treated like `TFunction<'ns', 'keyPrefix'>`.
+  - A locally declared wrapper that forwards its first parameter as the key to an already scoped
+    translation function (e.g. `const t = useCallback((key, opts) => tLocal(key, opts), [...])`)
+    inherits that function's namespace / keyPrefix.
+- fix: `t()` calls inside fenced code blocks (```` ``` ````) of doc comments are no longer extracted
+  as real call sites.
+
 ## 1.70.0
 
 - feat: improve namespace detection for `t` functions whose namespace is not a plain

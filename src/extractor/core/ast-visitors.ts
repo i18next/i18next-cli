@@ -624,6 +624,23 @@ export class ASTVisitors {
       return undefined
     }
 
+    // `ReturnType<typeof useTranslation<'ns', 'kp'>>['t']` is `TFunction<'ns', 'kp'>` spelled indirectly.
+    if (typeAnn?.type === 'TsIndexedAccessType' && extractStringLiteralValue(typeAnn.indexType) === 't') {
+      const obj = typeAnn.objectType
+      const query = obj?.type === 'TsTypeReference' && extractTypeName(obj) === 'ReturnType'
+        ? (obj.typeParams?.params?.[0] ?? obj.typeArguments?.params?.[0])
+        : undefined
+      const hookName = query?.type === 'TsTypeQuery' ? (query.exprName?.value ?? query.exprName?.name) : undefined
+      const hookNames = this.config.extract.useTranslationNames || ['useTranslation', 'getT', 'useT']
+      if (hookName && hookNames.some(h => (typeof h === 'string' ? h : h.name) === hookName)) {
+        const params = query.typeArguments?.params ?? query.typeArgs?.params ?? []
+        const ns = extractStringLiteralValue(params[0])
+        const kp = extractStringLiteralValue(params[1])
+        if (ns || kp) this.scopeManager.setVarInScope(paramKey, { defaultNs: ns, keyPrefix: kp })
+      }
+      return
+    }
+
     // Detect TsTypeReference like: TFunction<"my-custom-namespace">
     if (typeAnn && (typeAnn.type === 'TsTypeReference' || typeAnn.type === 'TsTypeRef' || typeAnn.type === 'TsTypeReference')) {
       const finalTypeName = extractTypeName(typeAnn)

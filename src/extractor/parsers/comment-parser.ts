@@ -359,7 +359,9 @@ function collectCommentTexts (src: string): string[] {
   const commentRegex = /\/\/(.*)|\/\*([\s\S]*?)\*\//g
   let cmatch: RegExpExecArray | null
   while ((cmatch = commentRegex.exec(src)) !== null) {
-    const content = cmatch[1] ?? cmatch[2]
+    // Strip fenced code blocks (```…```) from doc comments: they are usage
+    // examples, not real call sites, and would otherwise pollute the default namespace.
+    const content = (cmatch[1] ?? cmatch[2]).replace(/```[\s\S]*?```/g, '')
     const s = content.trim()
     if (s && !seen.has(s)) {
       seen.add(s)

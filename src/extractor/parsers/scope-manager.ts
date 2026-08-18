@@ -302,6 +302,18 @@ export class ScopeManager {
       // continue processing; still may be a useTranslation/getFixedT call below
     }
 
+    // Handle: const t = useCallback((key, opts) => tLocal(key, opts), [...])  OR
+    //         const t = (key, opts) => tLocal(key, opts)
+    // A wrapper that forwards its first parameter as the key to an already-scoped
+    // translation function inherits that function's scope.
+    if (node.id.type === 'Identifier') {
+      const wrapped = this.resolveDelegatingWrapperScope(init)
+      if (wrapped) {
+        this.setVarInScope(node.id.value, wrapped)
+        return
+      }
+    }
+
     // Handle: const { t } = this.#field  OR  const { t } = this.#field()
     // Resolve the source `this.<field>` to its previously-registered ScopeInfo
     // and propagate it onto the destructured variables.
@@ -626,6 +638,44 @@ export class ScopeManager {
       return { defaultNs: namespaces[0], namespaces: namespaces.length > 0 ? namespaces : undefined }
     }
     return {}
+  }
+
+  /**
+   * If `init` is a function (optionally wrapped in `useCallback(fn, deps)`) whose
+   * first parameter is passed as the first argument to a call of an already-scoped
+   * variable (e.g. `tLocal(key, opts)`), return that variable's ScopeInfo.
+   */
+  private resolveDelegatingWrapperScope (init: Expression): ScopeInfo | undefined {
+    let fn: any = ScopeManager.unwrapTsExpression(init)
+    if (fn?.type === 'CallExpression' && fn.callee?.type === 'Identifier' && fn.callee.value === 'useCallback') {
+      fn = fn.arguments?.[0]?.expression
+    }
+    if (fn?.type !== 'ArrowFunctionExpression' && fn?.type !== 'FunctionExpression') return undefined
+    const first = fn.params?.[0]
+    const pat = first?.pat ?? first
+    const keyParam: string | undefined = pat?.type === 'Identifier' ? pat.value : undefined
+    if (!keyParam) return undefined
+
+    let found: ScopeInfo | undefined
+    const visit = (n: any): void => {
+      if (found || !n || typeof n !== 'object') return
+      if (Array.isArray(n)) { for (const c of n) visit(c); return }
+      if (
+        n.type === 'CallExpression' &&
+        n.callee?.type === 'Identifier' &&
+        n.arguments?.[0]?.expression?.type === 'Identifier' &&
+        n.arguments[0].expression.value === keyParam
+      ) {
+        const scope = this.getVarFromScope(n.callee.value)
+        if (scope) { found = scope; return }
+      }
+      for (const k of Object.keys(n)) {
+        if (k === 'span') continue
+        visit(n[k])
+      }
+    }
+    visit(fn.body)
+    return found
   }
 
   private resolveStringArg (node: Expression | undefined): string | undefined {

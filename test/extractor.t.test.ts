@@ -418,6 +418,40 @@ describe('extractor: advanced t features', () => {
       expect(results.find(r => pathEndsWith(r.path, '/locales/en/ns-alias.json'))!.newTranslations).toEqual({ prefix: { c: 'C' } })
     })
 
+    it('should honour ReturnType<typeof useTranslation<ns>>[\'t\'] on params (#284)', async () => {
+      const sampleCode = `
+        import { useTranslation } from 'react-i18next';
+        const build = (t: ReturnType<typeof useTranslation<'order-banner'>>['t']) => ({ title: t('generic.title', 'Title') });
+        const build2 = ({ t }: { t: ReturnType<typeof useTranslation<'order-banner', 'generic'>>['t'] }) => t('cta', 'CTA');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      expect(results.find(r => pathEndsWith(r.path, '/locales/en/order-banner.json'))!.newTranslations)
+        .toEqual({ generic: { title: 'Title', cta: 'CTA' } })
+    })
+
+    it('should let a wrapper that forwards its key to a scoped t inherit that scope (#284)', async () => {
+      const sampleCode = `
+        import { useCallback } from 'react';
+        import { useTranslation } from 'react-i18next';
+        const useResolve = ({ t: tProp }) => {
+          const { t: tLocal } = useTranslation('anonymous-account');
+          const t = useCallback((key: string, options?: any): string => {
+            if (tProp) return tProp(key, { ...options, defaultValue: tLocal(key, options) });
+            return tLocal(key, options);
+          }, [tProp, tLocal]);
+          const t2 = (key: string) => tLocal(key);
+          return t('welcome', 'Welcome') + t2('login', 'Login');
+        };
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      expect(results.find(r => pathEndsWith(r.path, '/locales/en/anonymous-account.json'))!.newTranslations)
+        .toEqual({ welcome: 'Welcome', login: 'Login' })
+    })
+
     it('should handle array destructuring from useTranslation', async () => {
       const sampleCode = `
         const [t] = useTranslation('common');

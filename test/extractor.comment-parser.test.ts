@@ -48,4 +48,27 @@ describe('extractor: comment-parser', () => {
     expect(allKeys.has('translation:comment"s key')).toBe(true)
     expect(allKeys.has('translation:comment\'s key TWO')).toBe(true)
   })
+  it('should not extract keys from fenced code blocks inside doc comments (#284)', async () => {
+    const sampleCode = `
+      /**
+       * Usage:
+       *
+       * \`\`\`tsx
+       * const result = await showModal({ title: t('rename-activity-title') })
+       * \`\`\`
+       */
+      export const X = () => 1
+      // t('outside.fence')
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: { input: ['src/App.tsx'], output: 'locales/{{language}}/{{namespace}}.json' },
+    }
+
+    const { allKeys } = await findKeys(config)
+    expect(allKeys.has('translation:rename-activity-title')).toBe(false)
+    expect(allKeys.has('translation:outside.fence')).toBe(true)
+  })
 })
