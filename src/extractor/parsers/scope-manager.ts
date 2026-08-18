@@ -27,6 +27,8 @@ export class ScopeManager {
 
   // Track simple local constant objects with string literal property values
   private simpleConstantObjects: Map<string, Record<string, string>> = new Map()
+  // `const NS = ['a', 'b']` → used by resolveNsArg for `useTranslation(NS)`.
+  private simpleConstantArrays: Map<string, string[]> = new Map()
 
   // Shared (cross-file) tables so that exported constants from one file can be
   // resolved when imported in another. These are NOT cleared by reset().
@@ -87,6 +89,7 @@ export class ScopeManager {
     this.scope = new Map()
     this.simpleConstants.clear()
     this.simpleConstantObjects.clear()
+    this.simpleConstantArrays.clear()
     this.thisFieldStack = []
   }
 
@@ -291,6 +294,14 @@ export class ScopeManager {
         if (Object.keys(map).length > 0) {
           this.simpleConstantObjects.set(node.id.value, map)
           this.sharedConstantObjects.set(node.id.value, map)
+        }
+      } else if (unwrapped?.type === 'ArrayExpression') {
+        const arr = unwrapped.elements
+          .map((el: any) => ScopeManager.unwrapTsExpression(el?.expression))
+          .filter((e: any) => e?.type === 'StringLiteral')
+          .map((e: any) => e.value as string)
+        if (arr.length > 0 && arr.length === unwrapped.elements.length) {
+          this.simpleConstantArrays.set(node.id.value, arr)
         }
       } else {
         const fromType = ScopeManager.extractStringFromTypeAnnotation(node)
@@ -612,8 +623,13 @@ export class ScopeManager {
    */
   private resolveNsArg (nsNode: Expression | undefined): { defaultNs?: string; namespaces?: string[] } {
     if (!nsNode) return {}
+    nsNode = ScopeManager.unwrapTsExpression(nsNode) // `[...] as const`, `satisfies`, `as X`
     if (nsNode.type === 'StringLiteral') return { defaultNs: nsNode.value }
-    if (nsNode.type === 'Identifier') return { defaultNs: this.resolveSimpleStringIdentifier(nsNode.value) }
+    if (nsNode.type === 'Identifier') {
+      const arr = this.simpleConstantArrays.get(nsNode.value)
+      if (arr) return { defaultNs: arr[0], namespaces: arr }
+      return { defaultNs: this.resolveSimpleStringIdentifier(nsNode.value) }
+    }
     if (nsNode.type === 'MemberExpression') return { defaultNs: this.resolveSimpleMemberExpression(nsNode) }
     // `useTranslation(ns ?? 'fallback')` / `useTranslation(ns || 'fallback')`:
     // prefer a statically resolvable left side, otherwise use the fallback.

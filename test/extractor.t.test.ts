@@ -452,6 +452,42 @@ describe('extractor: advanced t features', () => {
         .toEqual({ welcome: 'Welcome', login: 'Login' })
     })
 
+    it('should resolve union / generic-constrained / aliased TFunction namespaces to the first member (#284)', async () => {
+      const sampleCode = `
+        import type { TFunction } from 'i18next';
+        type Ns = 'ns-alias' | 'other';
+        const A = ({ t }: { t: TFunction<'ns-union' | 'other'> }) => t('a', 'A');
+        function B<Ns extends 'ns-generic' | 'other'>(props: { t: TFunction<Ns> }) { return props.t('b', 'B'); }
+        const C = <Ns extends 'ns-generic2' | 'other'>({ t }: { t: TFunction<Ns> }) => t('c', 'C');
+        const D = (t: TFunction<Ns>) => t('d', 'D');
+        interface P { t: TFunction<'ns-props'> }
+        const E = (props: P) => props.t('e', 'E');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const ns = (n: string) => results.find(r => pathEndsWith(r.path, `/locales/en/${n}.json`))?.newTranslations
+      expect(ns('ns-union')).toEqual({ a: 'A' })
+      expect(ns('ns-generic')).toEqual({ b: 'B' })
+      expect(ns('ns-generic2')).toEqual({ c: 'C' })
+      expect(ns('ns-alias')).toEqual({ d: 'D' })
+      expect(ns('ns-props')).toEqual({ e: 'E' })
+      expect(ns('other')).toBeUndefined()
+    })
+
+    it('should resolve useTranslation([...] as const) and useTranslation(NS_CONST) arrays (#284)', async () => {
+      const sampleCode = `
+        const NS = ['ns-const', 'other'] as const;
+        const A = () => { const { t } = useTranslation(['ns-asconst', 'other'] as const); return t('a', 'A'); };
+        const B = () => { const { t } = useTranslation(NS); return t('b', 'B'); };
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      expect(results.find(r => pathEndsWith(r.path, '/locales/en/ns-asconst.json'))!.newTranslations).toEqual({ a: 'A' })
+      expect(results.find(r => pathEndsWith(r.path, '/locales/en/ns-const.json'))!.newTranslations).toEqual({ b: 'B' })
+    })
+
     it('should handle array destructuring from useTranslation', async () => {
       const sampleCode = `
         const [t] = useTranslation('common');

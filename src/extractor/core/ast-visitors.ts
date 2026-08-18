@@ -249,6 +249,13 @@ export class ASTVisitors {
       this.scopeManager.enterScope()
       isNewScope = true
 
+      // `<Ns extends 'a' | 'b'>(t: TFunction<Ns>)` → constraint lookup for type params
+      const typeParamConstraints: Record<string, any> = {}
+      for (const tp of (node.typeParameters?.parameters ?? node.typeParameters?.params ?? [])) {
+        const name = tp?.name?.value ?? tp?.name?.name
+        if (name && tp.constraint) typeParamConstraints[name] = tp.constraint
+      }
+
       const params = (node.params && Array.isArray(node.params)) ? node.params : (node.params || [])
       for (const p of params) {
         // handle common param shapes: Identifier, AssignmentPattern (default), RestElement ignored
@@ -270,7 +277,7 @@ export class ASTVisitors {
             const localName = localNode?.type === 'Identifier' ? localNode.value : undefined
             if (!memberName || !localName) continue
             // `({ t }: { t: TFunction<'ns'> })` → bind `t` to that namespace
-            this.bindTFunctionParam(localName, this.getMemberTypeNode(patType, memberName))
+            this.bindTFunctionParam(localName, this.getMemberTypeNode(patType, memberName), typeParamConstraints)
             if (!members?.[memberName]) continue
             this.expressionResolver.setTemporaryVariable(localName, members[memberName])
             if (!paramTemporaries) paramTemporaries = []
@@ -312,7 +319,11 @@ export class ASTVisitors {
           typeAnn = undefined
         }
 
-        this.bindTFunctionParam(paramKey, typeAnn)
+        this.bindTFunctionParam(paramKey, typeAnn, typeParamConstraints)
+        // `props: { t: TFunction<'ns'> }` → bind `props.t` so `props.t('key')` resolves
+        for (const { name, typeNode } of this.getObjectTypeMembers(typeAnn)) {
+          this.bindTFunctionParam(`${paramKey}.${name}`, typeNode, typeParamConstraints)
+        }
 
         // Capture parameter type annotations as temporary variables in the
         // expression resolver so that dynamic bracket expressions like
@@ -586,7 +597,7 @@ export class ASTVisitors {
    * If `typeAnn` is a `TFunction<Ns, KPrefix>` type reference, register
    * `paramKey` in the current scope with that namespace / keyPrefix.
    */
-  private bindTFunctionParam (paramKey: string, typeAnn: any): void {
+  private bindTFunctionParam (paramKey: string, typeAnn: any, typeParamConstraints: Record<string, any> = {}): void {
     // Small helpers to robustly extract the referenced type name and literal string
     const extractTypeName = (ta: any): string | undefined => {
       if (!ta) return undefined
@@ -605,6 +616,14 @@ export class ASTVisitors {
 
     const extractStringLiteralValue = (node: any): string | undefined => {
       if (!node) return undefined
+      // Union (`'a' | 'b'`), local alias, or generic constrained to those: use the
+      // first member. Mirrors i18next's type-level behaviour (first ns wins).
+      if (node.type === 'TsUnionType') return extractStringLiteralValue(node.types?.[0])
+      if (node.type === 'TsTypeReference' && node.typeName?.type === 'Identifier') {
+        const constraint = typeParamConstraints[node.typeName.value]
+        if (constraint) return extractStringLiteralValue(constraint)
+        return this.expressionResolver.resolveTypeToStringValues(node)[0]
+      }
       // Handle: typeof SomeConst  → TsTypeQuery { exprName: { value: 'SomeConst' } }
       if (node?.type === 'TsTypeQuery') {
         const name = node.exprName?.value ?? node.exprName?.name
@@ -697,19 +716,25 @@ export class ASTVisitors {
    * alias name).
    */
   private getMemberTypeNode (tsType: any, memberName: string): any | undefined {
-    if (!tsType) return undefined
+    return this.getObjectTypeMembers(tsType).find(m => m.name === memberName)?.typeNode
+  }
+
+  /** `{ name, typeNode }` for every property of an object-shaped type annotation. */
+  private getObjectTypeMembers (tsType: any): Array<{ name: string; typeNode: any }> {
+    if (!tsType) return []
     let members: any[] | undefined
     if (tsType.type === 'TsTypeLiteral') members = tsType.members
     else if (tsType.type === 'TsTypeReference' && tsType.typeName?.type === 'Identifier') {
       members = this.expressionResolver.getObjectTypeMembersRaw(tsType.typeName.value)
     }
-    if (!Array.isArray(members)) return undefined
+    if (!Array.isArray(members)) return []
+    const out: Array<{ name: string; typeNode: any }> = []
     for (const m of members) {
       if (m?.type !== 'TsPropertySignature') continue
       const name = m.key?.type === 'Identifier' || m.key?.type === 'StringLiteral' ? m.key.value : undefined
-      if (name === memberName) return m.typeAnnotation?.typeAnnotation ?? m.typeAnnotation
+      if (name) out.push({ name, typeNode: m.typeAnnotation?.typeAnnotation ?? m.typeAnnotation })
     }
-    return undefined
+    return out
   }
 
   /**

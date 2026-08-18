@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.70.2
+
+- fix: namespace detection for union / generic / array forms
+  ([#284](https://github.com/i18next/i18next-cli/issues/284)):
+  - `TFunction<'a' | 'b'>`, `TFunction<Ns>` with `<Ns extends 'a' | 'b'>`, and `TFunction<Alias>`
+    with a local `type Alias = 'a' | 'b'` resolve to the first member (plain, destructured and
+    `props.t` member-call forms).
+  - `useTranslation(['a', 'b'] as const)` and `useTranslation(NS)` with a local
+    `const NS = ['a', 'b']` are resolved like the inline array form.
+
 ## 1.70.1
 
 - feat: further namespace detection improvements
