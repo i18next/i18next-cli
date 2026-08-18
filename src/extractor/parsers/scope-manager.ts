@@ -29,6 +29,11 @@ export class ScopeManager {
   private simpleConstantObjects: Map<string, Record<string, string>> = new Map()
   // `const NS = ['a', 'b']` → used by resolveNsArg for `useTranslation(NS)`.
   private simpleConstantArrays: Map<string, string[]> = new Map()
+  // `({ ns = 'x' }) =>` / `(ns = 'x') =>` param defaults, set/cleared per function by the visitor.
+  private paramDefaults: Map<string, string> = new Map()
+  // Last-resort identifier resolution for `useTranslation(ns)` (e.g. first member of
+  // a param's union type), wired up by the visitor.
+  public identifierFallback?: (name: string) => string | undefined
 
   // Shared (cross-file) tables so that exported constants from one file can be
   // resolved when imported in another. These are NOT cleared by reset().
@@ -90,6 +95,7 @@ export class ScopeManager {
     this.simpleConstants.clear()
     this.simpleConstantObjects.clear()
     this.simpleConstantArrays.clear()
+    this.paramDefaults.clear()
     this.thisFieldStack = []
   }
 
@@ -220,6 +226,14 @@ export class ScopeManager {
   /**
    * Resolve simple identifier declared in-file to its string literal value, if known.
    */
+  public setParamDefault (name: string, value: string): void {
+    this.paramDefaults.set(name, value)
+  }
+
+  public deleteParamDefault (name: string): void {
+    this.paramDefaults.delete(name)
+  }
+
   public resolveSimpleStringIdentifier (name: string): string | undefined {
     return this.simpleConstants.get(name) ?? this.sharedConstants.get(name)
   }
@@ -628,7 +642,11 @@ export class ScopeManager {
     if (nsNode.type === 'Identifier') {
       const arr = this.simpleConstantArrays.get(nsNode.value)
       if (arr) return { defaultNs: arr[0], namespaces: arr }
-      return { defaultNs: this.resolveSimpleStringIdentifier(nsNode.value) }
+      return {
+        defaultNs: this.paramDefaults.get(nsNode.value) ??
+          this.resolveSimpleStringIdentifier(nsNode.value) ??
+          this.identifierFallback?.(nsNode.value)
+      }
     }
     if (nsNode.type === 'MemberExpression') return { defaultNs: this.resolveSimpleMemberExpression(nsNode) }
     // `useTranslation(ns ?? 'fallback')` / `useTranslation(ns || 'fallback')`:

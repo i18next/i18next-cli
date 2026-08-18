@@ -69,6 +69,9 @@ export class ASTVisitors {
     }
 
     this.scopeManager = new ScopeManager(config)
+    // `useTranslation(ns)` where `ns` is a param typed `'a' | 'b'` → first member
+    // (same rule as `TFunction<'a' | 'b'>`).
+    this.scopeManager.identifierFallback = (name) => this.expressionResolver.getVariableValues(name)?.[0]
     // use shared resolver when provided so captured enums/objects are visible across files
     this.expressionResolver = expressionResolver ?? new ExpressionResolver(this.hooks)
     this.callExpressionHandler = new CallExpressionHandler(
@@ -200,6 +203,7 @@ export class ASTVisitors {
     let isNewScope = false
     let isNewClassScope = false
     let paramTemporaries: string[] | undefined
+    let paramDefaults: string[] | undefined
     let paramObjectTemporaries: string[] | undefined
     let paramArrayTemporaries: string[] | undefined
 
@@ -276,6 +280,15 @@ export class ASTVisitors {
             if (localNode?.type === 'AssignmentPattern') localNode = localNode.left
             const localName = localNode?.type === 'Identifier' ? localNode.value : undefined
             if (!memberName || !localName) continue
+            // `({ ns = 'x' })` → `useTranslation(ns)` resolves to the default
+            const defaultNode = prop?.type === 'AssignmentPatternProperty'
+              ? prop.value
+              : (prop?.value?.type === 'AssignmentPattern' ? prop.value.right : undefined)
+            if (defaultNode?.type === 'StringLiteral') {
+              this.scopeManager.setParamDefault(localName, defaultNode.value)
+              if (!paramDefaults) paramDefaults = []
+              paramDefaults.push(localName)
+            }
             // `({ t }: { t: TFunction<'ns'> })` → bind `t` to that namespace
             this.bindTFunctionParam(localName, this.getMemberTypeNode(patType, memberName), typeParamConstraints)
             if (!members?.[memberName]) continue
@@ -296,6 +309,8 @@ export class ASTVisitors {
         else if ((p.type === 'Param' || p.type === 'FnParam' || p.type === 'Arg') && p.pat && p.pat.type === 'Identifier') ident = p.pat
         else if ((p.type === 'Param' || p.type === 'FnParam' || p.type === 'Arg') && p.pattern && p.pattern.type === 'Identifier') ident = p.pattern
         else if (p.pat && p.pat.type === 'Identifier') ident = p.pat
+        // function f(ns = 'x') → Param { pat: AssignmentPattern }
+        else if (p.pat?.type === 'AssignmentPattern' && p.pat.left?.type === 'Identifier') ident = p.pat.left
         else if (p.pattern && p.pattern.type === 'Identifier') ident = p.pattern
         // some parsers expose .param or .left.param shapes
         else if ((p.left && p.left.param && p.left.param.type === 'Identifier')) ident = p.left.param
@@ -304,6 +319,14 @@ export class ASTVisitors {
         if (!ident) continue
         const paramKey = (ident.value ?? ident.name) as string | undefined
         if (!paramKey) continue
+
+        // `(ns = 'x') =>` → `useTranslation(ns)` resolves to the default
+        const assign = p.type === 'AssignmentPattern' ? p : (p.pat?.type === 'AssignmentPattern' ? p.pat : undefined)
+        if (assign?.right?.type === 'StringLiteral') {
+          this.scopeManager.setParamDefault(paramKey, assign.right.value)
+          if (!paramDefaults) paramDefaults = []
+          paramDefaults.push(paramKey)
+        }
 
         // Try to locate TypeScript type node carried on the identifier.
         const rawTypeAnn: any = (ident.typeAnnotation ?? p.typeAnnotation ?? (p.left && p.left.typeAnnotation)) as any
@@ -573,6 +596,9 @@ export class ASTVisitors {
         for (const name of paramTemporaries) {
           this.expressionResolver.deleteTemporaryVariable(name)
         }
+      }
+      if (paramDefaults) {
+        for (const name of paramDefaults) this.scopeManager.deleteParamDefault(name)
       }
       if (paramObjectTemporaries) {
         for (const name of paramObjectTemporaries) {

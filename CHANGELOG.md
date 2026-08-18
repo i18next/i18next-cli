@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.70.4
+
+- feat: `useTranslation(ns)` where `ns` is a function parameter now resolves to the parameter's
+  string default (`({ ns = 'a' }) =>`, `(ns = 'a') =>`), or, without a default, to the first
+  member of its inline union type (`{ ns: 'a' | 'b' }`), mirroring the `TFunction<'a' | 'b'>`
+  rule ([#284](https://github.com/i18next/i18next-cli/issues/284)).
+
 ## 1.70.3
 
 - fix: `TFunction<Ns>` members are now found inside intersection types

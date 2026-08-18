@@ -496,6 +496,30 @@ describe('extractor: advanced t features', () => {
       expect(results.find(r => pathEndsWith(r.path, '/locales/en/ns-const.json'))!.newTranslations).toEqual({ b: 'B' })
     })
 
+    it('should resolve useTranslation(ns) from a param default or the first member of its union type (#284)', async () => {
+      const sampleCode = `
+        import type { FC } from 'react';
+        type WebUploadProps = { Ns?: 'ns-default' | 'other' };
+        const A: FC<WebUploadProps> = ({ Ns = 'ns-default', next }) => { const { t } = useTranslation(Ns); return t('a', 'A'); };
+        const B = ({ ns }: { ns: 'ns-union' | 'other' }) => { const { t } = useTranslation(ns); return t('b', 'B'); };
+        function C(ns = 'ns-plain') { const { t } = useTranslation(ns); return t('c', 'C'); }
+        const D = ({ ns: n = 'ns-renamed' }: { ns?: string }) => { const { t } = useTranslation(n); return t('d', 'D'); };
+        // default beats the union's first member
+        const E = ({ ns = 'ns-e' }: { ns?: 'other' | 'ns-e' }) => { const { t } = useTranslation(ns); return t('e', 'E'); };
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const ns = (n: string) => results.find(r => pathEndsWith(r.path, `/locales/en/${n}.json`))?.newTranslations
+      expect(ns('ns-default')).toEqual({ a: 'A' })
+      expect(ns('ns-union')).toEqual({ b: 'B' })
+      expect(ns('ns-plain')).toEqual({ c: 'C' })
+      expect(ns('ns-renamed')).toEqual({ d: 'D' })
+      expect(ns('ns-e')).toEqual({ e: 'E' })
+      expect(ns('other')).toBeUndefined()
+      expect(ns('translation')).toBeUndefined()
+    })
+
     it('should handle array destructuring from useTranslation', async () => {
       const sampleCode = `
         const [t] = useTranslation('common');
