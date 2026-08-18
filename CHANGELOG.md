@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.70.0
+
+- feat: improve namespace detection for `t` functions whose namespace is not a plain
+  `useTranslation('ns')` literal ([#284](https://github.com/i18next/i18next-cli/issues/284)):
+  - `useTranslation(ns ?? 'fallback')` / `useTranslation(ns || 'fallback')` now resolve to the
+    statically known side (the fallback literal when the left side is dynamic) instead of
+    silently falling back to `defaultNS`.
+  - `TFunction<'ns'>` / `TFunction<'ns', 'keyPrefix'>` is now honoured on destructured
+    parameters as well (`({ t }: { t: TFunction<'ns'> })`, `({ t }: Props)` with a local
+    interface or type alias), not only on plain `(t: TFunction<'ns'>)` parameters.
+  These previously caused `status` / `extract` to attribute such keys to the default namespace
+  and report them as missing.
+
 ## 1.69.2
 
 - fix: support the AST shape of `@swc/core` 1.16, which types function, arrow and method

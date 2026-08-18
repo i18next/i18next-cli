@@ -603,6 +603,12 @@ export class ScopeManager {
     if (nsNode.type === 'StringLiteral') return { defaultNs: nsNode.value }
     if (nsNode.type === 'Identifier') return { defaultNs: this.resolveSimpleStringIdentifier(nsNode.value) }
     if (nsNode.type === 'MemberExpression') return { defaultNs: this.resolveSimpleMemberExpression(nsNode) }
+    // `useTranslation(ns ?? 'fallback')` / `useTranslation(ns || 'fallback')`:
+    // prefer a statically resolvable left side, otherwise use the fallback.
+    if (nsNode.type === 'BinaryExpression' && (nsNode.operator === '??' || nsNode.operator === '||')) {
+      const left = this.resolveNsArg(nsNode.left)
+      return left.defaultNs !== undefined ? left : this.resolveNsArg(nsNode.right)
+    }
     if (nsNode.type === 'ArrayExpression') {
       const namespaces: string[] = []
       for (const el of nsNode.elements) {

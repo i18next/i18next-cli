@@ -38,6 +38,8 @@ export class ExpressionResolver {
   // type aliases. Maps typeName -> { memberName: possible string values }.
   // e.g. `interface IProps { size: ChangeType }` -> { IProps: { size: ['all','next'] } }
   private objectTypeTable: Map<string, Record<string, string[]>> = new Map()
+  // Raw TS member nodes of local interfaces / object type aliases, keyed by type name.
+  private objectTypeMembersRaw: Map<string, any[]> = new Map()
 
   // Temporary per-scope bindings for identifiers holding an object-shaped type,
   // e.g. `function f(props: IProps)` -> { props: { size: ['all','next'] } }.
@@ -252,6 +254,7 @@ export class ExpressionResolver {
       if (!tsType) return
       // `type IProps = { size: ChangeType }` — object shape, not a string union.
       if (tsType.type === 'TsTypeLiteral') {
+        this.objectTypeMembersRaw.set(name, tsType.members)
         const members = this.collectObjectTypeMembers(tsType.members)
         if (members) this.objectTypeTable.set(name, members)
         return
@@ -278,6 +281,7 @@ export class ExpressionResolver {
     try {
       const name: string | undefined = node?.id?.type === 'Identifier' ? node.id.value : undefined
       if (!name) return
+      if (Array.isArray(node?.body?.body)) this.objectTypeMembersRaw.set(name, node.body.body)
       const members = this.collectObjectTypeMembers(node?.body?.body)
       if (members) this.objectTypeTable.set(name, members)
     } catch {
@@ -309,6 +313,10 @@ export class ExpressionResolver {
    * Resolve a type annotation that refers to an object shape (interface, object
    * type alias, or inline type literal) to its member → string values map.
    */
+  public getObjectTypeMembersRaw (name: string): any[] | undefined {
+    return this.objectTypeMembersRaw.get(name)
+  }
+
   public resolveTypeMembers (tsType: any): Record<string, string[]> | undefined {
     try {
       if (!tsType) return undefined

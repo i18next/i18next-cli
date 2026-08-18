@@ -383,6 +383,41 @@ describe('extractor: advanced t features', () => {
       expect(ns2File!.newTranslations).toEqual({ key: { in: { ns2: 'Key 2' } } })
     })
 
+    it('should resolve the fallback of `ns ?? "literal"` / `ns || "literal"` in useTranslation (#284)', async () => {
+      const sampleCode = `
+        const A = ({ ns }: { ns?: string }) => {
+          const { t } = useTranslation(ns ?? 'scan');
+          return t('list.title', 'List');
+        };
+        const B = ({ ns }: { ns?: string }) => {
+          const { t } = useTranslation(ns || 'eval');
+          return t('other', 'Other');
+        };
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      expect(results.find(r => pathEndsWith(r.path, '/locales/en/scan.json'))!.newTranslations).toEqual({ list: { title: 'List' } })
+      expect(results.find(r => pathEndsWith(r.path, '/locales/en/eval.json'))!.newTranslations).toEqual({ other: 'Other' })
+    })
+
+    it('should honour TFunction<ns> on destructured params (inline type, interface, alias) (#284)', async () => {
+      const sampleCode = `
+        import type { TFunction } from 'i18next';
+        interface P { t: TFunction<'ns-interface'> }
+        type Q = { t: TFunction<'ns-alias', 'prefix'> }
+        const A = ({ t }: { t: TFunction<'ns-inline'> }) => t('a', 'A');
+        const B = ({ t }: P) => t('b', 'B');
+        const C = ({ t: tt }: Q) => tt('c', 'C');
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      expect(results.find(r => pathEndsWith(r.path, '/locales/en/ns-inline.json'))!.newTranslations).toEqual({ a: 'A' })
+      expect(results.find(r => pathEndsWith(r.path, '/locales/en/ns-interface.json'))!.newTranslations).toEqual({ b: 'B' })
+      expect(results.find(r => pathEndsWith(r.path, '/locales/en/ns-alias.json'))!.newTranslations).toEqual({ prefix: { c: 'C' } })
+    })
+
     it('should handle array destructuring from useTranslation', async () => {
       const sampleCode = `
         const [t] = useTranslation('common');
