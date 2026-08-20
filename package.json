@@ -59,8 +59,8 @@
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@typescript-eslint/parser": "^8.67.0",
-    "@vitest/coverage-v8": "^4.1.10",
-    "eslint": "^9.39.4",
+    "@vitest/coverage-v8": "^4.1.11",
+    "eslint": "^9.39.5",
     "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-import": "^2.32.0",
     "memfs": "^4.68.1",
@@ -68,25 +68,25 @@
     "rollup": "^4.62.4",
     "typescript": "^6.0.3",
     "unplugin-swc": "^1.5.11",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "dependencies": {
     "@croct/json5-parser": "^0.2.2",
-    "@swc/core": "^1.16.0",
+    "@swc/core": "^1.16.1",
     "chokidar": "^5.0.0",
     "commander": "^15.0.0",
     "execa": "^10.0.1",
     "glob": "^13.0.6",
-    "i18next": "^26.3.6",
+    "i18next": "^26.4.0",
     "i18next-resources-for-ts": "^2.1.0",
-    "inquirer": "^14.0.2",
+    "inquirer": "^14.1.0",
     "jiti": "^2.7.0",
     "jsonc-parser": "^3.3.1",
-    "magic-string": "^1.2.0",
+    "magic-string": "^1.2.2",
     "minimatch": "^10.2.6",
     "ora": "^9.4.1",
     "react": "^19.2.8",
-    "react-i18next": "^17.0.11",
+    "react-i18next": "^17.0.12",
     "yaml": "^2.9.0"
   }
 }
