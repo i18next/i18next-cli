@@ -6,6 +6,22 @@ import { CallExpressionHandler } from '../parsers/call-expression-handler.js'
 import { JSXHandler } from '../parsers/jsx-handler.js'
 
 /**
+ * Array iteration methods whose callback we can bind, mapped to the position of
+ * the *element* parameter: `map(el, i)` → 0, `reduce((acc, el) => …)` → 1.
+ */
+const ITERATION_METHODS = {
+  map: 0,
+  forEach: 0,
+  flatMap: 0,
+  filter: 0,
+  find: 0,
+  some: 0,
+  every: 0,
+  reduce: 1,
+  reduceRight: 1,
+} as const
+
+/**
  * AST visitor class that traverses JavaScript/TypeScript syntax trees to extract translation keys.
  *
  * This class implements a manual recursive walker that:
@@ -781,7 +797,8 @@ export class ASTVisitors {
       if (callee?.type !== 'MemberExpression') return undefined
       const prop = callee.property
       if (prop?.type !== 'Identifier') return undefined
-      if (!['map', 'forEach', 'flatMap', 'filter', 'find', 'some', 'every'].includes(prop.value)) return undefined
+      const elementParamIndex = ITERATION_METHODS[prop.value as keyof typeof ITERATION_METHODS]
+      if (elementParamIndex === undefined) return undefined
 
       // The object must be an identifier whose value is a known string array
       const obj = callee.object
@@ -790,7 +807,7 @@ export class ASTVisitors {
       if (obj?.type === 'Identifier') {
         const values = this.expressionResolver.getVariableValues(obj.value)
         if (values && values.length > 0) {
-          return this.extractCallbackParam(node, values)
+          return this.extractCallbackParam(node, values, elementParamIndex)
         }
       }
 
@@ -815,7 +832,7 @@ export class ASTVisitors {
             if (mapEntry) {
               const values = isKeys ? Object.keys(mapEntry) : Object.values(mapEntry)
               if (values.length > 0) {
-                return this.extractCallbackParam(node, values)
+                return this.extractCallbackParam(node, values, elementParamIndex)
               }
             }
           }
@@ -844,7 +861,8 @@ export class ASTVisitors {
       if (callee?.type !== 'MemberExpression') return undefined
       const prop = callee.property
       if (prop?.type !== 'Identifier') return undefined
-      if (!['map', 'forEach', 'flatMap', 'filter', 'find', 'some', 'every'].includes(prop.value)) return undefined
+      const elementParamIndex = ITERATION_METHODS[prop.value as keyof typeof ITERATION_METHODS]
+      if (elementParamIndex === undefined) return undefined
       if (callee.object?.type !== 'Identifier') return undefined
 
       const members = this.expressionResolver.getArrayElementMembers(callee.object.value)
@@ -852,7 +870,7 @@ export class ASTVisitors {
 
       const callbackArg = node.arguments?.[0]?.expression
       const params: any[] = callbackArg?.params ?? callbackArg?.parameters ?? []
-      const firstParam = params[0]
+      const firstParam = params[elementParamIndex]
       if (!firstParam) return undefined
 
       const pat = firstParam.pat ?? firstParam.pattern ?? firstParam
@@ -886,15 +904,16 @@ export class ASTVisitors {
   }
 
   /**
-   * Extracts the first callback parameter identifier from an iteration call node
-   * and pairs it with the provided values array.
+   * Extracts the element callback parameter identifier from an iteration call node
+   * and pairs it with the provided values array. `paramIndex` is the position of
+   * the element parameter (0 for map/forEach/…, 1 for reduce's `(acc, el)`).
    */
-  private extractCallbackParam (node: any, values: string[]): { paramName: string; values: string[] } | undefined {
+  private extractCallbackParam (node: any, values: string[], paramIndex = 0): { paramName: string; values: string[] } | undefined {
     const callbackArg = node.arguments?.[0]?.expression
     if (!callbackArg) return undefined
 
     const params: any[] = callbackArg.params ?? callbackArg.parameters ?? []
-    const firstParam = params[0]
+    const firstParam = params[paramIndex]
     if (!firstParam) return undefined
 
     const ident: any =

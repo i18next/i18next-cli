@@ -55,6 +55,28 @@ describe('extractor: as-const array and cross-file patterns', () => {
       expect(translationFile).toBeDefined()
     })
 
+    it('should expand all array values when the array is iterated with .reduce()', async () => {
+      // https://github.com/i18next/i18next-cli/issues/285 — reduce's element is the 2nd param
+      const sampleCode = `
+        const ERRORS = [400, 404] as const;
+        function buildErrorStatusText(textType: "title" | "description"): object {
+          return ERRORS.reduce((acc, n) => {
+            acc[n] = t(\`errors.\${n}.\${textType}\`);
+            return acc;
+          }, {} as Record<number, string>);
+        }
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+      expect(translationFile?.newTranslations).toEqual({
+        errors: {
+          400: { title: 'errors.400.title', description: 'errors.400.description' },
+          404: { title: 'errors.404.title', description: 'errors.404.description' },
+        },
+      })
+    })
+
     it('should expand all array values when the array is iterated with .map()', async () => {
       // Core pattern from the issue:
       // const ACCESS_OPTIONS = ['full', 'edit', 'restricted'] as const;

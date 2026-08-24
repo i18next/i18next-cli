@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.71.1
+
+- feat: `.reduce()`/`.reduceRight()` over an `as const` array now bind the element callback
+  parameter (the second one, `(acc, el) => …`) like `.map()`/`.forEach()` already did, so
+  ``ERRORS.reduce((acc, n) => { acc[n] = t(`errors.${n}.title`) }, {})`` extracts every element
+  without the `(typeof ERRORS)[number]` cast workaround
+  ([#285](https://github.com/i18next/i18next-cli/issues/285)).
+
 ## 1.71.0
 
 - feat: new `status.ignoreKeys` config option: glob patterns (same shape as `preservePatterns`,
