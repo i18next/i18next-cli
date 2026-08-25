@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.71.3
+
+- fix: `fallbackNS` accounting now works when the fallback namespace lives in its own file
+  outside a merged output (`mergeNamespaces: true`), e.g. split out and hidden via
+  `ignoreNamespaces`: `status` and `extract` look up a fallback namespace missing from the
+  merged file at its per-namespace path, and a function `output` resolves the merged file
+  without a namespace (matching what `extract` writes), so hybrid layouts are expressible via
+  an `output` function. When a `fallbackNS` is listed in `ignoreNamespaces` but its
+  translations cannot be found, `status` now warns instead of silently reporting the keys as
+  absent ([#287](https://github.com/i18next/i18next-cli/issues/287)).
+
 ## 1.71.2
 
 - fix: `extract` no longer scales quadratically with the number of keys: selector-API /

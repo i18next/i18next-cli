@@ -1158,8 +1158,9 @@ async function reattributeFallbackNsKeys (
 
   // Same merged-output detection as the per-locale loop in getTranslations.
   const shouldMerge = config.extract.mergeNamespaces || (typeof config.extract.output === 'string' ? !config.extract.output.includes('{{namespace}}') : false)
+  const mergedPrimaryPath = resolve(process.cwd(), getOutputPath(config.extract.output, primaryLanguage))
   const mergedPrimaryFile: Record<string, any> | null = shouldMerge
-    ? (await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, primaryLanguage))) || {})
+    ? (await loadTranslationFile(mergedPrimaryPath) || {})
     : null
 
   const catalogCache = new Map<string, Record<string, any>>()
@@ -1168,9 +1169,19 @@ async function reattributeFallbackNsKeys (
     let catalog = catalogCache.get(cacheKey)
     if (!catalog) {
       if (mergedPrimaryFile) {
+        catalog = mergedPrimaryFile[ns]
+        if (catalog === undefined) {
+          // The namespace may live in its own file outside the merged one
+          // (split out and hidden via `ignoreNamespaces`, #287). Only
+          // reachable when `output` resolves it to a separate path.
+          const nsPath = resolve(process.cwd(), getOutputPath(config.extract.output, primaryLanguage, ns))
+          if (nsPath !== mergedPrimaryPath) {
+            catalog = (await loadTranslationFile(nsPath)) ?? undefined
+          }
+        }
         // In merged mode the fallback keys may live at the top level when the
         // file is not namespaced (same resolution as the status command).
-        catalog = mergedPrimaryFile[ns] ?? (isFallback ? mergedPrimaryFile : {})
+        catalog ??= (isFallback ? mergedPrimaryFile : {})
       } else {
         catalog = await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, primaryLanguage, ns))) || {}
       }

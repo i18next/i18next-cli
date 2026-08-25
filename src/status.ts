@@ -313,17 +313,24 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
   const contextVariantsByNs = new Map<string, string[]>()
   const nestedReferenceKeysByNs = new Map<string, ExtractedKey[]>()
 
+  // Absolute path of the merged translation file for a locale. A function
+  // `output` is called WITHOUT a namespace — the same way `extract` resolves
+  // the merged file it writes — so hybrid layouts (one merged file plus a few
+  // split-out namespace files) resolve correctly (#287). String templates keep
+  // the historical defaultNS substitution for the {{namespace}} placeholder.
+  const getMergedPath = (locale: string): string => resolve(
+    process.cwd(),
+    typeof config.extract.output === 'function'
+      ? getOutputPath(config.extract.output, locale)
+      : getOutputPath(
+        config.extract.output,
+        locale,
+        (defaultNS === false ? 'translation' : (defaultNS || 'translation'))
+      )
+  )
+
   const primaryMergedForScan = mergeNamespaces
-    ? ((await loadTranslationFile(
-        resolve(
-          process.cwd(),
-          getOutputPath(
-            config.extract.output,
-            primaryLanguage,
-            (defaultNS === false ? 'translation' : (defaultNS || 'translation'))
-          )
-        )
-      )) || {})
+    ? ((await loadTranslationFile(getMergedPath(primaryLanguage))) || {})
     : null
 
   const collectNestedRefsFromValue = (value: unknown, refNs: string, bucket: ExtractedKey[], seen: Set<string>): void => {
@@ -408,19 +415,42 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
 
     const mergedTranslations = mergeNamespaces
       // When merging namespaces we need to load the combined translation file.
-      // The combined file lives under the regular output pattern and must include a namespace.
-      // If defaultNS is explicitly false, fall back to the conventional "translation" file name.
-      ? await loadTranslationFile(
-        resolve(
-          process.cwd(),
-          getOutputPath(
-            config.extract.output,
-            locale,
-            (defaultNS === false ? 'translation' : (defaultNS || 'translation'))
-          )
-        )
-      ) || {}
+      ? await loadTranslationFile(getMergedPath(locale)) || {}
       : null
+
+    // Load fallbackNS catalogs once per locale (looked up in order, like the
+    // i18next runtime). The per-namespace loop below skips a namespace's own
+    // entry.
+    const fallbackCatalogs = new Map<string, any>()
+    for (const fallbackNs of fallbackNamespaces) {
+      if (mergeNamespaces) {
+        // In merged mode the fallback keys normally live in the merged file
+        // under the fallback namespace.
+        let catalog = mergedTranslations?.[fallbackNs]
+        if (catalog === undefined) {
+          // The fallback namespace may live in its own file outside the merged
+          // one (split out and hidden via `ignoreNamespaces`, #287). Only
+          // reachable when `output` resolves it to a separate path.
+          const nsPath = resolve(process.cwd(), getOutputPath(config.extract.output, locale, fallbackNs))
+          if (nsPath !== getMergedPath(locale)) {
+            catalog = (await loadTranslationFile(nsPath)) ?? undefined
+          }
+        }
+        if (catalog === undefined && isPrimary && ignoreNamespaces.has(fallbackNs)) {
+          console.warn(`⚠️  fallbackNS "${fallbackNs}" is listed in ignoreNamespaces, but no translations for it were found — keys resolving through it will be reported as absent. If the namespace lives in its own file, use an \`output\` function that maps it to that path.`)
+        }
+        // If it's still not found, fall back to the top level of the merged
+        // file (flat, non-namespaced merged files).
+        fallbackCatalogs.set(fallbackNs, catalog ?? mergedTranslations ?? {})
+      } else {
+        const nsPath = resolve(process.cwd(), getOutputPath(config.extract.output, locale, fallbackNs))
+        const catalog = await loadTranslationFile(nsPath)
+        if (!catalog && isPrimary && ignoreNamespaces.has(fallbackNs)) {
+          console.warn(`⚠️  fallbackNS "${fallbackNs}" is listed in ignoreNamespaces, but no translations for it were found at "${nsPath}" — keys resolving through it will be reported as absent.`)
+        }
+        fallbackCatalogs.set(fallbackNs, catalog || {})
+      }
+    }
 
     for (const [ns, keysInNs] of keysByNs.entries()) {
       const translationsForNs = mergeNamespaces
@@ -429,18 +459,10 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
         ? (mergedTranslations?.[ns] ?? mergedTranslations ?? {})
         : await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, locale, ns))) || {}
 
-      // Load fallbackNS translations if configured (looked up in order, like the i18next runtime)
       const fallbackTranslationsList: any[] = []
       for (const fallbackNs of fallbackNamespaces) {
         if (ns === fallbackNs) continue
-        if (mergeNamespaces) {
-          // In merged mode, fallbackNS keys are in mergedTranslations under the fallback namespace
-          fallbackTranslationsList.push(mergedTranslations?.[fallbackNs] ?? mergedTranslations ?? {})
-        } else {
-          fallbackTranslationsList.push(await loadTranslationFile(
-            resolve(process.cwd(), getOutputPath(config.extract.output, locale, fallbackNs))
-          ) || {})
-        }
+        fallbackTranslationsList.push(fallbackCatalogs.get(fallbackNs))
       }
 
       let translatedInNs = 0

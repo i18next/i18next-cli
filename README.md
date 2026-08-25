@@ -921,6 +921,11 @@ export default defineConfig({
     // Namespaces to ignore during extraction, status, and sync operations.
     // Useful for monorepos where shared namespaces are managed elsewhere.
     // Keys using these namespaces will be excluded from processing.
+    // An ignored namespace can still act as a `fallbackNS` source: its
+    // translations are read (never written) for fallback accounting. If it
+    // lives in its own file outside a merged output (`mergeNamespaces: true`),
+    // use an `output` function that maps that namespace to its path, e.g.
+    // output: (lng, ns) => ns === 'shared' ? `locales/${lng}/${ns}.json` : `locales/${lng}.json`
     ignoreNamespaces: ['shared', 'common'], // Optional
 
     // When true (default), the extractor also scans code comments for t(...) / Trans examples and will extract keys found there.

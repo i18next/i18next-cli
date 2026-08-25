@@ -207,4 +207,39 @@ describe('extract with fallbackNS', () => {
       'page.checkout': { checkoutOnly: 'Checkout only' },
     })
   })
+
+  // https://github.com/i18next/i18next-cli/issues/287
+  it('reads a fallback namespace split into its own file and hidden via ignoreNamespaces (merged mode)', async () => {
+    await writeJson('locales/en.json', {
+      'page.checkout': { checkoutOnly: 'Checkout only' },
+    })
+    // The fallback namespace lives in its own file, outside the merged one.
+    await writeJson('locales/en/translations.json', { cancel: 'Cancel' })
+    await fs.writeFile(join(tempDir, 'src', 'Checkout.tsx'), `
+      import { useTranslation } from 'react-i18next';
+      export const Checkout = () => {
+        const { t } = useTranslation('page.checkout');
+        return <div><button>{t('cancel')}</button><p>{t('checkoutOnly')}</p></div>;
+      };
+    `)
+
+    const config = baseConfig({
+      mergeNamespaces: true,
+      ignoreNamespaces: ['translations'],
+    })
+    config.extract.output = (language: string, namespace?: string) =>
+      namespace === 'translations'
+        ? normalizePath(join(tempDir, `locales/${language}/${namespace}.json`))
+        : normalizePath(join(tempDir, `locales/${language}.json`))
+    await runExtractor(config, { isDryRun: false })
+
+    // 'cancel' resolves through the split fallback file, so it must not be
+    // duplicated into the merged file...
+    expect(await readJson('locales', 'en.json')).toEqual({
+      'page.checkout': { checkoutOnly: 'Checkout only' },
+    })
+    // ...and the ignored split file is left untouched.
+    expect(await readJson('locales', 'en', 'translations.json')).toEqual({ cancel: 'Cancel' })
+    expect(await fileExists('locales', 'de', 'translations.json')).toBe(false)
+  })
 })

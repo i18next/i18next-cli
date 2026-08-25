@@ -821,6 +821,100 @@ describe('status (fallbackNS)', () => {
     expect(processExitSpy).not.toHaveBeenCalled()
   })
 
+  // https://github.com/i18next/i18next-cli/issues/287
+  it('should read a fallback namespace split into its own file and hidden via ignoreNamespaces', async () => {
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/app.tsx')]: `
+        import { useTranslation } from 'react-i18next'
+        export default function App() {
+          const { t } = useTranslation('feature')
+          return (
+            <div>
+              <p>{t('feature-specific')}</p>
+              <p>{t('ok')}</p>
+              <p>{t('cancel')}</p>
+            </div>
+          )
+        }
+      `,
+      [resolve(process.cwd(), 'locales/en.json')]: JSON.stringify({
+        feature: { 'feature-specific': 'This is a feature-specific string' },
+      }),
+      [resolve(process.cwd(), 'locales/de.json')]: JSON.stringify({
+        feature: { 'feature-specific': 'Das ist ein feature-spezifischer text' },
+      }),
+      // The fallback namespace lives in its own file, outside the merged one.
+      [resolve(process.cwd(), 'locales/en/shared.json')]: JSON.stringify({
+        ok: 'OK',
+        cancel: 'Cancel',
+      }),
+      [resolve(process.cwd(), 'locales/de/shared.json')]: JSON.stringify({
+        ok: 'OK',
+        cancel: 'Abbrechen',
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: (language: string, namespace?: string) =>
+          namespace === 'shared'
+            ? `locales/${language}/${namespace}.json`
+            : `locales/${language}.json`,
+        defaultNS: 'shared',
+        fallbackNS: 'shared',
+        ignoreNamespaces: ['shared'],
+        mergeNamespaces: true,
+      },
+    }
+
+    await runStatus(config)
+
+    const logCalls = consoleLogSpy.mock.calls.map((call: any[]) => call[0])
+    expect(logCalls).toContain('🔑 Keys Found:         3')
+    // All keys present: one in the merged file, two via the split fallback file
+    expect(logCalls).toContain('- de: [■■■■■■■■■■■■■■■■■■■■] 100% (3/3 keys)')
+    expect(processExitSpy).not.toHaveBeenCalled()
+  })
+
+  it('should warn when fallbackNS is in ignoreNamespaces but cannot be found', async () => {
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/app.tsx')]: `
+        import { useTranslation } from 'react-i18next'
+        export default function App() {
+          const { t } = useTranslation('feature')
+          return <p>{t('ok')}</p>
+        }
+      `,
+      // The 'shared' fallback namespace is nowhere the CLI can see: not in the
+      // merged file, and the string output cannot address a per-namespace path.
+      [resolve(process.cwd(), 'locales/en.json')]: JSON.stringify({
+        feature: {},
+      }),
+      [resolve(process.cwd(), 'locales/de.json')]: JSON.stringify({
+        feature: {},
+      }),
+    })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/'],
+        output: 'locales/{{language}}.json',
+        defaultNS: 'shared',
+        fallbackNS: 'shared',
+        ignoreNamespaces: ['shared'],
+        mergeNamespaces: true,
+      },
+    }
+
+    await runStatus(config)
+
+    expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('fallbackNS "shared" is listed in ignoreNamespaces'))
+  })
+
   it('should support an array of fallback namespaces looked up in order', async () => {
     vol.fromJSON({
       [resolve(process.cwd(), 'src/app.tsx')]: `
