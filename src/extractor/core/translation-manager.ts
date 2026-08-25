@@ -395,13 +395,30 @@ function buildNewTranslationsForNs (
   // Prepare namespace pattern checking helpers
   const rawPreserve = config.extract.preservePatterns || []
 
+  // Fast equivalent of matching a `${objectKey}.*` glob per object key: instead of
+  // testing O(objectKeys) regexes per key, walk the key's '.' boundaries and look
+  // each ancestor prefix up in the Set — O(key depth). See issue #286.
+  const isUnderObjectKey = (key: string): boolean => {
+    if (objectKeys.size === 0) return false
+    let i = key.indexOf('.')
+    while (i !== -1) {
+      if (objectKeys.has(key.slice(0, i))) return true
+      i = key.indexOf('.', i + 1)
+    }
+    return false
+  }
+
   // Helper to check if a key should be filtered out during extraction
   const shouldFilterKey = (key: string): boolean => {
-    // 1) regex based patterns (existing behavior)
+    // 1) keys nested under a returnObjects / selector-API base key
+    if (isUnderObjectKey(key)) {
+      return true
+    }
+    // 2) regex based patterns (existing behavior)
     if (preservePatterns.some(re => re.test(key))) {
       return true
     }
-    // 2) namespace:* style patterns (respect nsSeparator)
+    // 3) namespace:* style patterns (respect nsSeparator)
     for (const rp of rawPreserve) {
       if (typeof rp !== 'string') continue
       if (rp.endsWith(`${nsSep}*`)) {
@@ -418,11 +435,15 @@ function buildNewTranslationsForNs (
 
   // Helper to check if an existing key should be preserved
   const shouldPreserveExistingKey = (key: string): boolean => {
-    // 1) regex-style patterns
+    // 1) keys nested under a returnObjects / selector-API base key
+    if (isUnderObjectKey(key)) {
+      return true
+    }
+    // 2) regex-style patterns
     if (preservePatterns.some(re => re.test(key))) {
       return true
     }
-    // 2) namespace:key patterns - check if pattern matches this namespace:key combination
+    // 3) namespace:key patterns - check if pattern matches this namespace:key combination
     for (const rp of rawPreserve) {
       if (typeof rp !== 'string') continue
 
@@ -664,6 +685,20 @@ function buildNewTranslationsForNs (
     }
   }
 
+  // Precompute every proper ancestor prefix (up to each keySeparator boundary) of the
+  // extracted keys, so the per-key "is this a leaf?" check below is a single Set lookup
+  // instead of an O(keys) scan per key. See issue #286.
+  const parentPrefixesInNewKeys = new Set<string>()
+  if (typeof keySeparator === 'string') {
+    for (const { key } of filteredKeys) {
+      let i = key.indexOf(keySeparator)
+      while (i !== -1 && i < key.length) {
+        parentPrefixesInNewKeys.add(key.slice(0, i))
+        i = key.indexOf(keySeparator, i + 1)
+      }
+    }
+  }
+
   // 1. Build the object first, without any sorting.
   for (const { key, defaultValue, explicitDefault, hasCount, isExpandedPlural, isOrdinal } of filteredKeys) {
     // If this is a base plural key (hasCount true but not an already-expanded variant)
@@ -810,7 +845,7 @@ function buildNewTranslationsForNs (
     // For flat keys there cannot be nested children, so treat them as leaves.
     const isLeafInNewKeys = keySeparator === false
       ? true
-      : !filteredKeys.some(otherKey => otherKey.key !== key && otherKey.key.startsWith(`${key}${keySeparator}`))
+      : !parentPrefixesInNewKeys.has(key)
 
     const isDerivedDefault = isDerivedFromKey(key, defaultValue, explicitDefault)
 
@@ -1261,8 +1296,12 @@ export async function getTranslations (
   const indentation = config.extract.indentation ?? 2
 
   for (const key of objectKeys) {
-    // Convert the object key to a glob pattern to preserve all its children
-    patternsToPreserve.push(`${key}.*`)
+    // Object keys are matched directly (and cheaply) against the objectKeys Set in
+    // buildNewTranslationsForNs (see isUnderObjectKey). Only a key that itself
+    // contains a wildcard still needs the glob-to-regex path.
+    if (key.includes('*')) {
+      patternsToPreserve.push(`${key}.*`)
+    }
   }
   const preservePatterns = patternsToPreserve.map(globToRegex)
 

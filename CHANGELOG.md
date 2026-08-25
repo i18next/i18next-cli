@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.71.2
+
+- fix: `extract` no longer scales quadratically with the number of keys: selector-API /
+  `returnObjects` keys are matched via an O(key depth) Set lookup instead of one regex per
+  object key, and the per-key leaf check uses a precomputed ancestor-prefix Set instead of
+  scanning all keys. A 4-minute run on a ~11,500-key monorepo drops to seconds; written
+  output is byte-identical ([#286](https://github.com/i18next/i18next-cli/issues/286)).
+
 ## 1.71.1
 
 - feat: `.reduce()`/`.reduceRight()` over an `as const` array now bind the element callback
