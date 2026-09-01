@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.72.1
+
+- fix: the interactive `instrument` prompt crashed because it still used inquirer's `list` prompt
+  type, which was removed in inquirer 13; switched to `select`
+  ([#288](https://github.com/i18next/i18next-cli/pull/288)).
+
 ## 1.72.0
 
 - feat: `locize-sync --changed-only [--base <ref>]` syncs and AI-auto-translates only the keys
