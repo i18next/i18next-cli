@@ -1,5 +1,6 @@
 ---
 name: i18next-localization
+allowed-tools: Bash(npx i18next-cli *)
 description: >-
   Takes an app from hardcoded strings to a localized, continuously translated
   one with i18next and Locize: stack detection, config, wrapping strings in
