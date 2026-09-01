@@ -113,7 +113,7 @@ export async function runInstrumenter (
           for (const candidate of candidates) {
             const { action } = await inquirer.prompt([
               {
-                type: 'list',
+                type: 'select',
                 name: 'action',
                 message: `Translate: "${candidate.content}" (${candidate.line}:${candidate.column})?`,
                 choices: [
