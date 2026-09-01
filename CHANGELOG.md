@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.72.0
+
+- feat: `locize-sync --changed-only [--base <ref>]` syncs and AI-auto-translates only the keys
+  that changed on the current git branch vs. the base branch — ideal for translating just a pull
+  request's diff instead of the whole project. The source-language files are diffed against the
+  merge-base with the base branch (auto-detected via `origin/HEAD`, `main`, `master`, or set with
+  `--base`); key creation, value updates and auto-translation are restricted to those keys, and
+  deletions are skipped. Changed keys are scoped per namespace file, and when any plural variant
+  of a key changed, all its plural forms are included (target languages often need more CLDR
+  plural forms than the source). Also configurable via `locize.changedOnly` /
+  `locize.changedOnlyBase`. Requires git and locize-cli >= 12.7.
+- feat: `sync --changed-only [--base <ref>]` applies the same branch-diff scoping to the local
+  synchronizer: only primary-language keys added or modified on the branch are propagated to the
+  secondary language files, and obsolete keys are left in place. Works with JSON, JSON5 and YAML
+  translation files (JS/TS resource modules cannot be parsed from git history and fail with a
+  clear message). Unusable git setups (git missing, not a repository, unresolvable base ref) fail
+  the command with actionable errors that mention `actions/checkout` `fetch-depth: 0` for shallow
+  CI clones.
+
 ## 1.71.3
 
 - fix: `fallbackNS` accounting now works when the fallback namespace lives in its own file

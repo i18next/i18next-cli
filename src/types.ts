@@ -412,6 +412,16 @@ export interface I18nextToolkitConfig {
 
     /** Restrict auto-translation to these target languages (sync only; defaults to all languages) */
     autoTranslateLanguages?: string[];
+
+    /**
+     * Only sync and auto-translate keys that changed on the current git branch
+     * compared to the base branch (sync only; requires git and locize-cli >= 12.7).
+     * Deletions are skipped.
+     */
+    changedOnly?: boolean;
+
+    /** Base git branch/ref for changedOnly (default: auto-detect origin/HEAD, then main, then master) */
+    changedOnlyBase?: string;
   };
 }
 

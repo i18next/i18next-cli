@@ -10,6 +10,7 @@ import { getOutputPath, loadTranslationFile, serializeTranslationFile, loadRawJs
 import { recordFunnelShown, shouldShowFunnel } from './utils/funnel-msg-tracker.js'
 import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-object.js'
 import { safePluralRules } from './utils/plural-rules.js'
+import { resolveGitCompareRef, readFileAtRef, parseTranslationContent, makeChangedKeyMatcher } from './utils/git-changed-keys.js'
 
 /**
  * Synchronizes translation files across different locales by ensuring all secondary
@@ -43,9 +44,13 @@ import { safePluralRules } from './utils/plural-rules.js'
  */
 export async function runSyncer (
   config: I18nextToolkitConfig,
-  options: { quiet?: boolean, logger?: Logger } = {}
+  options: { quiet?: boolean, logger?: Logger, changedOnly?: boolean, base?: string } = {}
 ) {
   const internalLogger = options.logger ?? new ConsoleLogger()
+  // Resolved before the try/catch below on purpose: an unusable git setup
+  // must fail the command (clear message, non-zero exit) instead of being
+  // logged and swallowed like a regular sync error.
+  const gitCompare = options.changedOnly ? resolveGitCompareRef(options.base) : null
   const spinner = createSpinnerLike('Running i18next locale synchronizer...\n', { quiet: !!options.quiet, logger: options.logger })
   try {
     const primaryLanguage = config.extract.primaryLanguage || config.locales[0] || 'en'
@@ -93,6 +98,24 @@ export async function runSyncer (
 
       const primaryKeys = getNestedKeys(primaryTranslations, keySeparator ?? '.')
       const primaryKeySet = new Set(primaryKeys)
+
+      // --changed-only: diff this primary file against its state at the git
+      // compare ref. The changed set is scoped to THIS file so the same bare
+      // key name in another namespace does not cross-match.
+      let isChangedKey: ((key: string) => boolean) | null = null
+      if (gitCompare) {
+        const oldContent = readFileAtRef(gitCompare.compareRef, primaryPath)
+        const oldTranslations = oldContent === null ? {} : parseTranslationContent(oldContent, primaryPath)
+        const changedKeys = new Set<string>()
+        for (const key of primaryKeys) {
+          const newValue = getNestedValue(primaryTranslations, key, keySeparator ?? '.')
+          const oldValue = getNestedValue(oldTranslations, key, keySeparator ?? '.')
+          if (oldValue === undefined || JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+            changedKeys.add(key)
+          }
+        }
+        isChangedKey = makeChangedKeyMatcher(changedKeys, config.extract.pluralSeparator ?? '_')
+      }
 
       // 3. For each secondary language, sync the current namespace
       for (const lang of secondaryLanguages) {
@@ -184,11 +207,15 @@ export async function runSyncer (
             const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
             // Only preserve non-empty values; an empty string was likely a
             // placeholder left by a previous (buggy) sync run and should not
-            // be perpetuated.
-            if (existingValue !== '' && existingValue != null) {
+            // be perpetuated. Under --changed-only nothing is ever dropped.
+            if ((existingValue !== '' && existingValue != null) || isChangedKey) {
               setNestedValue(newSecondaryTranslations, key, existingValue, keySeparator ?? '.')
               handledKeys.add(key)
             }
+          } else if (isChangedKey) {
+            // --changed-only: removals are out of scope, keep obsolete keys as-is
+            const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
+            setNestedValue(newSecondaryTranslations, key, existingValue, keySeparator ?? '.')
           }
           // else: obsolete key — omit it from the output
         }
@@ -196,6 +223,8 @@ export async function runSyncer (
         // Pass 2: new primary keys not yet in the secondary file
         for (const key of primaryKeys) {
           if (!handledKeys.has(key)) {
+            // --changed-only: only propagate keys that changed on this branch
+            if (isChangedKey && !isChangedKey(key)) continue
             const primaryValue = getNestedValue(primaryTranslations, key, keySeparator ?? '.')
             const valueToSet = resolveDefaultValue(defaultValue, key, ns, lang, primaryValue)
             setNestedValue(newSecondaryTranslations, key, valueToSet, keySeparator ?? '.')

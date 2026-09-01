@@ -236,6 +236,13 @@ function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: a
       const languages = Array.isArray(autoTranslateLanguages) ? autoTranslateLanguages.join(',') : String(autoTranslateLanguages)
       if (languages) commandArgs.push('--auto-translate-languages', languages)
     }
+    // Requires locize-cli >= 12.7 (older versions reject the unknown option).
+    const changedOnly = cliOptions.changedOnly ?? locizeConfig.changedOnly
+    if (changedOnly === true || changedOnly === 'true') {
+      commandArgs.push('--changed-only', 'true')
+      const gitBase = cliOptions.base ?? locizeConfig.changedOnlyBase
+      if (gitBase) commandArgs.push('--base', gitBase)
+    }
   }
 
   // Derive a sensible base path for locize from the configured output.

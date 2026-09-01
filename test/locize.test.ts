@@ -104,6 +104,23 @@ describe('locize', () => {
     expect(syncArgs[idx + 1]).toBe('false')
   })
 
+  it('should forward --changed-only and --base to locize-cli sync', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    await runLocizeSync(mockConfig, { changedOnly: true, base: 'develop' })
+    const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+    const syncArgs = syncCall![1] as string[]
+    expect(syncArgs).toEqual(expect.arrayContaining(['--changed-only', 'true', '--base', 'develop']))
+  })
+
+  it('should not forward --changed-only when omitted', async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    await runLocizeSync(mockConfig)
+    const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+    const syncArgs = syncCall![1] as string[]
+    expect(syncArgs).not.toContain('--changed-only')
+    expect(syncArgs).not.toContain('--base')
+  })
+
   it('should not forward --reference-language-only when --src-lng-only is omitted', async () => {
     vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
     await runLocizeSync(mockConfig)

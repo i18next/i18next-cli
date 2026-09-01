@@ -316,6 +316,10 @@ Synchronizes secondary language files against your primary language file, adding
 npx i18next-cli sync
 ```
 
+**Options:**
+- `--changed-only`: Only sync the keys that changed on the current git branch. The primary-language files are diffed against the merge-base with the base branch, and only added/modified keys are propagated to the secondary languages; nothing is removed. Changed keys are scoped per source file (the same bare key name in another namespace does not match), and when any plural variant of a key changed, all its plural forms are included (target languages often need more CLDR plural forms than the source). Requires git and JSON/JSON5/YAML translation files
+- `--base <ref>`: Base branch/ref for `--changed-only` (default: auto-detect `origin/HEAD`, then `main`, then `master`). In CI, make sure the base branch is fetched — e.g. `actions/checkout` with `fetch-depth: 0`
+
 ### `lint`
 Analyzes your source code for internationalization issues. Can run without a config file.
 
@@ -741,6 +745,8 @@ npx i18next-cli locize-sync [options]
 - `--auto-translate <true|false>`: Trigger AI/MT auto-translation of newly synced keys. Requires auto-translation in your Locize project (enabled by default for new projects; runs once the project is subscribed or an AI/MT provider is configured)
 - `--auto-translate-review <true|false>`: Route auto-translated segments through the review workflow for languages that have review enabled
 - `--auto-translate-languages <lng1,lng2>`: Restrict auto-translation to these target languages (defaults to all)
+- `--changed-only`: Only sync and auto-translate the keys that changed on the current git branch compared to the base branch — ideal for translating just a pull request's diff instead of the whole project. The source-language files are diffed against the merge-base with the base branch; key creation, value updates and auto-translation are restricted to those keys, and deletions are skipped. Keys are scoped per namespace file, and when any plural variant of a key changed, all its plural forms are included. Requires git and locize-cli >= 12.7
+- `--base <ref>`: Base branch/ref for `--changed-only` (default: auto-detect `origin/HEAD`, then `main`, then `master`). In CI, make sure the base branch is fetched — e.g. `actions/checkout` with `fetch-depth: 0`
 
 The same options can be set persistently in the `locize` block of your config:
 
@@ -753,6 +759,8 @@ export default defineConfig({
     autoTranslate: true,
     autoTranslateReview: false,
     autoTranslateLanguages: ['de', 'fr'],
+    changedOnly: true,          // only sync keys changed vs. the base branch
+    changedOnlyBase: 'main',    // optional; auto-detected when omitted
   },
 });
 ```

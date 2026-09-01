@@ -191,10 +191,17 @@ program
   .command('sync')
   .description('Synchronize secondary language files with the primary language file.')
   .option('-q, --quiet', 'Suppress spinner and output')
+  .option('--changed-only', 'Only sync keys that changed on the current git branch compared to the base branch (requires git). Removals are skipped.')
+  .option('--base <ref>', 'Base git branch/ref for --changed-only (default: auto-detect origin/HEAD, then main, then master).')
   .action(async (options) => {
     const cfgPath = program.opts().config
     const config = await ensureConfig(cfgPath)
-    await runSyncer(config, { quiet: !!options.quiet })
+    try {
+      await runSyncer(config, { quiet: !!options.quiet, changedOnly: !!options.changedOnly, base: options.base })
+    } catch (error) {
+      console.error(styleText('red', error instanceof Error ? error.message : String(error)))
+      process.exit(1)
+    }
   })
 
 program
@@ -347,6 +354,8 @@ program
   .option('--auto-translate <true|false>', 'Trigger AI/MT auto-translation of newly synced keys (requires auto-translation enabled in your Locize project; on by default for new projects).')
   .option('--auto-translate-review <true|false>', 'Route auto-translated segments through the review workflow for languages that have review enabled.')
   .option('--auto-translate-languages <lng1,lng2>', 'Restrict auto-translation to these target languages (comma separated; defaults to all languages).')
+  .option('--changed-only', 'Only sync and auto-translate keys that changed on the current git branch compared to the base branch (requires git; deletions are skipped).')
+  .option('--base <ref>', 'Base git branch/ref for --changed-only (default: auto-detect origin/HEAD, then main, then master).')
   .action(async (options) => {
     const cfgPath = program.opts().config
     const config = await ensureConfig(cfgPath)
