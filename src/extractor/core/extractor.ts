@@ -14,7 +14,10 @@ import { normalizeSpansToCharIndices } from '../parsers/ast-utils.js'
 import { ASTVisitors } from './ast-visitors.js'
 import { ConsoleLogger } from '../../utils/logger.js'
 import { serializeTranslationFile, loadRawJson5Content, inferFormatFromPath } from '../../utils/file-utils.js'
-import { shouldShowFunnel, recordFunnelShown } from '../../utils/funnel-msg-tracker.js'
+import { printUntranslatedFunnel } from '../../utils/locize-funnel.js'
+import { getNestedKeys, getNestedValue } from '../../utils/nested-object.js'
+
+const LOCIZE_SIGNUP_URL = 'https://www.locize.app/register?from=i18next_cli__extract'
 
 /**
  * Main extractor function that runs the complete key extraction and file generation process.
@@ -117,7 +120,16 @@ export async function runExtractor (
     spinner.succeed(completionMessage)
 
     // Show the funnel message only if files were actually changed.
-    if (anyFileUpdated && !options.isDryRun && !options.quiet) await printLocizeFunnel(options.logger)
+    if (anyFileUpdated && !options.isDryRun && !options.quiet) {
+      const keySeparator = config.extract.keySeparator ?? '.'
+      const countEmpty = (obj: Record<string, any>) => getNestedKeys(obj, keySeparator).filter(key => getNestedValue(obj, key, keySeparator) === '').length
+      const gaps = (config.extract.secondaryLanguages ?? []).map(locale => ({
+        locale,
+        untranslated: results.filter(r => r.locale === locale).reduce((sum, r) => sum + countEmpty(r.newTranslations), 0)
+      }))
+      const log = typeof internalLogger.info === 'function' ? (msg: string) => internalLogger.info(msg) : undefined
+      await printUntranslatedFunnel('extract', gaps, LOCIZE_SIGNUP_URL, log)
+    }
 
     return { anyFileUpdated, hasErrors: fileErrors.length > 0, results }
   } catch (error) {
@@ -431,32 +443,4 @@ export async function extract (config: I18nextToolkitConfig, { syncPrimaryWithDe
   config.extract.transComponents ||= ['Trans']
   const { allKeys, objectKeys } = await findKeys(config)
   return getTranslations(allKeys, objectKeys, config, { syncPrimaryWithDefaults })
-}
-
-/**
- * Prints a promotional message for the locize saveMissing workflow.
- * This message is shown after a successful extraction that resulted in changes.
- */
-async function printLocizeFunnel (logger?: Logger) {
-  if (!(await shouldShowFunnel('extract'))) return
-
-  const internalLogger = logger ?? new ConsoleLogger()
-  const lines = [
-    styleText(['yellow', 'bold'], '\n💡 Tip: Tired of running the extractor manually?'),
-    '   Discover a real-time "push" workflow with `saveMissing` and Locize AI/MT,',
-    '   where keys are created and translated automatically as you code.',
-    `   Learn more: ${styleText('cyan', 'https://www.locize.com/blog/i18next-savemissing-ai-automation')}`,
-    `   Watch the video: ${styleText('cyan', 'https://youtu.be/joPsZghT3wM')}`,
-    '',
-    '   You can also sync your extracted translations to Locize:',
-    `     ${styleText('cyan', 'npx i18next-cli locize-sync')}      – upload/sync translations to Locize`,
-    `     ${styleText('cyan', 'npx i18next-cli locize-migrate')}   – migrate local translations to Locize`,
-    '   Or import them manually via the Locize UI, API, or locize-cli.',
-  ]
-  const log = typeof internalLogger.info === 'function'
-    ? (msg: string) => internalLogger.info(msg)
-    : (msg: string) => console.log(msg)
-  for (const line of lines) log(line)
-
-  return recordFunnelShown('extract')
 }

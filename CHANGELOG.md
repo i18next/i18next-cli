@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.72.3
+
+- feat(funnel): the Locize hint after `status`, `extract` and `sync` is now a single line that
+  names the untranslated-key gap and the one command that fills it (`npx i18next-cli localize`),
+  each with its own `?from=` tagged register link. It only appears when secondary locales
+  actually have untranslated keys; the 24h cooldown and the CI/non-TTY suppression are unchanged.
+
 ## 1.72.2
 
 - fix: extract dynamic keys built from `for...of` loop variables. `for (const unit of UNITS)` over

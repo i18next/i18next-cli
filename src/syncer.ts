@@ -7,10 +7,12 @@ import { ConsoleLogger } from './utils/logger.js'
 import type { I18nextToolkitConfig, Logger } from './types.js'
 import { resolveDefaultValue } from './utils/default-value.js'
 import { getOutputPath, loadTranslationFile, serializeTranslationFile, loadRawJson5Content, inferFormatFromPath } from './utils/file-utils.js'
-import { recordFunnelShown, shouldShowFunnel } from './utils/funnel-msg-tracker.js'
+import { printUntranslatedFunnel } from './utils/locize-funnel.js'
 import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-object.js'
 import { safePluralRules } from './utils/plural-rules.js'
 import { resolveGitCompareRef, readFileAtRef, parseTranslationContent, makeChangedKeyMatcher } from './utils/git-changed-keys.js'
+
+const LOCIZE_SIGNUP_URL = 'https://www.locize.app/register?from=i18next_cli__sync'
 
 /**
  * Synchronizes translation files across different locales by ensuring all secondary
@@ -65,6 +67,8 @@ export async function runSyncer (
 
     const logMessages: string[] = []
     let wasAnythingSynced = false
+    // Keys still empty after the sync, per secondary locale (the funnel line's gap)
+    const untranslatedByLocale: Record<string, number> = {}
 
     // 1. Find all namespace files for the primary language
     const primaryNsPatternRaw = getOutputPath(output, primaryLanguage, '*')
@@ -231,6 +235,9 @@ export async function runSyncer (
           }
         }
 
+        untranslatedByLocale[lang] = (untranslatedByLocale[lang] ?? 0) + getNestedKeys(newSecondaryTranslations, keySeparator ?? '.')
+          .filter(key => getNestedValue(newSecondaryTranslations, key, keySeparator ?? '.') === '').length
+
         // Use JSON.stringify for a reliable object comparison, regardless of format
         const oldContent = JSON.stringify(existingSecondaryTranslations)
         const newContent = JSON.stringify(newSecondaryTranslations)
@@ -253,7 +260,8 @@ export async function runSyncer (
     logMessages.forEach(msg => internalLogger.info ? internalLogger.info(msg) : console.log(msg))
 
     if (wasAnythingSynced && !options.quiet) {
-      await printLocizeFunnel()
+      const gaps = Object.entries(untranslatedByLocale).map(([locale, untranslated]) => ({ locale, untranslated }))
+      await printUntranslatedFunnel('syncer', gaps, LOCIZE_SIGNUP_URL)
     } else if (!wasAnythingSynced) {
       if (typeof internalLogger.info === 'function') internalLogger.info(styleText(['green', 'bold'], '\n✅ All locales are already in sync.'))
       else console.log(styleText(['green', 'bold'], '\n✅ All locales are already in sync.'))
@@ -263,14 +271,4 @@ export async function runSyncer (
     if (typeof internalLogger.error === 'function') internalLogger.error(error)
     else console.error(error)
   }
-}
-
-async function printLocizeFunnel () {
-  if (!(await shouldShowFunnel('syncer'))) return
-
-  console.log(styleText(['green', 'bold'], '\n✅ Sync complete.'))
-  console.log(styleText('yellow', '🚀 Ready to collaborate with translators? Move your files to the cloud.'))
-  console.log(`   Get started with the official TMS for i18next: ${styleText('cyan', 'npx i18next-cli locize-migrate')}`)
-
-  return recordFunnelShown('syncer')
 }

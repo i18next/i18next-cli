@@ -9,6 +9,9 @@ import { safePluralRules } from './utils/plural-rules.js'
 import { isContextVariantOfAcceptingKey } from './utils/context-variants.js'
 import { parseNestedReferences } from './utils/nesting.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
+import { printUntranslatedFunnel } from './utils/locize-funnel.js'
+
+const LOCIZE_SIGNUP_URL = 'https://www.locize.app/register?from=i18next_cli__status'
 
 function globToRegex (glob: string): RegExp {
   const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
@@ -775,7 +778,11 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
     console.log(styleText(['green', 'bold'], `\nSummary: 🎉 All keys are translated for "${locale}".`))
   }
 
-  await printLocizeFunnel()
+  // Untranslated keys in a secondary locale are the gap Locize fills; absent
+  // keys in the primary language are an `extract` problem (handled above).
+  const nsData = namespaceFilter ? localeData.namespaces.get(namespaceFilter) : undefined
+  const untranslated = nsData ? nsData.totalKeys - nsData.translatedKeys : missingCount
+  await printUntranslatedFunnel('status', isPrimary ? [] : [{ locale, untranslated }], LOCIZE_SIGNUP_URL)
 }
 
 /**
@@ -815,7 +822,11 @@ async function displayNamespaceSummaryReport (report: StatusReport, config: I18n
     console.log(styleText(['red', 'bold'], `\n⚠ Primary language "${primaryLanguage}" is missing ${primaryNsData.absentKeys} key(s) that are used in code.`))
   }
 
-  await printLocizeFunnel()
+  const gaps = Array.from(report.locales, ([locale, localeData]) => {
+    const nsLocaleData = localeData.namespaces.get(namespace)
+    return { locale, untranslated: nsLocaleData ? nsLocaleData.totalKeys - nsLocaleData.translatedKeys : 0 }
+  })
+  await printUntranslatedFunnel('status', gaps, LOCIZE_SIGNUP_URL)
 }
 
 /**
@@ -853,7 +864,8 @@ async function displayOverallSummaryReport (report: StatusReport, config: I18nex
     console.log(styleText('red', `  Run "i18next-cli status ${primaryLanguage}" for details, or "i18next-cli extract" to add them.`))
   }
 
-  await printLocizeFunnel()
+  const gaps = Array.from(report.locales, ([locale, localeData]) => ({ locale, untranslated: localeData.totalKeys - localeData.totalTranslated }))
+  await printUntranslatedFunnel('status', gaps, LOCIZE_SIGNUP_URL)
 }
 
 /**
@@ -980,14 +992,4 @@ export async function runUnusedReport (config: I18nextToolkitConfig, options: Un
   if (totalUnused > 0 || hasErrors) {
     process.exit(1)
   }
-}
-
-async function printLocizeFunnel () {
-  if (!(await shouldShowFunnel('status'))) return
-
-  console.log(styleText(['yellow', 'bold'], '\n✨ Take your localization to the next level!'))
-  console.log('Manage translations with your team in the cloud with Locize => https://www.locize.com/docs/getting-started')
-  console.log(`Run ${styleText('cyan', 'npx i18next-cli locize-migrate')} to get started.`)
-
-  return recordFunnelShown('status')
 }
