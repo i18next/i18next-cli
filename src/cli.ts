@@ -27,6 +27,7 @@ program
   .name('i18next-cli')
   .description('A unified, high-performance i18next CLI.')
   .version('__packageVersion__') // This string is replaced with the actual version at build time by rollup
+  .addHelpText('after', '\nUsing an AI coding agent? Install the i18next-localization skill: npx skills add i18next/i18next-cli\n')
 
 // new: global config override option
 program.option('-c, --config <path>', 'Path to i18next-cli config file (overrides detection)')

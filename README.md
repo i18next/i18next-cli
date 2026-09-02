@@ -609,6 +609,8 @@ The command walks through six steps:
 npx skills add i18next/i18next-cli
 ```
 
+[![skills.sh installs](https://www.skills.sh/b/i18next/i18next-cli)](https://www.skills.sh/i18next/i18next-cli)
+
 Then just ask it to *"add i18n to this project"*. See [`skills/i18next-localization`](./skills/i18next-localization/SKILL.md) — it ships in this repo, so it stays version-matched to the commands it drives.
 
 **Agent prompt:** the same flow is also available as a copy-paste prompt for AI coding agents (Claude Code, Cursor, …):

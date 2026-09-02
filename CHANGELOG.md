@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.72.4
+
+- docs: the README shows the skills.sh install badge for the `i18next-localization` Agent Skill, and
+  `i18next-cli --help` now ends with a one-line hint on installing it
+  (`npx skills add i18next/i18next-cli`). No other command prints anything new.
+
 ## 1.72.3
 
 - feat(funnel): the Locize hint after `status`, `extract` and `sync` is now a single line that
