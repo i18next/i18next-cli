@@ -115,6 +115,24 @@ export class ExpressionResolver {
         return
       }
 
+      // ── ObjectPattern id: `const { unit } = rate` ───────────────────────────
+      // Bind each destructured local to the source object's property values.
+      if (node.id.type === 'ObjectPattern' && node.init?.type === 'Identifier') {
+        const map = this.getObjectMap(node.init.value)
+        const objMembers = this.temporaryObjectVariables.get(node.init.value)
+        if (!map && !objMembers) return
+        for (const prop of (node.id.properties ?? []) as any[]) {
+          const memberName = prop?.key?.value
+          let localNode = prop?.type === 'KeyValuePatternProperty' ? prop.value : prop?.key
+          if (localNode?.type === 'AssignmentPattern') localNode = localNode.left
+          const localName = localNode?.type === 'Identifier' ? localNode.value : undefined
+          if (!memberName || !localName) continue
+          const vals = objMembers?.[memberName] ?? (map?.[memberName] !== undefined ? [map[memberName]] : undefined)
+          if (vals?.length) this.variableTable.set(localName, vals)
+        }
+        return
+      }
+
       // only handle simple identifier bindings like `const x = ...`
       if (node.id.type !== 'Identifier') return
       const name = node.id.value
@@ -190,6 +208,33 @@ export class ExpressionResolver {
           this.variableTable.set(name, vals)
           // Also share so importing files can see this array
           this.sharedVariableTable.set(name, vals)
+          return
+        }
+
+        // Array of object literals — `const UNITS = [{ unit: 'day' }, …] as const`.
+        // Collect each property's possible values so `UNITS.map(({ unit }) => …)`
+        // and `for (const { unit } of UNITS)` can bind the destructured names.
+        const members: Record<string, string[]> = {}
+        for (const elem of unwrappedInit.elements as any[]) {
+          let objExpr = elem?.expression
+          while (
+            objExpr?.type === 'TsConstAssertion' ||
+            objExpr?.type === 'TsAsExpression' ||
+            objExpr?.type === 'TsSatisfiesExpression'
+          ) objExpr = objExpr.expression
+          if (objExpr?.type !== 'ObjectExpression') continue
+          for (const p of (objExpr.properties ?? []) as any[]) {
+            if (p?.type !== 'KeyValueProperty') continue
+            const keyName = p.key?.type === 'Identifier' || p.key?.type === 'StringLiteral' ? p.key.value : undefined
+            if (!keyName) continue
+            const resolved = this.resolvePossibleStringValuesFromExpression(p.value)
+            if (resolved.length !== 1) continue
+            const list = members[keyName] ??= []
+            if (!list.includes(resolved[0])) list.push(resolved[0])
+          }
+        }
+        if (Object.keys(members).length > 0) {
+          this.arrayElementMembers.set(name, members)
           return
         }
       }

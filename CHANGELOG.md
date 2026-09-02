@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.72.2
+
+- fix: extract dynamic keys built from `for...of` loop variables. `for (const unit of UNITS)` over
+  an `as const` string array now binds `unit` while the loop body is walked, just like `.map()` /
+  `.forEach()` callback parameters already did.
+- fix: capture `as const` arrays of object literals (e.g. `[{ unit: 'day' }, { unit: 'hour' }]`),
+  so both `for (const { unit } of UNITS)` and `UNITS.forEach(({ unit }) => ...)` resolve the
+  destructured properties.
+- fix: resolve object destructuring of a known `as const` object, e.g. `const { unit } = rate;`
+  followed by ``t(`msg ${unit}`)``
+  ([#289](https://github.com/i18next/i18next-cli/issues/289)).
+
 ## 1.72.1
 
 - fix: the interactive `instrument` prompt crashed because it still used inquirer's `list` prompt

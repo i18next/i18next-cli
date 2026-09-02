@@ -467,6 +467,8 @@ export class ASTVisitors {
         // where `items` is typed as an array of an object shape.
         arrayCallbackCleanup = this.tryBindObjectArrayCallback(node)
       }
+    } else if (node.type === 'ForOfStatement') {
+      arrayCallbackCleanup = this.tryBindForOfLoop(node)
     }
 
     // --- RECURSION ---
@@ -837,6 +839,62 @@ export class ASTVisitors {
             }
           }
         }
+      }
+
+      return undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * If `node` is `for (const unit of KNOWN_ARRAY)` — or the destructured
+   * `for (const { unit } of KNOWN_ARRAY_OF_OBJECTS)` — binds the loop variable
+   * for the duration of the loop body, the same way `.map()`/`.forEach()`
+   * callback parameters are bound.
+   *
+   * Returns a cleanup function, or undefined when nothing was bound.
+   */
+  private tryBindForOfLoop (node: any): (() => void) | undefined {
+    try {
+      if (node.right?.type !== 'Identifier') return undefined
+      const source = node.right.value
+
+      const left = node.left
+      const pat = left?.type === 'VariableDeclaration' ? left.declarations?.[0]?.id : left
+
+      // `for (const unit of ['day', 'hour'] as const)`
+      if (pat?.type === 'Identifier') {
+        const values = this.expressionResolver.getVariableValues(source)
+        if (values?.length) {
+          this.expressionResolver.setTemporaryVariable(pat.value, values)
+          return () => this.expressionResolver.deleteTemporaryVariable(pat.value)
+        }
+        // `for (const item of items)` so `item.unit` resolves
+        const members = this.expressionResolver.getArrayElementMembers(source)
+        if (members) {
+          this.expressionResolver.setTemporaryObjectVariable(pat.value, members)
+          return () => this.expressionResolver.deleteTemporaryObjectVariable(pat.value)
+        }
+        return undefined
+      }
+
+      // `for (const { unit } of [{ unit: 'day' }, …] as const)`
+      if (pat?.type === 'ObjectPattern') {
+        const members = this.expressionResolver.getArrayElementMembers(source)
+        if (!members) return undefined
+        const bound: string[] = []
+        for (const prop of (pat.properties ?? [])) {
+          const memberName = prop?.key?.value
+          let localNode = prop?.type === 'KeyValuePatternProperty' ? prop.value : prop?.key
+          if (localNode?.type === 'AssignmentPattern') localNode = localNode.left
+          const localName = localNode?.type === 'Identifier' ? localNode.value : undefined
+          if (!memberName || !localName || !members[memberName]) continue
+          this.expressionResolver.setTemporaryVariable(localName, members[memberName])
+          bound.push(localName)
+        }
+        if (bound.length === 0) return undefined
+        return () => bound.forEach(name => this.expressionResolver.deleteTemporaryVariable(name))
       }
 
       return undefined
