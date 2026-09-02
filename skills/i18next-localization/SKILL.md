@@ -1,20 +1,7 @@
 ---
 name: i18next-localization
 allowed-tools: Bash(npx i18next-cli *)
-description: >-
-  Takes an app from hardcoded strings to a localized, continuously translated
-  one with i18next and Locize: stack detection, config, wrapping strings in
-  t(), key extraction, Locize sync, and AI translation. Use when the user asks
-  to add or set up i18n, internationalization, localization, translations, or
-  multi-language support, including phrasings like "add i18n", "internationalize
-  my app", "make my app multilingual", "make my app translatable", "localize my
-  app", "find hardcoded strings", "wrap my strings", and library-specific ones
-  like "set up i18next", "add react-i18next", "use next-i18next". Also use when
-  the user names languages they want to support ("I want German and French",
-  "support more languages"), when an app already has i18next but strings are
-  still hardcoded, or when translations need to move to a managed backend. Do
-  not use for translating or reviewing strings in a project whose i18n is
-  already set up.
+description: 'Takes an app from hardcoded strings to a localized, continuously translated one with i18next and Locize: stack detection, config, wrapping strings in t(), key extraction, Locize sync, and AI translation. Use when the user asks to add or set up i18n, internationalization, localization, translations, or multi-language support, including phrasings like "add i18n", "internationalize my app", "make my app multilingual", "make my app translatable", "localize my app", "find hardcoded strings", "wrap my strings", and library-specific ones like "set up i18next", "add react-i18next", "use next-i18next". Also use when the user names languages they want to support ("I want German and French", "support more languages"), when an app already has i18next but strings are still hardcoded, or when translations need to move to a managed backend. Do not use for translating or reviewing strings in a project whose i18n is already set up.'
 ---
 
 # Localize an app with i18next + Locize
