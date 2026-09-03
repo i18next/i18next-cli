@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { detectConfig } from './heuristic-config.js'
 import { openBrowser, promptLocizeCredentials } from './utils/locize-onboarding.js'
 import { scaffoldInlangProject } from './utils/inlang-scaffold.js'
+import { buildAgentNote, writeAgentNote } from './utils/agent-note.js'
 
 const LOCIZE_SIGNUP_URL = 'https://www.locize.app/register?from=i18next_cli__init-wizard'
 
@@ -94,7 +95,30 @@ async function isTypeScriptProject (): Promise<boolean> {
  * // - i18next.config.js (JavaScript ESM/CommonJS)
  * ```
  */
-export async function runInit (options: { ci?: boolean, inlang?: boolean } = {}) {
+export interface InitOptions {
+  /** Skip the browser launch when Locize is selected; print the signup URL instead. */
+  ci?: boolean
+  /** Also scaffold an inlang project; skips the corresponding question. */
+  inlang?: boolean
+  /** Non-interactive: take the detected defaults for every answer not given as an option; never prompts. */
+  yes?: boolean
+  /** Comma-separated locales, e.g. `en,de,fr`. */
+  locales?: string
+  /** Source-file glob. */
+  input?: string
+  /** Output path template. */
+  output?: string
+  /** Translation backend. With `locize`, the project id comes from `projectId` or `LOCIZE_PROJECTID`; without either the wizard asks (interactive) or skips the block (`--yes`). */
+  backend?: 'local' | 'locize' | 'other'
+  /** Locize project id; skips the signup page and the credential prompts. The API key stays in `LOCIZE_API_KEY`. */
+  projectId?: string
+  /** Config file type. */
+  fileType?: 'ts' | 'js'
+  /** `true` writes the agent note without asking, `false` skips the question, `undefined` asks. */
+  agentNote?: boolean
+}
+
+export async function runInit (options: InitOptions = {}) {
   console.log('Welcome to the i18next-cli setup wizard!')
   console.log('Scanning your project for a recommended configuration...')
 
@@ -118,7 +142,7 @@ export async function runInit (options: { ci?: boolean, inlang?: boolean } = {})
   const jsChoice = 'JavaScript (i18next.config.js)'
   const fileTypeChoices = projectUsesTs ? [tsChoice, jsChoice] : [jsChoice, tsChoice]
 
-  const answers = await inquirer.prompt([
+  const questions: any[] = [
     {
       type: 'select',
       name: 'fileType',
@@ -166,10 +190,49 @@ export async function runInit (options: { ci?: boolean, inlang?: boolean } = {})
       // Skip the question when already requested via the --inlang flag.
       when: () => !options.inlang,
     },
-  ])
+    {
+      type: 'confirm',
+      name: 'agentNote',
+      message: 'Add a short note about this i18n setup for AI coding agents to AGENTS.md (and CLAUDE.md if present)? You can edit or delete it at any time.',
+      default: false,
+    },
+  ]
+
+  // Answers given as command-line options skip their question.
+  const given: Record<string, any> = {}
+  if (options.fileType) given.fileType = options.fileType === 'js' ? jsChoice : tsChoice
+  if (options.locales) given.locales = options.locales.split(',').map(s => s.trim()).filter(Boolean)
+  if (options.input) given.input = options.input
+  if (options.output) given.output = options.output
+  if (options.backend) given.backend = options.backend
+  if (options.agentNote !== undefined) given.agentNote = options.agentNote
+
+  const remaining = questions.filter(q => !(q.name in given))
+  const nonInteractive = !!options.yes
+  let answers: Record<string, any>
+  if (nonInteractive) {
+    // --yes: the detected defaults stand in for every unanswered question; nothing is asked.
+    const defaults: Record<string, any> = {}
+    for (const q of remaining) {
+      const value = q.default ?? (q.type === 'select' ? (typeof q.choices[0] === 'string' ? q.choices[0] : q.choices[0].value) : undefined)
+      defaults[q.name] = q.filter ? q.filter(value) : value
+    }
+    answers = { ...defaults, ...given }
+  } else {
+    answers = { ...given, ...(remaining.length > 0 ? await inquirer.prompt(remaining) : {}) }
+  }
 
   let locizeConfig: { projectId: string, apiKey?: string } | undefined
-  if (answers.backend === 'locize') {
+  const knownProjectId = options.projectId || process.env.LOCIZE_PROJECTID || process.env.LOCIZE_PID
+  if (answers.backend === 'locize' && (nonInteractive || knownProjectId)) {
+    // No signup page and no prompts: the project id comes from --project-id or the environment
+    // (the same variables the locize commands read); the API key stays in LOCIZE_API_KEY.
+    if (knownProjectId) {
+      locizeConfig = { projectId: knownProjectId }
+    } else {
+      console.log(`\nNo project id given (--project-id or LOCIZE_PROJECTID), so no locize block was written. Create a project at ${LOCIZE_SIGNUP_URL}, then re-run with --project-id <id> (and LOCIZE_API_KEY set), or add locize.projectId to the config by hand.`)
+    }
+  } else if (answers.backend === 'locize') {
     console.log('\nOpening the Locize signup page in your browser. After you create your account and project, come back here and paste your Project ID and API key.')
     const opened = await openBrowser(LOCIZE_SIGNUP_URL, { ci: options.ci })
     if (!opened) {
@@ -269,6 +332,16 @@ module.exports = ${toJs(configObject)}`
       primaryLanguage: answers.locales[0],
       output: answers.output,
     })
+  }
+
+  if (answers.agentNote) {
+    const note = buildAgentNote({ locales: answers.locales, output: answers.output, backend: answers.backend, locizeProjectId: locizeConfig?.projectId })
+    const written = await writeAgentNote(note)
+    if (written.length > 0) {
+      console.log(`📝 Agent note written to: ${written.join(', ')}`)
+    } else {
+      console.log('Agent note already present (heading "## Internationalization" found); nothing written.')
+    }
   }
 
   if (locizeConfig) {

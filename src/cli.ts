@@ -217,7 +217,27 @@ program
   .description('Create a new i18next.config.ts/js file with an interactive setup wizard.')
   .option('--ci', 'Skip the browser launch when a backend (e.g. Locize) is selected. The signup URL is printed instead.')
   .option('--inlang', 'Also scaffold an inlang project (project.inlang/settings.json) so inlang tooling (Sherlock, Fink, Paraglide) works on the translation files. Skips the corresponding wizard question.')
-  .action((options) => runInit({ ci: !!options.ci, inlang: !!options.inlang }))
+  .option('-y, --yes', 'Non-interactive: use the detected defaults for every question not answered by an option below; never opens a browser. For AI coding agents and scripts.')
+  .option('--locales <list...>', 'Locales, comma- or space-separated, e.g. en,de,fr (skips the question).')
+  .option('--input <glob>', 'Source-file glob (skips the question).')
+  .option('--output <path>', 'Output path template, e.g. public/locales/{{language}}/{{namespace}}.json (skips the question).')
+  .option('--backend <local|locize|other>', 'Translation backend (skips the question). With locize, pass --project-id or set LOCIZE_PROJECTID.')
+  .option('--project-id <id>', 'Locize project id (skips the signup page and the credential prompts; the API key stays in LOCIZE_API_KEY).')
+  .option('--file-type <ts|js>', 'Config file type (skips the question).')
+  .option('--agent-note', 'Write a short note about this i18n setup for AI coding agents into AGENTS.md (and CLAUDE.md if present) without asking.')
+  .option('--no-agent-note', 'Skip the agent-note question.')
+  .action((options) => runInit({
+    ci: !!options.ci,
+    inlang: !!options.inlang,
+    yes: !!options.yes,
+    locales: Array.isArray(options.locales) ? options.locales.join(',') : options.locales,
+    input: options.input,
+    output: options.output,
+    backend: options.backend,
+    projectId: options.projectId,
+    fileType: options.fileType,
+    agentNote: options.agentNote,
+  }))
 
 program
   .command('lint')

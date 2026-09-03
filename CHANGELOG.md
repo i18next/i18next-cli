@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.73.0
+
+- feat: `init` runs without the wizard. `--yes` takes the detected defaults for every question
+  not answered by `--locales`, `--input`, `--output`, `--backend <local|locize|other>` or
+  `--file-type <ts|js>`; `--project-id <id>` (or `LOCIZE_PROJECTID`) supplies the Locize project id
+  and skips the signup page and the credential prompts. Made for scripts and AI coding agents,
+  which cannot drive the prompts.
+- feat: `init --agent-note` (also the last wizard question, default No) appends a short
+  `## Internationalization` section to `AGENTS.md` (and `CLAUDE.md` when present; when neither
+  exists, `AGENTS.md` is created, plus a `CLAUDE.md` importing it if the project has a `.claude/`
+  folder) so the next agent session knows where the locale files are and how translations are
+  managed. The exact text is in the README; `--no-agent-note` skips the question. Nothing is
+  written unless you say yes.
+- change: the `localize` agent prompt (`--print-agent-prompt`) and the `i18next-localization`
+  skill no longer presume Locize. The agent asks the developer once, before creating the config,
+  whether to manage the translations with Locize or keep the files in the repository, and never
+  creates a project or asks for an API key unless they chose Locize. The prompt now creates the
+  config with `init --yes ...` instead of the interactive wizard.
+
 ## 1.72.4
 
 - docs: the README shows the skills.sh install badge for the `i18next-localization` Agent Skill, and
