@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.73.1
+
+- fix(extract): the `<Trans>` child error added for
+  [#246](https://github.com/i18next/i18next-cli/issues/246) now also fires for `{table.name}`,
+  `{fn()}`, `` {`a ${b}`} `` and any other child expression the extractor cannot serialise, not
+  only for bare identifiers like `{name}`. react-i18next inlines the value at runtime, while
+  extraction silently produced an empty `<1></1>` placeholder, so the key never matched. The
+  message suggests the `{{name: table.name}}` object form. It also no longer asks for a `values`
+  prop: react-i18next reads the value from the `{{name}}` object child itself, so
+  `<Trans>See table {{name}}</Trans>` works on its own. Extraction output is unchanged.
+  Fixes [#290](https://github.com/i18next/i18next-cli/issues/290).
+
 ## 1.73.0
 
 - feat: `init` runs without the wizard. `--yes` takes the detected defaults for every question

@@ -3,7 +3,7 @@ import type { PluginContext, I18nextToolkitConfig, ExtractedKey } from '../../ty
 import { ExpressionResolver } from './expression-resolver.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
 import { extractFromTransComponent } from './jsx-parser.js'
-import { getObjectPropValue, lineColumnFromOffset } from './ast-utils.js'
+import { getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset } from './ast-utils.js'
 
 // Checks if a string looks like natural language (contains spaces, punctuation, etc.)
 const naturalLanguageChars = /[ ,?!;]/
@@ -41,13 +41,19 @@ export class JSXHandler {
   }
 
   /**
-   * Emits an error for `<Trans>Hello <b>{name}</b></Trans>` style children
-   * where a bare identifier is used as a React child. react-i18next inlines
-   * the value at runtime, producing a key like `"Hello <1>meow</1>"`, but the
-   * extractor serializes the identifier name as `"{{name}}"`. The two never
-   * match, and even when an `i18nKey` is set, the placeholder `{{name}}`
-   * cannot be interpolated without a `values={{ name }}` prop — it renders
-   * literally.
+   * Emits an error for `<Trans>` children that the serializer cannot turn
+   * into the string react-i18next builds at runtime:
+   *
+   * - `{name}` (a bare identifier): react-i18next inlines the value, but the
+   *   extractor serialises the identifier name as `{{name}}`.
+   * - `{table.name}`, `{fn()}`, `` {`a ${b}`} `` and any other expression
+   *   (the fallback in `swcExpressionToReactNode`): react-i18next inlines the
+   *   value, but the extractor emits an empty `<1></1>` placeholder.
+   *
+   * Either way the extracted key never matches the runtime key. The fix is
+   * the `{{name}}` / `{{name: table.name}}` object form, which both sides
+   * serialise as `{{name}}`; react-i18next reads the value from that object
+   * child, so no `values` prop is needed.
    *
    * We keep the existing extraction behaviour so projects that already rely
    * on the `{{name}}` output (with a matching `values` prop) aren't broken,
@@ -55,36 +61,51 @@ export class JSXHandler {
    * Emitted via `logger.error` with an `Error:` prefix so build tooling that
    * watches for errors (see #200) can treat this as fatal if desired.
    */
-  private warnOnBareIdentifierTransChildren (node: JSXElement, elementName: string): void {
-    const bareIdentifiers: Array<{ name: string; span: { start: number } }> = []
+  private warnOnUnrepresentableTransChildren (node: JSXElement, elementName: string): void {
+    const code = this.getCurrentCode()
+    const emit =
+      (this.pluginContext as any)?.logger?.error?.bind((this.pluginContext as any).logger) ??
+      console.error.bind(console)
+
+    const check = (expr: Expression | undefined, span: { start: number }): void => {
+      const inner = this.unwrapExpression(expr)
+      if (!inner) return
+      switch (inner.type) {
+        // The shapes swcExpressionToReactNode serialises faithfully.
+        case 'StringLiteral':
+        case 'ObjectExpression':
+          return
+        case 'TemplateLiteral':
+          if (isSimpleTemplateLiteral(inner)) return
+          break
+        case 'ConditionalExpression':
+          check(inner.consequent, span)
+          check(inner.alternate, span)
+          return
+      }
+      const { span: s } = inner as any // ponytail: JSXMemberExpression lacks span in the SWC union; real children always have one
+      const text = code.slice(s.start, s.end)
+      const isIdentifier = inner.type === 'Identifier'
+      const produced = isIdentifier ? `"{{${text}}}"` : 'an empty "<1></1>" placeholder'
+      const name = inner.type === 'MemberExpression' && inner.property.type === 'Identifier' ? inner.property.value : 'value'
+      const suggestion = isIdentifier ? `{{${text}}}` : `{{${name}: ${text}}}`
+      const loc = lineColumnFromOffset(code, span.start)
+      const where = loc
+        ? `${this.getCurrentFile()}:${loc.line}:${loc.column}`
+        : this.getCurrentFile()
+      emit(`Error: <${elementName}> child {${text}} at ${where} won't match at runtime: react-i18next inlines the value, but extraction produces ${produced}. Use ${suggestion} (double braces) for interpolation.`)
+    }
+
     const visit = (children: JSXElementChild[]): void => {
       for (const child of children) {
         if (child.type === 'JSXExpressionContainer') {
-          const inner = this.unwrapExpression(child.expression as Expression)
-          if (inner && inner.type === 'Identifier') {
-            bareIdentifiers.push({ name: inner.value, span: child.span as any })
-          }
-        } else if (child.type === 'JSXElement') {
-          visit(child.children)
-        } else if (child.type === 'JSXFragment') {
+          if (child.expression.type !== 'JSXEmptyExpression') check(child.expression, child.span)
+        } else if (child.type === 'JSXElement' || child.type === 'JSXFragment') {
           visit(child.children)
         }
       }
     }
     visit(node.children)
-    if (bareIdentifiers.length === 0) return
-
-    const emit =
-      (this.pluginContext as any)?.logger?.error?.bind((this.pluginContext as any).logger) ??
-      console.error.bind(console)
-
-    for (const { name, span } of bareIdentifiers) {
-      const loc = lineColumnFromOffset(this.getCurrentCode(), span.start)
-      const where = loc
-        ? `${this.getCurrentFile()}:${loc.line}:${loc.column}`
-        : this.getCurrentFile()
-      emit(`Error: <${elementName}> child {${name}} at ${where} won't match at runtime — react-i18next inlines the value (e.g. "<1>meow</1>"), but extraction produces "<1>{{${name}}}</1>". Use {{${name}}} (double braces) with values={{ ${name} }} for interpolation.`)
-    }
   }
 
   /**
@@ -115,7 +136,7 @@ export class JSXHandler {
     const elementName = this.getElementName(node)
 
     if (elementName && (this.config.extract.transComponents || ['Trans']).includes(elementName)) {
-      this.warnOnBareIdentifierTransChildren(node, elementName)
+      this.warnOnUnrepresentableTransChildren(node, elementName)
 
       let extractedAttributes: ReturnType<typeof extractFromTransComponent> | null = null
 

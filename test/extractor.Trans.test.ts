@@ -2409,4 +2409,60 @@ describe('extractor: advanced Trans features', () => {
       errorSpy.mockRestore()
     })
   })
+
+  describe('unrepresentable child error (#290)', () => {
+    const mismatchErrorsFor = async (sampleCode: string) => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      await extract(mockConfig)
+      const messages = errorSpy.mock.calls.map(args => String(args[0]))
+      errorSpy.mockRestore()
+      return messages.filter(m => m.includes("won't match at runtime"))
+    }
+
+    it('errors for a member expression child like {table.name}', async () => {
+      const messages = await mismatchErrorsFor(`
+        function MyComponent() {
+          const table = { name: 'table1' };
+          return <Trans>See table {table.name}</Trans>;
+        }
+      `)
+      expect(messages).toHaveLength(1)
+      expect(messages[0]).toMatch(/^Error: <Trans> child \{table\.name\} at .*App\.tsx:4:\d+ won't match at runtime/)
+      expect(messages[0]).toContain('Use {{name: table.name}} (double braces)')
+    })
+
+    it('errors for a call expression child, suggesting a `value` key', async () => {
+      const messages = await mismatchErrorsFor(`
+        function MyComponent() {
+          return <Trans i18nKey="k">Total <b>{formatPrice(total)}</b></Trans>;
+        }
+      `)
+      expect(messages).toHaveLength(1)
+      expect(messages[0]).toContain('child {formatPrice(total)}')
+      expect(messages[0]).toContain('Use {{value: formatPrice(total)}} (double braces)')
+    })
+
+    it('does not error for object, string literal or simple template literal children', async () => {
+      const messages = await mismatchErrorsFor(`
+        function MyComponent() {
+          const table = { name: 'table1' };
+          return <Trans>See table {{name: table.name}}{' '}{\`now\`}{/* comment */}</Trans>;
+        }
+      `)
+      expect(messages).toEqual([])
+    })
+
+    it('no longer asks for a values prop in the bare identifier message', async () => {
+      const messages = await mismatchErrorsFor(`
+        function MyComponent() {
+          const cat = "meow";
+          return <Trans>Hello world <b>{cat}</b></Trans>;
+        }
+      `)
+      expect(messages).toHaveLength(1)
+      expect(messages[0]).toContain('Use {{cat}} (double braces)')
+      expect(messages[0]).not.toContain('values=')
+    })
+  })
 })
