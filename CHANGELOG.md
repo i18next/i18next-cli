@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.73.2
+
+- fix(deps): `react` is no longer a runtime dependency; it only lives in `devDependencies` for the
+  type import. The CLI only needs `react-i18next` at runtime, which resolves React from the
+  consuming project. Previously the `^19.2.8` floor could not dedupe against a project pinning an
+  older React patch (Expo SDK 57 pins `react@19.2.3`) and nested a second copy under
+  `node_modules/i18next-cli`, which Expo Doctor flagged as a duplicate. Now a single React copy is
+  used. Fixes [#292](https://github.com/i18next/i18next-cli/issues/292).
+
 ## 1.73.1
 
 - fix(extract): the `<Trans>` child error added for

@@ -65,6 +65,7 @@
     "eslint-plugin-import": "^2.32.0",
     "memfs": "^4.68.1",
     "neostandard": "^0.13.0",
+    "react": "^19.2.8",
     "rollup": "^4.62.4",
     "typescript": "^6.0.3",
     "unplugin-swc": "^1.5.11",
@@ -85,7 +86,6 @@
     "magic-string": "^1.2.2",
     "minimatch": "^10.2.6",
     "ora": "^9.4.1",
-    "react": "^19.2.8",
     "react-i18next": "^17.0.12",
     "yaml": "^2.9.0"
   }
