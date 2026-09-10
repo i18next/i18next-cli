@@ -376,5 +376,14 @@ export function getObjectPropValue (object: ObjectExpression, propName: string, 
     if (val.type === 'NumericLiteral') return val.value
     return '' // Indicate presence for other types
   }
+
+  // SWC represents shorthand options such as `{ ns }` as bare Identifiers.
+  const shorthand = object.properties.find(
+    (p): p is Identifier => p.type === 'Identifier' && p.value === propName
+  )
+  if (shorthand) {
+    return identifierResolver ? identifierResolver(shorthand.value) : ''
+  }
+
   return undefined
 }
