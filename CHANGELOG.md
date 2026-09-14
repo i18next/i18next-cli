@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.73.3
+
+- fix(extract): default values that are not string literals are now resolved statically instead of
+  being dropped. `t('greeting', STRINGS.greeting)`, `t('bye', FAREWELL)`,
+  `` t('k', `${GREETING} there`) `` and the same expressions inside `defaultValue` /
+  `defaultValue_one` / `defaultValue_other` options pick up the value from a module-scope const,
+  object map or enum. Ambiguous expressions such as ternaries still fall back to the key. Fixes
+  [#293](https://github.com/i18next/i18next-cli/issues/293).
+
 ## 1.73.2
 
 - fix(deps): `react` is no longer a runtime dependency; it only lives in `devDependencies` for the

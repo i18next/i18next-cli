@@ -1909,6 +1909,43 @@ describe('extractor: runExtractor', () => {
     })
   })
 
+  it('should statically resolve non-literal default values (#293)', async () => {
+    const sampleCode = `
+      const STRINGS = {
+        greeting: 'Hello, {{name}}!',
+        one: '{{count}} item',
+        other: '{{count}} items',
+      } as const;
+      const FAREWELL = 'Goodbye!';
+
+      t('member', STRINGS.greeting, { name: 'world' });
+      t('ident', FAREWELL);
+      t('template', \`\${FAREWELL} See you.\`);
+      t('option', { defaultValue: STRINGS.greeting });
+      t('plural', { count: 1, defaultValue_one: STRINGS.one, defaultValue_other: STRINGS.other });
+      t('ambiguous', cond ? STRINGS.greeting : FAREWELL);
+    `
+
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    await runExtractor(mockConfig)
+
+    const translationPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const translationFileContent = await vol.promises.readFile(translationPath, 'utf-8')
+    const translationJson = JSON.parse(translationFileContent as string)
+
+    expect(translationJson).toEqual({
+      member: 'Hello, {{name}}!',
+      ident: 'Goodbye!',
+      template: 'Goodbye! See you.',
+      option: 'Hello, {{name}}!',
+      plural_one: '{{count}} item',
+      plural_other: '{{count}} items',
+      // a ternary is ambiguous, so it falls back to the key like any dynamic value
+      ambiguous: 'ambiguous',
+    })
+  })
+
   it('should not overwrite existing plural variants when expanding base plural keys into secondary locales', async () => {
     const sampleCode = `
       function App() {

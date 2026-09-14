@@ -1,4 +1,4 @@
-import type { CallExpression, ArrowFunctionExpression, ObjectExpression } from '@swc/core'
+import type { CallExpression, ArrowFunctionExpression, Expression, ObjectExpression } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey, ScopeInfo } from '../../types.js'
 import { ExpressionResolver } from './expression-resolver.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
@@ -40,6 +40,20 @@ export class CallExpressionHandler {
     this.getCurrentFile = getCurrentFile
     this.getCurrentCode = getCurrentCode
     this.resolveIdentifier = resolveIdentifier
+  }
+
+  /**
+   * Statically resolves a non-literal default value such as `STRINGS.key`, `DEFAULT_TEXT`
+   * or `` `Hi ${NAME}` `` (#293). Ambiguous expressions (ternaries, unions) yield undefined.
+   */
+  private resolveDefaultValue = (expr: Expression): string | undefined => {
+    const values = this.expressionResolver.resolvePossibleKeyStringValues(expr)
+    return values.length === 1 ? values[0] : undefined
+  }
+
+  /** `getObjectPropValue` for `defaultValue*` props, so `{ defaultValue: STRINGS.key }` resolves too. */
+  private getDefaultValueProp (options: ObjectExpression, propName: string) {
+    return getObjectPropValue(options, propName, undefined, this.resolveDefaultValue)
   }
 
   /**
@@ -145,6 +159,8 @@ export class CallExpressionHandler {
         defaultValue = arg2.value
       } else if (arg2.type === 'TemplateLiteral' && isSimpleTemplateLiteral(arg2)) {
         defaultValue = arg2.quasis[0].cooked
+      } else {
+        defaultValue = this.resolveDefaultValue(arg2)
       }
     }
     if (node.arguments.length > 2) {
@@ -153,7 +169,7 @@ export class CallExpressionHandler {
         options = arg3
       }
     }
-    const defaultValueFromOptions = options ? getObjectPropValue(options, 'defaultValue') : undefined
+    const defaultValueFromOptions = options ? this.getDefaultValueProp(options, 'defaultValue') : undefined
     const finalDefaultValue = (typeof defaultValueFromOptions === 'string' ? defaultValueFromOptions : defaultValue)
 
     // Helper: detect if options object contains any defaultValue* properties
@@ -872,7 +888,7 @@ export class CallExpressionHandler {
       // When defaultValue_zero is present in the options, include 'zero' in the
       // categories so that key_zero is generated with the correct default value.
       // See: https://www.i18next.com/translation-function/plurals#special-zero
-      const zeroDefault = getObjectPropValue(options, `defaultValue${pluralSeparator}zero`)
+      const zeroDefault = this.getDefaultValueProp(options, `defaultValue${pluralSeparator}zero`)
       if (typeof zeroDefault === 'string' && !allPluralCategories.has('zero')) {
         allPluralCategories.add('zero')
       }
@@ -880,9 +896,9 @@ export class CallExpressionHandler {
       const pluralCategories = Array.from(allPluralCategories).sort()
 
       // Get all possible default values once at the start
-      const defaultValue = getObjectPropValue(options, 'defaultValue')
-      const otherDefault = getObjectPropValue(options, `defaultValue${pluralSeparator}other`)
-      const ordinalOtherDefault = getObjectPropValue(options, `defaultValue${pluralSeparator}ordinal${pluralSeparator}other`)
+      const defaultValue = this.getDefaultValueProp(options, 'defaultValue')
+      const otherDefault = this.getDefaultValueProp(options, `defaultValue${pluralSeparator}other`)
+      const ordinalOtherDefault = this.getDefaultValueProp(options, `defaultValue${pluralSeparator}ordinal${pluralSeparator}other`)
 
       // Handle context - both static and dynamic
       const contextPropValue = getObjectPropValueExpression(options, 'context')
@@ -941,7 +957,7 @@ export class CallExpressionHandler {
 
       if (primaryIsSingleOther || (pluralCategories.length === 1 && pluralCategories[0] === 'other')) {
         for (const { key: baseKey, context } of keysToGenerate) {
-          const specificOther = getObjectPropValue(options, `defaultValue${pluralSeparator}other`)
+          const specificOther = this.getDefaultValueProp(options, `defaultValue${pluralSeparator}other`)
           // Final default resolution:
           // 1) plural-specific defaultValue_other
           // 2) general defaultValue (from options)
@@ -979,7 +995,7 @@ export class CallExpressionHandler {
         for (const category of pluralCategories) {
           // 1. Look for the most specific default value
           const specificDefaultKey = isOrdinal ? `defaultValue${pluralSeparator}ordinal${pluralSeparator}${category}` : `defaultValue${pluralSeparator}${category}`
-          const specificDefault = getObjectPropValue(options, specificDefaultKey)
+          const specificDefault = this.getDefaultValueProp(options, specificDefaultKey)
 
           // 2. Determine the final default value using the ORIGINAL fallback chain with corrections
           let finalDefaultValue: string | undefined
@@ -1042,7 +1058,7 @@ export class CallExpressionHandler {
     } catch (e) {
       this.logger.warn(`Could not determine plural rules for language "${this.config.extract?.primaryLanguage}". Falling back to simple key extraction.`)
       // Fallback to a simple key if Intl API fails
-      const defaultValue = defaultValueFromCall || getObjectPropValue(options, 'defaultValue')
+      const defaultValue = defaultValueFromCall || this.getDefaultValueProp(options, 'defaultValue')
       this.pluginContext.addKey({ key, ns, defaultValue: typeof defaultValue === 'string' ? defaultValue : key, locations })
     }
   }

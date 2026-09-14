@@ -355,26 +355,22 @@ type IdentifierResolver = (name: string) => string | boolean | number | undefine
  * @param object - Object expression to search
  * @param propName - Property name to find
  * @param identifierResolver - callback to resolve Identifier type values when needed
+ * @param expressionResolver - callback to statically resolve any other non-literal value (e.g. `STRINGS.key`); '' is kept when it returns undefined
  * @returns String value if found, empty string if property exists but isn't a string, undefined if not found
  *
  * @private
  */
-export function getObjectPropValue (object: ObjectExpression, propName: string, identifierResolver?: IdentifierResolver): string | boolean | number | undefined {
+export function getObjectPropValue (object: ObjectExpression, propName: string, identifierResolver?: IdentifierResolver, expressionResolver?: (expr: Expression) => string | undefined): string | boolean | number | undefined {
   const prop = getObjectProperty(object, propName)
 
   if (prop?.type === 'KeyValueProperty') {
     const val = prop.value
     if (val.type === 'StringLiteral') return val.value
-    if (val.type === 'Identifier') {
-      if (identifierResolver) {
-        return identifierResolver(val.value)
-      }
-      return ''
-    }
+    if (val.type === 'Identifier' && identifierResolver) return identifierResolver(val.value)
     if (val.type === 'TemplateLiteral' && isSimpleTemplateLiteral(val)) return val.quasis[0].cooked
     if (val.type === 'BooleanLiteral') return val.value
     if (val.type === 'NumericLiteral') return val.value
-    return '' // Indicate presence for other types
+    return expressionResolver?.(val) ?? '' // Indicate presence for other types
   }
   return undefined
 }
