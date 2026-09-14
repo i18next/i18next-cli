@@ -20,8 +20,9 @@ describe('types-generator with merged namespaces (single file per language)', ()
     vi.spyOn(process, 'cwd').mockReturnValue('/project')
 
     const { glob } = await import('glob') as any
-    // ensure the types.input glob resolves to our single merged file
-    (glob as any).mockResolvedValue(['localization/translations/en.json'])
+    // ensure the types.input glob resolves to our single merged file (absolute, like the other
+    // types-generator tests: memfs >= 4.7x no longer resolves relative paths via the mocked process.cwd())
+    (glob as any).mockResolvedValue(['/project/localization/translations/en.json'])
 
     // Create a merged translations file with the default namespace "translation"
     vol.fromJSON({
