@@ -1528,6 +1528,25 @@ export default defineConfig({
 The same applies to a package that ships translatable sources: glob its files and
 their keys are extracted like your own.
 
+> **Careful with dependency types:** keys derived from them change when the dependency
+> does. If `ResourceStatus` is an enum today and widens to `string` in the next release,
+> the keys stop resolving and `removeUnusedKeys` (on by default) deletes them, during an
+> `npm update` rather than in a diff you wrote. Consider copying the type into your own
+> source instead and guarding it against drift, so a mismatch fails typecheck in CI
+> rather than silently emptying a locale file:
+>
+> ```typescript
+> type Equals<A, B> =
+>   (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+> type Assert<T extends true> = T;
+>
+> // drop the `${}` when the upstream type is a string union rather than an enum
+> type _driftGuard = Assert<Equals<LocalStatus, `${ResourceStatus}`>>;
+> ```
+>
+> If you do read from `node_modules`, `preservePatterns` keeps the already-translated
+> entries alive even when resolution stops producing them.
+
 Only keys that are **truly runtime-dynamic** (e.g. built from API data) cannot
 be statically resolved by any tool. For those, use `preservePatterns` to keep
 the existing entries in your translation files:
