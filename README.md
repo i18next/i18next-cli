@@ -1507,6 +1507,27 @@ t(MAP[someCondition ? 'ok' : 'err'])              // -> result.ok + result.err
 // Helper-function return types and `satisfies`-constrained values
 ```
 
+Resolution is name-based across every scanned file, including through renaming
+imports (`import { ResourceStatus as Status } from './types'`). Types declared by
+a dependency work too, but only if you let the scan reach them. `node_modules` is
+skipped unless an input pattern says otherwise ([#294](https://github.com/i18next/i18next-cli/issues/294),
+[#213](https://github.com/i18next/i18next-cli/issues/213)):
+
+```typescript
+export default defineConfig({
+  extract: {
+    input: [
+      'src/**/*.{ts,tsx}',
+      // declaration file scanned for its types; a `.d.ts` holds no keys to extract
+      'node_modules/@acme/api-sdk/dist/*.d.ts',
+    ],
+  }
+});
+```
+
+The same applies to a package that ships translatable sources: glob its files and
+their keys are extracted like your own.
+
 Only keys that are **truly runtime-dynamic** (e.g. built from API data) cannot
 be statically resolved by any tool. For those, use `preservePatterns` to keep
 the existing entries in your translation files:

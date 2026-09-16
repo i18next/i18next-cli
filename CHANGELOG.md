@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.74.0
+
+- fix(extract): finite dynamic keys now resolve through renaming imports. `import { ResourceStatus
+  as Status } from './types'` followed by `` t(`status.${s}`) `` used to expand to nothing, because
+  the resolver's tables are keyed by the declared type name and nothing mapped the local binding
+  back to it. Applies to type aliases, enums, interfaces, `as const` arrays and helper functions
+  alike. Part of [#294](https://github.com/i18next/i18next-cli/issues/294).
+- feat(extract): `node_modules` is no longer ignored unconditionally. The default ignore is
+  dropped as soon as one of your `extract.input` patterns mentions it. Glob a dependency's
+  `.d.ts` to let the type-aware resolver expand the string unions and enums it declares, or glob a
+  package's sources to extract the keys it ships. Fixes
+  [#294](https://github.com/i18next/i18next-cli/issues/294) and
+  [#213](https://github.com/i18next/i18next-cli/issues/213).
+
 ## 1.73.3
 
 - fix(extract): default values that are not string literals are now resolved statically instead of

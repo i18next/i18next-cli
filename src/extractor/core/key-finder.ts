@@ -103,6 +103,10 @@ export async function findKeys (
     await preScanFile(file, astVisitors, otherConfig, logger, fileErrors)
   }
 
+  // 6b. Mirror declarations onto the local names they were imported as, so that
+  //     `import { ResourceStatus as Status }` resolves like the unaliased import.
+  sharedExpressionResolver.applyImportAliases()
+
   // 7. Extraction pass: all shared tables are now fully populated, so every
   //    identifier reference can be resolved regardless of file order.
   for (const file of sourceFiles) {
@@ -138,7 +142,13 @@ export async function findKeys (
  * @internal
  */
 async function processSourceFiles (config: I18nextToolkitConfig): Promise<string[]> {
-  const defaultIgnore = ['node_modules/**']
+  // `node_modules` is ignored by default, but a user who explicitly globs into it
+  // means it, either to extract from a package that ships translatable sources
+  // (#213) or to let the type-aware resolver read a dependency's `.d.ts` (#294).
+  const inputPatterns = Array.isArray(config.extract.input) ? config.extract.input : [config.extract.input]
+  const defaultIgnore = inputPatterns.some(p => typeof p === 'string' && p.includes('node_modules'))
+    ? []
+    : ['node_modules/**']
 
   // Normalize the user's ignore option into an array
   const userIgnore = Array.isArray(config.extract.ignore)

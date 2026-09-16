@@ -50,6 +50,12 @@ export class ExpressionResolver {
   // callback parameter of `items.map(...)` can be bound to the element type.
   private arrayElementMembers: Map<string, Record<string, string[]>> = new Map()
 
+  // Shared (cross-file) table of renaming imports: localName -> declaredName,
+  // e.g. `import { ResourceStatus as Status }` -> { Status: 'ResourceStatus' }.
+  // Every other table is keyed by the *declared* name, so without this a type
+  // referenced through an alias resolves to nothing.
+  private sharedImportAliases: Map<string, string> = new Map()
+
   constructor (hooks: ASTVisitorHooks) {
     this.hooks = hooks
   }
@@ -312,6 +318,50 @@ export class ExpressionResolver {
       }
     } catch {
       // noop
+    }
+  }
+
+  /**
+   * Record renaming imports (`import { X as Y } from '...'`) so that `Y` can be
+   * resolved back to the declaration of `X` once every file has been pre-scanned.
+   *
+   * SWC node shape: `ImportDeclaration.specifiers[] -> ImportSpecifier { local, imported }`,
+   * where `imported` is null for a non-renaming import (nothing to record then).
+   */
+  captureImportDeclaration (node: any): void {
+    try {
+      for (const spec of node?.specifiers ?? []) {
+        if (spec?.type !== 'ImportSpecifier') continue
+        const local: string | undefined = spec.local?.value
+        const imported: string | undefined = spec.imported?.value
+        if (local && imported && local !== imported) this.sharedImportAliases.set(local, imported)
+      }
+    } catch {
+      // noop
+    }
+  }
+
+  /**
+   * Mirror every declaration captured under its declared name onto the local
+   * names it was imported as. Must run after the pre-scan pass has seen all
+   * files, since an alias may be read before the declaring file is parsed.
+   *
+   * Only the cross-file tables are mirrored; the per-file ones are cleared
+   * again on the next `resetFileSymbols()`.
+   */
+  public applyImportAliases (): void {
+    const tables: Map<string, any>[] = [
+      this.sharedTypeAliasTable,
+      this.sharedEnumTable,
+      this.sharedVariableTable,
+      this.sharedFunctionReturnTable,
+      this.objectTypeTable,
+      this.objectTypeMembersRaw,
+    ]
+    for (const [local, declared] of this.sharedImportAliases) {
+      for (const table of tables) {
+        if (table.has(declared) && !table.has(local)) table.set(local, table.get(declared))
+      }
     }
   }
 

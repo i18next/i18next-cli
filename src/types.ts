@@ -27,7 +27,14 @@ export interface I18nextToolkitConfig {
 
   /** Configuration options for translation key extraction */
   extract: {
-    /** Glob pattern(s) for source files to scan for translation keys */
+    /**
+     * Glob pattern(s) for source files to scan for translation keys.
+     *
+     * `node_modules` is skipped unless one of these patterns mentions it. Add e.g.
+     * `'node_modules/@acme/api-sdk/dist/*.d.ts'` to let the type-aware resolver expand
+     * string unions and enums declared by a dependency, or point at a package's sources
+     * to extract the keys it ships.
+     */
     input: string | string[];
 
     /** Glob pattern(s) for files to ignore during extraction */

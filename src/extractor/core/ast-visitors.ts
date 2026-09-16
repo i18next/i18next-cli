@@ -169,6 +169,11 @@ export class ASTVisitors {
         // Return-type annotations or inferred return values for t(fn()) patterns
         this.expressionResolver.captureFunctionDeclaration(node)
         break
+      case 'ImportDeclaration':
+        // `import { X as Y }` → ExpressionResolver.sharedImportAliases, resolved
+        // once the pre-scan has seen every file.
+        this.expressionResolver.captureImportDeclaration(node)
+        break
     }
 
     for (const key in node) {
