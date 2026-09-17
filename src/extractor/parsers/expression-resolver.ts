@@ -1,5 +1,6 @@
 import type { Expression, TsType, TemplateLiteral, TsTemplateLiteralType } from '@swc/core'
 import type { ASTVisitorHooks } from '../../types.js'
+import { unwrapParens } from './ast-utils.js'
 
 export class ExpressionResolver {
   private hooks: ASTVisitorHooks
@@ -718,6 +719,9 @@ export class ExpressionResolver {
    * @returns An array of possible string values that the expression may produce.
    */
   private resolvePossibleStringValuesFromExpression (expression: Expression, returnEmptyStrings = false): string[] {
+    // `t(('key'))` / `t(cond ? 'a' : ('b'))`: parens are just a wrapper node (#295).
+    expression = unwrapParens(expression)
+
     // Support selector-style arrow functions used by the selector API:
     // e.g. ($) => $.path.to.key  ->  ['path.to.key']
     // e.g. ($) => $.table.columns[field]  ->  ['table.columns.name', 'table.columns.age']

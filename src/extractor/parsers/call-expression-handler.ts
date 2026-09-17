@@ -3,7 +3,7 @@ import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey, ScopeIn
 import { ExpressionResolver } from './expression-resolver.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
 import { parseNestedReferences } from '../../utils/nesting.js'
-import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset } from './ast-utils.js'
+import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset, unwrapParens } from './ast-utils.js'
 import { matchesFunctionPattern } from '../utils/function-matcher.js'
 
 // Helper to escape regex characters
@@ -70,7 +70,7 @@ export class CallExpressionHandler {
       (node.type === 'CallExpression' || node.type === 'NewExpression') &&
       node.arguments?.length > 0
     ) {
-      const firstArg = node.arguments[0].expression
+      const firstArg = unwrapParens(node.arguments[0].expression)
       if (firstArg?.span && typeof firstArg.span.start === 'number') {
         return lineColumnFromOffset(this.getCurrentCode(), firstArg.span.start)
       }
@@ -152,7 +152,7 @@ export class CallExpressionHandler {
     let options: ObjectExpression | undefined
 
     if (node.arguments.length > 1) {
-      const arg2 = node.arguments[1].expression
+      const arg2 = unwrapParens(node.arguments[1].expression)
       if (arg2.type === 'ObjectExpression') {
         options = arg2
       } else if (arg2.type === 'StringLiteral') {
@@ -164,7 +164,7 @@ export class CallExpressionHandler {
       }
     }
     if (node.arguments.length > 2) {
-      const arg3 = node.arguments[2].expression
+      const arg3 = unwrapParens(node.arguments[2].expression)
       if (arg3.type === 'ObjectExpression') {
         options = arg3
       }
@@ -619,7 +619,7 @@ export class CallExpressionHandler {
     argIndex: number,
     scopeInfo?: ScopeInfo
   ): { keysToProcess: string[]; originalKeysToProcess: string[]; isSelectorAPI: boolean } {
-    const firstArg = node.arguments[argIndex].expression
+    const firstArg = unwrapParens(node.arguments[argIndex].expression)
     const keysToProcess: string[] = []
     // Mirror of keysToProcess BEFORE selector-ns rewriting. For non-selector
     // calls and selector calls that don't trigger a rewrite, both arrays hold

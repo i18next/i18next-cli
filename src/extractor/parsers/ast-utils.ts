@@ -285,6 +285,23 @@ export function collectIgnoredLineRanges (ast: any, code: string): Set<number> {
 }
 
 /**
+ * Strips redundant parentheses from an expression (#295).
+ *
+ * SWC keeps them as `ParenthesisExpression` nodes, so any code that switches on
+ * an expression's type sees the wrapper instead of the literal/object inside.
+ * These parens are easy to hit by accident: Prettier adds them around the
+ * longer branch of a ternary that doesn't fit on one line.
+ *
+ * Only parens are removed; TS assertions (`as`, `satisfies`) carry type
+ * information some callers need and are left alone.
+ */
+export function unwrapParens<T> (expr: T): T {
+  let current: any = expr
+  while (current?.type === 'ParenthesisExpression') current = current.expression
+  return current
+}
+
+/**
  * Finds and returns the full property node (KeyValueProperty) for the given
  * property name from an ObjectExpression.
  *
@@ -326,10 +343,10 @@ export function getObjectProperty (object: ObjectExpression, propName: string) {
  * @returns The matching value node if found, otherwise undefined.
  */
 export function getObjectPropValueExpression (object: ObjectExpression, propName: string): Expression | undefined {
-  return getObjectProperty(object, propName)?.value ?? (object.properties).find(
+  return unwrapParens(getObjectProperty(object, propName)?.value ?? (object.properties).find(
     // For shorthand properties like { ns }.
     (p): p is Identifier => p.type === 'Identifier' && p.value === propName
-  )
+  ))
 }
 
 /**
@@ -364,7 +381,7 @@ export function getObjectPropValue (object: ObjectExpression, propName: string, 
   const prop = getObjectProperty(object, propName)
 
   if (prop?.type === 'KeyValueProperty') {
-    const val = prop.value
+    const val = unwrapParens(prop.value)
     if (val.type === 'StringLiteral') return val.value
     if (val.type === 'Identifier' && identifierResolver) return identifierResolver(val.value)
     if (val.type === 'TemplateLiteral' && isSimpleTemplateLiteral(val)) return val.quasis[0].cooked

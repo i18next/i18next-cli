@@ -56,6 +56,7 @@ export class ScopeManager {
       case 'TsConstAssertion':
       case 'TsAsExpression':
       case 'TsSatisfiesExpression':
+      case 'ParenthesisExpression': // `useTranslation(('ns'))` (#295)
         return ScopeManager.unwrapTsExpression(node.expression)
       default:
         return node

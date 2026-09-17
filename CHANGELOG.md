@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.74.1
+
+- fix(extract): keys wrapped in parentheses are no longer dropped. `t(('key'))` and
+  `t(cond ? 'a' : ('b'))` produced nothing, which is easy to hit without meaning to, since Prettier
+  wraps the longer branch of a ternary in parentheses when the call does not fit on one line. The
+  same wrapper broke the options argument (`t('item', ({ count }))` extracted no plural forms), a
+  parenthesized default value (`t('welcome', ('Welcome!'))`), key arrays and selectors
+  (`t((['a', 'b']))`, `t((($) => $.sel.key))`), `useTranslation(('ns'))`, and option values such as
+  `{ ns: ('other') }`, which silently filed the key under the default namespace. Fixes
+  [#295](https://github.com/i18next/i18next-cli/issues/295).
+
 ## 1.74.0
 
 - fix(extract): finite dynamic keys now resolve through renaming imports. `import { ResourceStatus
