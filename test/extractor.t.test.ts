@@ -85,6 +85,32 @@ describe('extractor: advanced t features', () => {
     })
   })
 
+  it('should resolve a shorthand "ns" option in t()', async () => {
+    const sampleCode = `
+      const ns = 'common'
+      t('button.save', { ns, defaultValue: 'Save' })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const configWithNsOptions: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        nsSeparator: false,
+      },
+    }
+
+    const results = await extract(configWithNsOptions)
+    const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
+
+    expect(commonFile).toBeDefined()
+    expect(commonFile!.newTranslations).toEqual({
+      button: {
+        save: 'Save',
+      },
+    })
+  })
+
   describe('in react-i18next', () => {
     it('should detect the namespace from useTranslation("ns1")', async () => {
       const sampleCode = `
