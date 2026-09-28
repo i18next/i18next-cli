@@ -183,7 +183,7 @@ describe('processFile', () => {
 
   it('should log warning and skip file when file processing fails', async () => {
     const invalidCode = `
-      this is not valid javascript syntax !!!
+      t('key') this is not valid javascript syntax !!!
     `
 
     vol.fromJSON({

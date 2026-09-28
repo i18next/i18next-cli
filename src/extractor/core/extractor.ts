@@ -161,6 +161,38 @@ function isExtExplicitlyInInputPatterns (ext: string, input: string | string[]):
   })
 }
 
+const extractionSiteRegexes = new WeakMap<object, RegExp>()
+
+/**
+ * Cheap textual test for anything the extraction walk can turn into a key: a call
+ * to a configured function (`t(`, `i18n.t(`, `t?.(`, `t<Ns>(`, `new TranslatedError(`, a
+ * `t(` comment), or a mention of what binds a translation function under any name
+ * (useTranslation-style hooks, getFixedT, TFunction params) or of a Trans component.
+ * A false positive only costs a parse; a false negative would drop keys.
+ *
+ * @internal
+ */
+function mayContainExtractionSite (code: string, config: Omit<I18nextToolkitConfig, 'plugins'>): boolean {
+  let re = extractionSiteRegexes.get(config)
+  if (!re) {
+    const calls = new Set(['t'])
+    const names = new Set(['getFixedT', 'TFunction'])
+    for (const fn of config.extract.functions || ['t', '*.t']) {
+      // 'tProps.*' matches any `tProps.<x>(` call, so the prefix is what to look for
+      if (fn.endsWith('.*')) names.add(fn.slice(0, -2).split('.').pop()!)
+      else calls.add(fn.split('.').pop()!)
+    }
+    for (const hook of config.extract.useTranslationNames || ['useTranslation', 'getT', 'useT']) {
+      names.add(typeof hook === 'string' ? hook : hook.name)
+    }
+    for (const component of config.extract.transComponents || ['Trans']) names.add(component.split('.').pop()!)
+    const alt = (set: Set<string>) => [...set].map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+    re = new RegExp(`(?<!\\w)(?:(?:${alt(calls)})\\s*(?:\\?\\.\\s*)?[(<]|(?:${alt(names)})(?![\\w$]))`)
+    extractionSiteRegexes.set(config, re)
+  }
+  return re.test(code)
+}
+
 /**
  * Processes an individual source file for translation key extraction.
  *
@@ -238,6 +270,11 @@ export async function processFile (
       }
       return
     }
+
+    // A file that mentions no translation function, hook or component cannot yield
+    // a key, so skip the parse and walk (#297). The pre-scan has already harvested
+    // its constants and types for the other files. onVisitNode plugins see every node.
+    if (!plugins.some(p => p.onVisitNode) && !mayContainExtractionSite(code, config)) return
 
     // When a plugin transformed a non-native file, always use tsx so SWC can
     // handle TypeScript syntax that the plugin may have extracted from the file.

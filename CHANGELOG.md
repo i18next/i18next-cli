@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.74.2
+
+- fix(extract): the output no longer depends on the order in which `glob` happens to return the
+  input files. When two call sites give one key different defaults (`t('k', 'Adding...')` in one
+  file, `t('k', 'Importing...')` in another), the first file visited wins, so an unchanged source
+  tree could produce a different catalog from run to run and flip CI checks that compare against a
+  committed catalog. Files are now visited in sorted path order, which makes the winner stable. If
+  your sources contain such conflicts, the kept default may change once with this release. To
+  hear about them instead of silently keeping one default, set
+  `extract.warnOnConflicts` to `'warn'` or `'error'`. Fixes
+  [#296](https://github.com/i18next/i18next-cli/issues/296).
+- perf(extract): files that contain no translation call, hook, `TFunction`, `getFixedT` or Trans
+  component (as configured via `functions`, `useTranslationNames` and `transComponents`) are no
+  longer parsed and walked a second time for keys. The constants pre-scan still reads every file,
+  so types and `as const` values declared in such files keep resolving dynamic keys elsewhere.
+  Plugins with an `onVisitNode` hook still see every file. On large trees where most files hold no
+  translations this cuts extraction time considerably. Fixes
+  [#297](https://github.com/i18next/i18next-cli/issues/297).
+- chore: update dependencies
+
 ## 1.74.1
 
 - fix(extract): keys wrapped in parentheses are no longer dropped. `t(('key'))` and

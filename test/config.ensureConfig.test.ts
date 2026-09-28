@@ -30,17 +30,6 @@ describe('config: ensureConfig', () => {
     // Simulate the user answering "Yes" to the prompt
     vi.mocked(inquirer.prompt).mockResolvedValue({ shouldInit: true })
 
-    vi.mock('../src/config', async (importOriginal) => {
-      const original = await importOriginal<typeof import('../src/config')>()
-      return {
-        ...original,
-        // Mock loadConfig to return a value on the second call
-        loadConfig: vi.fn()
-          .mockResolvedValueOnce(null) // First call finds no config
-          .mockResolvedValueOnce({ locales: ['en'], extract: {} }), // Second call finds a config
-      }
-    })
-
     await ensureConfig()
 
     expect(inquirer.prompt).toHaveBeenCalledTimes(1)

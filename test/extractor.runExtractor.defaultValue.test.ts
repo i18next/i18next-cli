@@ -1053,12 +1053,13 @@ describe('runExtractor: defaultValue option', () => {
       cancel: '',
     })
 
-    // Primary language should resolve conflicts (last value wins)
+    // Files are visited in sorted path order and the first value wins,
+    // so App.tsx beats User.tsx on every run (#296)
     const appEnContent = await fs.readFile(join(tempDir, 'locales', 'en', 'app.json'), 'utf-8')
     const appEnTranslations = JSON.parse(appEnContent)
 
     expect(appEnTranslations).toEqual({
-      title: 'New App Title', // Resolves conflict with new value
+      title: 'App Title',
       description: 'App Description',
     })
 

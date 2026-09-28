@@ -155,11 +155,14 @@ async function processSourceFiles (config: I18nextToolkitConfig): Promise<string
     ? config.extract.ignore
     : config.extract.ignore ? [config.extract.ignore] : []
 
-  return await glob(config.extract.input, {
+  const files = await glob(config.extract.input, {
     // Combine default ignore patterns with user-configured ones
     ignore: [...defaultIgnore, ...userIgnore],
     cwd: process.cwd(),
     // A directory named e.g. `abc.tsx` matches the input globs
     nodir: true,
   })
+  // glob's order is not stable across runs, and when two call sites give one key
+  // different defaults the file visited first wins, so sort for reproducible output (#296)
+  return files.sort()
 }
