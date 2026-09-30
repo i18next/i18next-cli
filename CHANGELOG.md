@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.74.3
+
+- fix(extract): dynamic keys typed by a declaration in a file without any translation call
+  resolve again when that declaration builds on one from a file that sorts after it. In 1.74.2,
+  `type Kind = Base | 'extra'` in `api/types.ts` with `Base` declared in `shared/base.ts` expanded
+  `` t(`kind.${kind}`) `` to `kind.extra` only, and the same happened to interface members,
+  function return types and functions returning an enum member declared further down the list.
+  Such declarations are now resolved again once every file has been scanned, which also removes
+  the file-order dependence this had before 1.74.2.
+- feat(extract): more implicitly typed values expand to their finite set of keys. Fixes
+  [#298](https://github.com/i18next/i18next-cli/issues/298):
+  - members of an object returned by a function with an object return type:
+    `` const animal = getAnimal(); t(`animal.${animal.type}`) ``, also through
+    `const { type } = getAnimal()`, `const kind = animal.type` or `getAnimal().type`.
+  - unions and intersections of object types (`type Animal = Duck | Dog` gives `animal.type` the
+    values of both) and generic object types (`type AnimalBase<T extends AnimalType> = { type: T }`
+    used as `AnimalBase<'DUCK'>`, or bare, which falls back to the parameter's default or
+    constraint).
+  - `(typeof COLOR)[keyof typeof COLOR]` for an `as const` object or an enum.
+  - elements of an array, `colors[i]`, without an annotation on the variable they are assigned to.
+
+  Narrowing is not followed: after `if (color !== 'BLUE')`, `color.BLUE` is still extracted.
+- fix(extract): shorthand options resolve like their long form. `t('k', { ns })` filed the key
+  under the default namespace, `{ defaultValue }` was ignored and
+  `useTranslation('ns', { keyPrefix })` lost its prefix. Thanks to
+  [@aaronshaf](https://github.com/aaronshaf) for reporting it in
+  [#291](https://github.com/i18next/i18next-cli/pull/291).
+
 ## 1.74.2
 
 - fix(extract): the output no longer depends on the order in which `glob` happens to return the

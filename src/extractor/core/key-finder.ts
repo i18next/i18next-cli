@@ -103,9 +103,10 @@ export async function findKeys (
     await preScanFile(file, astVisitors, otherConfig, logger, fileErrors)
   }
 
-  // 6b. Mirror declarations onto the local names they were imported as, so that
+  // 6b. Re-resolve declarations that refer to ones in files scanned after them, and
+  //     mirror declarations onto the local names they were imported as, so that
   //     `import { ResourceStatus as Status }` resolves like the unaliased import.
-  sharedExpressionResolver.applyImportAliases()
+  sharedExpressionResolver.finishPreScan()
 
   // 7. Extraction pass: all shared tables are now fully populated, so every
   //    identifier reference can be resolved regardless of file order.

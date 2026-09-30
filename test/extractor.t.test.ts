@@ -85,6 +85,27 @@ describe('extractor: advanced t features', () => {
     })
   })
 
+  // #291
+  it('should resolve shorthand ns, defaultValue and keyPrefix options', async () => {
+    const sampleCode = `
+      const ns = 'common'
+      const defaultValue = 'Saved!'
+      t('button.save', { ns, defaultValue })
+      const keyPrefix = 'form'
+      const { t: tForm } = useTranslation('common', { keyPrefix })
+      tForm('submit', 'Submit')
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract({ ...mockConfig, extract: { ...mockConfig.extract, nsSeparator: false } })
+    const commonFile = results.find(r => pathEndsWith(r.path, '/locales/en/common.json'))
+
+    expect(commonFile!.newTranslations).toEqual({
+      button: { save: 'Saved!' },
+      form: { submit: 'Submit' },
+    })
+  })
+
   describe('in react-i18next', () => {
     it('should detect the namespace from useTranslation("ns1")', async () => {
       const sampleCode = `

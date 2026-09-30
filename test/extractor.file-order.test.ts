@@ -75,6 +75,27 @@ describe('extractor: file order and extraction-site prescreen', () => {
     expect(visit).toHaveBeenCalledTimes(Object.keys(files).length - 2)
   })
 
+  it('resolves declarations that refer to files scanned after them', async () => {
+    // api/* sorts before shared/* and types/*, and holds no token, so it is
+    // only ever pre-scanned, before the declarations it refers to exist
+    const files = {
+      '/src/api/app-type.ts': "import { OrgType } from '../types/org'\nexport function getAppType () { return OrgType.A }",
+      '/src/api/types.ts': "import type { Base as B } from '../shared/base'\nexport type Kind = B | 'extra'\nexport interface Props { size: B }\nexport const getKind = (): Kind => 'extra'",
+      // eslint-disable-next-line no-template-curly-in-string
+      '/src/app.ts': 'export const f = (k: Kind, p: Props) => { t(`kind.${k}`); t(`size.${p.size}`); t(`fn.${getKind()}`); t(`app.${getAppType()}`) }',
+      '/src/shared/base.ts': "export type Base = 'x' | 'y'",
+      '/src/types/org.ts': "export enum OrgType { A = 'a' }",
+    }
+    vol.fromJSON(files)
+    vi.mocked(glob).mockResolvedValue(Object.keys(files))
+
+    const { allKeys } = await findKeys(config())
+
+    expect([...allKeys.values()].map(k => k.key).sort()).toEqual([
+      'app.a', 'fn.extra', 'fn.x', 'fn.y', 'kind.extra', 'kind.x', 'kind.y', 'size.x', 'size.y',
+    ])
+  })
+
   it('still walks token-free files when a plugin visits nodes', async () => {
     vol.fromJSON({ '/src/model.ts': "export const LABEL = 'from.plugin'" })
     vi.mocked(glob).mockResolvedValue(['/src/model.ts'])

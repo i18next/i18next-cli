@@ -2,6 +2,42 @@ import type { Expression, TsType, TemplateLiteral, TsTemplateLiteralType } from 
 import type { ASTVisitorHooks } from '../../types.js'
 import { unwrapParens } from './ast-utils.js'
 
+// Whether `next` holds everything `prev` does: every value of a list, every
+// member of a map (recursively), or the same primitive.
+const covers = (next: any, prev: any): boolean => {
+  if (Array.isArray(prev)) {
+    const has = new Set(Array.isArray(next) ? next : [])
+    return prev.every(v => has.has(v))
+  }
+  if (prev && typeof prev === 'object') {
+    return !!next && typeof next === 'object' && Object.keys(prev).every(k => covers(next[k], prev[k]))
+  }
+  return next === prev
+}
+
+// Whether replacing `prev` by `next` only adds to it.
+const grows = (next: any, prev: any): boolean =>
+  prev === undefined || (covers(next, prev) && !covers(prev, next))
+
+// The parts of return expressions that still resolve without the file's local
+// bindings: members of enums / objects (`Kind.A`) and calls of other functions.
+function crossFileRefs (exprs: any[]): any[] {
+  const refs: any[] = []
+  const add = (e: any): void => {
+    e = unwrapParens(e)
+    if (e?.type === 'ConditionalExpression') {
+      add(e.consequent)
+      add(e.alternate)
+    } else if (e?.type === 'MemberExpression' && e.object?.type === 'Identifier') {
+      refs.push(e)
+    } else if (e?.type === 'CallExpression' && e.callee?.type === 'Identifier') {
+      refs.push({ type: 'CallExpression', callee: e.callee, arguments: [] })
+    }
+  }
+  exprs.forEach(add)
+  return refs
+}
+
 export class ExpressionResolver {
   private hooks: ASTVisitorHooks
   // Per-file symbol table for statically analyzable variables.
@@ -57,6 +93,26 @@ export class ExpressionResolver {
   // referenced through an alias resolves to nothing.
   private sharedImportAliases: Map<string, string> = new Map()
 
+  // Type parameters of generic object types, e.g. `type Base<T> = { type: T }`.
+  private objectTypeParams: Map<string, any[]> = new Map()
+  // Values bound to type parameters while a generic type is being resolved.
+  private typeParamBindings: Map<string, string[]> = new Map()
+
+  // Shared (cross-file) member maps of functions returning an object type,
+  // e.g. `const getAnimal = (): Animal => …` -> { getAnimal: { type: ['DUCK', 'DOG'] } }
+  private sharedFunctionReturnMembers: Map<string, Record<string, string[]>> = new Map()
+
+  // Per-file identifiers holding an object type, from their annotation or from the
+  // function they were initialised by: `const animal = getAnimal()` -> { animal: { type: [...] } }
+  private objectVariables: Map<string, Record<string, string[]>> = new Map()
+
+  // Set while the pre-scan runs. Captures that read other declarations queue a
+  // replay here, because what they read may be declared in a file scanned later.
+  public recording = false
+  private replays: Array<() => void> = []
+  private replaying = false
+  private grew = false
+
   constructor (hooks: ASTVisitorHooks) {
     this.hooks = hooks
   }
@@ -69,6 +125,44 @@ export class ExpressionResolver {
     this.typeAliasTable.clear()
     this.temporaryVariables.clear()
     this.arrayElementMembers.clear()
+    this.objectVariables.clear()
+  }
+
+  /**
+   * Call once every file has been pre-scanned. Captures ran in file order, so one
+   * that refers to a declaration in a later file (`type Kind = Base | 'extra'`
+   * with `Base` declared further down the list) came out short. They are replayed
+   * against the complete tables until nothing grows, then renaming imports are
+   * mirrored.
+   */
+  public finishPreScan (): void {
+    this.resetFileSymbols()
+    // ponytail: each round fixes one more link of a chain declared against file order; 10 is plenty
+    for (let round = 0; round < 10; round++) {
+      this.applyImportAliases()
+      this.grew = false
+      this.replaying = true
+      for (const replay of this.replays) replay()
+      this.replaying = false
+      if (!this.grew) break
+    }
+    this.applyImportAliases()
+    this.replays = []
+    this.resetFileSymbols()
+  }
+
+  /**
+   * Write an entry of a cross-file table. While replaying, an entry only grows:
+   * a replayed declaration has lost its file's local bindings and must not shrink
+   * what the pre-scan resolved, and two same-named declarations in different files
+   * must not keep overwriting each other.
+   */
+  private setShared<V> (table: Map<string, V>, name: string, value: V): void {
+    if (this.replaying) {
+      if (!grows(value, table.get(name))) return
+      this.grew = true
+    }
+    table.set(name, value)
   }
 
   /**
@@ -122,11 +216,11 @@ export class ExpressionResolver {
         return
       }
 
-      // ── ObjectPattern id: `const { unit } = rate` ───────────────────────────
+      // ── ObjectPattern id: `const { unit } = rate` / `const { type } = getAnimal()`
       // Bind each destructured local to the source object's property values.
-      if (node.id.type === 'ObjectPattern' && node.init?.type === 'Identifier') {
-        const map = this.getObjectMap(node.init.value)
-        const objMembers = this.temporaryObjectVariables.get(node.init.value)
+      if (node.id.type === 'ObjectPattern' && node.init) {
+        const map = node.init.type === 'Identifier' ? this.getObjectMap(node.init.value) : undefined
+        const objMembers = this.objectMembersOf(node.init)
         if (!map && !objMembers) return
         for (const prop of (node.id.properties ?? []) as any[]) {
           const memberName = prop?.key?.value
@@ -151,6 +245,12 @@ export class ExpressionResolver {
         const elementMembers = this.resolveArrayElementMembers(idTypeAnnotation)
         if (elementMembers) this.arrayElementMembers.set(name, elementMembers)
       }
+
+      // `const animal: Animal = …` / `const animal = getAnimal()` → `animal.type`
+      // resolves to the member's values.
+      const objMembers = (idTypeAnnotation && this.resolveTypeMembers(idTypeAnnotation)) ||
+        (node.init && this.objectMembersOf(node.init))
+      if (objMembers) this.objectVariables.set(name, objMembers)
 
       // pattern 1:
       // Handle `declare const x: 'a' | 'b'` and `declare const x: SomeUnion`
@@ -265,24 +365,9 @@ export class ExpressionResolver {
         return
       }
 
-      // pattern 3 (arrow function variant):
-      // `const fn = (): 'a' | 'b' => ...` — capture the explicit return type annotation,
-      // OR fall back to walking the body's return expressions / expression body
-      // when no annotation is present (mirrors TS's own return-type inference).
+      // pattern 3 (arrow function variant): `const fn = (): 'a' | 'b' => ...`
       if (unwrappedInit.type === 'ArrowFunctionExpression' || unwrappedInit.type === 'FunctionExpression') {
-        let returnVals: string[] = []
-        const rawReturnType = unwrappedInit.returnType ?? unwrappedInit.typeAnnotation
-        if (rawReturnType) {
-          // Explicit annotation — trust it even when it resolves to [].
-          const tsType = rawReturnType.typeAnnotation ?? rawReturnType
-          returnVals = this.resolvePossibleStringValuesFromType(tsType)
-        } else {
-          returnVals = this.inferReturnValuesFromFunctionBody(unwrappedInit)
-        }
-        if (returnVals.length > 0) {
-          this.variableTable.set(name, returnVals)
-          this.sharedFunctionReturnTable.set(name, returnVals)
-        }
+        this.captureFunctionReturn(name, unwrappedInit)
       }
     } catch {
       // be silent - conservative only
@@ -304,19 +389,25 @@ export class ExpressionResolver {
       // SWC puts the actual type in `.typeAnnotation`
       const tsType = node.typeAnnotation ?? node.typeAnn
       if (!tsType) return
+      if (this.recording) this.replays.push(() => this.captureTypeAliasDeclaration(node))
+      const params = node.typeParams?.parameters
       // `type IProps = { size: ChangeType }` — object shape, not a string union.
       if (tsType.type === 'TsTypeLiteral') {
-        this.objectTypeMembersRaw.set(name, tsType.members)
-        const members = this.collectObjectTypeMembers(tsType.members)
-        if (members) this.objectTypeTable.set(name, members)
+        if (!this.replaying) this.setObjectTypeRaw(name, tsType.members, params)
+        const members = this.withTypeParams(params, undefined, () => this.collectObjectTypeMembers(tsType.members))
+        if (members) this.setShared(this.objectTypeTable, name, members)
         return
       }
-      const vals = this.resolvePossibleStringValuesFromType(tsType)
+      const vals = this.withTypeParams(params, undefined, () => this.resolvePossibleStringValuesFromType(tsType))
       if (vals.length > 0) {
-        this.typeAliasTable.set(name, vals)
+        if (!this.replaying) this.typeAliasTable.set(name, vals)
         // Also share so importing files can resolve this alias by name
-        this.sharedTypeAliasTable.set(name, vals)
+        this.setShared(this.sharedTypeAliasTable, name, vals)
+        return
       }
+      // `type Animal = Duck | Dog`, `type Duck = Base<'DUCK'> & { fly: true }`
+      const members = this.withTypeParams(params, undefined, () => this.resolveTypeMembers(tsType))
+      if (members) this.setShared(this.objectTypeTable, name, members)
     } catch {
       // noop
     }
@@ -356,12 +447,15 @@ export class ExpressionResolver {
       this.sharedEnumTable,
       this.sharedVariableTable,
       this.sharedFunctionReturnTable,
+      this.sharedFunctionReturnMembers,
       this.objectTypeTable,
       this.objectTypeMembersRaw,
+      this.objectTypeParams,
     ]
     for (const [local, declared] of this.sharedImportAliases) {
       for (const table of tables) {
-        if (table.has(declared) && !table.has(local)) table.set(local, table.get(declared))
+        // A replayed declaration may have grown since it was last mirrored
+        if (table.has(declared) && grows(table.get(declared), table.get(local))) table.set(local, table.get(declared))
       }
     }
   }
@@ -377,12 +471,53 @@ export class ExpressionResolver {
     try {
       const name: string | undefined = node?.id?.type === 'Identifier' ? node.id.value : undefined
       if (!name) return
-      if (Array.isArray(node?.body?.body)) this.objectTypeMembersRaw.set(name, node.body.body)
-      const members = this.collectObjectTypeMembers(node?.body?.body)
-      if (members) this.objectTypeTable.set(name, members)
+      if (this.recording) this.replays.push(() => this.captureInterfaceDeclaration(node))
+      const params = node.typeParams?.parameters
+      if (!this.replaying && Array.isArray(node?.body?.body)) this.setObjectTypeRaw(name, node.body.body, params)
+      const members = this.withTypeParams(params, undefined, () => this.collectObjectTypeMembers(node?.body?.body))
+      if (members) this.setShared(this.objectTypeTable, name, members)
     } catch {
       // noop
     }
+  }
+
+  private setObjectTypeRaw (name: string, members: any[], params: any[] | undefined): void {
+    this.objectTypeMembersRaw.set(name, members)
+    if (params?.length) this.objectTypeParams.set(name, params)
+    else this.objectTypeParams.delete(name)
+  }
+
+  /**
+   * Run `fn` with the parameters of a generic type bound to the values of their
+   * arguments, falling back to each one's default and then its constraint, so
+   * that `type Base<T extends Kind> = { type: T }` used bare has `type: Kind`.
+   */
+  private withTypeParams<T> (params: any[] | undefined, args: any[] | undefined, fn: () => T): T {
+    if (!params?.length) return fn()
+    const values = params.map((p, i) => {
+      const arg = args?.[i] ?? p.default ?? p.constraint
+      return arg ? this.resolvePossibleStringValuesFromType(arg) : []
+    })
+    const saved = this.typeParamBindings
+    this.typeParamBindings = new Map(saved)
+    params.forEach((p, i) => { if (p.name?.value) this.typeParamBindings.set(p.name.value, values[i]) })
+    try {
+      return fn()
+    } finally {
+      this.typeParamBindings = saved
+    }
+  }
+
+  /**
+   * The member map of an object held by `expr`: a parameter typed by an interface
+   * (`props`), a variable holding an object type (`animal`) or a call of a
+   * function returning one (`getAnimal()`).
+   */
+  private objectMembersOf (expr: any): Record<string, string[]> | undefined {
+    expr = unwrapParens(expr)
+    if (expr?.type === 'Identifier') return this.temporaryObjectVariables.get(expr.value) ?? this.objectVariables.get(expr.value)
+    if (expr?.type === 'CallExpression' && expr.callee?.type === 'Identifier') return this.sharedFunctionReturnMembers.get(expr.callee.value)
+    return undefined
   }
 
   /**
@@ -416,11 +551,30 @@ export class ExpressionResolver {
   public resolveTypeMembers (tsType: any): Record<string, string[]> | undefined {
     try {
       if (!tsType) return undefined
+      if (tsType.type === 'TsParenthesizedType') return this.resolveTypeMembers(tsType.typeAnnotation)
       if (tsType.type === 'TsTypeLiteral') {
         return this.collectObjectTypeMembers(tsType.members)
       }
+      // `Duck | Dog`, `Base<'DUCK'> & { fly: true }` → every member with the values
+      // it has in any of the parts (`animal.type` → 'DUCK' | 'DOG')
+      if (tsType.type === 'TsUnionType' || tsType.type === 'TsIntersectionType') {
+        const merged: Record<string, string[]> = {}
+        for (const part of tsType.types) {
+          for (const [member, vals] of Object.entries(this.resolveTypeMembers(part) ?? {})) {
+            merged[member] = [...new Set([...(merged[member] ?? []), ...vals])]
+          }
+        }
+        return Object.keys(merged).length > 0 ? merged : undefined
+      }
       if (tsType.type === 'TsTypeReference' && tsType.typeName?.type === 'Identifier') {
-        return this.objectTypeTable.get(tsType.typeName.value)
+        const name = tsType.typeName.value
+        // `Base<'DUCK'>` → instantiate the generic type's members with the argument
+        const args = tsType.typeParams?.params
+        const params = this.objectTypeParams.get(name)
+        if (args?.length && params) {
+          return this.withTypeParams(params, args, () => this.collectObjectTypeMembers(this.objectTypeMembersRaw.get(name) ?? []))
+        }
+        return this.objectTypeTable.get(name)
       }
     } catch {}
     return undefined
@@ -491,51 +645,66 @@ export class ExpressionResolver {
       if (!name) return
       // SWC places the return type annotation in `.function.returnType` (FunctionDeclaration)
       // or directly in `.returnType` (FunctionExpression / ArrowFunctionExpression).
-      const fn = node.function ?? node
-      const rawReturnType = fn.returnType ?? fn.typeAnnotation
-
-      let vals: string[] = []
-      if (rawReturnType) {
-        // Unwrap TsTypeAnnotation wrapper if present. Explicit annotations are
-        // authoritative: if the author declared the return type we trust it,
-        // even when it resolves to [] (e.g. plain `string`). Falling back to
-        // body inference in that case would invent keys the author deliberately
-        // opted out of.
-        const tsType = rawReturnType.typeAnnotation ?? rawReturnType
-        vals = this.resolvePossibleStringValuesFromType(tsType)
-      } else {
-        // No annotation — infer from body. Mirrors TS's own return-type
-        // inference for functions like:
-        //   function getCurrentAppType() {
-        //     if (...) return OrganizationType.ROUTING;
-        //     if (...) return OrganizationType.CONTRACTOR;
-        //   }
-        vals = this.inferReturnValuesFromFunctionBody(fn)
-      }
-
-      if (vals.length > 0) {
-        this.variableTable.set(name, vals)
-        this.sharedFunctionReturnTable.set(name, vals)
-      }
+      this.captureFunctionReturn(name, node.function ?? node)
     } catch {
       // noop
     }
   }
 
   /**
-   * Walk a function body's ReturnStatements and union the statically-resolvable
-   * string values of their argument expressions. Does NOT descend into nested
-   * function declarations (their returns belong to the inner function, not us).
+   * Record what a function returns: string values for `t(fn())`, and the members
+   * of an object return type for `fn().type` / `const x = fn(); x.type`.
+   */
+  private captureFunctionReturn (name: string, fn: any): void {
+    const rawReturnType = fn.returnType ?? fn.typeAnnotation
+    // Unwrap TsTypeAnnotation wrapper if present. Explicit annotations are
+    // authoritative: if the author declared the return type we trust it,
+    // even when it resolves to [] (e.g. plain `string`). Falling back to
+    // body inference in that case would invent keys the author deliberately
+    // opted out of.
+    const returnType = rawReturnType?.typeAnnotation ?? rawReturnType
+    // No annotation: infer from body. Mirrors TS's own return-type
+    // inference for functions like:
+    //   function getCurrentAppType() {
+    //     if (...) return OrganizationType.ROUTING;
+    //     if (...) return OrganizationType.CONTRACTOR;
+    //   }
+    const exprs = returnType ? [] : this.returnExpressions(fn)
+    const vals = returnType
+      ? this.resolvePossibleStringValuesFromType(returnType)
+      : [...new Set(exprs.flatMap(e => this.resolvePossibleStringValuesFromExpression(e)))]
+    if (vals.length > 0) this.variableTable.set(name, vals)
+
+    // A replay has lost the file's local bindings, so it re-resolves only the
+    // return type, or the returned enum / object members and calls of other
+    // functions, kept as small nodes so no function body stays in memory.
+    const refs = this.recording ? crossFileRefs(exprs) : []
+    const store = (): void => {
+      const all = returnType
+        ? this.resolvePossibleStringValuesFromType(returnType)
+        : [...new Set([...vals, ...refs.flatMap(e => this.resolvePossibleStringValuesFromExpression(e))])]
+      if (all.length > 0) this.setShared(this.sharedFunctionReturnTable, name, all)
+      const members = returnType && this.resolveTypeMembers(returnType)
+      if (members) this.setShared(this.sharedFunctionReturnMembers, name, members)
+    }
+    store()
+    if (this.recording && (returnType || refs.length > 0)) this.replays.push(store)
+  }
+
+  /**
+   * Collect a function's return expressions (the expression body of an arrow
+   * function, or the arguments of its ReturnStatements). Does NOT descend into
+   * nested function declarations (their returns belong to the inner function, not us).
    *
    * This is how we mirror TypeScript's implicit return-type inference for the
    * purpose of extracting translation keys — we don't need exhaustiveness, just
    * the set of string values any return statement could produce.
    */
-  private inferReturnValuesFromFunctionBody (fn: any): string[] {
+  private returnExpressions (fn: any): any[] {
     const body = fn?.body
     if (!body) return []
 
-    const collected: string[] = []
+    const collected: any[] = []
     const visit = (n: any): void => {
       if (!n || typeof n !== 'object') return
       // Don't descend into nested function bodies — their returns aren't ours.
@@ -547,10 +716,7 @@ export class ExpressionResolver {
         )
       ) return
 
-      if (n.type === 'ReturnStatement' && n.argument) {
-        const vals = this.resolvePossibleStringValuesFromExpression(n.argument)
-        if (vals.length > 0) collected.push(...vals)
-      }
+      if (n.type === 'ReturnStatement' && n.argument) collected.push(n.argument)
 
       for (const key of Object.keys(n)) {
         const child = (n as any)[key]
@@ -567,14 +733,10 @@ export class ExpressionResolver {
     // Arrow functions with an expression body (no block) — `() => expr` —
     // have their return expression directly as `body`. swc >=1.16 types function
     // bodies as 'FunctionBody'; older versions used 'BlockStatement'.
-    if (body.type !== 'BlockStatement' && body.type !== 'FunctionBody') {
-      const vals = this.resolvePossibleStringValuesFromExpression(body)
-      if (vals.length > 0) return Array.from(new Set(vals))
-      return []
-    }
+    if (body.type !== 'BlockStatement' && body.type !== 'FunctionBody') return [body]
 
     visit(body)
-    return Array.from(new Set(collected))
+    return collected
   }
 
   /**
@@ -806,25 +968,21 @@ export class ExpressionResolver {
       try {
         const obj = expression.object
         const prop = expression.property
+        const propName = prop.type === 'Identifier'
+          ? prop.value
+          : prop.type === 'Computed' && prop.expression?.type === 'StringLiteral'
+            ? prop.expression.value
+            : undefined
+        // Object type held by a parameter (`props.size`), a variable (`animal.type`)
+        // or returned by a call (`getAnimal().type`)
+        const objMembers = this.objectMembersOf(obj)
+        if (propName && objMembers?.[propName]) return objMembers[propName]
         // only handle simple identifier base + simple property (Identifier or computed StringLiteral)
         if (obj.type === 'Identifier') {
-          // Parameter typed by an interface / object type: `props.size`
-          const objMembers = this.temporaryObjectVariables.get(obj.value)
-          if (objMembers) {
-            const propName = prop.type === 'Identifier'
-              ? prop.value
-              : prop.type === 'Computed' && prop.expression?.type === 'StringLiteral'
-                ? prop.expression.value
-                : undefined
-            if (propName && objMembers[propName]) return objMembers[propName]
-          }
           const baseVar = this.variableTable.get(obj.value)
           const baseShared = this.sharedEnumTable.get(obj.value)
           const base = baseVar ?? baseShared
           if (base && typeof base !== 'string' && !Array.isArray(base)) {
-            let propName: string | undefined
-            if (prop.type === 'Identifier') propName = prop.value
-            else if (prop.type === 'Computed' && prop.expression?.type === 'StringLiteral') propName = prop.expression.value
             if (propName && base[propName] !== undefined) {
               return [base[propName]]
             }
@@ -841,6 +999,12 @@ export class ExpressionResolver {
               // Cannot narrow the key at all — return all map values as a conservative fallback
               return Object.values(base) as string[]
             }
+          }
+          // `COLORS[i]` → one of the array's elements
+          if (prop.type === 'Computed') {
+            const elements = this.sharedVariableTable.get(obj.value)
+            const index = prop.expression
+            if (elements) return index.type === 'NumericLiteral' && elements[index.value] !== undefined ? [elements[index.value]] : elements
           }
         }
       } catch {}
@@ -986,6 +1150,10 @@ export class ExpressionResolver {
           ? (type as any).typeName.value
           : undefined
       if (typeName) {
+        // Inside a generic type: the parameter's argument, default or constraint
+        const bound = this.typeParamBindings.get(typeName)
+        if (bound) return bound
+
         // 1. Check type alias table first (exact match for string-literal unions)
         const aliasVals = this.typeAliasTable.get(typeName) ?? this.sharedTypeAliasTable.get(typeName)
         if (aliasVals && aliasVals.length > 0) return aliasVals
@@ -1022,6 +1190,13 @@ export class ExpressionResolver {
           if (varName) {
             const vals = this.getVariableValues(varName)
             if (vals && vals.length > 0) return vals
+            // `(typeof COLOR)[keyof typeof COLOR]` → the as-const object's (or enum's) values
+            const map = this.getObjectMap(varName)
+            if (map) {
+              const keys = this.resolvePossibleStringValuesFromType((type as any).indexType)
+              const picked = keys.map(k => map[k]).filter((v): v is string => v !== undefined)
+              return picked.length > 0 ? picked : Object.values(map)
+            }
           }
         }
       } catch {}

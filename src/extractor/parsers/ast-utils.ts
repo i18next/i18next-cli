@@ -378,16 +378,13 @@ type IdentifierResolver = (name: string) => string | boolean | number | undefine
  * @private
  */
 export function getObjectPropValue (object: ObjectExpression, propName: string, identifierResolver?: IdentifierResolver, expressionResolver?: (expr: Expression) => string | undefined): string | boolean | number | undefined {
-  const prop = getObjectProperty(object, propName)
-
-  if (prop?.type === 'KeyValueProperty') {
-    const val = unwrapParens(prop.value)
-    if (val.type === 'StringLiteral') return val.value
-    if (val.type === 'Identifier' && identifierResolver) return identifierResolver(val.value)
-    if (val.type === 'TemplateLiteral' && isSimpleTemplateLiteral(val)) return val.quasis[0].cooked
-    if (val.type === 'BooleanLiteral') return val.value
-    if (val.type === 'NumericLiteral') return val.value
-    return expressionResolver?.(val) ?? '' // Indicate presence for other types
-  }
-  return undefined
+  // Shorthand `{ ns }` resolves like `{ ns: ns }`
+  const val = getObjectPropValueExpression(object, propName)
+  if (!val) return undefined
+  if (val.type === 'StringLiteral') return val.value
+  if (val.type === 'Identifier' && identifierResolver) return identifierResolver(val.value)
+  if (val.type === 'TemplateLiteral' && isSimpleTemplateLiteral(val)) return val.quasis[0].cooked
+  if (val.type === 'BooleanLiteral') return val.value
+  if (val.type === 'NumericLiteral') return val.value
+  return expressionResolver?.(val) ?? '' // Indicate presence for other types
 }

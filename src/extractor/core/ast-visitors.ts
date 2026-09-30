@@ -124,7 +124,12 @@ export class ASTVisitors {
    */
   public preScanForConstants (node: Module): void {
     this.expressionResolver.resetFileSymbols()
-    this._walkForConstants(node)
+    this.expressionResolver.recording = true
+    try {
+      this._walkForConstants(node)
+    } finally {
+      this.expressionResolver.recording = false
+    }
   }
 
   /**
