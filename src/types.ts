@@ -905,6 +905,12 @@ export interface ScopeInfo {
    * "secondary" and eligible for the rewrite.
    */
   namespaces?: string[];
+  /**
+   * Primary namespaces of the other branches when the hook's ns argument is a
+   * conditional (e.g. `useTranslation(cond ? 'a' : 'b')` → `defaultNs: 'a'`,
+   * `altNs: ['b']`). Keys falling back to `defaultNs` are emitted into these too.
+   */
+  altNs?: string[];
   /** Key prefix to prepend to all translation keys in this scope */
   keyPrefix?: string;
 }

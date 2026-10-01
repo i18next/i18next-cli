@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.74.4
+
+- fix(extract): a conditional namespace argument resolves to the namespaces in its branches.
+  `useTranslation(confirmEmail ? ['reset-email-page', 'reset-page'] : 'reset-page')` filed
+  `t('form.title')` under `defaultNS`, so `status` reported it as absent and `extract` removed the
+  existing translations from `reset-page` and `reset-email-page`. The key is now extracted into the
+  primary namespace of every branch (here `reset-email-page` and `reset-page`), also for
+  `<Trans t={t}>`. Fixes [#299](https://github.com/i18next/i18next-cli/issues/299).
+
 ## 1.74.3
 
 - fix(extract): dynamic keys typed by a declaration in a file without any translation call

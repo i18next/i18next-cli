@@ -133,6 +133,14 @@ export class CallExpressionHandler {
       }
     }
 
+    // `useTranslation(cond ? 'a' : 'b')`: the key is used in every branch's namespace (#299).
+    for (const ns of scopeInfo?.altNs ?? []) {
+      this.extractFromCall(node, { ...scopeInfo, defaultNs: ns, namespaces: undefined, altNs: undefined })
+    }
+    this.extractFromCall(node, scopeInfo)
+  }
+
+  private extractFromCall (node: CallExpression, scopeInfo: ScopeInfo | undefined): void {
     const { keysToProcess, originalKeysToProcess, isSelectorAPI } = this.handleCallExpressionArgument(node, 0, scopeInfo)
 
     if (keysToProcess.length === 0) return

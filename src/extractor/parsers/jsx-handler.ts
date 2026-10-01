@@ -1,5 +1,5 @@
 import type { Expression, JSXElement, JSXElementChild, ObjectExpression } from '@swc/core'
-import type { PluginContext, I18nextToolkitConfig, ExtractedKey } from '../../types.js'
+import type { PluginContext, I18nextToolkitConfig, ExtractedKey, ScopeInfo } from '../../types.js'
 import { ExpressionResolver } from './expression-resolver.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
 import { extractFromTransComponent } from './jsx-parser.js'
@@ -132,7 +132,7 @@ export class JSXHandler {
    * @param node - JSX element node to process
    * @param getScopeInfo - Function to retrieve scope information for variables
    */
-  handleJSXElement (node: JSXElement, getScopeInfo: (name: string) => { defaultNs?: string; keyPrefix?: string } | undefined): void {
+  handleJSXElement (node: JSXElement, getScopeInfo: (name: string) => ScopeInfo | undefined): void {
     const elementName = this.getElementName(node)
 
     if (elementName && (this.config.extract.transComponents || ['Trans']).includes(elementName)) {
@@ -233,11 +233,11 @@ export class JSXHandler {
             const tIdentifier = tProp.value.expression.value
             const scopeInfo = getScopeInfo(tIdentifier)
             if (scopeInfo?.defaultNs) {
-              extractedKeys.forEach(key => {
-                if (!key.ns) {
-                  key.ns = scopeInfo.defaultNs
-                }
-              })
+              // One copy per namespace when the hook's ns was a conditional (#299)
+              const scopeNamespaces = [scopeInfo.defaultNs, ...(scopeInfo.altNs ?? [])]
+              extractedKeys = extractedKeys.flatMap(key =>
+                key.ns ? [key] : scopeNamespaces.map(ns => ({ ...key, ns }))
+              )
             }
 
             // APPLY keyPrefix from useTranslation to Trans component keys

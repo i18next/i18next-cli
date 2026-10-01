@@ -521,6 +521,7 @@ export class ScopeManager {
 
     let defaultNs: string | undefined
     let namespaces: string[] | undefined
+    let altNs: string[] | undefined
     let keyPrefix: string | undefined
 
     // Early detect useTranslation(lng, ns) for built-in hook name only
@@ -542,6 +543,7 @@ export class ScopeManager {
         const resolved = this.resolveNsArg(callExpr.arguments?.[nsArgIndex]?.expression)
         defaultNs = resolved.defaultNs
         namespaces = resolved.namespaces
+        altNs = resolved.altNs
       }
       kpArg = kpArgIndex === -1 ? undefined : callExpr.arguments?.[kpArgIndex]?.expression
     }
@@ -566,7 +568,7 @@ export class ScopeManager {
       }
     }
 
-    const info: ScopeInfo = { defaultNs, namespaces, keyPrefix }
+    const info: ScopeInfo = { defaultNs, namespaces, altNs, keyPrefix }
 
     // Attach scope info to all destructured properties (custom functions, t, getFixedT, etc.)
     if (node.id.type === 'ObjectPattern') {
@@ -636,7 +638,7 @@ export class ScopeManager {
    * The runtime selector rule from v25.8.19 only applies when length > 1, so
    * either single form behaves identically downstream.
    */
-  private resolveNsArg (nsNode: Expression | undefined): { defaultNs?: string; namespaces?: string[] } {
+  private resolveNsArg (nsNode: Expression | undefined): Pick<ScopeInfo, 'defaultNs' | 'namespaces' | 'altNs'> {
     if (!nsNode) return {}
     nsNode = ScopeManager.unwrapTsExpression(nsNode) // `[...] as const`, `satisfies`, `as X`
     if (nsNode.type === 'StringLiteral') return { defaultNs: nsNode.value }
@@ -655,6 +657,16 @@ export class ScopeManager {
     if (nsNode.type === 'BinaryExpression' && (nsNode.operator === '??' || nsNode.operator === '||')) {
       const left = this.resolveNsArg(nsNode.left)
       return left.defaultNs !== undefined ? left : this.resolveNsArg(nsNode.right)
+    }
+    // `useTranslation(cond ? ['a', 'b'] : 'c')`: `t` resolves against either branch,
+    // so the first branch stays primary and the others' primaries go to `altNs` (#299).
+    if (nsNode.type === 'ConditionalExpression') {
+      const branches = [this.resolveNsArg(nsNode.consequent), this.resolveNsArg(nsNode.alternate)]
+        .filter(b => b.defaultNs !== undefined)
+      if (branches.length === 0) return {}
+      const altNs = [...new Set(branches.flatMap(b => [b.defaultNs!, ...(b.altNs ?? [])]))]
+        .filter(ns => ns !== branches[0].defaultNs)
+      return { ...branches[0], altNs: altNs.length > 0 ? altNs : undefined }
     }
     if (nsNode.type === 'ArrayExpression') {
       const namespaces: string[] = []
