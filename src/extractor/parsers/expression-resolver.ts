@@ -1140,6 +1140,21 @@ export class ExpressionResolver {
       }
     }
 
+    // `Color[]` / `readonly Color[]` / `Array<Color>` hold the element's values, the
+    // same way an as-const array constant does, so `colors.map(c => …)` and
+    // `for (const c of colors)` bind the element.
+    if (type.type === 'TsArrayType') {
+      return this.resolvePossibleStringValuesFromType(type.elemType, returnEmptyStrings)
+    }
+    if ((type as any).type === 'TsTypeOperator' && (type as any).op === 'readonly') {
+      return this.resolvePossibleStringValuesFromType((type as any).typeAnnotation, returnEmptyStrings)
+    }
+    if (type.type === 'TsTypeReference' && (type as any).typeName?.type === 'Identifier' &&
+      ['Array', 'ReadonlyArray'].includes((type as any).typeName.value)) {
+      const arg = (type as any).typeParams?.params?.[0]
+      return arg ? this.resolvePossibleStringValuesFromType(arg, returnEmptyStrings) : []
+    }
+
     // pattern 2:
     // Resolve a named type alias reference: `declare const x: ChangeType`
     // where `type ChangeType = 'all' | 'next' | 'this'` was captured earlier.

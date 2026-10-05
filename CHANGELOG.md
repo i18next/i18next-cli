@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.74.5
+
+- fix(extract): a value typed as an array of a string union (`Color[]`, `readonly Color[]`,
+  `Array<Color>` or an alias of one) now resolves to the union's values, so
+  `colors.map((color) => t(\`color.${color}\`))` and `for (const color of colors)` extract every
+  key instead of nothing. Before, this only worked with `color as Color`. Fixes
+  [#300](https://github.com/i18next/i18next-cli/issues/300).
+
 ## 1.74.4
 
 - fix(extract): a conditional namespace argument resolves to the namespaces in its branches.
