@@ -45,3 +45,17 @@ describe('extractor: arrays of a string union (#300)', () => {
     `)).toEqual(['a.m', 'a.s', 'b.m', 'b.s', 'c.m', 'c.s'])
   })
 })
+
+describe('extractor: inline array literals (#301)', () => {
+  beforeEach(() => {
+    vol.reset()
+  })
+
+  it('binds the callback parameter of map() and for...of on an inline as-const array', async () => {
+    expect(await keysOf(`
+      const translatedQuarters = ([1, 2, 3, 4] as const).map((q) => t(\`QUARTER.\${q}\`));
+      for (const unit of ['day', 'hour'] as const) t(\`unit.\${unit}\`)
+      ;([{ size: 's' }, { size: 'm' }] as const).forEach(({ size }) => t(\`size.\${size}\`))
+    `)).toEqual(['QUARTER.1', 'QUARTER.2', 'QUARTER.3', 'QUARTER.4', 'size.m', 'size.s', 'unit.day', 'unit.hour'])
+  })
+})

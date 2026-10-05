@@ -15,6 +15,42 @@ const covers = (next: any, prev: any): boolean => {
   return next === prev
 }
 
+// `(x)`, `x as const`, `x as T`, `x satisfies T` -> `x`
+const unwrapExpr = (expr: any): any => {
+  while (['ParenthesisExpression', 'TsConstAssertion', 'TsAsExpression', 'TsSatisfiesExpression'].includes(expr?.type)) expr = expr.expression
+  return expr
+}
+
+// Nested object members are flattened to dotted paths (`{ 'Foo.Bar.status': [...] }`).
+// ponytail: capped so recursive types (`interface Node { child: Node }`) stay small;
+// raise it if real code reads deeper chains in a key.
+const MAX_MEMBER_DEPTH = 5
+
+// The members nested under `name`: { 'Bar.status': v } -> { status: v }. Member maps
+// are never changed once built, so each is split by its first segment only once:
+// resolving every `components['schemas'][X]` of an OpenAPI schema stays linear.
+const nestedIndex = new WeakMap<Record<string, string[]>, Map<string, Record<string, string[]>>>()
+const nestedMembers = (members: Record<string, string[]> | undefined, name: string): Record<string, string[]> | undefined => {
+  if (!members) return undefined
+  let index = nestedIndex.get(members)
+  if (!index) {
+    index = new Map()
+    for (const [path, vals] of Object.entries(members)) {
+      const dot = path.indexOf('.')
+      if (dot < 0) continue
+      const head = path.slice(0, dot)
+      if (!index.has(head)) index.set(head, {})
+      index.get(head)![path.slice(dot + 1)] = vals
+    }
+    nestedIndex.set(members, index)
+  }
+  return index.get(name)
+}
+
+// `T['a']` -> 'a'
+const indexedKey = (type: any): string | undefined =>
+  type?.indexType?.type === 'TsLiteralType' && type.indexType.literal?.type === 'StringLiteral' ? type.indexType.literal.value : undefined
+
 // Whether replacing `prev` by `next` only adds to it.
 const grows = (next: any, prev: any): boolean =>
   prev === undefined || (covers(next, prev) && !covers(prev, next))
@@ -112,6 +148,7 @@ export class ExpressionResolver {
   private replays: Array<() => void> = []
   private replaying = false
   private grew = false
+  private memberDepth = 0
 
   constructor (hooks: ASTVisitorHooks) {
     this.hooks = hooks
@@ -271,14 +308,7 @@ export class ExpressionResolver {
       // Unwrap TS type assertion wrappers before inspecting the shape of the initializer.
       // `{ ... } as const` → TsConstAssertion; `x as Type` → TsAsExpression; etc.
       // We need the raw expression to detect ObjectExpression and ArrowFunctionExpression.
-      let unwrappedInit = init
-      while (
-        unwrappedInit?.type === 'TsConstAssertion' ||
-        unwrappedInit?.type === 'TsAsExpression' ||
-        unwrappedInit?.type === 'TsSatisfiesExpression'
-      ) {
-        unwrappedInit = unwrappedInit.expression
-      }
+      const unwrappedInit = unwrapExpr(init)
 
       // ObjectExpression -> map of string props
       if (unwrappedInit.type === 'ObjectExpression' && Array.isArray(unwrappedInit.properties)) {
@@ -305,13 +335,8 @@ export class ExpressionResolver {
       // ArrayExpression -> list of string values
       // Handles `const OPTS = ['a', 'b', 'c'] as const`
       if (unwrappedInit.type === 'ArrayExpression' && Array.isArray(unwrappedInit.elements)) {
-        const vals: string[] = []
-        for (const elem of unwrappedInit.elements as any[]) {
-          if (!elem || !elem.expression) continue
-          const resolved = this.resolvePossibleStringValuesFromExpression(elem.expression)
-          if (resolved.length === 1) vals.push(resolved[0])
-        }
-        if (vals.length > 0) {
+        const vals = this.arrayLiteralValues(unwrappedInit)
+        if (vals) {
           this.variableTable.set(name, vals)
           // Also share so importing files can see this array
           this.sharedVariableTable.set(name, vals)
@@ -321,26 +346,8 @@ export class ExpressionResolver {
         // Array of object literals — `const UNITS = [{ unit: 'day' }, …] as const`.
         // Collect each property's possible values so `UNITS.map(({ unit }) => …)`
         // and `for (const { unit } of UNITS)` can bind the destructured names.
-        const members: Record<string, string[]> = {}
-        for (const elem of unwrappedInit.elements as any[]) {
-          let objExpr = elem?.expression
-          while (
-            objExpr?.type === 'TsConstAssertion' ||
-            objExpr?.type === 'TsAsExpression' ||
-            objExpr?.type === 'TsSatisfiesExpression'
-          ) objExpr = objExpr.expression
-          if (objExpr?.type !== 'ObjectExpression') continue
-          for (const p of (objExpr.properties ?? []) as any[]) {
-            if (p?.type !== 'KeyValueProperty') continue
-            const keyName = p.key?.type === 'Identifier' || p.key?.type === 'StringLiteral' ? p.key.value : undefined
-            if (!keyName) continue
-            const resolved = this.resolvePossibleStringValuesFromExpression(p.value)
-            if (resolved.length !== 1) continue
-            const list = members[keyName] ??= []
-            if (!list.includes(resolved[0])) list.push(resolved[0])
-          }
-        }
-        if (Object.keys(members).length > 0) {
+        const members = this.arrayLiteralMembers(unwrappedInit)
+        if (members) {
           this.arrayElementMembers.set(name, members)
           return
         }
@@ -515,8 +522,15 @@ export class ExpressionResolver {
    */
   private objectMembersOf (expr: any): Record<string, string[]> | undefined {
     expr = unwrapParens(expr)
+    if (expr?.type === 'OptionalChainingExpression') return this.objectMembersOf(expr.base)
     if (expr?.type === 'Identifier') return this.temporaryObjectVariables.get(expr.value) ?? this.objectVariables.get(expr.value)
     if (expr?.type === 'CallExpression' && expr.callee?.type === 'Identifier') return this.sharedFunctionReturnMembers.get(expr.callee.value)
+    // `deepObject.Foo.Bar` → the members nested under `Foo.Bar`
+    if (expr?.type === 'MemberExpression') {
+      const prop = expr.property
+      const name = prop?.type === 'Identifier' ? prop.value : prop?.type === 'Computed' && prop.expression?.type === 'StringLiteral' ? prop.expression.value : undefined
+      return name === undefined ? undefined : nestedMembers(this.objectMembersOf(expr.object), name)
+    }
     return undefined
   }
 
@@ -526,7 +540,7 @@ export class ExpressionResolver {
    * resolves to a finite string set are kept; returns undefined when none do.
    */
   private collectObjectTypeMembers (members: any[]): Record<string, string[]> | undefined {
-    if (!Array.isArray(members)) return undefined
+    if (!Array.isArray(members) || this.memberDepth >= MAX_MEMBER_DEPTH) return undefined
     const map: Record<string, string[]> = {}
     for (const m of members) {
       if (!m || m.type !== 'TsPropertySignature') continue
@@ -535,7 +549,21 @@ export class ExpressionResolver {
       const tsType = m.typeAnnotation?.typeAnnotation ?? m.typeAnnotation
       if (!tsType) continue
       const vals = this.resolvePossibleStringValuesFromType(tsType)
-      if (vals.length > 0) map[memberName] = vals
+      if (vals.length > 0) {
+        map[memberName] = vals
+        continue
+      }
+      // `Bar: { status: '201' | '400' }` → `Bar.status`
+      this.memberDepth++
+      let nested: Record<string, string[]> | undefined
+      try {
+        nested = this.resolveTypeMembers(tsType)
+      } finally {
+        this.memberDepth--
+      }
+      for (const [path, v] of Object.entries(nested ?? {})) {
+        if (path.split('.').length < MAX_MEMBER_DEPTH) map[`${memberName}.${path}`] = v
+      }
     }
     return Object.keys(map).length > 0 ? map : undefined
   }
@@ -552,6 +580,11 @@ export class ExpressionResolver {
     try {
       if (!tsType) return undefined
       if (tsType.type === 'TsParenthesizedType') return this.resolveTypeMembers(tsType.typeAnnotation)
+      // `components['schemas']['Pet']` → the members nested under `schemas.Pet`
+      if (tsType.type === 'TsIndexedAccessType') {
+        const key = indexedKey(tsType)
+        return key === undefined ? undefined : nestedMembers(this.resolveTypeMembers(tsType.objectType), key)
+      }
       if (tsType.type === 'TsTypeLiteral') {
         return this.collectObjectTypeMembers(tsType.members)
       }
@@ -601,16 +634,64 @@ export class ExpressionResolver {
     return undefined
   }
 
+  // `['day', 'hour']` -> ['day', 'hour']
+  private arrayLiteralValues (arr: any): string[] | undefined {
+    const vals: string[] = []
+    for (const elem of arr.elements ?? []) {
+      if (!elem?.expression) continue
+      const resolved = this.resolvePossibleStringValuesFromExpression(elem.expression)
+      if (resolved.length === 1) vals.push(resolved[0])
+    }
+    return vals.length > 0 ? vals : undefined
+  }
+
+  // `[{ unit: 'day' }, { unit: 'hour' }]` -> { unit: ['day', 'hour'] }
+  private arrayLiteralMembers (arr: any): Record<string, string[]> | undefined {
+    const members: Record<string, string[]> = {}
+    for (const elem of arr.elements ?? []) {
+      const objExpr = unwrapExpr(elem?.expression)
+      if (objExpr?.type !== 'ObjectExpression') continue
+      for (const p of (objExpr.properties ?? []) as any[]) {
+        if (p?.type !== 'KeyValueProperty') continue
+        const keyName = p.key?.type === 'Identifier' || p.key?.type === 'StringLiteral' ? p.key.value : undefined
+        if (!keyName) continue
+        const resolved = this.resolvePossibleStringValuesFromExpression(p.value)
+        if (resolved.length !== 1) continue
+        const list = members[keyName] ??= []
+        if (!list.includes(resolved[0])) list.push(resolved[0])
+      }
+    }
+    return Object.keys(members).length > 0 ? members : undefined
+  }
+
+  /**
+   * The values an iterated array holds: a known constant (`QUARTERS.map(…)`) or an
+   * inline literal (`([1, 2, 3, 4] as const).map(…)`).
+   */
+  public arrayValuesOf (expr: any): string[] | undefined {
+    expr = unwrapExpr(expr)
+    if (expr?.type === 'Identifier') return this.getVariableValues(expr.value)
+    if (expr?.type === 'ArrayExpression') return this.arrayLiteralValues(expr)
+    return undefined
+  }
+
+  /**
+   * The element member map of an iterated array of objects: a typed or constant
+   * identifier (`items: IProps[]`) or an inline literal (`[{ unit: 'day' }]`).
+   */
+  public arrayMembersOf (expr: any): Record<string, string[]> | undefined {
+    expr = unwrapExpr(expr)
+    if (expr?.type === 'Identifier') return this.arrayElementMembers.get(expr.value)
+    if (expr?.type === 'ArrayExpression') return this.arrayLiteralMembers(expr)
+    return undefined
+  }
+
   /**
    * Bind an identifier to the member map of its array element type
    * (`items: IProps[]`).
    */
   public setArrayElementMembers (name: string, members: Record<string, string[]>): void {
     this.arrayElementMembers.set(name, members)
-  }
-
-  public getArrayElementMembers (name: string): Record<string, string[]> | undefined {
-    return this.arrayElementMembers.get(name)
   }
 
   public deleteArrayElementMembers (name: string): void {
@@ -883,6 +964,10 @@ export class ExpressionResolver {
   private resolvePossibleStringValuesFromExpression (expression: Expression, returnEmptyStrings = false): string[] {
     // `t(('key'))` / `t(cond ? 'a' : ('b'))`: parens are just a wrapper node (#295).
     expression = unwrapParens(expression)
+    // `pet.category?.kind` → `pet.category.kind`
+    if ((expression as any).type === 'OptionalChainingExpression') {
+      return this.resolvePossibleStringValuesFromExpression((expression as any).base, returnEmptyStrings)
+    }
 
     // Support selector-style arrow functions used by the selector API:
     // e.g. ($) => $.path.to.key  ->  ['path.to.key']
@@ -1214,6 +1299,10 @@ export class ExpressionResolver {
             }
           }
         }
+        // `DeepObject['Bar']['status']` → that member's values
+        const key = indexedKey(type)
+        const vals = key === undefined ? undefined : this.resolveTypeMembers((type as any).objectType)?.[key]
+        if (vals) return vals
       } catch {}
     }
 

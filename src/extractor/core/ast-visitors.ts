@@ -812,16 +812,11 @@ export class ASTVisitors {
       const elementParamIndex = ITERATION_METHODS[prop.value as keyof typeof ITERATION_METHODS]
       if (elementParamIndex === undefined) return undefined
 
-      // The object must be an identifier whose value is a known string array
       const obj = callee.object
 
-      // ── Case 1: KNOWN_ARRAY.map(x => ...) ─────────────────────────────────
-      if (obj?.type === 'Identifier') {
-        const values = this.expressionResolver.getVariableValues(obj.value)
-        if (values && values.length > 0) {
-          return this.extractCallbackParam(node, values, elementParamIndex)
-        }
-      }
+      // ── Case 1: KNOWN_ARRAY.map(x => ...) / ([1, 2] as const).map(x => ...)
+      const values = this.expressionResolver.arrayValuesOf(obj)
+      if (values?.length) return this.extractCallbackParam(node, values, elementParamIndex)
 
       // ── Case 2: Object.keys(MAP).map(k => ...) ────────────────────────────
       //            Object.values(MAP).map(v => ...)
@@ -867,21 +862,20 @@ export class ASTVisitors {
    */
   private tryBindForOfLoop (node: any): (() => void) | undefined {
     try {
-      if (node.right?.type !== 'Identifier') return undefined
-      const source = node.right.value
+      const source = node.right
 
       const left = node.left
       const pat = left?.type === 'VariableDeclaration' ? left.declarations?.[0]?.id : left
 
       // `for (const unit of ['day', 'hour'] as const)`
       if (pat?.type === 'Identifier') {
-        const values = this.expressionResolver.getVariableValues(source)
+        const values = this.expressionResolver.arrayValuesOf(source)
         if (values?.length) {
           this.expressionResolver.setTemporaryVariable(pat.value, values)
           return () => this.expressionResolver.deleteTemporaryVariable(pat.value)
         }
         // `for (const item of items)` so `item.unit` resolves
-        const members = this.expressionResolver.getArrayElementMembers(source)
+        const members = this.expressionResolver.arrayMembersOf(source)
         if (members) {
           this.expressionResolver.setTemporaryObjectVariable(pat.value, members)
           return () => this.expressionResolver.deleteTemporaryObjectVariable(pat.value)
@@ -891,7 +885,7 @@ export class ASTVisitors {
 
       // `for (const { unit } of [{ unit: 'day' }, …] as const)`
       if (pat?.type === 'ObjectPattern') {
-        const members = this.expressionResolver.getArrayElementMembers(source)
+        const members = this.expressionResolver.arrayMembersOf(source)
         if (!members) return undefined
         const bound: string[] = []
         for (const prop of (pat.properties ?? [])) {
@@ -931,9 +925,7 @@ export class ASTVisitors {
       if (prop?.type !== 'Identifier') return undefined
       const elementParamIndex = ITERATION_METHODS[prop.value as keyof typeof ITERATION_METHODS]
       if (elementParamIndex === undefined) return undefined
-      if (callee.object?.type !== 'Identifier') return undefined
-
-      const members = this.expressionResolver.getArrayElementMembers(callee.object.value)
+      const members = this.expressionResolver.arrayMembersOf(callee.object)
       if (!members) return undefined
 
       const callbackArg = node.arguments?.[0]?.expression
