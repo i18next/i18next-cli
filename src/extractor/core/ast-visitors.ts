@@ -1,9 +1,10 @@
 import type { Module, Node } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, Logger, ASTVisitorHooks, ScopeInfo } from '../../types.js'
 import { ScopeManager } from '../parsers/scope-manager.js'
-import { ExpressionResolver } from '../parsers/expression-resolver.js'
+import { ExpressionResolver, nestedMembers } from '../parsers/expression-resolver.js'
 import { CallExpressionHandler } from '../parsers/call-expression-handler.js'
 import { JSXHandler } from '../parsers/jsx-handler.js'
+import { unwrapParens } from '../parsers/ast-utils.js'
 
 /**
  * Array iteration methods whose callback we can bind, mapped to the position of
@@ -20,6 +21,24 @@ const ITERATION_METHODS = {
   reduce: 1,
   reduceRight: 1,
 } as const
+
+// `FC<Props>` / `React.FC<Props>` / `FunctionComponent<Props>` → `Props`
+const COMPONENT_TYPES = new Set(['FC', 'FunctionComponent', 'VFC', 'VoidFunctionComponent'])
+function componentPropsType (type: any): any {
+  if (type?.type !== 'TsTypeReference') return undefined
+  const name = type.typeName?.type === 'TsQualifiedName' ? type.typeName.right?.value : type.typeName?.value
+  return COMPONENT_TYPES.has(name) ? type.typeParams?.params?.[0] : undefined
+}
+
+// `memo(fn)` / `forwardRef(fn)` → `fn`, and which type argument types its props:
+// `memo<Props>` → 0, `forwardRef<Ref, Props>` → 1
+const PROPS_TYPE_ARG: Record<string, number> = { memo: 0, forwardRef: 1 }
+function reactWrapper (node: any): { fn: any, propsTypeIndex: number } | undefined {
+  if (node?.type !== 'CallExpression') return undefined
+  const name = node.callee?.type === 'MemberExpression' ? node.callee.property?.value : node.callee?.value
+  const propsTypeIndex = PROPS_TYPE_ARG[name]
+  return propsTypeIndex === undefined ? undefined : { fn: unwrapParens(node.arguments?.[0]?.expression), propsTypeIndex }
+}
 
 /**
  * AST visitor class that traverses JavaScript/TypeScript syntax trees to extract translation keys.
@@ -59,6 +78,8 @@ export class ASTVisitors {
   private readonly jsxHandler: JSXHandler
   private currentFile: string = ''
   private currentCode: string = ''
+  // `const C: React.FC<Props> = (props) => …` → the function → `Props`
+  private readonly componentPropsTypes = new WeakMap<any, any>()
 
   /**
    * Creates a new AST visitor instance.
@@ -291,12 +312,14 @@ export class ASTVisitors {
         // handle common param shapes: Identifier, AssignmentPattern (default), RestElement ignored
         let ident: any
         if (!p) continue
+        // The props of `const C: React.FC<Props> = (props) => …` are typed by `Props`
+        const inheritedType = p === params[0] ? this.componentPropsTypes.get(node) : undefined
 
         // Destructured object param: `function f({ size }: IProps)`.
         // Bind each destructured local name to its interface member's values.
         const pat = p.pat ?? p.pattern ?? p
         if (pat.type === 'ObjectPattern') {
-          const patType = pat.typeAnnotation?.typeAnnotation ?? pat.typeAnnotation
+          const patType = pat.typeAnnotation?.typeAnnotation ?? pat.typeAnnotation ?? inheritedType
           const members = this.expressionResolver.resolveTypeMembers(patType)
           for (const prop of (pat.properties ?? [])) {
             // `{ size }` / `{ size = 'all' }` → AssignmentPatternProperty (local name is the key)
@@ -317,10 +340,21 @@ export class ASTVisitors {
             }
             // `({ t }: { t: TFunction<'ns'> })` → bind `t` to that namespace
             this.bindTFunctionParam(localName, this.getMemberTypeNode(patType, memberName), typeParamConstraints)
-            if (!members?.[memberName]) continue
-            this.expressionResolver.setTemporaryVariable(localName, members[memberName])
-            if (!paramTemporaries) paramTemporaries = []
-            paramTemporaries.push(localName)
+            if (members?.[memberName]) {
+              this.expressionResolver.setTemporaryVariable(localName, members[memberName])
+              if (!paramTemporaries) paramTemporaries = []
+              paramTemporaries.push(localName)
+              continue
+            }
+            // `({ Bar }: DeepObject)` → `Bar.status`; `({ items }: Props)` → `items.map(({ kind }) => …)`
+            const nested = nestedMembers(members, memberName)
+            if (!nested) continue
+            this.expressionResolver.setTemporaryObjectVariable(localName, nested)
+            this.expressionResolver.setArrayElementMembers(localName, nested)
+            if (!paramObjectTemporaries) paramObjectTemporaries = []
+            paramObjectTemporaries.push(localName)
+            if (!paramArrayTemporaries) paramArrayTemporaries = []
+            paramArrayTemporaries.push(localName)
           }
           continue
         }
@@ -355,7 +389,7 @@ export class ASTVisitors {
         }
 
         // Try to locate TypeScript type node carried on the identifier.
-        const rawTypeAnn: any = (ident.typeAnnotation ?? p.typeAnnotation ?? (p.left && p.left.typeAnnotation)) as any
+        const rawTypeAnn: any = (ident.typeAnnotation ?? p.typeAnnotation ?? (p.left && p.left.typeAnnotation) ?? inheritedType) as any
         let typeAnn: any | undefined
         if (rawTypeAnn) {
           // SWC may wrap the actual TS type in a wrapper like TsTypeAnn / TsTypeAnnotation
@@ -411,12 +445,17 @@ export class ASTVisitors {
     // --- VISIT LOGIC ---
     // Handle specific node types
     switch (node.type) {
-      case 'VariableDeclarator':
+      case 'VariableDeclarator': {
         this.scopeManager.handleVariableDeclarator(node)
         // Capture simple variable initializers so the expressionResolver can
         // resolve identifiers / member expressions that reference them.
         this.expressionResolver.captureVariableDeclarator(node)
+        // `const C: React.FC<Props> = (props) => …` / `= memo((props) => …)`
+        const propsType = componentPropsType(node.id?.typeAnnotation?.typeAnnotation)
+        const init = unwrapParens(node.init)
+        if (propsType && init) this.componentPropsTypes.set(reactWrapper(init)?.fn ?? init, propsType)
         break
+      }
       case 'TSEnumDeclaration':
       case 'TsEnumDeclaration':
       case 'TsEnumDecl':
@@ -439,9 +478,14 @@ export class ASTVisitors {
       case 'FnDecl':
         this.expressionResolver.captureFunctionDeclaration(node)
         break
-      case 'CallExpression':
+      case 'CallExpression': {
         this.callExpressionHandler.handleCallExpression(node, this.scopeManager.getVarFromScope.bind(this.scopeManager))
+        // `forwardRef<Ref, Props>((props, ref) => …)` / `memo<Props>((props) => …)`
+        const wrapper = reactWrapper(node)
+        const propsType = wrapper && node.typeArguments?.params?.[wrapper.propsTypeIndex]
+        if (propsType && wrapper.fn) this.componentPropsTypes.set(wrapper.fn, propsType)
         break
+      }
       case 'NewExpression':
         // Handle NewExpression similarly to CallExpression (e.g., new TranslatedError(...))
         // NewExpression has the same structure: callee and arguments

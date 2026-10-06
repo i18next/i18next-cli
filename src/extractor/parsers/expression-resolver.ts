@@ -30,7 +30,7 @@ const MAX_MEMBER_DEPTH = 5
 // are never changed once built, so each is split by its first segment only once:
 // resolving every `components['schemas'][X]` of an OpenAPI schema stays linear.
 const nestedIndex = new WeakMap<Record<string, string[]>, Map<string, Record<string, string[]>>>()
-const nestedMembers = (members: Record<string, string[]> | undefined, name: string): Record<string, string[]> | undefined => {
+export const nestedMembers = (members: Record<string, string[]> | undefined, name: string): Record<string, string[]> | undefined => {
   if (!members) return undefined
   let index = nestedIndex.get(members)
   if (!index) {
@@ -553,11 +553,12 @@ export class ExpressionResolver {
         map[memberName] = vals
         continue
       }
-      // `Bar: { status: '201' | '400' }` → `Bar.status`
+      // `Bar: { status: '201' | '400' }` → `Bar.status`, and the element of
+      // `items: Item[]` the same way so `props.items.map(({ size }) => …)` binds
       this.memberDepth++
       let nested: Record<string, string[]> | undefined
       try {
-        nested = this.resolveTypeMembers(tsType)
+        nested = this.resolveTypeMembers(tsType) ?? this.resolveArrayElementMembers(tsType)
       } finally {
         this.memberDepth--
       }
@@ -624,6 +625,9 @@ export class ExpressionResolver {
       if (tsType.type === 'TsArrayType') {
         return this.resolveTypeMembers(tsType.elemType)
       }
+      if (tsType.type === 'TsTypeOperator' && tsType.op === 'readonly') {
+        return this.resolveArrayElementMembers(tsType.typeAnnotation)
+      }
       if (tsType.type === 'TsTypeReference' && tsType.typeName?.type === 'Identifier') {
         const name = tsType.typeName.value
         if (name !== 'Array' && name !== 'ReadonlyArray') return undefined
@@ -665,24 +669,32 @@ export class ExpressionResolver {
   }
 
   /**
-   * The values an iterated array holds: a known constant (`QUARTERS.map(…)`) or an
-   * inline literal (`([1, 2, 3, 4] as const).map(…)`).
+   * The values an iterated array holds: a known constant (`QUARTERS.map(…)`), an
+   * inline literal (`([1, 2, 3, 4] as const).map(…)`) or a typed member (`props.colors`).
    */
   public arrayValuesOf (expr: any): string[] | undefined {
     expr = unwrapExpr(expr)
     if (expr?.type === 'Identifier') return this.getVariableValues(expr.value)
     if (expr?.type === 'ArrayExpression') return this.arrayLiteralValues(expr)
+    // `props.colors` where `colors: Color[]`
+    if (expr?.type === 'MemberExpression') {
+      const vals = this.resolvePossibleStringValuesFromExpression(expr)
+      return vals.length > 0 ? vals : undefined
+    }
     return undefined
   }
 
   /**
    * The element member map of an iterated array of objects: a typed or constant
-   * identifier (`items: IProps[]`) or an inline literal (`[{ unit: 'day' }]`).
+   * identifier (`items: IProps[]`), an inline literal (`[{ unit: 'day' }]`) or a
+   * typed member (`props.items`).
    */
   public arrayMembersOf (expr: any): Record<string, string[]> | undefined {
     expr = unwrapExpr(expr)
     if (expr?.type === 'Identifier') return this.arrayElementMembers.get(expr.value)
     if (expr?.type === 'ArrayExpression') return this.arrayLiteralMembers(expr)
+    // `props.items` where `items: Item[]`
+    if (expr?.type === 'MemberExpression') return this.objectMembersOf(expr)
     return undefined
   }
 

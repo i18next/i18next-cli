@@ -59,3 +59,86 @@ describe('extractor: inline array literals (#301)', () => {
     `)).toEqual(['QUARTER.1', 'QUARTER.2', 'QUARTER.3', 'QUARTER.4', 'size.m', 'size.s', 'unit.day', 'unit.hour'])
   })
 })
+
+describe('extractor: props typed through React.FC (#303)', () => {
+  beforeEach(() => {
+    vol.reset()
+  })
+
+  it('binds the props of a component typed React.FC<Props> and iterates a typed member', async () => {
+    vol.fromJSON({
+      '/src/ColorList.tsx': `
+        import * as React from "react";
+        import { useTranslation } from "react-i18next";
+
+        export type Color = 'RED' | 'GREEN' | 'BLUE'
+        type Size = 's' | 'm'
+
+        interface Props {
+          colors: Color[];
+          sizes: Size[];
+        }
+
+        const ColorList: React.FC<Props> = (props) => {
+          const { t } = useTranslation();
+          return (
+            <ul>
+              {props.colors.map((color) => (
+                <li key={color}>{t(\`Color.\${color}\`)}</li>
+              ))}
+            </ul>
+          );
+        };
+
+        const SizeList: FC<Props> = ({ sizes }) => {
+          const { t } = useTranslation();
+          return <>{sizes.map((size) => t(\`Size.\${size}\`))}</>;
+        };
+
+        export default ColorList;
+      `,
+    })
+    vi.mocked(glob).mockResolvedValue(['/src/ColorList.tsx'])
+    const { allKeys } = await findKeys({
+      locales: ['en'],
+      extract: { input: ['src/**/*.tsx'], output: 'locales/{{language}}/{{namespace}}.json' },
+    })
+    expect([...allKeys.values()].map(k => k.key).sort()).toEqual(['Color.BLUE', 'Color.GREEN', 'Color.RED', 'Size.m', 'Size.s'])
+  })
+
+  it('types the props of forwardRef and memo, and iterates typed arrays of objects', async () => {
+    vol.fromJSON({
+      '/src/Lists.tsx': `
+        import { forwardRef, memo, type FC } from "react";
+        import { useTranslation } from "react-i18next";
+
+        type Item = { kind: 'a' | 'b' }
+        interface Props { level: 'low' | 'high'; items: Item[] }
+
+        export const WithRef = forwardRef<HTMLDivElement, Props>((props, ref) => {
+          const { t } = useTranslation();
+          return <div ref={ref}>{t(\`level.\${props.level}\`)}</div>;
+        });
+
+        export const Memo = memo<Props>(({ items }) => {
+          const { t } = useTranslation();
+          return <>{items.map(({ kind }) => t(\`destructured.\${kind}\`))}</>;
+        });
+
+        export const MemoFC: FC<Props> = memo((props) => {
+          const { t } = useTranslation();
+          for (const item of props.items) t(\`forOf.\${item.kind}\`)
+          return <>{props.items.map((item) => t(\`member.\${item.kind}\`))}</>;
+        });
+      `,
+    })
+    vi.mocked(glob).mockResolvedValue(['/src/Lists.tsx'])
+    const { allKeys } = await findKeys({
+      locales: ['en'],
+      extract: { input: ['src/**/*.tsx'], output: 'locales/{{language}}/{{namespace}}.json' },
+    })
+    expect([...allKeys.values()].map(k => k.key).sort()).toEqual([
+      'destructured.a', 'destructured.b', 'forOf.a', 'forOf.b', 'level.high', 'level.low', 'member.a', 'member.b',
+    ])
+  })
+})

@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ns2:message`, like `t($ => $.ns2.message)`. Under `types.enableSelector: 'strict'` a leading primary
   namespace is stripped too (`useTranslation('only')` with `$ => $.only.key` files `only:key`). Reported in
   [react-i18next#1933](https://github.com/i18next/react-i18next/issues/1933).
+- fix(extract): the props of a component typed `React.FC<Props>` (also `FC`, `FunctionComponent`),
+  `forwardRef<Ref, Props>(…)` or `memo<Props>(…)` are typed by `Props`, and iterating a typed member binds
+  the element. `props.colors.map((color) => t(\`Color.${color}\`))` with `colors: Color[]` extracted nothing
+  before unless `color` was asserted with `as Color`. Arrays of objects work the same way:
+  `props.items.map(({ kind }) => …)`, `for (const item of props.items)` and a destructured
+  `({ items }) => items.map(…)`. Fixes [#303](https://github.com/i18next/i18next-cli/issues/303).
 
 ## 1.74.6
 
