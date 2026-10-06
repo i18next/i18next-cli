@@ -73,10 +73,11 @@ export async function runExtractor (
 
   try {
     const fileErrors: string[] = []
-    const { allKeys, objectKeys } = await findKeys(config, internalLogger, fileErrors)
+    const { allKeys, objectKeys, keepPatterns } = await findKeys(config, internalLogger, fileErrors)
     spinner.text = `Found ${allKeys.size} unique keys. Updating translation files...`
 
     const results = await getTranslations(allKeys, objectKeys, config, {
+      keepPatterns,
       syncPrimaryWithDefaults: options.syncPrimaryWithDefaults,
       syncAll: options.syncAll,
       trustDerivedDefaults: options.trustDerivedDefaults,
@@ -346,7 +347,7 @@ export async function processFile (
 
     // 4. THEN: Extract keys from comments with scope resolution (now scope info is available)
     if (config.extract.extractFromComments !== false) {
-      extractKeysFromComments(code, pluginContext, config, astVisitors.getVarFromScope.bind(astVisitors))
+      extractKeysFromComments(code, pluginContext, config, astVisitors.getVarFromScope.bind(astVisitors), astVisitors.keepPatterns)
     }
   } catch (error) {
     // Re-throw ConflictError so warnOnConflicts: 'error' aborts extraction
@@ -478,6 +479,6 @@ export async function extract (config: I18nextToolkitConfig, { syncPrimaryWithDe
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
   config.extract.functions ||= ['t', '*.t']
   config.extract.transComponents ||= ['Trans']
-  const { allKeys, objectKeys } = await findKeys(config)
-  return getTranslations(allKeys, objectKeys, config, { syncPrimaryWithDefaults })
+  const { allKeys, objectKeys, keepPatterns } = await findKeys(config)
+  return getTranslations(allKeys, objectKeys, config, { syncPrimaryWithDefaults, keepPatterns })
 }

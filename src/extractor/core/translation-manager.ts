@@ -197,7 +197,8 @@ function buildNewTranslationsForNs (
   syncAll: boolean = false,
   trustDerivedDefaults: boolean = false,
   primaryExistingTranslations: Record<string, any> = {},
-  logger: Logger = new ConsoleLogger()
+  logger: Logger = new ConsoleLogger(),
+  keepPatterns: ExtractedKey[] = []
 ): Record<string, any> {
   const {
     keySeparator = '.',
@@ -433,10 +434,19 @@ function buildNewTranslationsForNs (
     return false
   }
 
+  // Patterns of commented template literals in this namespace, `// t(`QUARTER.${q}`)` (#304).
+  // Unlike preservePatterns they only keep existing keys, so code still extracts matching keys.
+  const keepRegexes = keepPatterns
+    .filter(p => !namespace || !p.ns || p.ns === '*' || p.ns === namespace)
+    .map(p => globToRegex(p.key))
+
   // Helper to check if an existing key should be preserved
   const shouldPreserveExistingKey = (key: string): boolean => {
     // 1) keys nested under a returnObjects / selector-API base key
     if (isUnderObjectKey(key)) {
+      return true
+    }
+    if (keepRegexes.some(re => re.test(key))) {
       return true
     }
     // 2) regex-style patterns
@@ -1292,12 +1302,14 @@ export async function getTranslations (
     syncPrimaryWithDefaults = false,
     syncAll = false,
     trustDerivedDefaults = false,
-    logger = new ConsoleLogger()
+    logger = new ConsoleLogger(),
+    keepPatterns = []
   }: {
     syncPrimaryWithDefaults?: boolean,
     syncAll?: boolean,
     trustDerivedDefaults?: boolean,
-    logger?: Logger
+    logger?: Logger,
+    keepPatterns?: ExtractedKey[]
   } = {}
 ): Promise<TranslationResult[]> {
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
@@ -1410,12 +1422,12 @@ export async function getTranslations (
         const nsKeys = keysByNS.get(nsKey) || []
         if (isTopLevel(nsKey)) {
           // keys without namespace -> merged into top-level of the merged file
-          const built = buildNewTranslationsForNs(nsKeys, existingMergedFile, config, locale, undefined, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, primaryMergedFile, logger)
+          const built = buildNewTranslationsForNs(nsKeys, existingMergedFile, config, locale, undefined, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, primaryMergedFile, logger, keepPatterns)
           Object.assign(newMergedTranslations, built)
         } else {
           const existingTranslations = existingMergedFile[nsKey] || {}
           const primaryExistingTranslations = primaryMergedFile[nsKey] || {}
-          newMergedTranslations[nsKey] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, nsKey, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, primaryExistingTranslations, logger)
+          newMergedTranslations[nsKey] = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, nsKey, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, primaryExistingTranslations, logger, keepPatterns)
         }
       }
 
@@ -1461,7 +1473,7 @@ export async function getTranslations (
         const primaryExistingTranslations = locale === primaryLanguage
           ? existingTranslations
           : (await loadTranslationFile(primaryOutputPath) || {})
-        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, ns, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, primaryExistingTranslations, logger)
+        const newTranslations = buildNewTranslationsForNs(nsKeys, existingTranslations, config, locale, ns, preservePatterns, objectKeys, syncPrimaryWithDefaults, syncAll, trustDerivedDefaults, primaryExistingTranslations, logger, keepPatterns)
 
         const oldContent = JSON.stringify(existingTranslations, null, indentation)
         const newContent = JSON.stringify(newTranslations, null, indentation)

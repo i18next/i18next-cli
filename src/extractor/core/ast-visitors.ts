@@ -1,5 +1,5 @@
 import type { Module, Node } from '@swc/core'
-import type { PluginContext, I18nextToolkitConfig, Logger, ASTVisitorHooks, ScopeInfo } from '../../types.js'
+import type { PluginContext, I18nextToolkitConfig, Logger, ASTVisitorHooks, ScopeInfo, ExtractedKey } from '../../types.js'
 import { ScopeManager } from '../parsers/scope-manager.js'
 import { ExpressionResolver, nestedMembers } from '../parsers/expression-resolver.js'
 import { CallExpressionHandler } from '../parsers/call-expression-handler.js'
@@ -71,6 +71,9 @@ export class ASTVisitors {
   public get objectKeys () {
     return this.callExpressionHandler.objectKeys
   }
+
+  // Key patterns of commented template literals, `// t(`QUARTER.${q}`)` → `QUARTER.*`
+  public readonly keepPatterns: ExtractedKey[] = []
 
   public readonly scopeManager: ScopeManager
   private readonly expressionResolver: ExpressionResolver

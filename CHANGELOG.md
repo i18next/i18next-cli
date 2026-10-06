@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.74.8
+
+- fix(extract): a commented template literal no longer extracts its placeholder as a key.
+  `` // t(`QUARTER.${q}`) `` extracted `QUARTER.${q}` and `` // t(`status.${deepObject.status}`) `` extracted
+  `status.${deepObject.status}`. Such a comment now keeps the existing keys it matches (`QUARTER.1`,
+  `QUARTER.2`, …) even with `removeUnusedKeys`, the way a commented static key keeps its key, while code can
+  still add new matching keys. A pattern without any static part (`` `${a}.${b}` ``) is ignored. Fixes
+  [#304](https://github.com/i18next/i18next-cli/issues/304).
+
 ## 1.74.7
 
 - fix(extract): a selector `i18nKey` on `<Trans t={t}>` now routes into the hook's namespaces the same way

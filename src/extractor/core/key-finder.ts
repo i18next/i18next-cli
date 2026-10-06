@@ -39,7 +39,7 @@ export async function findKeys (
   config: I18nextToolkitConfig,
   logger: Logger = new ConsoleLogger(),
   fileErrors?: string[]
-): Promise<{ allKeys: Map<string, ExtractedKey>, objectKeys: Set<string> }> {
+): Promise<{ allKeys: Map<string, ExtractedKey>, objectKeys: Set<string>, keepPatterns: ExtractedKey[] }> {
   const { plugins: pluginsOrUndefined, ...otherConfig } = config
   const plugins = pluginsOrUndefined || []
 
@@ -130,7 +130,7 @@ export async function findKeys (
       ;(ek as any).isExpandedPlural = true
     }
   }
-  return { allKeys, objectKeys: astVisitors.objectKeys }
+  return { allKeys, objectKeys: astVisitors.objectKeys, keepPatterns: astVisitors.keepPatterns }
 }
 
 /**

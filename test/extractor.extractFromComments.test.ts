@@ -3,6 +3,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { extract } from '../src/index'
 import type { I18nextToolkitConfig } from '../src/index'
 import { pathEndsWith } from './utils/path'
+import { resolve } from 'path'
 
 // Mocks
 vi.mock('fs/promises', async () => {
@@ -72,5 +73,30 @@ describe('extractor: extractFromComments option', () => {
     })
     expect(file!.newTranslations).not.toHaveProperty('comment')
     expect(file!.newTranslations).not.toHaveProperty('block')
+  })
+
+  it('keeps the existing keys a commented template literal matches instead of extracting it (#304)', async () => {
+    vol.fromJSON({
+      '/src/App.tsx': `
+        // ([1, 2, 3, 4] as const).map((q) => t(\`QUARTER.\${q}\`));
+        // t(\`status.\${deepObject.status}\`)
+        // t(\`\${section}.\${item}\`)
+        ;(['5'] as const).map((q) => t(\`QUARTER.\${q}\`, 'Q5'))
+      `,
+    })
+    await vol.promises.mkdir(resolve(process.cwd(), 'locales/en'), { recursive: true })
+    await vol.promises.writeFile(resolve(process.cwd(), 'locales/en/translation.json'), JSON.stringify({
+      QUARTER: { 1: 'Q1', 2: 'Q2' },
+      status: { 200: 'OK' },
+      unused: 'gone',
+    }))
+
+    const results = await extract({ ...mockConfig, extract: { ...mockConfig.extract, removeUnusedKeys: true } })
+    const file = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(file!.newTranslations).toEqual({
+      QUARTER: { 1: 'Q1', 2: 'Q2', 5: 'Q5' },
+      status: { 200: 'OK' },
+    })
   })
 })

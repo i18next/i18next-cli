@@ -1575,6 +1575,11 @@ Extract keys from comments for documentation or edge cases:
 // t('user.greeting', { defaultValue: 'Hello!', ns: 'common' })
 ```
 
+A commented template literal cannot name its keys, so it is not extracted. Instead it keeps the
+existing keys it matches, even with `removeUnusedKeys`: `` // t(`QUARTER.${q}`) `` keeps `QUARTER.1`,
+`QUARTER.2` and so on, while code can still add new `QUARTER.*` keys. Unlike `preservePatterns`, it
+does not stop matching keys from being extracted.
+
 ### JavaScript & TypeScript Translation Files
 
 For projects that prefer to keep everything in a single module type, you can configure the CLI to output JavaScript or TypeScript files instead of JSON.

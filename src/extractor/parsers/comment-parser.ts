@@ -1,4 +1,4 @@
-import type { PluginContext, I18nextToolkitConfig } from '../../types.js'
+import type { PluginContext, I18nextToolkitConfig, ExtractedKey } from '../../types.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
 
 // Checks if a string looks like natural language (contains spaces, punctuation, etc.)
@@ -13,6 +13,7 @@ const looksLikeNaturalLanguage = (s: string) => naturalLanguageChars.test(s)
  * @param pluginContext - Context object with helper methods to add found keys
  * @param config - Configuration object containing extraction settings
  * @param scopeResolver - Function to resolve scope information for variables (optional)
+ * @param keepPatterns - Collects the key patterns of commented template literals (optional)
  *
  * @example
  * ```typescript
@@ -30,7 +31,8 @@ export function extractKeysFromComments (
   code: string,
   pluginContext: PluginContext,
   config: I18nextToolkitConfig,
-  scopeResolver?: (varName: string) => { defaultNs?: string; keyPrefix?: string } | undefined
+  scopeResolver?: (varName: string) => { defaultNs?: string; keyPrefix?: string } | undefined,
+  keepPatterns?: ExtractedKey[]
 ): void {
   // Hardcode the function name to 't' to prevent parsing other functions like 'test()'.
   const functionNameToFind = 't'
@@ -71,6 +73,11 @@ export function extractKeysFromComments (
       if (!key || key.trim() === '') {
         continue // Skip empty keys
       }
+
+      // `t(`QUARTER.${q}`)` cannot name its keys: it becomes the pattern `QUARTER.*`,
+      // which keeps the existing keys it matches instead of adding a literal `${q}` (#304)
+      const isPattern = match[1] === '`' && key.includes('${')
+      if (isPattern) key = key.replace(/\$\{[^}]*\}/g, '*')
 
       // We'll check preservePatterns after namespace resolution below
 
@@ -144,6 +151,15 @@ export function extractKeysFromComments (
 
       // 4. Final fallback to configured default namespace
       if (!ns) ns = config.extract.defaultNS
+
+      if (isPattern) {
+        // ponytail: a pattern without any static segment (`${a}.${b}`) would keep the whole
+        // namespace, so it is dropped
+        const keySeparator = config.extract.keySeparator ?? '.'
+        const staticPart = key.replace(/\*/g, '')
+        if (keySeparator === false ? staticPart : staticPart.split(keySeparator).some(Boolean)) keepPatterns?.push({ key, ns })
+        continue
+      }
 
       // 5. Handle context and count combinations based on disablePlurals setting
       if (config.extract.disablePlurals) {
