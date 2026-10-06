@@ -86,7 +86,7 @@
     "magic-string": "^1.4.2",
     "minimatch": "^10.2.6",
     "ora": "^9.4.1",
-    "react-i18next": "^17.0.15",
+    "react-i18next": "^17.0.16",
     "yaml": "^2.9.1"
   }
 }

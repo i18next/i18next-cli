@@ -109,6 +109,60 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should route a selector key into a secondary namespace of the t prop like t() (react-i18next#1933)', async () => {
+    const sampleCode = `
+      import React from 'react';
+      import { Trans, useTranslation } from 'react-i18next'
+
+      function MyComponent() {
+        const { t } = useTranslation(['ns1', 'ns2']);
+
+        return (
+          <>
+            <p>{t($ => $.ns2.fromT)}</p>
+            <Trans t={t} i18nKey={$ => $.ns2.message}>Hello <b>world</b></Trans>
+            <Trans t={t} i18nKey={$ => $.title}>Title</Trans>
+            <Trans t={t} i18nKey={$ => $.ns1.nested}>Nested</Trans>
+          </>
+        );
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const ns1File = results.find(r => pathEndsWith(r.path, '/locales/en/ns1.json'))
+    const ns2File = results.find(r => pathEndsWith(r.path, '/locales/en/ns2.json'))
+
+    expect(ns2File!.newTranslations).toEqual({
+      fromT: 'fromT',
+      message: 'Hello <1>world</1>',
+    })
+    // default selector mode: the primary namespace is not a prefix
+    expect(ns1File!.newTranslations).toEqual({
+      title: 'Title',
+      ns1: { nested: 'Nested' },
+    })
+  })
+
+  it('should strip the primary namespace from a Trans selector key under enableSelector strict', async () => {
+    const sampleCode = `
+      import React from 'react';
+      import { Trans, useTranslation } from 'react-i18next'
+
+      function MyComponent() {
+        const { t } = useTranslation('only');
+
+        return <Trans t={t} i18nKey={$ => $.only.deep.key}>Deep</Trans>;
+      }
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract({ ...mockConfig, types: { input: ['locales/en/*.json'], output: 'src/types/i18next.d.ts', enableSelector: 'strict' } })
+    const onlyFile = results.find(r => pathEndsWith(r.path, '/locales/en/only.json'))
+
+    expect(onlyFile!.newTranslations).toEqual({ deep: { key: 'Deep' } })
+  })
+
   it('should generate plural keys when Trans component has a count prop', async () => {
     const sampleCode = `
       <Trans i18nKey="userMessagesUnreadARA" count={count}>

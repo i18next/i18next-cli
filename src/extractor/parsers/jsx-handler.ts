@@ -3,7 +3,8 @@ import type { PluginContext, I18nextToolkitConfig, ExtractedKey, ScopeInfo } fro
 import { ExpressionResolver } from './expression-resolver.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
 import { extractFromTransComponent } from './jsx-parser.js'
-import { getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset } from './ast-utils.js'
+import { getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset, unwrapParens } from './ast-utils.js'
+import { applySelectorNsRewrite } from './call-expression-handler.js'
 
 // Checks if a string looks like natural language (contains spaces, punctuation, etc.)
 const naturalLanguageChars = /[ ,?!;]/
@@ -192,7 +193,28 @@ export class JSXHandler {
         // If ns is not explicitly set on the component, try to find it from the key
         // or the `t` prop
         if (!extractedAttributes.ns) {
+          const tProp = node.opening.attributes?.find(
+            attr =>
+              attr.type === 'JSXAttribute' &&
+              attr.name.type === 'Identifier' &&
+              attr.name.value === 't'
+          )
+
+          // Check if the prop value is an identifier (e.g., t={t})
+          const scopeInfo =
+            tProp?.type === 'JSXAttribute' &&
+            tProp.value?.type === 'JSXExpressionContainer' &&
+            tProp.value.expression.type === 'Identifier'
+              ? getScopeInfo(tProp.value.expression.value)
+              : undefined
+
+          // Trans leaves a selector key to the `t` prop, which routes it into the
+          // hook's other namespaces like t() does (react-i18next#1933)
+          const isSelector = !!extractedAttributes.keyExpression &&
+            unwrapParens(extractedAttributes.keyExpression).type === 'ArrowFunctionExpression'
+
           extractedKeys = keysToProcess.map(key => {
+            if (isSelector) key = applySelectorNsRewrite(key, scopeInfo, this.config)
             const nsSeparator = this.config.extract.nsSeparator ?? ':'
             let ns: string | undefined
 
@@ -217,22 +239,8 @@ export class JSXHandler {
             }
           })
 
-          const tProp = node.opening.attributes?.find(
-            attr =>
-              attr.type === 'JSXAttribute' &&
-              attr.name.type === 'Identifier' &&
-              attr.name.value === 't'
-          )
-
-          // Check if the prop value is an identifier (e.g., t={t})
-          if (
-            tProp?.type === 'JSXAttribute' &&
-            tProp.value?.type === 'JSXExpressionContainer' &&
-            tProp.value.expression.type === 'Identifier'
-          ) {
-            const tIdentifier = tProp.value.expression.value
-            const scopeInfo = getScopeInfo(tIdentifier)
-            if (scopeInfo?.defaultNs) {
+          if (scopeInfo) {
+            if (scopeInfo.defaultNs) {
               // One copy per namespace when the hook's ns was a conditional (#299)
               const scopeNamespaces = [scopeInfo.defaultNs, ...(scopeInfo.altNs ?? [])]
               extractedKeys = extractedKeys.flatMap(key =>

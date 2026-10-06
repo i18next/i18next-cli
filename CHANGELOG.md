@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.74.7
+
+- fix(extract): a selector `i18nKey` on `<Trans t={t}>` now routes into the hook's namespaces the same way
+  `t()` does, matching react-i18next 17.0.16. With `const { t } = useTranslation(['ns1', 'ns2'])`,
+  `<Trans t={t} i18nKey={$ => $.ns2.message} />` was filed as `ns1:ns2.message`; it is now filed as
+  `ns2:message`, like `t($ => $.ns2.message)`. Under `types.enableSelector: 'strict'` a leading primary
+  namespace is stripped too (`useTranslation('only')` with `$ => $.only.key` files `only:key`). Reported in
+  [react-i18next#1933](https://github.com/i18next/react-i18next/issues/1933).
+
 ## 1.74.6
 
 - fix(extract): iterating an inline array literal binds the element like iterating a named constant
