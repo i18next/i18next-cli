@@ -183,6 +183,15 @@ export interface I18nextToolkitConfig {
      */
     extractFromComments?: boolean;
 
+    /**
+     * How many levels of nested object members are followed when a dynamic key reads a typed value,
+     * counted from the type the value is declared with or the type an indexed access picks:
+     * `deepObject.Foo.Bar.status` reads 3 levels, and `components['schemas']['Pet']` starts at `Pet`.
+     * Higher values cost time and memory on large recursive types such as OpenAPI schemas.
+     * (default: 5)
+     */
+    maxTypeDepth?: number;
+
     // control whether base plural forms are generated when context is present
     generateBasePluralForms?: boolean
 

@@ -998,6 +998,12 @@ export default defineConfig({
     // Set to false to ignore translation-like patterns in comments (useful to avoid extracting example/documentation strings).
     extractFromComments: true,
 
+    // How many levels of nested object members are followed when a dynamic key reads a typed value
+    // (default: 5). Counted from the type the value is declared with or the type an indexed access picks,
+    // so `deepObject.Foo.Bar.status` reads 3 levels and `components['schemas']['Pet']` starts at `Pet`.
+    // Higher values cost time and memory on large recursive types such as OpenAPI schemas.
+    maxTypeDepth: 5,
+
     // Control whether base plural forms are generated when context is present
     // When false, t('key', { context: 'male', count: 1 }) will only generate 
     // key_male_one, key_male_other but NOT key_one, key_other

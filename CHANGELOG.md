@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.75.0
+
+- feat(extract): new `extract.maxTypeDepth` option sets how many levels of nested object members are
+  followed when a dynamic key reads a typed value (default: 5). Higher values cost time and memory on
+  large recursive types such as OpenAPI schemas. Requested in
+  [#302](https://github.com/i18next/i18next-cli/issues/302#issuecomment-6039348480).
+- fix(extract): the depth now counts from the type an indexed access picks instead of from the declared
+  wrapper type. `type Pet = components['schemas']['Pet']` gets the full depth below `Pet`, where the
+  `components`/`schemas` wrapper used to take two of the five levels.
+- fix(extract): numeric keys resolve in object types and indexed access types, so openapi-typescript
+  response types work:
+  `operations['getPet']['responses'][200]['content']['application/json']` and
+  `op.responses[200].content['application/json'].status` resolved nothing before.
+
 ## 1.74.8
 
 - fix(extract): a commented template literal no longer extracts its placeholder as a key.

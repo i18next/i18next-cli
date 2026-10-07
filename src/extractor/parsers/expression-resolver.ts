@@ -21,11 +21,6 @@ const unwrapExpr = (expr: any): any => {
   return expr
 }
 
-// Nested object members are flattened to dotted paths (`{ 'Foo.Bar.status': [...] }`).
-// ponytail: capped so recursive types (`interface Node { child: Node }`) stay small;
-// raise it if real code reads deeper chains in a key.
-const MAX_MEMBER_DEPTH = 5
-
 // The members nested under `name`: { 'Bar.status': v } -> { status: v }. Member maps
 // are never changed once built, so each is split by its first segment only once:
 // resolving every `components['schemas'][X]` of an OpenAPI schema stays linear.
@@ -47,9 +42,29 @@ export const nestedMembers = (members: Record<string, string[]> | undefined, nam
   return index.get(name)
 }
 
-// `T['a']` -> 'a'
+// `{ a: … }`, `{ 'a': … }`, `{ 200: … }` -> 'a' / '200'
+const literalKey = (node: any): string | undefined =>
+  node?.type === 'Identifier' || node?.type === 'StringLiteral' ? node.value : node?.type === 'NumericLiteral' ? String(node.value) : undefined
+
+// The member named `key` of a type's member list. Like `nestedMembers`, indexed once per
+// list, since `components['schemas'][X]` looks up one of thousands of schemas.
+const memberIndex = new WeakMap<any[], Map<string, any>>()
+const memberByKey = (members: any[], key: string): any => {
+  let index = memberIndex.get(members)
+  if (!index) {
+    index = new Map()
+    for (const m of members) {
+      const name = m?.type === 'TsPropertySignature' ? literalKey(m.key) : undefined
+      if (name !== undefined && !index.has(name)) index.set(name, m)
+    }
+    memberIndex.set(members, index)
+  }
+  return index.get(key)
+}
+
+// `T['a']` / `T[200]` -> 'a' / '200'
 const indexedKey = (type: any): string | undefined =>
-  type?.indexType?.type === 'TsLiteralType' && type.indexType.literal?.type === 'StringLiteral' ? type.indexType.literal.value : undefined
+  type?.indexType?.type === 'TsLiteralType' ? literalKey(type.indexType.literal) : undefined
 
 // Whether replacing `prev` by `next` only adds to it.
 const grows = (next: any, prev: any): boolean =>
@@ -149,6 +164,10 @@ export class ExpressionResolver {
   private replaying = false
   private grew = false
   private memberDepth = 0
+  // Nested object members are flattened to dotted paths (`{ 'Foo.Bar.status': [...] }`), up to
+  // this many levels below a declared or indexed type, so recursive types stay small
+  // (`extract.maxTypeDepth`).
+  public maxMemberDepth = 5
 
   constructor (hooks: ASTVisitorHooks) {
     this.hooks = hooks
@@ -528,7 +547,7 @@ export class ExpressionResolver {
     // `deepObject.Foo.Bar` → the members nested under `Foo.Bar`
     if (expr?.type === 'MemberExpression') {
       const prop = expr.property
-      const name = prop?.type === 'Identifier' ? prop.value : prop?.type === 'Computed' && prop.expression?.type === 'StringLiteral' ? prop.expression.value : undefined
+      const name = prop?.type === 'Computed' ? literalKey(prop.expression) : prop?.type === 'Identifier' ? prop.value : undefined
       return name === undefined ? undefined : nestedMembers(this.objectMembersOf(expr.object), name)
     }
     return undefined
@@ -540,11 +559,11 @@ export class ExpressionResolver {
    * resolves to a finite string set are kept; returns undefined when none do.
    */
   private collectObjectTypeMembers (members: any[]): Record<string, string[]> | undefined {
-    if (!Array.isArray(members) || this.memberDepth >= MAX_MEMBER_DEPTH) return undefined
+    if (!Array.isArray(members) || this.memberDepth >= this.maxMemberDepth) return undefined
     const map: Record<string, string[]> = {}
     for (const m of members) {
       if (!m || m.type !== 'TsPropertySignature') continue
-      const memberName = m.key?.type === 'Identifier' ? m.key.value : m.key?.type === 'StringLiteral' ? m.key.value : undefined
+      const memberName = literalKey(m.key)
       if (!memberName) continue
       const tsType = m.typeAnnotation?.typeAnnotation ?? m.typeAnnotation
       if (!tsType) continue
@@ -563,7 +582,7 @@ export class ExpressionResolver {
         this.memberDepth--
       }
       for (const [path, v] of Object.entries(nested ?? {})) {
-        if (path.split('.').length < MAX_MEMBER_DEPTH) map[`${memberName}.${path}`] = v
+        if (path.split('.').length < this.maxMemberDepth) map[`${memberName}.${path}`] = v
       }
     }
     return Object.keys(map).length > 0 ? map : undefined
@@ -581,8 +600,10 @@ export class ExpressionResolver {
     try {
       if (!tsType) return undefined
       if (tsType.type === 'TsParenthesizedType') return this.resolveTypeMembers(tsType.typeAnnotation)
-      // `components['schemas']['Pet']` → the members nested under `schemas.Pet`
+      // `components['schemas']['Pet']` → Pet's members, else the members nested under `schemas.Pet`
       if (tsType.type === 'TsIndexedAccessType') {
+        const target = this.indexedAccessTarget(tsType)
+        if (target) return this.resolveTypeMembers(target)
         const key = indexedKey(tsType)
         return key === undefined ? undefined : nestedMembers(this.resolveTypeMembers(tsType.objectType), key)
       }
@@ -636,6 +657,26 @@ export class ExpressionResolver {
       }
     } catch {}
     return undefined
+  }
+
+  /**
+   * The type node an indexed access picks, found by walking the declared members:
+   * `operations['getPet']['responses'][200]` → that response's type. Resolving it from
+   * there gives it the full depth instead of what is left below `operations`.
+   * Generic types are left to the flattened tables, which bind their parameters.
+   */
+  private indexedAccessTarget (type: any): any {
+    const key = indexedKey(type)
+    if (key === undefined) return undefined
+    let obj = type.objectType
+    while (obj?.type === 'TsParenthesizedType') obj = obj.typeAnnotation
+    if (obj?.type === 'TsIndexedAccessType') obj = this.indexedAccessTarget(obj)
+    const name = obj?.type === 'TsTypeReference' && !obj.typeParams && obj.typeName?.type === 'Identifier' ? obj.typeName.value : undefined
+    const members = obj?.type === 'TsTypeLiteral'
+      ? obj.members
+      : name && !this.objectTypeParams.has(name) ? this.objectTypeMembersRaw.get(name) : undefined
+    const member = Array.isArray(members) ? memberByKey(members, key) : undefined
+    return member?.typeAnnotation?.typeAnnotation ?? member?.typeAnnotation
   }
 
   // `['day', 'hour']` -> ['day', 'hour']
@@ -1312,6 +1353,8 @@ export class ExpressionResolver {
           }
         }
         // `DeepObject['Bar']['status']` → that member's values
+        const target = this.indexedAccessTarget(type)
+        if (target) return this.resolvePossibleStringValuesFromType(target, returnEmptyStrings)
         const key = indexedKey(type)
         const vals = key === undefined ? undefined : this.resolveTypeMembers((type as any).objectType)?.[key]
         if (vals) return vals

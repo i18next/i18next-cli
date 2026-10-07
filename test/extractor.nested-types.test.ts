@@ -10,12 +10,12 @@ vi.mock('fs/promises', async () => {
 
 vi.mock('glob', () => ({ glob: vi.fn() }))
 
-const keysOf = async (files: Record<string, string>) => {
+const keysOf = async (files: Record<string, string>, extract: Record<string, unknown> = {}) => {
   vol.fromJSON(files)
   vi.mocked(glob).mockResolvedValue(Object.keys(files))
   const { allKeys } = await findKeys({
     locales: ['en'],
-    extract: { input: ['src/**/*.ts'], output: 'locales/{{language}}/{{namespace}}.json', functions: ['t'] },
+    extract: { input: ['src/**/*.ts'], output: 'locales/{{language}}/{{namespace}}.json', functions: ['t'], ...extract },
   })
   return [...allKeys.values()].map(k => k.key).sort()
 }
@@ -89,5 +89,57 @@ describe('extractor: members of nested object types (#302)', () => {
         t(\`tree.\${tree.child.child.value}\`)
       `,
     })).toEqual(['node.branch', 'node.leaf', 'tree.x', 'tree.y'])
+  })
+
+  it('resolves openapi-typescript response types and counts the depth from the indexed type', async () => {
+    expect(await keysOf({
+      '/src/app.ts': `
+        import type { components, operations } from './schema'
+        type Ok = operations["getPet"]["responses"][200]["content"]["application/json"]
+        type NotFound = operations["getPet"]["responses"]["404"]["content"]["application/json"]
+        type Pet = components["schemas"]["Pet"]
+        declare const ok: Ok
+        declare const notFound: NotFound
+        declare const pet: Pet
+        declare const op: operations["getPet"]
+        t(\`ok.\${ok.status}\`)
+        t(\`notFound.\${notFound.code}\`)
+        t(\`deep.\${pet.a.b.c.d.kind}\`)
+        t(\`chain.\${op.responses[200].content["application/json"].status}\`)
+      `,
+      '/src/schema.ts': `
+        export interface components {
+          schemas: {
+            Pet: { status: "available" | "sold"; a: { b: { c: { d: { kind: "x" | "y" } } } } };
+          };
+        }
+        export interface operations {
+          getPet: {
+            responses: {
+              200: { content: { "application/json": components["schemas"]["Pet"] } };
+              "404": { content: { "application/json": { code: "NOT_FOUND" | "GONE" } } };
+            };
+          };
+        }
+      `,
+    })).toEqual([
+      'chain.available', 'chain.sold',
+      'deep.x', 'deep.y',
+      'notFound.GONE', 'notFound.NOT_FOUND',
+      'ok.available', 'ok.sold',
+    ])
+  })
+
+  it('follows deeper chains with extract.maxTypeDepth', async () => {
+    const files = {
+      '/src/app.ts': `
+        type Deep = { a: { b: { c: { d: { e: { kind: 'x' | 'y' } } } } } }
+        declare const deep: Deep
+        t(\`deep.\${deep.a.b.c.d.e.kind}\`)
+      `,
+    }
+    expect(await keysOf(files)).toEqual([])
+    vol.reset()
+    expect(await keysOf(files, { maxTypeDepth: 6 })).toEqual(['deep.x', 'deep.y'])
   })
 })
