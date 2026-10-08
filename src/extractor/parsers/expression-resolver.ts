@@ -62,6 +62,11 @@ const memberByKey = (members: any[], key: string): any => {
   return index.get(key)
 }
 
+// `Color` / `Types.Color` / `NS.Inner.Color` -> 'Color'. Declarations are looked up by their
+// own name, so a qualified name resolves by its last part, whatever namespace holds it.
+export const typeRefName = (type: any): string | undefined =>
+  type?.typeName?.type === 'Identifier' ? type.typeName.value : type?.typeName?.type === 'TsQualifiedName' ? type.typeName.right?.value : undefined
+
 // `T['a']` / `T[200]` -> 'a' / '200'
 const indexedKey = (type: any): string | undefined =>
   type?.indexType?.type === 'TsLiteralType' ? literalKey(type.indexType.literal) : undefined
@@ -108,6 +113,10 @@ export class ExpressionResolver {
   // Persists across resetFileSymbols() so exported arrays are visible to importers.
   private sharedVariableTable: Map<string, string[]> = new Map()
 
+  // Shared (cross-file) table for as-const object maps, `export const LABELS = { … } as const`,
+  // so `LABELS.save` and `Object.keys(LABELS)` resolve in importing files.
+  private sharedObjectMapTable: Map<string, Record<string, string>> = new Map()
+
   // Shared (cross-file) table for type aliases — populated alongside typeAliasTable.
   // Persists across resetFileSymbols() so exported type aliases are visible to importers.
   private sharedTypeAliasTable: Map<string, string[]> = new Map()
@@ -143,6 +152,10 @@ export class ExpressionResolver {
   // Every other table is keyed by the *declared* name, so without this a type
   // referenced through an alias resolves to nothing.
   private sharedImportAliases: Map<string, string> = new Map()
+
+  // Shared (cross-file) namespace names: `import * as Types`, `export * as Types`. Their
+  // members are declared under their own names, so `Types.COLORS` resolves as `COLORS`.
+  private sharedNamespaceNames: Set<string> = new Set()
 
   // Type parameters of generic object types, e.g. `type Base<T> = { type: T }`.
   private objectTypeParams: Map<string, any[]> = new Map()
@@ -347,6 +360,7 @@ export class ExpressionResolver {
         // If at least one property was resolvable, record the partial map.
         if (Object.keys(map).length > 0) {
           this.variableTable.set(name, map)
+          this.sharedObjectMapTable.set(name, map)
           return
         }
       }
@@ -449,6 +463,9 @@ export class ExpressionResolver {
   captureImportDeclaration (node: any): void {
     try {
       for (const spec of node?.specifiers ?? []) {
+        // `import * as Types from …` / `export * as Types from …`
+        if (spec?.type === 'ImportNamespaceSpecifier' && spec.local?.value) this.sharedNamespaceNames.add(spec.local.value)
+        if (spec?.type === 'ExportNamespaceSpecifier' && spec.name?.value) this.sharedNamespaceNames.add(spec.name.value)
         if (spec?.type !== 'ImportSpecifier') continue
         const local: string | undefined = spec.local?.value
         const imported: string | undefined = spec.imported?.value
@@ -457,6 +474,25 @@ export class ExpressionResolver {
     } catch {
       // noop
     }
+  }
+
+  /**
+   * `Types.COLORS` → `COLORS` when `Types` is a namespace import (also one renamed by
+   * `import { Types as T }` from a barrel); any other expression is returned as is.
+   */
+  public unwrapNamespace (expr: any): any {
+    if (expr?.type !== 'MemberExpression' || expr.object?.type !== 'Identifier' || expr.property?.type !== 'Identifier') return expr
+    const ns = expr.object.value
+    if (!this.sharedNamespaceNames.has(this.sharedImportAliases.get(ns) ?? ns)) return expr
+    return { type: 'Identifier', value: expr.property.value, span: expr.span }
+  }
+
+  // The variable a `typeof` names: `typeof LABELS`, or `typeof Types.LABELS` through a namespace import
+  private typeQueryName (exprName: any): string | undefined {
+    if (exprName?.type === 'TsQualifiedName') {
+      return this.unwrapNamespace({ type: 'MemberExpression', object: exprName.left, property: exprName.right })?.value
+    }
+    return exprName?.value ?? exprName?.name
   }
 
   /**
@@ -472,6 +508,7 @@ export class ExpressionResolver {
       this.sharedTypeAliasTable,
       this.sharedEnumTable,
       this.sharedVariableTable,
+      this.sharedObjectMapTable,
       this.sharedFunctionReturnTable,
       this.sharedFunctionReturnMembers,
       this.objectTypeTable,
@@ -540,10 +577,11 @@ export class ExpressionResolver {
    * function returning one (`getAnimal()`).
    */
   private objectMembersOf (expr: any): Record<string, string[]> | undefined {
-    expr = unwrapParens(expr)
+    expr = this.unwrapNamespace(unwrapParens(expr))
     if (expr?.type === 'OptionalChainingExpression') return this.objectMembersOf(expr.base)
     if (expr?.type === 'Identifier') return this.temporaryObjectVariables.get(expr.value) ?? this.objectVariables.get(expr.value)
-    if (expr?.type === 'CallExpression' && expr.callee?.type === 'Identifier') return this.sharedFunctionReturnMembers.get(expr.callee.value)
+    const callee = this.unwrapNamespace(expr?.callee)
+    if (expr?.type === 'CallExpression' && callee?.type === 'Identifier') return this.sharedFunctionReturnMembers.get(callee.value)
     // `deepObject.Foo.Bar` → the members nested under `Foo.Bar`
     if (expr?.type === 'MemberExpression') {
       const prop = expr.property
@@ -621,8 +659,8 @@ export class ExpressionResolver {
         }
         return Object.keys(merged).length > 0 ? merged : undefined
       }
-      if (tsType.type === 'TsTypeReference' && tsType.typeName?.type === 'Identifier') {
-        const name = tsType.typeName.value
+      const name = tsType.type === 'TsTypeReference' ? typeRefName(tsType) : undefined
+      if (name) {
         // `Base<'DUCK'>` → instantiate the generic type's members with the argument
         const args = tsType.typeParams?.params
         const params = this.objectTypeParams.get(name)
@@ -671,7 +709,7 @@ export class ExpressionResolver {
     let obj = type.objectType
     while (obj?.type === 'TsParenthesizedType') obj = obj.typeAnnotation
     if (obj?.type === 'TsIndexedAccessType') obj = this.indexedAccessTarget(obj)
-    const name = obj?.type === 'TsTypeReference' && !obj.typeParams && obj.typeName?.type === 'Identifier' ? obj.typeName.value : undefined
+    const name = obj?.type === 'TsTypeReference' && !obj.typeParams ? typeRefName(obj) : undefined
     const members = obj?.type === 'TsTypeLiteral'
       ? obj.members
       : name && !this.objectTypeParams.has(name) ? this.objectTypeMembersRaw.get(name) : undefined
@@ -714,7 +752,7 @@ export class ExpressionResolver {
    * inline literal (`([1, 2, 3, 4] as const).map(…)`) or a typed member (`props.colors`).
    */
   public arrayValuesOf (expr: any): string[] | undefined {
-    expr = unwrapExpr(expr)
+    expr = this.unwrapNamespace(unwrapExpr(expr))
     if (expr?.type === 'Identifier') return this.getVariableValues(expr.value)
     if (expr?.type === 'ArrayExpression') return this.arrayLiteralValues(expr)
     // `props.colors` where `colors: Color[]`
@@ -731,7 +769,7 @@ export class ExpressionResolver {
    * typed member (`props.items`).
    */
   public arrayMembersOf (expr: any): Record<string, string[]> | undefined {
-    expr = unwrapExpr(expr)
+    expr = this.unwrapNamespace(unwrapExpr(expr))
     if (expr?.type === 'Identifier') return this.arrayElementMembers.get(expr.value)
     if (expr?.type === 'ArrayExpression') return this.arrayLiteralMembers(expr)
     // `props.items` where `items: Item[]`
@@ -934,9 +972,7 @@ export class ExpressionResolver {
   public getObjectMap (name: string): Record<string, string> | undefined {
     const v = this.variableTable.get(name)
     if (v && !Array.isArray(v) && typeof v === 'object') return v as Record<string, string>
-    const ev = this.sharedEnumTable.get(name)
-    if (ev) return ev
-    return undefined
+    return this.sharedObjectMapTable.get(name) ?? this.sharedEnumTable.get(name)
   }
 
   /**
@@ -1016,7 +1052,8 @@ export class ExpressionResolver {
    */
   private resolvePossibleStringValuesFromExpression (expression: Expression, returnEmptyStrings = false): string[] {
     // `t(('key'))` / `t(cond ? 'a' : ('b'))`: parens are just a wrapper node (#295).
-    expression = unwrapParens(expression)
+    // `Types.COLORS` with `import * as Types` → `COLORS`
+    expression = this.unwrapNamespace(unwrapParens(expression))
     // `pet.category?.kind` → `pet.category.kind`
     if ((expression as any).type === 'OptionalChainingExpression') {
       return this.resolvePossibleStringValuesFromExpression((expression as any).base, returnEmptyStrings)
@@ -1104,7 +1141,7 @@ export class ExpressionResolver {
     // MemberExpression: try to resolve object identifier to an object map in the symbol table
     if (expression.type === 'MemberExpression') {
       try {
-        const obj = expression.object
+        const obj = this.unwrapNamespace(expression.object)
         const prop = expression.property
         const propName = prop.type === 'Identifier'
           ? prop.value
@@ -1118,7 +1155,7 @@ export class ExpressionResolver {
         // only handle simple identifier base + simple property (Identifier or computed StringLiteral)
         if (obj.type === 'Identifier') {
           const baseVar = this.variableTable.get(obj.value)
-          const baseShared = this.sharedEnumTable.get(obj.value)
+          const baseShared = this.sharedObjectMapTable.get(obj.value) ?? this.sharedEnumTable.get(obj.value)
           const base = baseVar ?? baseShared
           if (base && typeof base !== 'string' && !Array.isArray(base)) {
             if (propName && base[propName] !== undefined) {
@@ -1155,7 +1192,7 @@ export class ExpressionResolver {
     // the shared cross-file table populated during pre-scan.
     if (expression.type === 'CallExpression') {
       try {
-        const callee = (expression as any).callee
+        const callee = this.unwrapNamespace((expression as any).callee)
         if (callee?.type === 'Identifier') {
           const v = this.variableTable.get(callee.value)
           if (Array.isArray(v) && v.length > 0) return v
@@ -1298,10 +1335,7 @@ export class ExpressionResolver {
     // where `type ChangeType = 'all' | 'next' | 'this'` was captured earlier.
     // Also handles `declare const d: SomeEnum` where SomeEnum is a TS enum with string values.
     if (type.type === 'TsTypeReference') {
-      const typeName: string | undefined =
-        (type as any).typeName?.type === 'Identifier'
-          ? (type as any).typeName.value
-          : undefined
+      const typeName = typeRefName(type)
       if (typeName) {
         // Inside a generic type: the parameter's argument, default or constraint
         const bound = this.typeParamBindings.get(typeName)
@@ -1339,7 +1373,7 @@ export class ExpressionResolver {
           // SWC: TsTypeQuery.exprName is TsEntityName (Identifier | TsQualifiedName)
           const exprName = objType.exprName ?? objType.expr ?? objType.entityName
           // access .value (Identifier) or fall back to .name for alternate SWC builds
-          const varName: string | undefined = exprName?.value ?? exprName?.name
+          const varName: string | undefined = this.typeQueryName(exprName)
           if (varName) {
             const vals = this.getVariableValues(varName)
             if (vals && vals.length > 0) return vals
@@ -1371,16 +1405,16 @@ export class ExpressionResolver {
     //   Object.keys(MAP).forEach(k => t(MAP[k]))
     if ((type as any).type === 'TsTypeOperator') {
       try {
-        const op = (type as any).operator
+        const op = (type as any).op
         if (op === 'keyof') {
           let inner = (type as any).typeAnnotation
           while (inner?.type === 'TsParenthesizedType') inner = inner.typeAnnotation
           if (inner?.type === 'TsTypeQuery' || inner?.type === 'TSTypeQuery') {
             const exprName = inner.exprName ?? inner.expr ?? inner.entityName
-            const varName: string | undefined = exprName?.value ?? exprName?.name
+            const varName: string | undefined = this.typeQueryName(exprName)
             if (varName) {
-              // Look up in variableTable (local) or sharedVariableTable (cross-file) for object maps
-              const v = this.variableTable.get(varName) ?? this.sharedVariableTable.get(varName)
+              // Look up in variableTable (local) or sharedObjectMapTable (cross-file) for object maps
+              const v = this.variableTable.get(varName) ?? this.sharedObjectMapTable.get(varName)
               if (v && !Array.isArray(v) && typeof v === 'object') {
                 return Object.keys(v as Record<string, string>)
               }

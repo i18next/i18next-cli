@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.75.1
+
+- fix(extract): types and values read through a namespace import resolve like named imports. With
+  `import * as Types from './types'`, a qualified type (`(color: Types.Color) => …`, `x as Types.Color`,
+  `FC<Types.Props>`, `declare const s: Types.Status`) and a namespace member (`Types.SIZES.map(…)`,
+  `Types.Status.Done`, `t(Types.LABELS.save)`, `Object.keys(Types.LABELS)`) now extract their keys, also
+  for a namespace re-exported from a barrel (`export * as Shared from './types'`). Fixes
+  [#305](https://github.com/i18next/i18next-cli/issues/305).
+- fix(extract): an exported `as const` object resolves in the files that import it: `t(LABELS.save)` and
+  `Object.keys(LABELS)` only worked in the declaring file before.
+- fix(extract): a value typed `keyof typeof MAP` resolves to the map's keys, so
+  `` t(`label.${key}`) `` with `declare const key: keyof typeof LABELS` extracts `label.save` and
+  `label.cancel`. This branch never matched before.
+
 ## 1.75.0
 
 - feat(extract): new `extract.maxTypeDepth` option sets how many levels of nested object members are

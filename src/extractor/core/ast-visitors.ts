@@ -1,7 +1,7 @@
 import type { Module, Node } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, Logger, ASTVisitorHooks, ScopeInfo, ExtractedKey } from '../../types.js'
 import { ScopeManager } from '../parsers/scope-manager.js'
-import { ExpressionResolver, nestedMembers } from '../parsers/expression-resolver.js'
+import { ExpressionResolver, nestedMembers, typeRefName } from '../parsers/expression-resolver.js'
 import { CallExpressionHandler } from '../parsers/call-expression-handler.js'
 import { JSXHandler } from '../parsers/jsx-handler.js'
 import { unwrapParens } from '../parsers/ast-utils.js'
@@ -199,8 +199,10 @@ export class ASTVisitors {
         this.expressionResolver.captureFunctionDeclaration(node)
         break
       case 'ImportDeclaration':
+      case 'ExportNamedDeclaration':
         // `import { X as Y }` → ExpressionResolver.sharedImportAliases, resolved
-        // once the pre-scan has seen every file.
+        // once the pre-scan has seen every file; `import * as Types` / `export * as Types`
+        // → namespace names.
         this.expressionResolver.captureImportDeclaration(node)
         break
     }
@@ -828,8 +830,8 @@ export class ASTVisitors {
     if (tsType.type === 'TsParenthesizedType') return this.getObjectTypeMembers(tsType.typeAnnotation)
     let members: any[] | undefined
     if (tsType.type === 'TsTypeLiteral') members = tsType.members
-    else if (tsType.type === 'TsTypeReference' && tsType.typeName?.type === 'Identifier') {
-      members = this.expressionResolver.getObjectTypeMembersRaw(tsType.typeName.value)
+    else if (tsType.type === 'TsTypeReference' && typeRefName(tsType)) {
+      members = this.expressionResolver.getObjectTypeMembersRaw(typeRefName(tsType)!)
     }
     if (!Array.isArray(members)) return []
     const out: Array<{ name: string; typeNode: any }> = []
@@ -880,7 +882,7 @@ export class ASTVisitors {
         ) {
           const isKeys = innerCallee.property.value === 'keys'
           // The single argument to Object.keys/values must be a known identifier
-          const mapArg = obj.arguments?.[0]?.expression
+          const mapArg = this.expressionResolver.unwrapNamespace(obj.arguments?.[0]?.expression)
           if (mapArg?.type === 'Identifier') {
             const mapEntry = this.expressionResolver.getObjectMap(mapArg.value)
             if (mapEntry) {
