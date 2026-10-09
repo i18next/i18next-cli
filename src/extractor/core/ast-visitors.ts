@@ -1,7 +1,7 @@
 import type { Module, Node } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, Logger, ASTVisitorHooks, ScopeInfo, ExtractedKey } from '../../types.js'
 import { ScopeManager } from '../parsers/scope-manager.js'
-import { ExpressionResolver, nestedMembers, typeRefName } from '../parsers/expression-resolver.js'
+import { ExpressionResolver, nestedMembers } from '../parsers/expression-resolver.js'
 import { CallExpressionHandler } from '../parsers/call-expression-handler.js'
 import { JSXHandler } from '../parsers/jsx-handler.js'
 import { unwrapParens } from '../parsers/ast-utils.js'
@@ -830,8 +830,8 @@ export class ASTVisitors {
     if (tsType.type === 'TsParenthesizedType') return this.getObjectTypeMembers(tsType.typeAnnotation)
     let members: any[] | undefined
     if (tsType.type === 'TsTypeLiteral') members = tsType.members
-    else if (tsType.type === 'TsTypeReference' && typeRefName(tsType)) {
-      members = this.expressionResolver.getObjectTypeMembersRaw(typeRefName(tsType)!)
+    else if (tsType.type === 'TsTypeReference' && this.expressionResolver.typeRefName(tsType)) {
+      members = this.expressionResolver.getObjectTypeMembersRaw(this.expressionResolver.typeRefName(tsType)!)
     }
     if (!Array.isArray(members)) return []
     const out: Array<{ name: string; typeNode: any }> = []
@@ -1057,6 +1057,7 @@ export class ASTVisitors {
   public setCurrentFile (file: string, code: string): void {
     this.currentFile = file
     this.currentCode = code
+    this.expressionResolver.setCurrentFile(file)
   }
 
   /**

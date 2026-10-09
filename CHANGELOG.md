@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.75.2
+
+- fix(extract): declarations with the same name in different files no longer overwrite each other.
+  Two generated OpenAPI clients that both export `components` resolved to whichever file was read first,
+  so `import { components as githubComponents } from './github-api'` and
+  `import { components as digitalOceanComponents } from './digital-ocean-api'` extracted the keys of only one
+  of them, and moving files around changed which. A name now resolves to the module the file imports it
+  from, for renamed and plain imports, namespace imports (`GH.components`), `.js` import specifiers and
+  tsconfig `paths` aliases. Imports that cannot be traced to a scanned file (packages, re-exporting barrels)
+  still resolve by name as before. Fixes [#306](https://github.com/i18next/i18next-cli/issues/306).
+
 ## 1.75.1
 
 - fix(extract): types and values read through a namespace import resolve like named imports. With

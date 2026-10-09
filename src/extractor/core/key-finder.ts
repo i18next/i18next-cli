@@ -6,6 +6,7 @@ import { ConsoleLogger } from '../../utils/logger.js'
 import { initializePlugins, createPluginContext } from '../plugin-manager.js'
 import { ASTVisitors } from './ast-visitors.js'
 import { ExpressionResolver } from '../parsers/expression-resolver.js'
+import { getTsConfigAliases } from '../../config.js'
 
 /**
  * Main function for finding translation keys across all source files in a project.
@@ -86,6 +87,7 @@ export async function findKeys (
   // Use a shared ExpressionResolver so captured enums/objects in one file are available when resolving MemberExpressions
   const sharedExpressionResolver = new ExpressionResolver(hooks)
   sharedExpressionResolver.maxMemberDepth = config.extract.maxTypeDepth ?? 5
+  sharedExpressionResolver.pathAliases = await getTsConfigAliases()
   const astVisitors = new ASTVisitors(otherConfig, pluginContext, logger, hooks, sharedExpressionResolver)
 
   // 4. "Wire up" the visitor's scope method to the context.

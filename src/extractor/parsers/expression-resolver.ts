@@ -1,5 +1,6 @@
 import type { Expression, TsType, TemplateLiteral, TsTemplateLiteralType } from '@swc/core'
 import type { ASTVisitorHooks } from '../../types.js'
+import { dirname, resolve } from 'node:path'
 import { unwrapParens } from './ast-utils.js'
 
 // Whether `next` holds everything `prev` does: every value of a list, every
@@ -62,10 +63,45 @@ const memberByKey = (members: any[], key: string): any => {
   return index.get(key)
 }
 
-// `Color` / `Types.Color` / `NS.Inner.Color` -> 'Color'. Declarations are looked up by their
-// own name, so a qualified name resolves by its last part, whatever namespace holds it.
-export const typeRefName = (type: any): string | undefined =>
-  type?.typeName?.type === 'Identifier' ? type.typeName.value : type?.typeName?.type === 'TsQualifiedName' ? type.typeName.right?.value : undefined
+// `/src/api/github-api.ts`, `.d.ts`, or an import of `./github-api.js` -> `/src/api/github-api`
+const moduleKey = (path: string): string => path.replace(/(\.d)?\.[cm]?[jt]sx?$/, '')
+
+/**
+ * A cross-file table keyed by declared name. Every entry is also kept under the module that
+ * declares it (`/src/api/github-api#components`), and a lookup made while a file is being read
+ * first tries where that file gets the name from: the module it imported it from, then its own
+ * declaration. The bare name, held by whichever file declared it last, is the fallback, so two
+ * generated clients that both declare `components` no longer overwrite each other (#306).
+ */
+class ModuleTable<V> extends Map<string, V> {
+  constructor (private readonly scope: { keysOf (name: string): string[], declaringKey (name: string): string | undefined }) {
+    super()
+  }
+
+  get (name: string): V | undefined {
+    for (const key of this.scope.keysOf(name)) {
+      const value = super.get(key)
+      if (value !== undefined) return value
+    }
+    return super.get(name)
+  }
+
+  has (name: string): boolean {
+    return this.scope.keysOf(name).some(key => super.has(key)) || super.has(name)
+  }
+
+  set (name: string, value: V): this {
+    const key = this.scope.declaringKey(name)
+    if (key) super.set(key, value)
+    return super.set(name, value)
+  }
+
+  delete (name: string): boolean {
+    const key = this.scope.declaringKey(name)
+    if (key) super.delete(key)
+    return super.delete(name)
+  }
+}
 
 // `T['a']` / `T[200]` -> 'a' / '200'
 const indexedKey = (type: any): string | undefined =>
@@ -103,7 +139,7 @@ export class ExpressionResolver {
   private variableTable: Map<string, string[] | Record<string, string>> = new Map()
 
   // Shared (cross-file) table for enums / exported object maps that should persist
-  private sharedEnumTable: Map<string, Record<string, string>> = new Map()
+  private sharedEnumTable: Map<string, Record<string, string>> = new ModuleTable(this)
 
   // Per-file table for type aliases: Maps typeName -> string[]
   // e.g. `type ChangeType = 'all' | 'next' | 'this'` -> { ChangeType: ['all', 'next', 'this'] }
@@ -111,21 +147,21 @@ export class ExpressionResolver {
 
   // Shared (cross-file) table for string-array constants (e.g. `as const` arrays).
   // Persists across resetFileSymbols() so exported arrays are visible to importers.
-  private sharedVariableTable: Map<string, string[]> = new Map()
+  private sharedVariableTable: Map<string, string[]> = new ModuleTable(this)
 
   // Shared (cross-file) table for as-const object maps, `export const LABELS = { … } as const`,
   // so `LABELS.save` and `Object.keys(LABELS)` resolve in importing files.
-  private sharedObjectMapTable: Map<string, Record<string, string>> = new Map()
+  private sharedObjectMapTable: Map<string, Record<string, string>> = new ModuleTable(this)
 
   // Shared (cross-file) table for type aliases — populated alongside typeAliasTable.
   // Persists across resetFileSymbols() so exported type aliases are visible to importers.
-  private sharedTypeAliasTable: Map<string, string[]> = new Map()
+  private sharedTypeAliasTable: Map<string, string[]> = new ModuleTable(this)
 
   // Shared (cross-file) table for function return-value sets. Populated from
   // both explicit return-type annotations and body-inferred return values so
   // that `t(fn())` / `const x = fn(); t(\`...${x}...\`)` work across files.
   // Persists across resetFileSymbols() just like the other shared tables.
-  private sharedFunctionReturnTable: Map<string, string[]> = new Map()
+  private sharedFunctionReturnTable: Map<string, string[]> = new ModuleTable(this)
 
   // Temporary per-scope variable overrides, used to inject .map() / .forEach()
   // callback parameters while the callback body is being walked.
@@ -134,9 +170,9 @@ export class ExpressionResolver {
   // Shared (cross-file) table for object-shaped types: interfaces and object
   // type aliases. Maps typeName -> { memberName: possible string values }.
   // e.g. `interface IProps { size: ChangeType }` -> { IProps: { size: ['all','next'] } }
-  private objectTypeTable: Map<string, Record<string, string[]>> = new Map()
+  private objectTypeTable: Map<string, Record<string, string[]>> = new ModuleTable(this)
   // Raw TS member nodes of local interfaces / object type aliases, keyed by type name.
-  private objectTypeMembersRaw: Map<string, any[]> = new Map()
+  private objectTypeMembersRaw: Map<string, any[]> = new ModuleTable(this)
 
   // Temporary per-scope bindings for identifiers holding an object-shaped type,
   // e.g. `function f(props: IProps)` -> { props: { size: ['all','next'] } }.
@@ -158,13 +194,13 @@ export class ExpressionResolver {
   private sharedNamespaceNames: Set<string> = new Set()
 
   // Type parameters of generic object types, e.g. `type Base<T> = { type: T }`.
-  private objectTypeParams: Map<string, any[]> = new Map()
+  private objectTypeParams: Map<string, any[]> = new ModuleTable(this)
   // Values bound to type parameters while a generic type is being resolved.
   private typeParamBindings: Map<string, string[]> = new Map()
 
   // Shared (cross-file) member maps of functions returning an object type,
   // e.g. `const getAnimal = (): Animal => …` -> { getAnimal: { type: ['DUCK', 'DOG'] } }
-  private sharedFunctionReturnMembers: Map<string, Record<string, string[]>> = new Map()
+  private sharedFunctionReturnMembers: Map<string, Record<string, string[]>> = new ModuleTable(this)
 
   // Per-file identifiers holding an object type, from their annotation or from the
   // function they were initialised by: `const animal = getAnimal()` -> { animal: { type: [...] } }
@@ -182,8 +218,86 @@ export class ExpressionResolver {
   // (`extract.maxTypeDepth`).
   public maxMemberDepth = 5
 
+  // The module being read (its path without extension), and where each module gets its
+  // names from (see ModuleTable)
+  private currentModule: string | undefined
+  private knownModules: Set<string> = new Set()
+  // module -> local name -> { from: the import's resolved path, name: the declared name }
+  private fileImports: Map<string, Map<string, { from: string, name: string }>> = new Map()
+  // module -> namespace import's local name -> the import's resolved path
+  private fileNamespaces: Map<string, Map<string, string>> = new Map()
+  // tsconfig `paths`, `@api` -> `/abs/src/api`
+  public pathAliases: Record<string, string> = {}
+
   constructor (hooks: ASTVisitorHooks) {
     this.hooks = hooks
+  }
+
+  public setCurrentFile (file: string): void {
+    this.currentModule = moduleKey(resolve(file))
+    this.knownModules.add(this.currentModule)
+  }
+
+  // `./api/github-api` / `@api/github-api` imported in the current file -> its path, or undefined
+  // for a package or anything else that isn't a file of this project
+  private importPath (source: string): string | undefined {
+    if (!this.currentModule) return undefined
+    if (source.startsWith('.')) return moduleKey(resolve(dirname(this.currentModule), source))
+    for (const [alias, path] of Object.entries(this.pathAliases)) {
+      if (source === alias || source.startsWith(`${alias}/`)) return moduleKey(resolve(path, `.${source.slice(alias.length)}`))
+    }
+    return undefined
+  }
+
+  // The scanned module an import path points to: the file itself or its `index`
+  private moduleOf (path: string): string | undefined {
+    return [path, `${path}/index`].find(m => this.knownModules.has(m))
+  }
+
+  // ModuleTable: the keys `name` read in the current file may be stored under, most specific first
+  public keysOf (name: string): string[] {
+    if (name.includes('#')) return [name]
+    if (!this.currentModule) return []
+    const keys: string[] = []
+    const imported = this.fileImports.get(this.currentModule)?.get(name)
+    const module = imported && this.moduleOf(imported.from)
+    if (module) keys.push(`${module}#${imported.name}`)
+    keys.push(`${this.currentModule}#${name}`)
+    return keys
+  }
+
+  // ModuleTable: the key a declaration made in the current file is also stored under
+  public declaringKey (name: string): string | undefined {
+    return this.currentModule && !name.includes('#') ? `${this.currentModule}#${name}` : undefined
+  }
+
+  // Replays run after every file was read: run each in the file it was recorded in
+  private inCurrentFile (fn: () => void): () => void {
+    const module = this.currentModule
+    return () => {
+      const saved = this.currentModule
+      this.currentModule = module
+      try {
+        fn()
+      } finally {
+        this.currentModule = saved
+      }
+    }
+  }
+
+  /**
+   * `Color` / `Types.Color` / `NS.Inner.Color` -> 'Color'. Declarations are looked up by their
+   * own name, so a qualified name resolves by its last part, whatever namespace holds it, and
+   * through a namespace import of a module (`GH.components`) by that module's declaration.
+   */
+  public typeRefName (type: any): string | undefined {
+    const typeName = type?.typeName
+    if (typeName?.type === 'Identifier') return typeName.value
+    if (typeName?.type !== 'TsQualifiedName') return undefined
+    const name = typeName.right?.value
+    const from = typeName.left?.type === 'Identifier' && this.currentModule ? this.fileNamespaces.get(this.currentModule)?.get(typeName.left.value) : undefined
+    const module = from && this.moduleOf(from)
+    return module && name ? `${module}#${name}` : name
   }
 
   /**
@@ -206,6 +320,8 @@ export class ExpressionResolver {
    */
   public finishPreScan (): void {
     this.resetFileSymbols()
+    // Mirroring onto import aliases writes bare names only; each replay restores its own file
+    this.currentModule = undefined
     // ponytail: each round fixes one more link of a chain declared against file order; 10 is plenty
     for (let round = 0; round < 10; round++) {
       this.applyImportAliases()
@@ -429,7 +545,7 @@ export class ExpressionResolver {
       // SWC puts the actual type in `.typeAnnotation`
       const tsType = node.typeAnnotation ?? node.typeAnn
       if (!tsType) return
-      if (this.recording) this.replays.push(() => this.captureTypeAliasDeclaration(node))
+      if (this.recording) this.replays.push(this.inCurrentFile(() => this.captureTypeAliasDeclaration(node)))
       const params = node.typeParams?.parameters
       // `type IProps = { size: ChangeType }` — object shape, not a string union.
       if (tsType.type === 'TsTypeLiteral') {
@@ -462,14 +578,25 @@ export class ExpressionResolver {
    */
   captureImportDeclaration (node: any): void {
     try {
+      const from = node?.type === 'ImportDeclaration' && typeof node.source?.value === 'string' ? this.importPath(node.source.value) : undefined
+      const imports = from && this.currentModule ? (this.fileImports.get(this.currentModule) ?? new Map()) : undefined
+      if (imports) this.fileImports.set(this.currentModule!, imports)
       for (const spec of node?.specifiers ?? []) {
         // `import * as Types from …` / `export * as Types from …`
-        if (spec?.type === 'ImportNamespaceSpecifier' && spec.local?.value) this.sharedNamespaceNames.add(spec.local.value)
+        if (spec?.type === 'ImportNamespaceSpecifier' && spec.local?.value) {
+          this.sharedNamespaceNames.add(spec.local.value)
+          if (from) {
+            if (!this.fileNamespaces.has(this.currentModule!)) this.fileNamespaces.set(this.currentModule!, new Map())
+            this.fileNamespaces.get(this.currentModule!)!.set(spec.local.value, from)
+          }
+        }
         if (spec?.type === 'ExportNamespaceSpecifier' && spec.name?.value) this.sharedNamespaceNames.add(spec.name.value)
         if (spec?.type !== 'ImportSpecifier') continue
         const local: string | undefined = spec.local?.value
-        const imported: string | undefined = spec.imported?.value
+        const imported: string | undefined = spec.imported?.value ?? local
         if (local && imported && local !== imported) this.sharedImportAliases.set(local, imported)
+        // `import { components as githubComponents } from './github-api'` → that module's `components`
+        if (local && imported && imports) imports.set(local, { from: from!, name: imported })
       }
     } catch {
       // noop
@@ -484,7 +611,10 @@ export class ExpressionResolver {
     if (expr?.type !== 'MemberExpression' || expr.object?.type !== 'Identifier' || expr.property?.type !== 'Identifier') return expr
     const ns = expr.object.value
     if (!this.sharedNamespaceNames.has(this.sharedImportAliases.get(ns) ?? ns)) return expr
-    return { type: 'Identifier', value: expr.property.value, span: expr.span }
+    // `GH.components` with `import * as GH from './github-api'` → that module's `components`
+    const from = this.currentModule ? this.fileNamespaces.get(this.currentModule)?.get(ns) : undefined
+    const module = from && this.moduleOf(from)
+    return { type: 'Identifier', value: module ? `${module}#${expr.property.value}` : expr.property.value, span: expr.span }
   }
 
   // The variable a `typeof` names: `typeof LABELS`, or `typeof Types.LABELS` through a namespace import
@@ -534,7 +664,7 @@ export class ExpressionResolver {
     try {
       const name: string | undefined = node?.id?.type === 'Identifier' ? node.id.value : undefined
       if (!name) return
-      if (this.recording) this.replays.push(() => this.captureInterfaceDeclaration(node))
+      if (this.recording) this.replays.push(this.inCurrentFile(() => this.captureInterfaceDeclaration(node)))
       const params = node.typeParams?.parameters
       if (!this.replaying && Array.isArray(node?.body?.body)) this.setObjectTypeRaw(name, node.body.body, params)
       const members = this.withTypeParams(params, undefined, () => this.collectObjectTypeMembers(node?.body?.body))
@@ -659,7 +789,7 @@ export class ExpressionResolver {
         }
         return Object.keys(merged).length > 0 ? merged : undefined
       }
-      const name = tsType.type === 'TsTypeReference' ? typeRefName(tsType) : undefined
+      const name = tsType.type === 'TsTypeReference' ? this.typeRefName(tsType) : undefined
       if (name) {
         // `Base<'DUCK'>` → instantiate the generic type's members with the argument
         const args = tsType.typeParams?.params
@@ -709,7 +839,7 @@ export class ExpressionResolver {
     let obj = type.objectType
     while (obj?.type === 'TsParenthesizedType') obj = obj.typeAnnotation
     if (obj?.type === 'TsIndexedAccessType') obj = this.indexedAccessTarget(obj)
-    const name = obj?.type === 'TsTypeReference' && !obj.typeParams ? typeRefName(obj) : undefined
+    const name = obj?.type === 'TsTypeReference' && !obj.typeParams ? this.typeRefName(obj) : undefined
     const members = obj?.type === 'TsTypeLiteral'
       ? obj.members
       : name && !this.objectTypeParams.has(name) ? this.objectTypeMembersRaw.get(name) : undefined
@@ -860,7 +990,7 @@ export class ExpressionResolver {
       if (members) this.setShared(this.sharedFunctionReturnMembers, name, members)
     }
     store()
-    if (this.recording && (returnType || refs.length > 0)) this.replays.push(store)
+    if (this.recording && (returnType || refs.length > 0)) this.replays.push(this.inCurrentFile(store))
   }
 
   /**
@@ -1335,7 +1465,7 @@ export class ExpressionResolver {
     // where `type ChangeType = 'all' | 'next' | 'this'` was captured earlier.
     // Also handles `declare const d: SomeEnum` where SomeEnum is a TS enum with string values.
     if (type.type === 'TsTypeReference') {
-      const typeName = typeRefName(type)
+      const typeName = this.typeRefName(type)
       if (typeName) {
         // Inside a generic type: the parameter's argument, default or constraint
         const bound = this.typeParamBindings.get(typeName)

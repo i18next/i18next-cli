@@ -89,7 +89,7 @@ describe('extractor: type-aware resolution across imports (issue #294)', () => {
       expect(keys).toHaveProperty('sdk.status.paused')
     })
 
-    it('should not let an alias shadow a type actually declared under that name', async () => {
+    it('should resolve a renamed import to the imported declaration, not a same-named one (#306)', async () => {
       const { glob } = await import('glob')
       ;(glob as any).mockResolvedValue(['/src/types.ts', '/src/App.tsx'])
       vol.fromJSON({
@@ -105,9 +105,10 @@ describe('extractor: type-aware resolution across imports (issue #294)', () => {
       })
 
       const keys = await extractKeys()
-      // Name-keyed resolution: the real `Status` declaration wins over the mirror.
-      expect(keys).toHaveProperty('sdk.status.on')
-      expect(keys).toHaveProperty('sdk.status.off')
+      // `Status` here is `ResourceStatus`, whatever else `types.ts` declares as `Status`
+      expect(keys).toHaveProperty('sdk.status.active')
+      expect(keys).toHaveProperty('sdk.status.paused')
+      expect(keys).not.toHaveProperty('sdk.status.on')
     })
   })
 
