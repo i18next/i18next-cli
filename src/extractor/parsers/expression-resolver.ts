@@ -1,4 +1,4 @@
-import type { Expression, TsType, TemplateLiteral, TsTemplateLiteralType } from '@swc/core'
+import type { Expression, ObjectExpression, TsType, TemplateLiteral, TsTemplateLiteralType } from '@swc/core'
 import type { ASTVisitorHooks } from '../../types.js'
 import { dirname, resolve } from 'node:path'
 import { unwrapParens } from './ast-utils.js'
@@ -83,11 +83,11 @@ class ModuleTable<V> extends Map<string, V> {
       const value = super.get(key)
       if (value !== undefined) return value
     }
-    return super.get(name)
+    return undefined
   }
 
   has (name: string): boolean {
-    return this.scope.keysOf(name).some(key => super.has(key)) || super.has(name)
+    return this.scope.keysOf(name).some(key => super.has(key))
   }
 
   set (name: string, value: V): this {
@@ -206,6 +206,10 @@ export class ExpressionResolver {
   // function they were initialised by: `const animal = getAnimal()` -> { animal: { type: [...] } }
   private objectVariables: Map<string, Record<string, string[]>> = new Map()
 
+  // Per-file object literals by variable, so `const params = { count }; t('key', params)`
+  // reads its options like an inline object (#307)
+  private objectLiterals: Map<string, ObjectExpression> = new Map()
+
   // Set while the pre-scan runs. Captures that read other declarations queue a
   // replay here, because what they read may be declared in a file scanned later.
   public recording = false
@@ -226,6 +230,8 @@ export class ExpressionResolver {
   private fileImports: Map<string, Map<string, { from: string, name: string }>> = new Map()
   // module -> namespace import's local name -> the import's resolved path
   private fileNamespaces: Map<string, Map<string, string>> = new Map()
+  // module -> the variables it declares, which shadow the same names declared in other files
+  private fileVariables: Map<string, Set<string>> = new Map()
   // tsconfig `paths`, `@api` -> `/abs/src/api`
   public pathAliases: Record<string, string> = {}
 
@@ -256,13 +262,15 @@ export class ExpressionResolver {
 
   // ModuleTable: the keys `name` read in the current file may be stored under, most specific first
   public keysOf (name: string): string[] {
-    if (name.includes('#')) return [name]
-    if (!this.currentModule) return []
+    if (name.includes('#') || !this.currentModule) return [name]
     const keys: string[] = []
     const imported = this.fileImports.get(this.currentModule)?.get(name)
     const module = imported && this.moduleOf(imported.from)
     if (module) keys.push(`${module}#${imported.name}`)
     keys.push(`${this.currentModule}#${name}`)
+    // A variable of this file never means another file's same-named one, even when its own
+    // value isn't captured (`const params = { count }` vs another file's `params` array) (#307)
+    if (!this.fileVariables.get(this.currentModule)?.has(name)) keys.push(name)
     return keys
   }
 
@@ -309,6 +317,7 @@ export class ExpressionResolver {
     this.temporaryVariables.clear()
     this.arrayElementMembers.clear()
     this.objectVariables.clear()
+    this.objectLiterals.clear()
   }
 
   /**
@@ -422,6 +431,10 @@ export class ExpressionResolver {
       // only handle simple identifier bindings like `const x = ...`
       if (node.id.type !== 'Identifier') return
       const name = node.id.value
+      if (this.currentModule) {
+        if (!this.fileVariables.has(this.currentModule)) this.fileVariables.set(this.currentModule, new Set())
+        this.fileVariables.get(this.currentModule)!.add(name)
+      }
 
       // `const items: IProps[] = …` → remember the element's member map so
       // `items.map(({ size }) => …)` can bind the callback parameter.
@@ -460,6 +473,7 @@ export class ExpressionResolver {
 
       // ObjectExpression -> map of string props
       if (unwrappedInit.type === 'ObjectExpression' && Array.isArray(unwrappedInit.properties)) {
+        this.objectLiterals.set(name, unwrappedInit)
         const map: Record<string, string> = {}
         for (const p of unwrappedInit.properties as any[]) {
           if (!p || p.type !== 'KeyValueProperty') continue
@@ -1092,6 +1106,13 @@ export class ExpressionResolver {
     const v = this.variableTable.get(name)
     if (Array.isArray(v)) return v
     return this.sharedVariableTable.get(name)
+  }
+
+  /** The object literal `expr` is, inline or through a variable of this file, or undefined. */
+  public objectLiteralOf (expr: any): ObjectExpression | undefined {
+    expr = unwrapExpr(expr)
+    if (expr?.type === 'ObjectExpression') return expr
+    return expr?.type === 'Identifier' ? this.objectLiterals.get(expr.value) : undefined
   }
 
   /**

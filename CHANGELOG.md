@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.75.3
+
+- fix(extract): options passed in a variable are read like inline ones. With `const params = { count }`,
+  `t('key', params)` now extracts the plural keys (and reads `context`, `ns`, `defaultValue` the same way),
+  where it used to extract only `key`. A variable a file declares also no longer resolves to a same-named
+  variable of another file: `t('key', overwrittenParams)` took `y=true` as its default value from an
+  unrelated function-local `overwrittenParams` array elsewhere. Fixes
+  [#307](https://github.com/i18next/i18next-cli/issues/307).
+
 ## 1.75.2
 
 - fix(extract): declarations with the same name in different files no longer overwrite each other.

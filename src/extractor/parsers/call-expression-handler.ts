@@ -210,10 +210,12 @@ export class CallExpressionHandler {
     let defaultValue: string | undefined
     let options: ObjectExpression | undefined
 
+    // Options inline or in a variable: `t('key', { count })`, `t('key', params)` (#307)
     if (node.arguments.length > 1) {
       const arg2 = unwrapParens(node.arguments[1].expression)
-      if (arg2.type === 'ObjectExpression') {
-        options = arg2
+      options = this.expressionResolver.objectLiteralOf(arg2)
+      if (options) {
+        // no default value
       } else if (arg2.type === 'StringLiteral') {
         defaultValue = arg2.value
       } else if (arg2.type === 'TemplateLiteral' && isSimpleTemplateLiteral(arg2)) {
@@ -223,10 +225,7 @@ export class CallExpressionHandler {
       }
     }
     if (node.arguments.length > 2) {
-      const arg3 = unwrapParens(node.arguments[2].expression)
-      if (arg3.type === 'ObjectExpression') {
-        options = arg3
-      }
+      options = this.expressionResolver.objectLiteralOf(node.arguments[2].expression) ?? options
     }
     const defaultValueFromOptions = options ? this.getDefaultValueProp(options, 'defaultValue') : undefined
     const finalDefaultValue = (typeof defaultValueFromOptions === 'string' ? defaultValueFromOptions : defaultValue)
