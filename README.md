@@ -650,6 +650,7 @@ npx skills add i18next/i18next-cli
 ```
 
 [![skills.sh installs](https://www.skills.sh/b/i18next/i18next-cli)](https://www.skills.sh/i18next/i18next-cli)
+[![Mentioned in Awesome Claude Code](https://awesome.re/mentioned-badge.svg)](https://github.com/hesreallyhim/awesome-claude-code)
 
 Then just ask it to *"add i18n to this project"*. See [`skills/i18next-localization`](./skills/i18next-localization/SKILL.md) — it ships in this repo, so it stays version-matched to the commands it drives.
 
