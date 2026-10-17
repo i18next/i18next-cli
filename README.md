@@ -1055,9 +1055,9 @@ export default defineConfig({
     interpolationSuffix: '}}', // Default: '}}'
 
     // The syntax of your translation values: 'i18next' (default), 'icu' (i18next-icu) or 'mf2' (i18next-mf2).
-    // With 'icu' or 'mf2', `lint` checks the syntax, arguments and plural categories of every
-    // translation value, and `types` adds `parseInterpolation: false` to a new i18next.d.ts.
-    // Extraction does not use it yet. See "ICU and MF2 messages" below.
+    // With 'icu' or 'mf2', `extract` writes one key per message (no plural or context suffix keys),
+    // `lint` checks the syntax, arguments and plural categories of every translation value, and
+    // `types` adds `parseInterpolation: false` to a new i18next.d.ts. See "ICU and MF2 messages" below.
     messageFormat: 'i18next', // Default: 'i18next'
 
     // Warn (or error) when the same ns:key is extracted with different default values.
@@ -1771,17 +1771,21 @@ export default defineConfig({
     input: ['src/**/*.{ts,tsx}'],
     output: 'locales/{{language}}/{{namespace}}.json',
     messageFormat: 'icu', // or 'mf2'
-    disablePlurals: true, // one key per plural message, see below
   },
 })
 ```
 
 What it changes:
 
+- `extract` writes one key per message. `t('photos', '{count, plural, one {# photo} other {# photos}}', { count })` gives `photos`, not `photos_one` and `photos_other`, and `context` adds no `_male` keys, because ICU and MF2 keep plurals and selects inside the message and the plugins never read suffix keys. `$t()` in a value is text, not nesting. Plural suffix keys left over from an earlier extraction are removed like other unused keys.
+- `extract` writes the children of `<Trans>` with `{name}` (ICU) or `{$name}` (MF2) in the value; the key of a `<Trans>` without `i18nKey` stays what react-i18next builds at runtime (`Hello {{name}}`).
+- `extract` reads [`IcuTrans`](https://react.i18next.com/latest/icu-trans-component): the key is `i18nKey`, or `defaultTranslation` when there is none, and `defaultTranslation` is the value. The components of `react-i18next/icu.macro` (`Trans`, `Plural`, `Select`, `SelectOrdinal`) are extracted with the message the macro builds, for example `<Trans i18nKey="welcome">Welcome, <strong>{name}</strong>!</Trans>` gives `Welcome, <0>{name}</0>!`. These two are recognized in every format, without adding them to `transComponents`.
+- `status` counts a plural or select message as one key.
+- `instrument` writes `{name}` / `{$name}` placeholders, and a ternary like `count === 1 ? 'task' : 'tasks'` becomes one plural message (`{count, plural, one {…} other {…}}`, MF2 `.match $count`) instead of `defaultValue_one` / `defaultValue_other`.
 - `lint` parses every translation value and reports syntax errors, arguments that differ from the primary language and plural categories that do not fit a locale (see [`lint`](#lint)). The `t()` interpolation check reads the arguments with the same parser.
 - `types` sets `parseInterpolation: false` in a newly generated `i18next.d.ts`.
 
-Not yet covered: `extract` still writes i18next plural suffix keys (`photos_one`, `photos_other`) for `t('photos', { count })`, which the plugins never read, so keep `extract.disablePlurals: true`. It also writes the children of `<Trans>` with `{{name}}`, and does not extract `IcuTrans` or the components of `icu.macro`. `status` counts plural suffix keys, and `instrument` writes `{{name}}` placeholders.
+`instrument` does not set up the plugin in the i18n init file it creates: add `i18next-icu` or `i18next-mf2` there yourself.
 
 What keeps and what stops working at runtime with these formats (plural and context suffix keys, `$t()` nesting, i18next formatters, `escapeValue`) is described in [Using ICU or MF2](https://www.i18next.com/how-to/using-icu-or-mf2).
 

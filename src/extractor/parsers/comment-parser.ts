@@ -1,5 +1,6 @@
 import type { PluginContext, I18nextToolkitConfig, ExtractedKey } from '../../types.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
+import { usesMessageFormat } from '../../utils/message-format.js'
 
 // Checks if a string looks like natural language (contains spaces, punctuation, etc.)
 const naturalLanguageChars = /[ ,?!;]/
@@ -162,7 +163,10 @@ export function extractKeysFromComments (
       }
 
       // 5. Handle context and count combinations based on disablePlurals setting
-      if (config.extract.disablePlurals) {
+      if (usesMessageFormat(config)) {
+        // ICU and MF2 keep plurals and selects inside one message
+        pluginContext.addKey({ key, ns, defaultValue: defaultValue ?? key })
+      } else if (config.extract.disablePlurals) {
         // When plurals are disabled, ignore count for key generation. We still
         // tag the key with `hasCount` (when a count was present) so `status` can
         // recognise it as count-driven; file generation ignores the flag under

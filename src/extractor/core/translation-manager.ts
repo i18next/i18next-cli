@@ -7,6 +7,7 @@ import { resolveDefaultValue } from '../../utils/default-value.js'
 import { ConsoleLogger } from '../../utils/logger.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
 import { parseNestedReferences } from '../../utils/nesting.js'
+import { usesMessageFormat } from '../../utils/message-format.js'
 import { isContextVariantOfAcceptingKey } from '../../utils/context-variants.js'
 
 // used for natural language check
@@ -336,6 +337,8 @@ function buildNewTranslationsForNs (
 
   const seenNestedValues = new Set<string>()
   const collectFromValue = (value: unknown): void => {
+    // ICU and MF2 output $t() as text, so it references no key
+    if (usesMessageFormat(config)) return
     if (typeof value === 'string') {
       if (seenNestedValues.has(value)) return
       seenNestedValues.add(value)

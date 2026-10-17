@@ -15,6 +15,7 @@ import { ConsoleLogger } from '../../utils/logger.js'
 import { ignoredAttributeSet } from '../../utils/jsx-attributes.js'
 import { normalizeSpansToCharIndices, collectIgnoredLineRanges } from '../../extractor/parsers/ast-utils.js'
 import { getOutputPath } from '../../utils/file-utils.js'
+import { usesMessageFormat, toMessageFormatPlaceholders } from '../../utils/message-format.js'
 
 /**
  * Main orchestrator for the instrument command.
@@ -174,6 +175,9 @@ export async function runInstrumenter (
               )
             }
           }
+
+          // After key generation, so ICU/MF2 syntax does not end up in generated keys
+          if (usesMessageFormat(config)) approvedCandidates.forEach(candidate => toMessageFormatCandidate(candidate, config))
 
           // Transform the file
           const transformResult = performTransformation(
@@ -2101,6 +2105,27 @@ async function injectI18nImportIntoEntryFile (
   } catch (err) {
     logger.warn(`Failed to inject i18n import into entry file: ${err}`)
   }
+}
+
+/**
+ * Rewrites a candidate for `extract.messageFormat` `'icu'` or `'mf2'`: `{{name}}` placeholders become
+ * `{name}` / `{$name}`, and plural forms become one message with a plural on `count`, so the code gets
+ * `t('key', '{count, plural, one {…} other {…}}', { count: expr })` and the JSON one key.
+ */
+function toMessageFormatCandidate (candidate: CandidateString, config: I18nextToolkitConfig): void {
+  const convert = (text: string) => toMessageFormatPlaceholders(text, config)
+  if (candidate.pluralForms) {
+    const { countExpression, zero, one, other } = candidate.pluralForms
+    candidate.content = config.extract.messageFormat === 'mf2'
+      ? `.input {$count :number} .match $count ${zero !== undefined ? `0 {{${convert(zero)}}} ` : ''}${one !== undefined ? `one {{${convert(one)}}} ` : ''}* {{${convert(other)}}}`
+      : `{count, plural, ${zero !== undefined ? `=0 {${convert(zero)}} ` : ''}${one !== undefined ? `one {${convert(one)}} ` : ''}other {${convert(other)}}}`
+    candidate.interpolations = [{ name: 'count', expression: countExpression }, ...(candidate.interpolations ?? [])]
+    candidate.pluralForms = undefined
+    return
+  }
+  // the content of a <Trans> candidate is JSX source; only its JSON value changes
+  if (candidate.type !== 'jsx-mixed') candidate.content = convert(candidate.content)
+  if (candidate.transValue) candidate.transValue = convert(candidate.transValue)
 }
 
 /**

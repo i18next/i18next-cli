@@ -3,6 +3,7 @@ import type { PluginContext, I18nextToolkitConfig, Logger, ExtractedKey, ScopeIn
 import { ExpressionResolver } from './expression-resolver.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
 import { parseNestedReferences } from '../../utils/nesting.js'
+import { usesMessageFormat } from '../../utils/message-format.js'
 import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset, unwrapParens } from './ast-utils.js'
 import { matchesFunctionPattern } from '../utils/function-matcher.js'
 
@@ -351,8 +352,10 @@ export class CallExpressionHandler {
       const locationEntry = location
         ? [{ file: this.getCurrentFile(), line: location.line, column: location.column }]
         : undefined
+      // ICU and MF2 keep plurals and selects inside one message: no context or plural keys
+      const plainMessage = usesMessageFormat(this.config)
       if (options) {
-        const contextPropValue = getObjectPropValueExpression(options, 'context')
+        const contextPropValue = plainMessage ? undefined : getObjectPropValueExpression(options, 'context')
 
         const keysWithContext: ExtractedKey[] = []
 
@@ -434,7 +437,7 @@ export class CallExpressionHandler {
           }
           return false
         })()
-        if (hasCount || isOrdinalByKey) {
+        if (!plainMessage && (hasCount || isOrdinalByKey)) {
           // Check if plurals are disabled FIRST, before any plural optimization paths
           if (this.config.extract.disablePlurals) {
             // When plurals are disabled, treat count as a regular option (for interpolation only)
@@ -574,6 +577,8 @@ export class CallExpressionHandler {
    * plugin context.
    */
   private extractNestedKeys (text: string, _ns: string | false | undefined): void {
+    // ICU and MF2 output $t() as text
+    if (usesMessageFormat(this.config)) return
     const references = parseNestedReferences(text, {
       nestingPrefix: this.config.extract.nestingPrefix,
       nestingSuffix: this.config.extract.nestingSuffix,

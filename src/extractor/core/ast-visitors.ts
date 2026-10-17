@@ -232,6 +232,7 @@ export class ASTVisitors {
     // Reset per-file captured variables in the expression resolver so variables from other files don't leak.
     this.expressionResolver.resetFileSymbols()
     this.scopeManager.enterScope() // Create the root scope for the file
+    this.jsxHandler.setIcuMacroImports(node.body ?? [])
     this.walk(node)
     this.scopeManager.exitScope()  // Clean up the root scope
   }

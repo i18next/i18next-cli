@@ -1,8 +1,9 @@
-import type { Expression, JSXElement, JSXElementChild, ObjectExpression } from '@swc/core'
+import type { Expression, JSXElement, JSXElementChild, ModuleItem, ObjectExpression } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, ExtractedKey, ScopeInfo } from '../../types.js'
 import { ExpressionResolver } from './expression-resolver.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
-import { extractFromTransComponent } from './jsx-parser.js'
+import { extractFromTransComponent, extractFromIcuTrans, extractFromIcuMacro, type IcuMacroComponent } from './jsx-parser.js'
+import { usesMessageFormat } from '../../utils/message-format.js'
 import { getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset, unwrapParens } from './ast-utils.js'
 import { applySelectorNsRewrite } from './call-expression-handler.js'
 
@@ -16,6 +17,10 @@ export class JSXHandler {
   private expressionResolver: ExpressionResolver
   private getCurrentFile: () => string
   private getCurrentCode: () => string
+  /** local name -> component, for the components the current file imports from react-i18next/icu.macro */
+  private icuMacroComponents = new Map<string, IcuMacroComponent>()
+  /** the <Trans> elements in the case props of a macro <Plural> or <Select>, which belong to its message */
+  private consumedByMacro = new WeakSet<object>()
 
   constructor (
     config: Omit<I18nextToolkitConfig, 'plugins'>,
@@ -29,6 +34,24 @@ export class JSXHandler {
     this.expressionResolver = expressionResolver
     this.getCurrentFile = getCurrentFile
     this.getCurrentCode = getCurrentCode
+  }
+
+  /**
+   * Records which local names the current file imports from `react-i18next/icu.macro`
+   * (`Trans`, `Plural`, `Select`, `SelectOrdinal`), so they are extracted like the macro compiles them.
+   */
+  setIcuMacroImports (body: ModuleItem[]): void {
+    this.icuMacroComponents = new Map()
+    for (const item of body) {
+      if (item.type !== 'ImportDeclaration' || !/^react-i18next\/icu\.macro(\.js)?$/.test(item.source.value)) continue
+      for (const specifier of item.specifiers) {
+        if (specifier.type !== 'ImportSpecifier') continue
+        const imported = specifier.imported?.value ?? specifier.local.value
+        if (imported === 'Trans' || imported === 'Plural' || imported === 'Select' || imported === 'SelectOrdinal') {
+          this.icuMacroComponents.set(specifier.local.value, imported)
+        }
+      }
+    }
   }
 
   /**
@@ -134,15 +157,28 @@ export class JSXHandler {
    * @param getScopeInfo - Function to retrieve scope information for variables
    */
   handleJSXElement (node: JSXElement, getScopeInfo: (name: string) => ScopeInfo | undefined): void {
+    if (this.consumedByMacro.has(node)) return
     const elementName = this.getElementName(node)
+    const macroComponent = elementName ? this.icuMacroComponents.get(elementName) : undefined
+    if (macroComponent && macroComponent !== 'Trans') {
+      for (const attr of node.opening.attributes ?? []) {
+        if (attr.type === 'JSXAttribute' && attr.value?.type === 'JSXExpressionContainer') this.consumedByMacro.add(attr.value.expression)
+      }
+    }
+    const isIcuTrans = elementName === 'IcuTrans'
 
-    if (elementName && (this.config.extract.transComponents || ['Trans']).includes(elementName)) {
-      this.warnOnUnrepresentableTransChildren(node, elementName)
+    if (elementName && (macroComponent || isIcuTrans || (this.config.extract.transComponents || ['Trans']).includes(elementName))) {
+      // the macro writes {name} on purpose, so only plain <Trans> gets the {{name}} advice
+      if (!macroComponent && !isIcuTrans) this.warnOnUnrepresentableTransChildren(node, elementName)
 
       let extractedAttributes: ReturnType<typeof extractFromTransComponent> | null = null
 
       try {
-        extractedAttributes = extractFromTransComponent(node, this.config as any)
+        extractedAttributes = macroComponent
+          ? extractFromIcuMacro(node, macroComponent)
+          : isIcuTrans
+            ? extractFromIcuTrans(node)
+            : extractFromTransComponent(node, this.config as any)
       } catch (err) {
         const loc = this.getLocationFromNode(node)
         const where = loc
@@ -178,7 +214,11 @@ export class JSXHandler {
 
         let extractedKeys: ExtractedKey[]
 
-        const { contextExpression, optionsNode, defaultValue, hasCount, isOrdinal, serializedChildren } = extractedAttributes
+        const { optionsNode, defaultValue, isOrdinal, serializedChildren } = extractedAttributes
+        // ICU and MF2 keep plurals and selects inside one message: no context or plural keys
+        const plainMessage = usesMessageFormat(this.config)
+        const contextExpression = plainMessage ? undefined : extractedAttributes.contextExpression
+        const hasCount = !plainMessage && extractedAttributes.hasCount
 
         // Extract location information using the helper method
         const location = this.getLocationFromNode(node)

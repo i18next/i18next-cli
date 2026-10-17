@@ -8,6 +8,7 @@ import { getOutputPath, loadTranslationFile } from './utils/file-utils.js'
 import { safePluralRules } from './utils/plural-rules.js'
 import { isContextVariantOfAcceptingKey } from './utils/context-variants.js'
 import { parseNestedReferences } from './utils/nesting.js'
+import { usesMessageFormat } from './utils/message-format.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 import { printUntranslatedFunnel } from './utils/locize-funnel.js'
 
@@ -337,6 +338,8 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
     : null
 
   const collectNestedRefsFromValue = (value: unknown, refNs: string, bucket: ExtractedKey[], seen: Set<string>): void => {
+    // ICU and MF2 output $t() as text, so it references no key
+    if (usesMessageFormat(config)) return
     if (typeof value === 'string') {
       if (seen.has(value)) return
       seen.add(value)

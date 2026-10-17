@@ -68,18 +68,18 @@ Set this in `i18next.config.ts`:
 extract: {
   // ...
   messageFormat: 'icu', // or 'mf2'
-  disablePlurals: true, // one key per plural message instead of key_one/key_other
 }
 ```
+
+`extract` then writes one key per message (no `key_one`/`key_other` or
+`key_male` keys), writes `Trans` children with `{name}` / `{$name}`, and reads
+`IcuTrans` and the `icu.macro` components. `instrument` writes the placeholders
+and plurals in the chosen syntax, but its i18n init file does not register the
+plugin: add `i18next-icu` or `i18next-mf2` there.
 
 `npx i18next-cli lint` then parses every translation value of every locale and
 reports syntax errors, argument names that differ from the primary language, and
 plural categories that do not fit a locale (`ru` needs `one`, `few` and `many`;
 `fr` may leave out `many`; `zero` in English is never used; `=1` covers English `one`). Its `t()` check
-reads the arguments with the same parser. Run it after every translation change.
-
-Not covered yet: `extract` and `instrument` still write `{{name}}` placeholders
-(also for `Trans` children), `extract` does not pick up `IcuTrans` or the
-`icu.macro` components, and `status` counts plural suffix keys. After
-`instrument` and `extract`, convert the placeholders and plurals in the primary
-language's values to the chosen syntax, then run `lint` until it is clean.
+reads the arguments with the same parser. Run it after `instrument`, after
+`extract` and after every translation change, and fix what it reports.

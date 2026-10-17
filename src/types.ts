@@ -243,10 +243,11 @@ export interface I18nextToolkitConfig {
      * - `'icu'`: ICU MessageFormat, read by i18next-icu (`{name}`, `{count, plural, ...}`).
      * - `'mf2'`: Unicode MessageFormat 2, read by i18next-mf2 (`{$name}`, `.match`).
      *
-     * With `'icu'` or `'mf2'`, `lint` parses every translation value and checks its syntax,
-     * its argument names against the primary language and its plural categories per locale,
-     * and `types` adds `parseInterpolation: false` to a newly generated `i18next.d.ts`.
-     * Extraction is not affected yet.
+     * With `'icu'` or `'mf2'`, `extract`, `status` and `instrument` use one key per message (no plural
+     * or context suffix keys, no `$t()` nesting) and write `{name}` / `{$name}` placeholders, `lint`
+     * parses every translation value and checks its syntax, its argument names against the primary
+     * language and its plural categories per locale, and `types` adds `parseInterpolation: false`
+     * to a newly generated `i18next.d.ts`.
      */
     messageFormat?: 'i18next' | 'icu' | 'mf2';
 

@@ -16,6 +16,25 @@ export interface MessageShape {
 /** Parses an ICU or MF2 message. Throws an Error with the parser's message on a syntax error. */
 export type MessageAnalyzer = (message: string) => MessageShape
 
+/**
+ * True for `extract.messageFormat` `'icu'` and `'mf2'`. These formats put plurals and selects into the
+ * message itself and have no `$t()` nesting, so the CLI writes no plural or context suffix keys for them.
+ */
+export const usesMessageFormat = (config: Pick<I18nextToolkitConfig, 'extract'>): boolean =>
+  config.extract.messageFormat === 'icu' || config.extract.messageFormat === 'mf2'
+
+/**
+ * Rewrites i18next placeholders (`{{name}}`, `{{name, format}}`) into the configured message format:
+ * `{name}` / `{name, format}` for ICU, `{$name}` / `{$name :format}` for MF2. Other values are returned as is.
+ * ponytail: literal braces in the text are not escaped for ICU or MF2.
+ */
+export function toMessageFormatPlaceholders (value: string, config: Pick<I18nextToolkitConfig, 'extract'>): string {
+  const format = config.extract.messageFormat
+  if (format !== 'icu' && format !== 'mf2') return value
+  return value.replace(/\{\{\s*([^{},\s]+)\s*(?:,\s*([^{}]*?)\s*)?\}\}/g, (_, name: string, fmt?: string) =>
+    format === 'icu' ? `{${name}${fmt ? `, ${fmt}` : ''}}` : `{$${name}${fmt ? ` :${fmt}` : ''}}`)
+}
+
 const CLDR_ORDER = ['zero', 'one', 'two', 'few', 'many', 'other']
 const byCldrOrder = (a: string, b: string) => CLDR_ORDER.indexOf(a) - CLDR_ORDER.indexOf(b)
 const MF2_NUMBER_LITERAL = /^-?(0|[1-9]\d*)(\.\d+)?([eE][-+]?\d+)?$/

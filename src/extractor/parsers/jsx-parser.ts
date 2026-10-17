@@ -1,7 +1,9 @@
 import type { Expression, JSXAttribute, JSXAttributeOrSpread, JSXElement, JSXElementChild, JSXElementName, JSXExpression, ObjectExpression } from '@swc/core'
 import type { I18nextToolkitConfig } from '../../types.js'
 import { getObjectPropValue, getObjectPropValueExpression, isSimpleTemplateLiteral } from './ast-utils.js'
+import { toMessageFormatPlaceholders } from '../../utils/message-format.js'
 import { createRequire } from 'node:module'
+import { parseSync } from '@swc/core'
 import type { JSXElementConstructor, ReactElement } from 'react'
 
 /**
@@ -368,7 +370,8 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
   if (!defaultsAttr && processedKeyValue && !serialized.trim()) {
     defaultValue = processedKeyValue
   } else if (!defaultsAttr && serialized.trim()) {
-    defaultValue = serialized
+    // react-i18next serializes interpolation objects as {{name}}; ICU and MF2 values need {name} / {$name}
+    defaultValue = toMessageFormatPlaceholders(serialized, config)
   }
 
   // Determine if tOptions contained explicit defaultValue* properties
@@ -396,6 +399,154 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
     optionsNode,
     explicitDefault
   }
+}
+
+function findAttribute (node: JSXElement, name: string): JSXAttribute | undefined {
+  return node.opening.attributes?.find((attr): attr is JSXAttribute =>
+    attr.type === 'JSXAttribute' && attr.name.type === 'Identifier' && attr.name.value === name)
+}
+
+// The `i18nKey` of an IcuTrans or icu.macro component, undefined when there is none (the message is the key then)
+function getKeyExpression (node: JSXElement): Expression | undefined {
+  const attr = findAttribute(node, 'i18nKey')
+  if (attr?.value?.type === 'StringLiteral') return attr.value.value.trim() ? attr.value : undefined
+  if (attr?.value?.type === 'JSXExpressionContainer' && attr.value.expression.type !== 'JSXEmptyExpression') return attr.value.expression
+  return undefined
+}
+
+/**
+ * Extracts react-i18next's `<IcuTrans i18nKey="invite" defaultTranslation="We invited <0>{user}</0>." />`.
+ * Like IcuTrans at runtime, the key is `i18nKey`, or `defaultTranslation` when there is none.
+ */
+export function extractFromIcuTrans (node: JSXElement): ExtractedJSXAttributes | null {
+  const defaultAttr = findAttribute(node, 'defaultTranslation')
+  const defaultTranslation = (defaultAttr && getStringLiteralFromAttribute(defaultAttr)) ?? ''
+  const keyExpression = getKeyExpression(node)
+  if (!keyExpression && !defaultTranslation.trim()) return null
+  const nsAttr = findAttribute(node, 'ns')
+  return {
+    keyExpression,
+    serializedChildren: defaultTranslation,
+    defaultValue: defaultTranslation,
+    ns: nsAttr && getStringLiteralFromAttribute(nsAttr),
+    explicitDefault: !!defaultTranslation,
+  }
+}
+
+export type IcuMacroComponent = 'Trans' | 'Plural' | 'Select' | 'SelectOrdinal'
+
+/**
+ * Extracts the components of `react-i18next/icu.macro`. The macro compiles them to IcuTrans with a
+ * `defaultTranslation` it builds from the children or props, and that is the key when there is no
+ * `i18nKey`, so the message is built exactly like the macro does (quirks included):
+ *
+ * - `<Trans>Welcome, <strong>{name}</strong>!</Trans>` → `Welcome, <0>{name}</0>!`
+ * - `<Plural count={count} one="# item" other="# items" />` → `{count, plural,  one {# item} other {# items}}`
+ * - `<Select switch={gender} male="He" other="They" />` → `{gender, select,  male {He} other {They}}`
+ */
+export function extractFromIcuMacro (node: JSXElement, component: IcuMacroComponent): ExtractedJSXAttributes | null {
+  let message: string
+  let ns: string | undefined
+  if (component === 'Trans') {
+    const defaultsAttr = findAttribute(node, 'defaults')
+    const defaults = defaultsAttr && getStringLiteralFromAttribute(defaultsAttr)
+    // the macro parses `defaults` as JSX children, unless `content` or `components` is set
+    // (then it builds an empty message from the children it no longer has)
+    const children = defaults === undefined
+      ? node.children
+      : findAttribute(node, 'content') || findAttribute(node, 'components')
+        ? []
+        : (parseSync(`<>${defaults}</>`, { syntax: 'ecmascript', jsx: true }).body[0] as any).expression.children
+    message = mergeMacroChildren(children, 0).text
+    const nsAttr = findAttribute(node, 'ns')
+    ns = nsAttr && getStringLiteralFromAttribute(nsAttr)
+  } else {
+    // Plural, Select and SelectOrdinal do not pass `ns` on (the macro would make it a case)
+    message = buildMacroChoice(node, component)
+  }
+  const keyExpression = getKeyExpression(node)
+  if (!keyExpression && !message.trim()) return null
+  return { keyExpression, serializedChildren: message, defaultValue: message, ns }
+}
+
+// Port of icu.macro's mergeChildren: text, {name}, {name, number}, tagged templates, and <N>…</N>
+// for every element, numbered per nesting level. Fragments and other expressions are dropped.
+function mergeMacroChildren (children: JSXElementChild[], start: number): { text: string, next: number } {
+  let index = start
+  let text = ''
+  for (const child of children) {
+    if (child.type === 'JSXText') {
+      text += child.value.replace(/^\n\s+/, '').replace(/\n\s+$/, '')
+    } else if (child.type === 'JSXElement') {
+      text += `<${index}>${mergeMacroChildren(child.children, 0).text}</${index}>`
+      index++
+    } else if (child.type === 'JSXExpressionContainer') {
+      const expr: any = child.expression
+      if ((expr.type === 'StringLiteral' || expr.type === 'NumericLiteral' || expr.type === 'BooleanLiteral') && expr.value) {
+        text += String(expr.value)
+      } else if (expr.type === 'Identifier') {
+        text += `{${expr.value}}`
+      } else if (expr.type === 'SequenceExpression') {
+        text += `{${expr.expressions.map((e: any) => e.value ?? '').join(', ')}}`
+      } else if (expr.type === 'TaggedTemplateExpression') {
+        const merged = mergeMacroTemplate(expr, index)
+        text += merged.text
+        index = merged.next
+      }
+    }
+  }
+  return { text, next: index }
+}
+
+// Port of icu.macro's tagged templates: number`${n}` → {n, number}, plural`${count}, one {…} other {…}` → {count, plural, …}
+function mergeMacroTemplate (node: any, start: number): { text: string, next: number } {
+  const type = node.tag.type === 'Identifier' ? node.tag.value : 'unknown'
+  const { quasis, expressions } = node.template
+  let index = start
+  let text = ''
+  quasis.forEach((quasi: any, i: number) => {
+    text += (quasi.cooked ?? '').replace(/\s+/g, ' ')
+    const expr = expressions[i]
+    if (!expr) return
+    if (expr.type === 'Identifier') {
+      text += `${expr.value}, ${type}`
+    } else if (expr.type === 'JSXElement') {
+      text += `<${index}>${mergeMacroChildren(expr.children, 0).text}</${index}>`
+      index++
+    } else if (expr.type === 'TaggedTemplateExpression') {
+      const merged = mergeMacroTemplate(expr, index)
+      text += merged.text
+      index = merged.next
+    }
+  })
+  return { text: `{${text}}`, next: index }
+}
+
+// Port of icu.macro's pluralAsJSX / selectAsJSX
+function buildMacroChoice (node: JSXElement, component: Exclude<IcuMacroComponent, 'Trans'>): string {
+  const type = component === 'Select' ? 'select' : component.toLowerCase()
+  const switchProp = component === 'Select' ? 'switch' : 'count'
+  let message = ''
+  let index = 0
+  for (const attr of node.opening.attributes ?? []) {
+    if (attr.type !== 'JSXAttribute' || attr.name.type !== 'Identifier') continue
+    const name = attr.name.value
+    if (name === 'i18nKey' || name === 'values') continue
+    const selector = component !== 'Select' && name.startsWith('$') ? `=${name.slice(1)}` : name
+    if (name === switchProp) {
+      const expr = attr.value?.type === 'JSXExpressionContainer' ? attr.value.expression : undefined
+      const arg = expr?.type === 'Identifier' ? expr.value : component === 'Select' ? 'selectKey' : 'count'
+      message = `{${arg}, ${type}, ${message}`
+    } else if (attr.value?.type === 'StringLiteral') {
+      message = `${message} ${selector} {${attr.value.value}}`
+    } else if (attr.value?.type === 'JSXExpressionContainer') {
+      const expr = attr.value.expression
+      const merged = mergeMacroChildren(expr.type === 'JSXElement' || expr.type === 'JSXFragment' ? expr.children : [], index)
+      message = `${message} ${selector} {${merged.text}}`
+      index = merged.next
+    }
+  }
+  return `${message}}`
 }
 
 /**

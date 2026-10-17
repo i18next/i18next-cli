@@ -86,7 +86,8 @@ already uses `i18next-icu` or `i18next-mf2`. In that case read
 [references/icu-mf2.md](references/icu-mf2.md) before instrumenting: plural and
 context suffix keys, `$t()` nesting, i18next formatters and `escapeValue` stop
 working without an error, TypeScript needs `parseInterpolation: false`, and the
-CLI needs `extract.messageFormat` so `lint` checks the messages. Full guide:
+CLI needs `extract.messageFormat` so `instrument`, `extract` and `lint` use the
+format. Full guide:
 <https://www.i18next.com/how-to/using-icu-or-mf2>.
 
 ## Hard stops
