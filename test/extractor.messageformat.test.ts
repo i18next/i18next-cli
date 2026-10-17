@@ -107,6 +107,15 @@ describe('extract with messageFormat icu / mf2', () => {
     expect(toMessageFormatPlaceholders('{{max}}', config('i18next'))).toBe('{{max}}')
   })
 
+  it('escapes the text around the placeholders', () => {
+    // in ICU an apostrophe before { quotes it ('{name}' would render as the text {name}), and literal braces are quoted
+    expect(toMessageFormatPlaceholders("File '{{name}}' not found", config('icu'))).toBe("File ''{name}' not found")
+    expect(toMessageFormatPlaceholders("Don't use {braces}", config('icu'))).toBe("Don't use '{'braces'}'")
+    expect(toMessageFormatPlaceholders("Click '<1>Save</1>'", config('icu'))).toBe("Click ''<1>Save</1>'")
+    // in MF2 braces and backslashes are escaped, apostrophes are text
+    expect(toMessageFormatPlaceholders("File '{{name}}' {x} \\", config('mf2'))).toBe("File '{$name}' \\{x\\} \\\\")
+  })
+
   it('extracts IcuTrans: i18nKey, or else defaultTranslation as the key', async () => {
     const { en } = await run(`
       import { IcuTrans } from 'react-i18next'
@@ -116,6 +125,18 @@ describe('extract with messageFormat icu / mf2', () => {
       </>
     `)
     expect(en).toEqual({ invite: 'We invited <0>{user}</0>.', 'Hello {name}': 'Hello {name}' })
+  })
+
+  it('extracts IcuTransWithoutContext and a renamed IcuTrans import', async () => {
+    const { en } = await run(`
+      import { IcuTransWithoutContext } from 'react-i18next/IcuTransWithoutContext'
+      import { IcuTrans as Message } from 'react-i18next'
+      const x = <>
+        <IcuTransWithoutContext i18nKey="server" defaultTranslation="Hello <0>{name}</0>" content={[{ type: 'b' }]} values={{ name }} />
+        <Message i18nKey="renamed" defaultTranslation="Renamed {name}" content={[]} values={{ name }} />
+      </>
+    `)
+    expect(en).toEqual({ server: 'Hello <0>{name}</0>', renamed: 'Renamed {name}' })
   })
 
   it('puts IcuTrans with ns into that namespace', async () => {

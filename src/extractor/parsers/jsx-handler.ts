@@ -11,6 +11,9 @@ import { applySelectorNsRewrite } from './call-expression-handler.js'
 const naturalLanguageChars = /[ ,?!;]/
 const looksLikeNaturalLanguage = (s: string) => naturalLanguageChars.test(s)
 
+// react-i18next's exports of the IcuTrans component (IcuTransWithoutContext is the one for React Server Components)
+const ICU_TRANS_EXPORTS = ['IcuTrans', 'IcuTransWithoutContext']
+
 export class JSXHandler {
   private config: Omit<I18nextToolkitConfig, 'plugins'>
   private pluginContext: PluginContext
@@ -19,6 +22,8 @@ export class JSXHandler {
   private getCurrentCode: () => string
   /** local name -> component, for the components the current file imports from react-i18next/icu.macro */
   private icuMacroComponents = new Map<string, IcuMacroComponent>()
+  /** the names IcuTrans is used under in the current file */
+  private icuTransNames = new Set(ICU_TRANS_EXPORTS)
   /** the <Trans> elements in the case props of a macro <Plural> or <Select>, which belong to its message */
   private consumedByMacro = new WeakSet<object>()
 
@@ -37,18 +42,24 @@ export class JSXHandler {
   }
 
   /**
-   * Records which local names the current file imports from `react-i18next/icu.macro`
-   * (`Trans`, `Plural`, `Select`, `SelectOrdinal`), so they are extracted like the macro compiles them.
+   * Records the local names the current file imports the components of `react-i18next/icu.macro`
+   * (`Trans`, `Plural`, `Select`, `SelectOrdinal`) and `IcuTrans` / `IcuTransWithoutContext` under,
+   * so `import { IcuTrans as T }` and `import { Trans } from 'react-i18next/icu.macro'` are recognized.
    */
-  setIcuMacroImports (body: ModuleItem[]): void {
+  setReactI18nextImports (body: ModuleItem[]): void {
     this.icuMacroComponents = new Map()
+    this.icuTransNames = new Set(ICU_TRANS_EXPORTS)
     for (const item of body) {
-      if (item.type !== 'ImportDeclaration' || !/^react-i18next\/icu\.macro(\.js)?$/.test(item.source.value)) continue
+      if (item.type !== 'ImportDeclaration') continue
+      const isMacro = /^react-i18next\/icu\.macro(\.js)?$/.test(item.source.value)
+      if (!isMacro && !/^react-i18next(\/|$)/.test(item.source.value)) continue
       for (const specifier of item.specifiers) {
         if (specifier.type !== 'ImportSpecifier') continue
         const imported = specifier.imported?.value ?? specifier.local.value
-        if (imported === 'Trans' || imported === 'Plural' || imported === 'Select' || imported === 'SelectOrdinal') {
+        if (isMacro && (imported === 'Trans' || imported === 'Plural' || imported === 'Select' || imported === 'SelectOrdinal')) {
           this.icuMacroComponents.set(specifier.local.value, imported)
+        } else if (!isMacro && ICU_TRANS_EXPORTS.includes(imported)) {
+          this.icuTransNames.add(specifier.local.value)
         }
       }
     }
@@ -165,7 +176,7 @@ export class JSXHandler {
         if (attr.type === 'JSXAttribute' && attr.value?.type === 'JSXExpressionContainer') this.consumedByMacro.add(attr.value.expression)
       }
     }
-    const isIcuTrans = elementName === 'IcuTrans'
+    const isIcuTrans = !!elementName && this.icuTransNames.has(elementName)
 
     if (elementName && (macroComponent || isIcuTrans || (this.config.extract.transComponents || ['Trans']).includes(elementName))) {
       // the macro writes {name} on purpose, so only plain <Trans> gets the {{name}} advice

@@ -1844,8 +1844,15 @@ function buildInitFileContent (opts: {
   const ns = defaultNS || 'translation'
 
   // ── Dependencies for the install hint ──
+  // ICU / MF2 values only render with their i18nFormat plugin (intl-messageformat is i18next-icu's peer)
+  const formatPlugin = config.extract.messageFormat === 'icu'
+    ? { name: 'ICU', pkg: 'i18next-icu', deps: ['i18next-icu', 'intl-messageformat'] }
+    : config.extract.messageFormat === 'mf2'
+      ? { name: 'MF2', pkg: 'i18next-mf2', deps: ['i18next-mf2'] }
+      : undefined
   const deps: string[] = ['i18next']
   if (hasReact) deps.push('react-i18next')
+  if (formatPlugin) deps.push(...formatPlugin.deps)
   if (strategy === 'resources-to-backend' && outputTemplate) deps.push('i18next-resources-to-backend')
   if (strategy === 'fs-backend' && outputTemplate) deps.push('i18next-fs-backend')
 
@@ -1866,6 +1873,7 @@ function buildInitFileContent (opts: {
   // ── Import declarations ──
   lines.push("import i18next from 'i18next'")
   if (hasReact) lines.push("import { initReactI18next } from 'react-i18next'")
+  if (formatPlugin) lines.push(`import ${formatPlugin.name} from '${formatPlugin.pkg}'`)
 
   if (outputTemplate) {
     switch (strategy) {
@@ -1895,6 +1903,7 @@ function buildInitFileContent (opts: {
 
   // ── .use() chain entries ──
   const useEntries: string[] = []
+  if (formatPlugin) useEntries.push(`  .use(${formatPlugin.name})`)
   if (hasReact) useEntries.push('  .use(initReactI18next)')
   if (outputTemplate) {
     if (strategy === 'resources-to-backend') {

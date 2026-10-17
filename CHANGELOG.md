@@ -14,15 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keys i18next-icu and i18next-mf2 never read, and `context` gave `_male` keys; now it gives `photos`. `$t()` in a value
   is no longer read as nesting, and the children of `<Trans>` are written with `{name}` (ICU) or `{$name}` (MF2)
   instead of `{{name}}`, which ICU and MF2 rendered as text.
-- feat(extract): `IcuTrans` is extracted (key from `i18nKey`, or `defaultTranslation` when there is none), and so are
-  the `Trans`, `Plural`, `Select` and `SelectOrdinal` components of `react-i18next/icu.macro`, with the message the macro
-  builds (`<Trans>Welcome, <strong>{name}</strong>!</Trans>` gives `Welcome, <0>{name}</0>!`). Before, `IcuTrans` was
+- feat(extract): `IcuTrans` and `IcuTransWithoutContext` are extracted, also when imported under another name (key from
+  `i18nKey`, or `defaultTranslation` when there is none), and so are the `Trans`, `Plural`, `Select` and `SelectOrdinal`
+  components of `react-i18next/icu.macro`, with the message the macro builds (`<Trans>Welcome, <strong>{name}</strong>!</Trans>` gives `Welcome, <0>{name}</0>!`). Before, `IcuTrans` was
   not extracted, and the macro `<Trans>` was read as react-i18next `Trans` and written as
   `Welcome, <strong>{{name}}</strong>!`, which the compiled `IcuTrans` rendered as text.
 - feat(status): with `messageFormat: 'icu'` or `'mf2'`, a plural or select message counts as one key, so `status` no
   longer reports missing `_few` and `_many` keys.
-- feat(instrument): with `messageFormat: 'icu'` or `'mf2'`, `instrument` writes `{name}` / `{$name}` placeholders, and a
-  `count === 1 ? … : …` ternary becomes one plural message instead of `defaultValue_one` / `defaultValue_other`.
+- feat(instrument): with `messageFormat: 'icu'` or `'mf2'`, `instrument` writes `{name}` / `{$name}` placeholders, a
+  `count === 1 ? … : …` ternary becomes one plural message instead of `defaultValue_one` / `defaultValue_other`, and
+  the i18n init file it creates registers `i18next-icu` (with `intl-messageformat` in the install hint) or `i18next-mf2`.
+- feat(extract, instrument): with `messageFormat: 'icu'` or `'mf2'`, the text around converted placeholders (`Trans` values, `instrument`) is
+  escaped: `File '{{name}}' not found` becomes `File ''{name}' not found`, because an apostrophe before `{` starts quoted
+  text in ICU and `'{name}'` would render as the text `{name}`; literal braces are quoted (ICU) or escaped (MF2).
 - feat(lint): with `messageFormat: 'icu'` or `'mf2'`, `lint` parses every value in the translation files of all
   locales and reports, with file, key and line (JSON files):
   - syntax errors with the parser's message (`greeting: ICU syntax error: EXPECT_ARGUMENT_CLOSING_BRACE at column 7`),

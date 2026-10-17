@@ -74,8 +74,8 @@ extract: {
 `extract` then writes one key per message (no `key_one`/`key_other` or
 `key_male` keys), writes `Trans` children with `{name}` / `{$name}`, and reads
 `IcuTrans` and the `icu.macro` components. `instrument` writes the placeholders
-and plurals in the chosen syntax, but its i18n init file does not register the
-plugin: add `i18next-icu` or `i18next-mf2` there.
+and plurals in the chosen syntax, and its i18n init file registers the plugin
+(install the packages its header comment lists).
 
 `npx i18next-cli lint` then parses every translation value of every locale and
 reports syntax errors, argument names that differ from the primary language, and

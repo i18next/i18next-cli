@@ -24,15 +24,29 @@ export const usesMessageFormat = (config: Pick<I18nextToolkitConfig, 'extract'>)
   config.extract.messageFormat === 'icu' || config.extract.messageFormat === 'mf2'
 
 /**
- * Rewrites i18next placeholders (`{{name}}`, `{{name, format}}`) into the configured message format:
- * `{name}` / `{name, format}` for ICU, `{$name}` / `{$name :format}` for MF2. Other values are returned as is.
- * ponytail: literal braces in the text are not escaped for ICU or MF2.
+ * Rewrites an i18next-format text (`Hello {{name}}`, `{{total, number}}`) into the configured message format:
+ * `{name}` / `{total, number}` for ICU, `{$name}` / `{$total :number}` for MF2, and escapes the text around the
+ * placeholders. Values of the i18next format are returned as is.
+ * ponytail: `#` is not quoted inside ICU plurals, and an MF2 text starting with `.` is left to `lint` to report.
  */
 export function toMessageFormatPlaceholders (value: string, config: Pick<I18nextToolkitConfig, 'extract'>): string {
   const format = config.extract.messageFormat
   if (format !== 'icu' && format !== 'mf2') return value
-  return value.replace(/\{\{\s*([^{},\s]+)\s*(?:,\s*([^{}]*?)\s*)?\}\}/g, (_, name: string, fmt?: string) =>
-    format === 'icu' ? `{${name}${fmt ? `, ${fmt}` : ''}}` : `{$${name}${fmt ? ` :${fmt}` : ''}}`)
+  const text = (segment: string, beforePlaceholder: boolean) => format === 'mf2'
+    ? segment.replace(/[\\{}]/g, '\\$&')
+    : segment
+      // an apostrophe before { } < > or ' starts quoted text in ICU, so a literal one is doubled
+      .replace(beforePlaceholder ? /'(?=[{}<>']|$)/g : /'(?=[{}<>'])/g, "''")
+      .replace(/[{}]/g, "'$&'")
+  let result = ''
+  let last = 0
+  for (const match of value.matchAll(/\{\{\s*([^{},\s]+)\s*(?:,\s*([^{}]*?)\s*)?\}\}/g)) {
+    const [placeholder, name, fmt] = match
+    result += text(value.slice(last, match.index), true) +
+      (format === 'icu' ? `{${name}${fmt ? `, ${fmt}` : ''}}` : `{$${name}${fmt ? ` :${fmt}` : ''}}`)
+    last = match.index + placeholder.length
+  }
+  return result + text(value.slice(last), false)
 }
 
 const CLDR_ORDER = ['zero', 'one', 'two', 'few', 'many', 'other']

@@ -189,6 +189,7 @@ function mayContainExtractionSite (code: string, config: Omit<I18nextToolkitConf
     for (const component of config.extract.transComponents || ['Trans']) names.add(component.split('.').pop()!)
     // always extracted, see JSXHandler
     names.add('IcuTrans')
+    names.add('IcuTransWithoutContext')
     names.add('icu.macro')
     const alt = (set: Set<string>) => [...set].map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
     re = new RegExp(`(?<!\\w)(?:(?:${alt(calls)})\\s*(?:\\?\\.\\s*)?[(<]|(?:${alt(names)})(?![\\w$]))`)

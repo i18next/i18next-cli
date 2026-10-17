@@ -8,6 +8,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { parse } from '@swc/core'
 import { normalizePath } from './utils/path'
 import { loadMessageAnalyzer } from '../src/utils/message-format'
+import { findExistingI18nInitFile } from '../src/instrumenter/index'
 
 const silentLogger: Logger = { info () {}, warn () {}, error () {} }
 
@@ -62,11 +63,17 @@ describe('instrument with messageFormat icu / mf2', () => {
     // every written value is a valid message in the chosen format
     const analyze = await loadMessageAnalyzer(messageFormat)
     for (const value of Object.values(translations)) expect(() => analyze(value as string)).not.toThrow()
-    return { src, values: Object.values(translations), keys: Object.keys(translations) }
+    const initFile = await findExistingI18nInitFile()
+    const init = initFile ? await readFile(join(tempDir, initFile), 'utf-8') : ''
+    return { src, init, values: Object.values(translations), keys: Object.keys(translations) }
   }
 
   it('writes ICU placeholders and one plural message', async () => {
-    const { src, values, keys } = await instrument('icu')
+    const { src, init, values, keys } = await instrument('icu')
+    // without the plugin the app would render the ICU source text
+    expect(init).toContain("import ICU from 'i18next-icu'")
+    expect(init).toContain('.use(ICU)')
+    expect(init).toContain('npm install i18next react-i18next i18next-icu intl-messageformat')
     expect(values).toContain('Welcome back to your tasks, {name}')
     expect(values).toContain('{count, plural, one {{count} task remaining} other {{count} tasks remaining}}')
     expect(keys.some(k => /_(one|other)$/.test(k))).toBe(false)
@@ -75,7 +82,9 @@ describe('instrument with messageFormat icu / mf2', () => {
   })
 
   it('writes MF2 placeholders and one .match message', async () => {
-    const { src, values } = await instrument('mf2')
+    const { src, init, values } = await instrument('mf2')
+    expect(init).toContain("import MF2 from 'i18next-mf2'")
+    expect(init).toContain('.use(MF2)')
     expect(values).toContain('Welcome back to your tasks, {$name}')
     expect(values).toContain('.input {$count :number} .match $count one {{{$count} task remaining}} * {{{$count} tasks remaining}}')
     expect(src).toContain('{ count: activeCount }')
