@@ -101,13 +101,31 @@ describe('types-generator', () => {
   describe('messageFormat icu / mf2', () => {
     const silentLogger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 
-    it.each(['icu', 'mf2'] as const)('sets parseInterpolation: false for %s', async (messageFormat) => {
-      vol.fromJSON({ '/locales/en/translation.json': JSON.stringify({ rows: '{count, plural, one {{count} row} other {{count} rows}}' }) })
+    const withI18next = (version: string) => ({ [resolve(process.cwd(), 'node_modules/i18next/package.json')]: JSON.stringify({ version }) })
+
+    it.each(['icu', 'mf2'] as const)('sets parseInterpolation: \'%s\' when i18next is 26.5.0 or later', async (messageFormat) => {
+      vol.fromJSON({ '/locales/en/translation.json': JSON.stringify({ rows: '{count, plural, one {{count} row} other {{count} rows}}' }), ...withI18next('26.5.0') })
 
       await runTypesGenerator({ ...mockConfig, extract: { ...mockConfig.extract, messageFormat } }, { logger: silentLogger() })
 
       const content = await vol.promises.readFile(resolve(process.cwd(), mockConfig.types!.output), 'utf-8')
-      expect(content).toContain('parseInterpolation: false;')
+      expect(content).toContain(`parseInterpolation: '${messageFormat}';`)
+    })
+
+    it('finds a hoisted i18next in a parent directory', async () => {
+      vol.fromJSON({ '/locales/en/translation.json': JSON.stringify({ key: 'value' }), [resolve(process.cwd(), '..', 'node_modules/i18next/package.json')]: JSON.stringify({ version: '27.0.0' }) })
+
+      await runTypesGenerator({ ...mockConfig, extract: { ...mockConfig.extract, messageFormat: 'icu' } }, { logger: silentLogger() })
+
+      expect(await vol.promises.readFile(resolve(process.cwd(), mockConfig.types!.output), 'utf-8')).toContain("parseInterpolation: 'icu';")
+    })
+
+    it.each([['26.4.7'], [undefined]])('sets parseInterpolation: false for i18next %s', async (version) => {
+      vol.fromJSON({ '/locales/en/translation.json': JSON.stringify({ key: 'value' }), ...(version ? withI18next(version) : {}) })
+
+      await runTypesGenerator({ ...mockConfig, extract: { ...mockConfig.extract, messageFormat: 'mf2' } }, { logger: silentLogger() })
+
+      expect(await vol.promises.readFile(resolve(process.cwd(), mockConfig.types!.output), 'utf-8')).toContain('parseInterpolation: false;')
     })
 
     it('does not set parseInterpolation for the i18next format', async () => {
@@ -132,6 +150,33 @@ describe('types-generator', () => {
 
       expect(await vol.promises.readFile(outputPath, 'utf-8')).toBe(existing)
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('parseInterpolation: false;'))
+    })
+
+    it('suggests the typed value in the warning when i18next supports it', async () => {
+      const outputPath = resolve(process.cwd(), mockConfig.types!.output)
+      vol.fromJSON({
+        '/locales/en/translation.json': JSON.stringify({ key: 'value' }),
+        [outputPath]: "declare module 'i18next' { interface CustomTypeOptions { defaultNS: 'translation' } }",
+        ...withI18next('26.5.1'),
+      })
+      const logger = silentLogger()
+
+      await runTypesGenerator({ ...mockConfig, extract: { ...mockConfig.extract, messageFormat: 'mf2' } }, { logger })
+
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("parseInterpolation: 'mf2';"))
+    })
+
+    it('hints at the typed value when an existing i18next.d.ts still sets parseInterpolation: false', async () => {
+      const outputPath = resolve(process.cwd(), mockConfig.types!.output)
+      const existing = "declare module 'i18next' { interface CustomTypeOptions { parseInterpolation: false; } }"
+      vol.fromJSON({ '/locales/en/translation.json': JSON.stringify({ key: 'value' }), [outputPath]: existing, ...withI18next('26.5.0') })
+      const logger = silentLogger()
+
+      await runTypesGenerator({ ...mockConfig, extract: { ...mockConfig.extract, messageFormat: 'icu' } }, { logger })
+
+      expect(await vol.promises.readFile(outputPath, 'utf-8')).toBe(existing)
+      expect(logger.warn).not.toHaveBeenCalled()
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("parseInterpolation: 'icu';"))
     })
   })
 })

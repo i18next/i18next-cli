@@ -52,13 +52,18 @@ See <https://react.i18next.com/latest/icu-trans-component>.
 
 ## TypeScript
 
-The type-safe `t` reads `{{variable}}` from the translation values, and ICU and
-MF2 plurals contain double braces, so these calls do not compile. Set
-`parseInterpolation: false` in `CustomTypeOptions` (i18next 26.2.0+).
-`npx i18next-cli types` writes it into a new `i18next.d.ts` when
+The type-safe `t` reads `{{variable}}` from the translation values by default,
+and ICU and MF2 plurals contain double braces, so these calls do not compile.
+Set `parseInterpolation: 'icu'` (or `'mf2'`) in `CustomTypeOptions` (i18next
+26.5.0+): `t()` options, and the `values` of `Trans` and `IcuTrans`, are then
+checked against the message's arguments, so a missing or misspelled `{name}`, a
+string for a `plural` count or leaving out the options is a type error. With
+i18next 26.2.0 to 26.4.x set `parseInterpolation: false`: keys are checked, the
+values are not (`lint` covers them). `npx i18next-cli types` writes the right
+value for the installed i18next into a new `i18next.d.ts` when
 `extract.messageFormat` is set; for an existing file it prints a warning and you
-add the line. The values passed to `t` are then no longer type-checked, which
-`lint` covers.
+add the line. Typed arguments need literal message types, which the generated
+resources file has.
 
 ## i18next-cli
 

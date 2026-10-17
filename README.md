@@ -340,7 +340,7 @@ Generates TypeScript definitions from your translation files for full type-safet
 
 > **Note:** When `extract.defaultNS` is set to `false`, the generated `defaultNS` is derived from your resource files (i18next's type system cannot express `defaultNS: false`). Adjust the generated `i18next.d.ts` if your runtime i18next config uses a different default namespace.
 
-> **Note:** With `extract.messageFormat: 'icu'` or `'mf2'` the generated `i18next.d.ts` sets `parseInterpolation: false` (needs `i18next` >= 26.2.0), so ICU plurals like `one {{count} row}` are not typed as `{{…}}` interpolation. The file is only written when it does not exist yet; for an existing one `types` prints a warning until you add the line.
+> **Note:** With `extract.messageFormat: 'icu'` or `'mf2'` the generated `i18next.d.ts` sets `parseInterpolation: 'icu'` or `'mf2'` when the project's `i18next` is 26.5.0 or later, so `t()` options are type-checked against the arguments of each message (a missing or misspelled `{name}` is a type error). With `i18next` 26.2.0 to 26.4.x it sets `parseInterpolation: false` instead, so ICU plurals like `one {{count} row}` are not typed as `{{…}}` interpolation, but arguments are not checked. The installed version is read from `node_modules/i18next/package.json`, from the working directory upwards. The file is only written when it does not exist yet; for an existing one `types` prints a warning until you add the line, and a hint when it still sets `false` although your `i18next` supports the typed value.
 
 ```bash
 npx i18next-cli types [options]
@@ -1057,7 +1057,8 @@ export default defineConfig({
     // The syntax of your translation values: 'i18next' (default), 'icu' (i18next-icu) or 'mf2' (i18next-mf2).
     // With 'icu' or 'mf2', `extract` writes one key per message (no plural or context suffix keys),
     // `lint` checks the syntax, arguments and plural categories of every translation value, and
-    // `types` adds `parseInterpolation: false` to a new i18next.d.ts. See "ICU and MF2 messages" below.
+    // `types` adds `parseInterpolation: 'icu'` / 'mf2' (i18next >= 26.5.0, else false) to a new i18next.d.ts.
+    // See "ICU and MF2 messages" below.
     messageFormat: 'i18next', // Default: 'i18next'
 
     // Warn (or error) when the same ns:key is extracted with different default values.
@@ -1783,7 +1784,7 @@ What it changes:
 - `status` counts a plural or select message as one key.
 - `instrument` writes `{name}` / `{$name}` placeholders and escapes the text around them (`File '{{name}}'` becomes `File ''{name}'`, since an apostrophe before `{` starts quoted text in ICU), a ternary like `count === 1 ? 'task' : 'tasks'` becomes one plural message (`{count, plural, one {…} other {…}}`, MF2 `.match $count`) instead of `defaultValue_one` / `defaultValue_other`, and the i18n init file it creates registers `i18next-icu` or `i18next-mf2`.
 - `lint` parses every translation value and reports syntax errors, arguments that differ from the primary language and plural categories that do not fit a locale (see [`lint`](#lint)). The `t()` interpolation check reads the arguments with the same parser.
-- `types` sets `parseInterpolation: false` in a newly generated `i18next.d.ts`.
+- `types` sets `parseInterpolation: 'icu'` or `'mf2'` in a newly generated `i18next.d.ts`, so `t()` options are type-checked against each message's arguments (i18next 26.5.0 or later; with older versions it sets `parseInterpolation: false`).
 
 What keeps and what stops working at runtime with these formats (plural and context suffix keys, `$t()` nesting, i18next formatters, `escapeValue`) is described in [Using ICU or MF2](https://www.i18next.com/how-to/using-icu-or-mf2).
 

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.77.0
+
+- feat(types): with `extract.messageFormat: 'icu'` or `'mf2'`, a newly generated `i18next.d.ts` sets
+  `parseInterpolation: 'icu'` or `'mf2'` when the project's i18next is 26.5.0 or later, so `t()` options are type-checked
+  against the arguments of each message. With i18next 26.2.0 to 26.4.x it still sets `parseInterpolation: false`. The
+  version is read from `node_modules/i18next/package.json`, from the working directory upwards (hoisted monorepo
+  installs count); without an installed i18next it stays `false`. The warning for an existing `i18next.d.ts` without
+  `parseInterpolation` suggests the value for your i18next version, and an existing file that still sets `false`
+  although your i18next supports the typed value gets a hint.
+- docs(skill): the ICU and MF2 reference describes `parseInterpolation: 'icu'` / `'mf2'`.
+
 ## 1.76.0
 
 - feat: new `extract.messageFormat` option, `'i18next'` (default), `'icu'` ([i18next-icu](https://github.com/i18next/i18next-icu))

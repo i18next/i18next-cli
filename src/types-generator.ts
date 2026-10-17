@@ -22,6 +22,22 @@ interface Resource {
   resources: object;
 }
 
+/**
+ * The `parseInterpolation` value for ICU or MF2 messages: `'icu'` / `'mf2'` (typed arguments) when the
+ * project's i18next is 26.5.0 or later, else `false` (no argument checks, needs 26.2.0). Looks for
+ * node_modules/i18next from the working directory upwards, so hoisted monorepo installs count.
+ */
+async function parseInterpolationFor (messageFormat: 'icu' | 'mf2'): Promise<string> {
+  for (let dir = process.cwd(); ; dir = dirname(dir)) {
+    try {
+      const { version } = JSON.parse(await readFile(join(dir, 'node_modules', 'i18next', 'package.json'), 'utf-8'))
+      const [major, minor] = String(version).split('.').map(Number)
+      return major > 26 || (major === 26 && minor >= 5) ? `'${messageFormat}'` : 'false'
+    } catch {}
+    if (dirname(dir) === dir) return 'false'
+  }
+}
+
 async function loadFile (file: string) {
   const ext = extname(file)
   if (['.ts', '.mts', '.cts', '.js', '.mjs', '.cjs'].includes(ext)) {
@@ -217,10 +233,17 @@ ${mergeResourcesAsInterface(resources, { optimize: !!enableSelector, indentation
     }
 
     // ICU and MF2 plurals like `one {{count} row}` contain double braces, which i18next's type-level
-    // {{variable}} extractor would read as interpolation (i18next >= 26.2.0 can turn it off)
-    const isIcuOrMf2 = config.extract.messageFormat === 'icu' || config.extract.messageFormat === 'mf2'
-    if (outputPathExists && isIcuOrMf2 && !(await readFile(outputPath, 'utf-8')).includes('parseInterpolation')) {
-      internalLogger.warn(styleText('yellow', `Warning: extract.messageFormat is '${config.extract.messageFormat}', but ${config.types.output} does not set parseInterpolation. Add \`parseInterpolation: false;\` to CustomTypeOptions, see https://www.i18next.com/how-to/using-icu-or-mf2#typescript`))
+    // {{variable}} extractor would read as interpolation: i18next >= 26.5.0 parses ICU / MF2 instead,
+    // >= 26.2.0 can turn it off
+    const messageFormat = config.extract.messageFormat === 'icu' || config.extract.messageFormat === 'mf2' ? config.extract.messageFormat : undefined
+    const parseInterpolation = messageFormat && await parseInterpolationFor(messageFormat)
+    if (outputPathExists && messageFormat) {
+      const existing = await readFile(outputPath, 'utf-8')
+      if (!existing.includes('parseInterpolation')) {
+        internalLogger.warn(styleText('yellow', `Warning: extract.messageFormat is '${messageFormat}', but ${config.types.output} does not set parseInterpolation. Add \`parseInterpolation: ${parseInterpolation};\` to CustomTypeOptions, see https://www.i18next.com/how-to/using-icu-or-mf2#typescript`))
+      } else if (parseInterpolation !== 'false' && /parseInterpolation\s*:\s*false/.test(existing)) {
+        logMessages.push(`  ${styleText('yellow', 'Hint:')} your i18next version can type-check ${messageFormat === 'icu' ? 'ICU' : 'MF2'} arguments: set \`parseInterpolation: ${parseInterpolation};\` in ${config.types.output}`)
+      }
     }
 
     if (!outputPathExists) {
@@ -273,7 +296,7 @@ import type Resources from './${importPath}';
 declare module 'i18next' {
   interface CustomTypeOptions {
     enableSelector: ${typeof enableSelector === 'string' ? `"${enableSelector}"` : enableSelector};
-    defaultNS: ${defaultNS};${config.extract.fallbackNS ? `\n    fallbackNS: ${fallbackNS};` : ''}${isIcuOrMf2 ? '\n    parseInterpolation: false;' : ''}
+    defaultNS: ${defaultNS};${config.extract.fallbackNS ? `\n    fallbackNS: ${fallbackNS};` : ''}${parseInterpolation ? `\n    parseInterpolation: ${parseInterpolation};` : ''}
     resources: Resources;
   }
 }`

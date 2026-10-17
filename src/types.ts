@@ -246,8 +246,9 @@ export interface I18nextToolkitConfig {
      * With `'icu'` or `'mf2'`, `extract`, `status` and `instrument` use one key per message (no plural
      * or context suffix keys, no `$t()` nesting) and write `{name}` / `{$name}` placeholders, `lint`
      * parses every translation value and checks its syntax, its argument names against the primary
-     * language and its plural categories per locale, and `types` adds `parseInterpolation: false`
-     * to a newly generated `i18next.d.ts`.
+     * language and its plural categories per locale, and `types` adds `parseInterpolation: 'icu'` /
+     * `'mf2'` (typed arguments, i18next >= 26.5.0) or `parseInterpolation: false` (older i18next) to a
+     * newly generated `i18next.d.ts`.
      */
     messageFormat?: 'i18next' | 'icu' | 'mf2';
 
