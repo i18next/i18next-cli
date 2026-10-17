@@ -78,6 +78,17 @@ Short version: **Vue** → `i18next-cli-vue`, **Svelte** → `i18next-cli-plugin
 both added to the `plugins` array in `i18next.config.ts`. Do not wrap strings in
 those files by hand.
 
+## ICU or MF2 message syntax
+
+i18next's own format (`{{name}}`, `key_one`/`key_other`) is the default. Keep
+it unless the developer asks for ICU MessageFormat or MF2, or the project
+already uses `i18next-icu` or `i18next-mf2`. In that case read
+[references/icu-mf2.md](references/icu-mf2.md) before instrumenting: plural and
+context suffix keys, `$t()` nesting, i18next formatters and `escapeValue` stop
+working without an error, TypeScript needs `parseInterpolation: false`, and the
+CLI needs `extract.messageFormat` so `lint` checks the messages. Full guide:
+<https://www.i18next.com/how-to/using-icu-or-mf2>.
+
 ## Hard stops
 
 Stop and ask the user before proceeding when:

@@ -9,6 +9,7 @@ import { createSpinnerLike } from './utils/wrap-ora.js'
 import { translatableAttributes, ignoredAttributeLowerSet, ignoredTags as sharedIgnoredTags, acceptedTags as sharedAcceptedTags } from './utils/jsx-attributes.js'
 import { normalizeSpansToCharIndices, collectIgnoredLineRanges, lineColumnFromOffset } from './extractor/parsers/ast-utils.js'
 import { matchesFunctionPattern } from './extractor/utils/function-matcher.js'
+import { loadMessageAnalyzer, lintMessageFormatResources, type MessageAnalyzer } from './utils/message-format.js'
 import type { I18nextToolkitConfig, Logger, LintIssue, Plugin, LintPluginContext } from './types.js'
 
 /**
@@ -161,8 +162,20 @@ function isTranslationCall (node: any, config: I18nextToolkitConfig): boolean {
   return false
 }
 
-// Helper to lint interpolation parameter errors in t() calls
-function lintInterpolationParams (ast: any, code: string, config: I18nextToolkitConfig, translationValues?: Map<string, string>): LintIssue[] {
+// The argument names of an ICU or MF2 message; none when it does not parse (`lint` reports
+// syntax errors of translation files on its own).
+function messageArgs (analyze: MessageAnalyzer, str: string): string[] {
+  try {
+    return [...analyze(str).args]
+  } catch {
+    return []
+  }
+}
+
+// Helper to lint interpolation parameter errors in t() calls.
+// With `analyze` (extract.messageFormat 'icu' or 'mf2') the arguments come from the message parser
+// instead of the {{…}} pattern, so ICU/MF2 braces are not read as i18next interpolation.
+function lintInterpolationParams (ast: any, code: string, config: I18nextToolkitConfig, translationValues?: Map<string, string>, analyze?: MessageAnalyzer): LintIssue[] {
   const issues: LintIssue[] = []
   // Only run if enabled (default true)
   const enabled = config.lint?.checkInterpolationParams !== false
@@ -282,7 +295,7 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
     lastSearchIndex = position + searchText.length
 
     const issueLineNumber = getLineNumber(position)
-    const keys = extractInterpolationKeys(translationStr, config)
+    const keys = analyze ? messageArgs(analyze, translationStr) : extractInterpolationKeys(translationStr, config)
 
     // Only check for unused parameters if there is at least one interpolation key in the string
     if (keys.length > 0) {
@@ -561,6 +574,8 @@ export class Linter extends EventEmitter<LinterEventMap> {
       // Load translation values once so the interpolation linter can resolve lookup keys
       // to their translated strings (fixes: key != value interpolation not detected)
       const translationValues = await loadPrimaryTranslationValues(config)
+      const { messageFormat } = config.extract
+      const analyze = messageFormat === 'icu' || messageFormat === 'mf2' ? await loadMessageAnalyzer(messageFormat) : undefined
       const plugins = config.plugins || []
       const lintPluginContext = this.createLintPluginContext(config)
       await this.initializeLintPlugins(plugins, lintPluginContext)
@@ -640,7 +655,7 @@ export class Linter extends EventEmitter<LinterEventMap> {
         // Collect hardcoded string issues
         const hardcodedStrings = findHardcodedStrings(ast, code, config)
         // Collect interpolation parameter issues
-        const interpolationIssues = lintInterpolationParams(ast, code, config, translationValues)
+        const interpolationIssues = lintInterpolationParams(ast, code, config, translationValues, analyze)
         // Collect string-concatenation issues
         const concatenationIssues = lintConcatenation(ast, code, config)
         let allIssues: LintIssue[] = [...hardcodedStrings, ...interpolationIssues, ...concatenationIssues]
@@ -657,6 +672,14 @@ export class Linter extends EventEmitter<LinterEventMap> {
         if (allIssues.length > 0) {
           totalIssues += allIssues.length
           issuesByFile.set(file, allIssues)
+        }
+      }
+
+      if (analyze) {
+        this.emit('progress', { message: `Checking ${messageFormat === 'mf2' ? 'MF2' : 'ICU'} messages in translation files...` })
+        for (const [file, issues] of await lintMessageFormatResources(config, analyze)) {
+          totalIssues += issues.length
+          issuesByFile.set(file, [...(issuesByFile.get(file) ?? []), ...issues])
         }
       }
 
@@ -802,9 +825,16 @@ export async function runLinterCli (
       if (internalLogger.info) internalLogger.info(styleText('yellow', `\n${file}`))
       else console.log(styleText('yellow', `\n${file}`))
       issues.forEach(({ text, line, type, severity }) => {
-        const label = type === 'interpolation' ? 'Interpolation issue' : type === 'concatenation' ? 'String concatenation' : 'Found hardcoded string'
+        const label = type === 'interpolation'
+          ? 'Interpolation issue'
+          : type === 'concatenation'
+            ? 'String concatenation'
+            : type === 'messageFormat'
+              ? `${config.extract.messageFormat === 'mf2' ? 'MF2' : 'ICU'} message`
+              : 'Found hardcoded string'
         const tag = severity === 'warning' ? styleText('yellow', 'Warning:') : styleText('red', 'Error:')
-        const detail = `  ${styleText('gray', `${line}:`)} ${tag} ${label}: "${text}"`
+        // line 0: a translation file whose format has no line lookup (YAML, JS)
+        const detail = `  ${line ? `${styleText('gray', `${line}:`)} ` : ''}${tag} ${label}: "${text}"`
         if (typeof internalLogger.info === 'function') internalLogger.info(detail)
         else console.log(detail)
       })

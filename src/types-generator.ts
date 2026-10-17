@@ -216,6 +216,13 @@ ${mergeResourcesAsInterface(resources, { optimize: !!enableSelector, indentation
       outputPathExists = false
     }
 
+    // ICU and MF2 plurals like `one {{count} row}` contain double braces, which i18next's type-level
+    // {{variable}} extractor would read as interpolation (i18next >= 26.2.0 can turn it off)
+    const isIcuOrMf2 = config.extract.messageFormat === 'icu' || config.extract.messageFormat === 'mf2'
+    if (outputPathExists && isIcuOrMf2 && !(await readFile(outputPath, 'utf-8')).includes('parseInterpolation')) {
+      internalLogger.warn(styleText('yellow', `Warning: extract.messageFormat is '${config.extract.messageFormat}', but ${config.types.output} does not set parseInterpolation. Add \`parseInterpolation: false;\` to CustomTypeOptions, see https://www.i18next.com/how-to/using-icu-or-mf2#typescript`))
+    }
+
     if (!outputPathExists) {
     // The main output file will now import from the resources file
       const importPath = relative(dirname(outputPath), resourcesOutputPath)
@@ -266,7 +273,7 @@ import type Resources from './${importPath}';
 declare module 'i18next' {
   interface CustomTypeOptions {
     enableSelector: ${typeof enableSelector === 'string' ? `"${enableSelector}"` : enableSelector};
-    defaultNS: ${defaultNS};${config.extract.fallbackNS ? `\n    fallbackNS: ${fallbackNS};` : ''}
+    defaultNS: ${defaultNS};${config.extract.fallbackNS ? `\n    fallbackNS: ${fallbackNS};` : ''}${isIcuOrMf2 ? '\n    parseInterpolation: false;' : ''}
     resources: Resources;
   }
 }`

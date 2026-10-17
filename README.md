@@ -340,6 +340,8 @@ Generates TypeScript definitions from your translation files for full type-safet
 
 > **Note:** When `extract.defaultNS` is set to `false`, the generated `defaultNS` is derived from your resource files (i18next's type system cannot express `defaultNS: false`). Adjust the generated `i18next.d.ts` if your runtime i18next config uses a different default namespace.
 
+> **Note:** With `extract.messageFormat: 'icu'` or `'mf2'` the generated `i18next.d.ts` sets `parseInterpolation: false` (needs `i18next` >= 26.2.0), so ICU plurals like `one {{count} row}` are not typed as `{{…}}` interpolation. The file is only written when it does not exist yet; for an existing one `types` prints a warning until you add the line.
+
 ```bash
 npx i18next-cli types [options]
 ```
@@ -370,7 +372,13 @@ npx i18next-cli lint
 **What it checks:**
 
 - **Hardcoded strings** *(error)* — user-facing text in JSX elements and attributes that isn't wrapped in `t()`/`<Trans>`.
-- **Interpolation parameters** *(error)* — mismatches between `{{placeholders}}` in a translation and the params passed to `t()` (missing or unused). Toggle with `lint.checkInterpolationParams` (default: `true`).
+- **Interpolation parameters** *(error)* — mismatches between `{{placeholders}}` in a translation and the params passed to `t()` (missing or unused). Toggle with `lint.checkInterpolationParams` (default: `true`). With `extract.messageFormat: 'icu'` or `'mf2'` the arguments come from the ICU or MF2 parser (`{name}`, `{$name}`), so plurals like `one {{count} row}` are not read as `{{…}}` interpolation.
+- **ICU / MF2 messages** *(error, only with `extract.messageFormat: 'icu'` or `'mf2'`)*: every value in the translation files of all locales is parsed. The linter reports, with file, key and line (JSON files):
+  - syntax errors with the parser's message, e.g. `greeting: ICU syntax error: EXPECT_ARGUMENT_CLOSING_BRACE at column 7`
+  - argument names that differ from the primary language (a renamed or missing `{name}`). `#` in a plural is not an argument
+  - plural categories of `plural` and `selectordinal` (MF2: `.match` on `:number` or `:integer`) that do not fit the locale. Allowed are the locale's CLDR categories, required are `other` plus every category a whole number from 0 to 1000 selects. So `ru` needs `one`, `few` and `many`, while `fr`, `es`, `it` and `pt` may leave out `many` (only from 1,000,000) and `cs` its `many` (fractions only), and `zero` in English is reported as unused. Exact selectors like `=0` are always allowed, and they count for a category when they cover every whole number it is used for: `=1` covers `one` in English, but not in Russian, where `one` is also 21, 31 and so on. For a locale `Intl` does not know only `other` is required.
+
+  Empty values count as untranslated and are skipped. See [ICU and MF2 messages](#icu-and-mf2-messages).
 - **String concatenation** *(warning by default)* — translated strings glued together with `+`, or a sentence split across multiple adjacent translations (`<Trans>` components and/or `{t()}` expressions rendered as siblings). This breaks in languages that reorder or inflect the pieces; use a single key with placeholders instead. Configure with `lint.checkConcatenation`: `'warn'` / `true` (default) reports it without failing the run, `'error'` makes it fail (exit non-zero, useful for CI), and `'off'` / `false` disables it.
 
   ```jsx
@@ -1045,6 +1053,12 @@ export default defineConfig({
     // Interpolation suffix used in defaultValue templates and runtime interpolation.
     // Example: '}}'
     interpolationSuffix: '}}', // Default: '}}'
+
+    // The syntax of your translation values: 'i18next' (default), 'icu' (i18next-icu) or 'mf2' (i18next-mf2).
+    // With 'icu' or 'mf2', `lint` checks the syntax, arguments and plural categories of every
+    // translation value, and `types` adds `parseInterpolation: false` to a new i18next.d.ts.
+    // Extraction does not use it yet. See "ICU and MF2 messages" below.
+    messageFormat: 'i18next', // Default: 'i18next'
 
     // Warn (or error) when the same ns:key is extracted with different default values.
     warnOnConflicts: true // Default: false
@@ -1745,6 +1759,31 @@ types: {
 ```
 
 This is useful for organizing translations into logical groups while maintaining type safety across your entire namespace hierarchy.
+
+### ICU and MF2 messages
+
+If your translations are written in ICU MessageFormat ([i18next-icu](https://github.com/i18next/i18next-icu)) or Unicode MessageFormat 2 ([i18next-mf2](https://github.com/i18next/i18next-mf2)), tell the CLI:
+
+```typescript
+export default defineConfig({
+  locales: ['en', 'de', 'ru'],
+  extract: {
+    input: ['src/**/*.{ts,tsx}'],
+    output: 'locales/{{language}}/{{namespace}}.json',
+    messageFormat: 'icu', // or 'mf2'
+    disablePlurals: true, // one key per plural message, see below
+  },
+})
+```
+
+What it changes:
+
+- `lint` parses every translation value and reports syntax errors, arguments that differ from the primary language and plural categories that do not fit a locale (see [`lint`](#lint)). The `t()` interpolation check reads the arguments with the same parser.
+- `types` sets `parseInterpolation: false` in a newly generated `i18next.d.ts`.
+
+Not yet covered: `extract` still writes i18next plural suffix keys (`photos_one`, `photos_other`) for `t('photos', { count })`, which the plugins never read, so keep `extract.disablePlurals: true`. It also writes the children of `<Trans>` with `{{name}}`, and does not extract `IcuTrans` or the components of `icu.macro`. `status` counts plural suffix keys, and `instrument` writes `{{name}}` placeholders.
+
+What keeps and what stops working at runtime with these formats (plural and context suffix keys, `$t()` nesting, i18next formatters, `escapeValue`) is described in [Using ICU or MF2](https://www.i18next.com/how-to/using-icu-or-mf2).
 
 ## Migration from i18next-parser
 

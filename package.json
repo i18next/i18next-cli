@@ -73,6 +73,7 @@
   },
   "dependencies": {
     "@croct/json5-parser": "^0.2.2",
+    "@formatjs/icu-messageformat-parser": "^3.5.21",
     "@swc/core": "^1.16.2",
     "chokidar": "^5.0.0",
     "commander": "^15.0.0",
@@ -84,6 +85,7 @@
     "jiti": "^2.7.0",
     "jsonc-parser": "^3.3.1",
     "magic-string": "^1.4.2",
+    "messageformat": "^4.1.0",
     "minimatch": "^10.2.6",
     "ora": "^9.4.1",
     "react-i18next": "^17.0.16",

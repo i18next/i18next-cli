@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.76.0
+
+- feat: new `extract.messageFormat` option, `'i18next'` (default), `'icu'` ([i18next-icu](https://github.com/i18next/i18next-icu))
+  or `'mf2'` ([i18next-mf2](https://github.com/i18next/i18next-mf2)), for the syntax of your translation values.
+  `lint` and `types` read it; extraction does not use it yet.
+- feat(lint): with `messageFormat: 'icu'` or `'mf2'`, `lint` parses every value in the translation files of all
+  locales and reports, with file, key and line (JSON files):
+  - syntax errors with the parser's message (`greeting: ICU syntax error: EXPECT_ARGUMENT_CLOSING_BRACE at column 7`),
+    with a hint when the value contains i18next's `{{`
+  - argument names that differ from the primary language, so a renamed or missing `{name}` is caught (`#` is not an argument)
+  - plural categories that do not fit the locale, for `plural` and `selectordinal` (MF2: `.match` on `:number` or
+    `:integer`). Allowed are the locale's CLDR categories, required are `other` plus every category a whole number from
+    0 to 1000 selects: `ru` needs `one`, `few` and `many`, while `fr`, `es`, `it` and `pt` may leave out `many` (only from
+    1,000,000) and `cs` its `many` (fractions only), and `zero` in `en` is reported as never used. Exact selectors like
+    `=0` are allowed and count for a category when they cover every whole number it is used for (`=1` covers `one` in
+    `en`, not in `ru`, where `one` is also 21, 31, ...). For a locale `Intl` does not know only `other` is required.
+- fix(lint): with `messageFormat: 'icu'` or `'mf2'`, the `t()` interpolation check reads the arguments with the same
+  parser. ICU braces like `male {{name}}` are no longer taken for `{{name}}` interpolation (which reported the `gender`
+  passed to a select as unused), and `t('greeting', 'Hello {name}', { nmae })` is reported.
+- feat(types): with `messageFormat: 'icu'` or `'mf2'`, a newly generated `i18next.d.ts` sets `parseInterpolation: false`
+  (i18next 26.2.0+), so ICU and MF2 plurals no longer break the type-safe `t`. For an existing file without it, `types`
+  prints a warning.
+- docs(skill): the i18next-localization skill has an ICU and MF2 section: which format to choose, setup, what silently
+  stops working, `IcuTrans`, `parseInterpolation: false` and `extract.messageFormat`.
+- deps: `@formatjs/icu-messageformat-parser` (the parser i18next-icu uses through intl-messageformat) and `messageformat`
+  (the MF2 implementation i18next-mf2 uses). They are only loaded when `messageFormat` is `'icu'` or `'mf2'`.
+
 ## 1.75.3
 
 - fix(extract): options passed in a variable are read like inline ones. With `const params = { count }`,

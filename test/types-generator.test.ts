@@ -97,4 +97,41 @@ describe('types-generator', () => {
   // You can also assert that files were created at the default output paths,
   // for example: `expect(vol.existsSync('src/@types/i18next.d.ts')).toBe(true)`
   })
+
+  describe('messageFormat icu / mf2', () => {
+    const silentLogger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() })
+
+    it.each(['icu', 'mf2'] as const)('sets parseInterpolation: false for %s', async (messageFormat) => {
+      vol.fromJSON({ '/locales/en/translation.json': JSON.stringify({ rows: '{count, plural, one {{count} row} other {{count} rows}}' }) })
+
+      await runTypesGenerator({ ...mockConfig, extract: { ...mockConfig.extract, messageFormat } }, { logger: silentLogger() })
+
+      const content = await vol.promises.readFile(resolve(process.cwd(), mockConfig.types!.output), 'utf-8')
+      expect(content).toContain('parseInterpolation: false;')
+    })
+
+    it('does not set parseInterpolation for the i18next format', async () => {
+      vol.fromJSON({ '/locales/en/translation.json': JSON.stringify({ key: 'value' }) })
+
+      await runTypesGenerator({ ...mockConfig, extract: { ...mockConfig.extract, messageFormat: 'i18next' } }, { logger: silentLogger() })
+
+      const content = await vol.promises.readFile(resolve(process.cwd(), mockConfig.types!.output), 'utf-8')
+      expect(content).not.toContain('parseInterpolation')
+    })
+
+    it('warns when an existing i18next.d.ts does not set parseInterpolation, and leaves it unchanged', async () => {
+      const outputPath = resolve(process.cwd(), mockConfig.types!.output)
+      const existing = "declare module 'i18next' { interface CustomTypeOptions { defaultNS: 'translation' } }"
+      vol.fromJSON({
+        '/locales/en/translation.json': JSON.stringify({ key: 'value' }),
+        [outputPath]: existing,
+      })
+      const logger = silentLogger()
+
+      await runTypesGenerator({ ...mockConfig, extract: { ...mockConfig.extract, messageFormat: 'icu' } }, { logger })
+
+      expect(await vol.promises.readFile(outputPath, 'utf-8')).toBe(existing)
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('parseInterpolation: false;'))
+    })
+  })
 })
