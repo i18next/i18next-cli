@@ -3,6 +3,13 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { runLinter, runLinterCli } from '../src/linter'
 import { pluralCategories } from '../src/utils/message-format'
 import type { I18nextToolkitConfig } from '../src/index'
+import { normalize, resolve } from 'node:path'
+
+// Platform paths, like status.test.ts: memfs keys as the linter resolves them, issue keys as getOutputPath
+// normalizes them, so the tests pass on Windows too
+const SRC = resolve(process.cwd(), 'src/App.tsx')
+const abs = (p: string) => resolve(process.cwd(), p)
+const out = (lng: string) => normalize(`locales/${lng}/translation.json`)
 
 vi.mock('fs/promises', async () => {
   const memfs = await vi.importActual<typeof import('memfs')>('memfs')
@@ -14,7 +21,7 @@ const config = (messageFormat: 'i18next' | 'icu' | 'mf2', locales: string[], ext
   locales,
   extract: {
     input: ['src/**/*.tsx'],
-    output: '/locales/{{language}}/{{namespace}}.json',
+    output: 'locales/{{language}}/{{namespace}}.json',
     messageFormat,
     ...extra,
   },
@@ -22,16 +29,16 @@ const config = (messageFormat: 'i18next' | 'icu' | 'mf2', locales: string[], ext
 
 // Writes one translation.json per locale and returns the lint result
 async function lint (cfg: I18nextToolkitConfig, resources: Record<string, Record<string, any>>, code = '') {
-  const files: Record<string, string> = { '/src/App.tsx': code }
+  const files: Record<string, string> = { [SRC]: code }
   for (const [lng, values] of Object.entries(resources)) {
-    files[`/locales/${lng}/translation.json`] = JSON.stringify(values, null, 2)
+    files[abs(`locales/${lng}/translation.json`)] = JSON.stringify(values, null, 2)
   }
   vol.fromJSON(files)
   return runLinter(cfg)
 }
 
 const texts = (result: Awaited<ReturnType<typeof runLinter>>, lng: string) =>
-  (result.files[`/locales/${lng}/translation.json`] ?? []).map(i => i.text)
+  (result.files[out(lng)] ?? []).map(i => i.text)
 
 describe('pluralCategories (same rule as Locize)', () => {
   it('requires the categories whole numbers 0 to 1000 select, allows all CLDR categories', () => {
@@ -56,7 +63,7 @@ describe('lint with messageFormat: icu', () => {
     vi.clearAllMocks()
     const { glob } = await import('glob')
     ;(glob as any).mockImplementation(async (pattern: string | string[]) =>
-      String(pattern).startsWith('/locales/') ? ['/locales/en/translation.json'] : ['/src/App.tsx'])
+      String(pattern).startsWith('locales/') ? [out('en')] : [SRC])
   })
 
   it('accepts valid messages in en, ru, fr, cs and ar', async () => {
@@ -88,7 +95,7 @@ describe('lint with messageFormat: icu', () => {
       // ru `one` is also 21, 31, ..., so =1 does not cover it
       ru: { photos: '{count, plural, =0 {Нет фото} =1 {Одно фото} few {# фото} many {# фото} other {# фото}}' },
     })
-    expect(Object.keys(result.files)).toEqual(['/locales/ru/translation.json'])
+    expect(Object.keys(result.files)).toEqual([out('ru')])
     expect(texts(result, 'ru')).toEqual(['photos: plural {count} is missing the "ru" categories one'])
   })
 
@@ -97,7 +104,7 @@ describe('lint with messageFormat: icu', () => {
       en: { ok: 'Fine', greeting: 'Hello {name' },
     })
     expect(result.success).toBe(false)
-    const [issue] = result.files['/locales/en/translation.json']
+    const [issue] = result.files[out('en')]
     expect(issue.text).toBe('greeting: ICU syntax error: EXPECT_ARGUMENT_CLOSING_BRACE at column 7')
     expect(issue.type).toBe('messageFormat')
     expect(issue.line).toBe(3)
@@ -182,19 +189,19 @@ describe('lint with messageFormat: icu', () => {
 
   it('reads nested keys and reports them with the key separator', async () => {
     const result = await lint(config('icu', ['en']), { en: { gallery: { photos: '{count, plural, one {# photo} few {x} other {# photos}}' } } })
-    const [issue] = result.files['/locales/en/translation.json']
+    const [issue] = result.files[out('en')]
     expect(issue.text).toBe('gallery.photos: plural {count} has categories "en" does not use: few')
     expect(issue.line).toBe(3)
   })
 
   it('lints a single file per language (output without {{namespace}})', async () => {
     vol.fromJSON({
-      '/src/App.tsx': '',
-      '/locales/en.json': JSON.stringify({ greeting: 'Hello {name}' }),
-      '/locales/de.json': JSON.stringify({ greeting: 'Hallo {nmae}' }),
+      [SRC]: '',
+      [abs('locales/en.json')]: JSON.stringify({ greeting: 'Hello {name}' }),
+      [abs('locales/de.json')]: JSON.stringify({ greeting: 'Hallo {nmae}' }),
     })
-    const result = await runLinter(config('icu', ['en', 'de'], { output: '/locales/{{language}}.json' }))
-    expect(result.files['/locales/de.json'].map(i => i.text)).toEqual(['greeting: arguments differ from "en": missing {name}, unexpected {nmae}'])
+    const result = await runLinter(config('icu', ['en', 'de'], { output: 'locales/{{language}}.json' }))
+    expect(result.files[normalize('locales/de.json')].map(i => i.text)).toEqual(['greeting: arguments differ from "en": missing {name}, unexpected {nmae}'])
   })
 
   it('does not read ICU braces as i18next interpolation in t() calls', async () => {
@@ -208,7 +215,7 @@ describe('lint with messageFormat: icu', () => {
     // the i18next format reads `male {{name}}` as {{name}} interpolation and misses `gender`
     vol.reset()
     const i18nextResult = await lint(config('i18next', ['en']), { en: {} }, code)
-    expect(i18nextResult.files['/src/App.tsx']?.map(i => i.text)).toContain('Parameter "gender" is not used in translation string')
+    expect(i18nextResult.files[SRC]?.map(i => i.text)).toContain('Parameter "gender" is not used in translation string')
   })
 
   it('checks ICU arguments of t() calls against the values passed', async () => {
@@ -217,7 +224,7 @@ describe('lint with messageFormat: icu', () => {
       t('photos', { count })
     `
     const result = await lint(config('icu', ['en']), { en: { photos: '{count, plural, one {# photo} other {# photos}}' } }, code)
-    expect(result.files['/src/App.tsx'].map(i => i.text)).toEqual([
+    expect(result.files[SRC].map(i => i.text)).toEqual([
       'Interpolation parameter "name" was not provided',
       'Parameter "nmae" is not used in translation string',
     ])
@@ -232,12 +239,12 @@ describe('lint with messageFormat: icu', () => {
     const logs: string[] = []
     const logger = { info: (m: string) => { logs.push(m) }, warn: (m: string) => { logs.push(m) }, error: (m: string) => { logs.push(m) } }
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((() => undefined) as any))
-    vol.fromJSON({ '/src/App.tsx': '', '/locales/en/translation.json': '{\n  "greeting": "Hello {name"\n}' })
+    vol.fromJSON({ [SRC]: '', [abs('locales/en/translation.json')]: '{\n  "greeting": "Hello {name"\n}' })
 
     await runLinterCli(config('icu', ['en']), { logger: logger as any })
 
     const output = logs.join('\n')
-    expect(output).toContain('/locales/en/translation.json')
+    expect(output).toContain(out('en'))
     expect(output).toContain('2: Error: ICU message: "greeting: ICU syntax error: EXPECT_ARGUMENT_CLOSING_BRACE at column 7"')
     expect(exitSpy).toHaveBeenCalledWith(1)
     exitSpy.mockRestore()
@@ -250,7 +257,7 @@ describe('lint with messageFormat: mf2', () => {
     vi.clearAllMocks()
     const { glob } = await import('glob')
     ;(glob as any).mockImplementation(async (pattern: string | string[]) =>
-      String(pattern).startsWith('/locales/') ? ['/locales/en/translation.json'] : ['/src/App.tsx'])
+      String(pattern).startsWith('locales/') ? [out('en')] : [SRC])
   })
 
   const plural = (...variants: string[]) => `.input {$count :number}\n.match $count\n${variants.join('\n')}`
@@ -313,7 +320,7 @@ describe('lint with messageFormat: mf2', () => {
       t('greeting', 'Hello {$name}', { nmae })
     `
     const result = await lint(config('mf2', ['en']), { en: {} }, code)
-    expect(result.files['/src/App.tsx'].map(i => i.text)).toEqual([
+    expect(result.files[SRC].map(i => i.text)).toEqual([
       'Interpolation parameter "name" was not provided',
       'Parameter "nmae" is not used in translation string',
     ])
