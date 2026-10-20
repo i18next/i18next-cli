@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.78.0
+
+- feat(lint): with `messageFormat: 'mf2'`, `lint` warns when whitespace at the start or end of a pattern differs from
+  the primary language. MF2 keeps a space inside `{{ }}` as text, so `{{ {$count} files}}` shows it in the app. A
+  warning does not fail the run.
+- fix(lint): a language code with `_` (`ru_RU`, `pt_BR`) is read as `ru-RU`, `pt-BR` for the plural categories. Before,
+  `Intl` rejected it and only `other` was required, so a `ru_RU` plural with only `one` and `other` passed.
+- fix(lint): the required plural categories are `other` plus every category a whole number below one million selects
+  (was 0 to 1000), the same rule as Locize; exact selectors count for a category only when it selects a few small
+  numbers. No locale's result changes with today's CLDR data.
+- docs(skill): the ICU and MF2 reference names the common MF2 plural mistakes: `other` instead of `*`, `{{ {$count}`
+  instead of `{{{$count}`, and spaces inside `{{ }}`.
+
 ## 1.77.0
 
 - feat(types): with `extract.messageFormat: 'icu'` or `'mf2'`, a newly generated `i18next.d.ts` sets

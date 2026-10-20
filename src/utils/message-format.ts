@@ -11,6 +11,8 @@ export interface MessageShape {
   args: Set<string>
   /** Plural selections: their CLDR category selectors and the numbers of their exact selectors (`=0` in ICU, `0` in MF2). */
   plurals: Array<{ arg: string, type: 'cardinal' | 'ordinal', categories: string[], exact: number[] }>
+  /** MF2 only: `start` / `end` when a pattern starts / ends with whitespace, which MF2 keeps as text. */
+  edges: Set<'start' | 'end'>
 }
 
 /** Parses an ICU or MF2 message. Throws an Error with the parser's message on a syntax error. */
@@ -90,7 +92,7 @@ export async function loadMessageAnalyzer (format: 'icu' | 'mf2'): Promise<Messa
         const column = err?.location?.start?.column
         throw new Error(column ? `${err.message} at column ${column}` : String(err?.message ?? err))
       }
-      const shape: MessageShape = { args: new Set(), plurals: [] }
+      const shape: MessageShape = { args: new Set(), plurals: [], edges: new Set() }
       walk(elements, shape)
       return shape
     }
@@ -99,7 +101,13 @@ export async function loadMessageAnalyzer (format: 'icu' | 'mf2'): Promise<Messa
   const { parseMessage, validate } = await import('messageformat')
   return (message) => {
     const msg = parseMessage(message) // throws a MessageSyntaxError
-    const shape: MessageShape = { args: validate(msg).variables, plurals: [] } // validate throws a MessageDataModelError
+    const shape: MessageShape = { args: validate(msg).variables, plurals: [], edges: new Set() } // validate throws a MessageDataModelError
+    for (const pattern of msg.type === 'select' ? msg.variants.map(v => v.value) : [msg.pattern]) {
+      const first = pattern[0]
+      const last = pattern[pattern.length - 1]
+      if (typeof first === 'string' && /^\s/.test(first)) shape.edges.add('start')
+      if (typeof last === 'string' && /\s$/.test(last)) shape.edges.add('end')
+    }
     if (msg.type !== 'select') return shape
     msg.selectors.forEach((selector, i) => {
       const type = mf2PluralType(msg.declarations, selector.name)
@@ -140,34 +148,41 @@ function mf2PluralType (declarations: any[], name: string): 'cardinal' | 'ordina
 interface PluralCategories {
   /** the locale's CLDR categories */
   allowed: string[]
-  /** `other` plus every category a whole number from 0 to 1000 selects */
+  /** `other` plus every category a whole number below one million selects */
   required: string[]
-  /** per required category, the whole numbers from 0 to 1000 it is selected for */
-  numbers: Map<string, number[]>
+  /** per required category, the smallest whole numbers it selects (up to 10) and whether there are more */
+  numbers: Map<string, { first: number[], more: boolean }>
 }
 
 const categoryCache = new Map<string, PluralCategories | undefined>()
+const FIRST_NUMBERS = 10
 
 /**
  * The plural categories a message for `lng` may and must have: allowed are the locale's CLDR
- * categories, required are `other` plus every category a whole number from 0 to 1000 selects.
+ * categories, required are `other` plus every category a whole number below one million selects.
  * So ru needs one/few/many, while fr, es, it and pt may leave out `many` (from 1,000,000 only)
  * and cs/lt `many` (fractions only). Undefined when Intl does not know the locale.
- * Same rule as the Locize AI-review guard and MCP server.
+ * Same rule as Locize (`@inweso-dev/i18n-utils` `pluralCategories`); port a fix by hand in both directions.
+ * ponytail: samples 0..1999, not every number below one million: CLDR's whole-number rules look at
+ * small values and at n % 10, % 100 and % 1000, and a category met from 1000 on selects hundreds of numbers.
  */
 export function pluralCategories (lng: string, type: 'cardinal' | 'ordinal'): PluralCategories | undefined {
   const cacheKey = `${lng}|${type}`
   if (categoryCache.has(cacheKey)) return categoryCache.get(cacheKey)
+  // a language code may use `_` (ru_RU, zh_Hant_TW), Intl only reads `-`
+  const locale = lng.replace(/_/g, '-')
   let categories
   try {
-    if (Intl.PluralRules.supportedLocalesOf([lng]).length) {
-      const rules = new Intl.PluralRules(lng, { type })
-      const numbers = new Map<string, number[]>([['other', []]])
-      for (let i = 0; i <= 1000; i++) {
+    if (Intl.PluralRules.supportedLocalesOf([locale]).length) {
+      const rules = new Intl.PluralRules(locale, { type })
+      const numbers = new Map([['other', { first: [] as number[], more: false }]])
+      for (let i = 0; i < 2000; i++) {
         const category = rules.select(i)
-        const list = numbers.get(category)
-        if (list) list.push(i)
-        else numbers.set(category, [i])
+        let n = numbers.get(category)
+        if (!n) numbers.set(category, n = { first: [], more: false })
+        if (n.first.length < FIRST_NUMBERS) n.first.push(i)
+        else n.more = true
+        if (i >= 1000) n.more = true
       }
       categories = { allowed: rules.resolvedOptions().pluralCategories as string[], required: [...numbers.keys()], numbers }
     }
@@ -180,15 +195,20 @@ export function pluralCategories (lng: string, type: 'cardinal' | 'ordinal'): Pl
 
 /**
  * The required categories a plural lacks. A category other than `other` also counts as present when
- * exact selectors cover every whole number it is selected for: en `=1` covers `one`, while ru `=1`
- * does not (ru `one` is also 21, 31, ...). This is where the rule deliberately differs from Locize.
+ * it selects few small numbers and exact selectors cover them all: en `=1` covers `one`, while ru `=1`
+ * does not (ru `one` is also 21, 31, ...).
  */
 function missingPluralCategories (plural: MessageShape['plurals'][number], lng: string): string[] {
   const expected = pluralCategories(lng, plural.type)
   const exact = new Set(plural.exact)
+  const covered = (c: string) => {
+    if (c === 'other') return false
+    const n = expected!.numbers.get(c)!
+    return !n.more && n.first.every(i => exact.has(i))
+  }
   return (expected?.required ?? ['other'])
     .filter(c => !plural.categories.includes(c))
-    .filter(c => c === 'other' || !expected!.numbers.get(c)!.every(n => exact.has(n)))
+    .filter(c => !covered(c))
     .sort(byCldrOrder)
 }
 
@@ -241,12 +261,12 @@ export async function lintMessageFormatResources (config: I18nextToolkitConfig, 
       if (!resources) continue
 
       const shapes = new Map<string, MessageShape>()
-      const problems: Array<{ path: Array<string | number>, text: string }> = []
+      const problems: Array<{ path: Array<string | number>, text: string, severity?: 'warning' }> = []
       for (const [path, value] of leaves(resources)) {
         // an empty value is untranslated, not a message
         if (typeof value !== 'string' || value === '') continue
         const key = path.join(keySeparator)
-        const report = (text: string) => problems.push({ path, text: `${key}: ${text}` })
+        const report = (text: string, severity?: 'warning') => problems.push({ path, text: `${key}: ${text}`, severity })
 
         let shape: MessageShape
         try {
@@ -268,6 +288,10 @@ export async function lintMessageFormatResources (config: I18nextToolkitConfig, 
               unexpected.length ? `unexpected ${unexpected.join(', ')}` : '',
             ].filter(Boolean).join(', ')}`)
           }
+          // a correct translation with a visible flaw, so a warning (Locize's soft `whitespace`)
+          if ([...source.edges].sort().join() !== [...shape.edges].sort().join()) {
+            report(`whitespace at the start or end of a pattern differs from "${primary}", MF2 shows it as text`, 'warning')
+          }
         }
 
         for (const plural of shape.plurals) {
@@ -283,7 +307,7 @@ export async function lintMessageFormatResources (config: I18nextToolkitConfig, 
 
       if (problems.length) {
         const lineOf = await lineFinder(file)
-        issuesByFile.set(file, problems.map(({ path, text }) => ({ text, line: lineOf(path), type: 'messageFormat' })))
+        issuesByFile.set(file, problems.map(({ path, text, severity }) => ({ text, line: lineOf(path), type: 'messageFormat', severity })))
       }
     }
   }

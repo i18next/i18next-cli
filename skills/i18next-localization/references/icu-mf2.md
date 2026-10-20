@@ -42,6 +42,16 @@ React escapes on its own, so `escapeValue` only matters outside React. Also set
 `saveMissingPlurals: false`. In ICU an apostrophe before `{` starts quoted text:
 write `l''{place}` or the typographic `’`.
 
+## Writing MF2 plurals
+
+These three mistakes are the common ones:
+
+- The catch-all key is `*`, never `other`. Without a `*` variant the message
+  does not parse (Missing Fallback Variant).
+- A pattern that starts with a placeholder opens with three braces and no
+  space: `{{{$count} files}}`, never `{{ {$count} files}}`.
+- A space inside `{{ }}` is text and shows in the app.
+
 ## Rich text in React
 
 `Trans` with numbered tags (`<0>text</0>`) works with both plugins. For ICU,
@@ -85,6 +95,8 @@ and plurals in the chosen syntax, and its i18n init file registers the plugin
 `npx i18next-cli lint` then parses every translation value of every locale and
 reports syntax errors, argument names that differ from the primary language, and
 plural categories that do not fit a locale (`ru` needs `one`, `few` and `many`;
-`fr` may leave out `many`; `zero` in English is never used; `=1` covers English `one`). Its `t()` check
+`fr` may leave out `many`; `zero` in English is never used; `=1` covers English `one`).
+For MF2 it warns when whitespace at the start or end of a pattern differs from
+the primary language. Its `t()` check
 reads the arguments with the same parser. Run it after `instrument`, after
 `extract` and after every translation change, and fix what it reports.

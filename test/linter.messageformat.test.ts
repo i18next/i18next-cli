@@ -41,7 +41,7 @@ const texts = (result: Awaited<ReturnType<typeof runLinter>>, lng: string) =>
   (result.files[out(lng)] ?? []).map(i => i.text)
 
 describe('pluralCategories (same rule as Locize)', () => {
-  it('requires the categories whole numbers 0 to 1000 select, allows all CLDR categories', () => {
+  it('requires the categories whole numbers below one million select, allows all CLDR categories', () => {
     expect(pluralCategories('ru', 'cardinal')?.required.sort()).toEqual(['few', 'many', 'one', 'other'])
     expect(pluralCategories('fr', 'cardinal')?.required.sort()).toEqual(['one', 'other'])
     expect(pluralCategories('fr', 'cardinal')?.allowed).toContain('many')
@@ -143,6 +143,14 @@ describe('lint with messageFormat: icu', () => {
       ru: { photos: '{count, plural, one {# фото} other {# фото}}' },
     })
     expect(texts(result, 'ru')).toEqual(['photos: plural {count} is missing the "ru" categories few, many'])
+  })
+
+  it('reads a language code with _ like Intl, so ru_RU needs the ru categories', async () => {
+    const result = await lint(config('icu', ['en', 'ru_RU']), {
+      en: { photos: '{count, plural, one {# photo} other {# photos}}' },
+      ru_RU: { photos: '{count, plural, one {# фото} other {# фото}}' },
+    })
+    expect(texts(result, 'ru_RU')).toEqual(['photos: plural {count} is missing the "ru_RU" categories few, many'])
   })
 
   it('reports categories a locale does not use, like zero or few in en', async () => {
@@ -293,6 +301,20 @@ describe('lint with messageFormat: mf2', () => {
       de: { greeting: 'Hallo {$nmae}' },
     })
     expect(texts(result, 'de')).toEqual(['greeting: arguments differ from "en": missing {$name}, unexpected {$nmae}'])
+  })
+
+  it('warns about a space inside {{ }} the primary language does not have', async () => {
+    const result = await lint(config('mf2', ['en', 'de', 'fr']), {
+      en: { photos: plural('one {{{$count} photo}}', '* {{{$count} photos}}') },
+      de: { photos: plural('one {{ {$count} Foto}}', '* {{{$count} Fotos}}') },
+      fr: { photos: plural('one {{{$count} photo}}', '* {{{$count} photos}}') },
+    })
+    expect(result.success).toBe(true)
+    expect(Object.keys(result.files)).toEqual([out('de')])
+    expect(result.files[out('de')]).toEqual([expect.objectContaining({
+      text: 'photos: whitespace at the start or end of a pattern differs from "en", MF2 shows it as text',
+      severity: 'warning',
+    })])
   })
 
   it('reports the ru categories that whole numbers need, and unused en categories', async () => {
