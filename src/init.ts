@@ -160,7 +160,7 @@ export async function runInit (options: InitOptions = {}) {
       type: 'input',
       name: 'input',
       message: 'What is the glob pattern for your source files?',
-      default: detectedConfig?.extract?.input ? (detectedConfig.extract.input || [])[0] : 'src/**/*.{js,jsx,ts,tsx}',
+      default: detectedConfig?.extract?.input ? (detectedConfig.extract.input || [])[0] : 'src/**/*.{js,jsx,mjs,ts,tsx}',
     },
     {
       type: 'input',

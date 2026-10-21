@@ -42,10 +42,10 @@ describe('heuristic-config', () => {
     }
     expect(config?.extract?.primaryLanguage).toBe('en')
     expect(config?.extract?.input).toEqual([
-      'src/**/*.{js,jsx,ts,tsx}',
-      'app/**/*.{js,jsx,ts,tsx}',
-      'pages/**/*.{js,jsx,ts,tsx}',
-      'components/**/*.{js,jsx,ts,tsx}'
+      'src/**/*.{js,jsx,mjs,ts,tsx}',
+      'app/**/*.{js,jsx,mjs,ts,tsx}',
+      'pages/**/*.{js,jsx,mjs,ts,tsx}',
+      'components/**/*.{js,jsx,mjs,ts,tsx}'
     ])
   })
 

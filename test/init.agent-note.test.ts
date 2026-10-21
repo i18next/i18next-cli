@@ -51,7 +51,7 @@ describe('init: non-interactive mode and the agent note', () => {
     expect(inquirer.prompt).not.toHaveBeenCalled()
     const content = await read('i18next.config.js')
     expect(content).toContain('"en",\n    "fr"')
-    expect(content).toContain('input: "src/**/*.{js,jsx,ts,tsx}"')
+    expect(content).toContain('input: "src/**/*.{js,jsx,mjs,ts,tsx}"')
     expect(content).not.toContain('locize')
     expect(await exists('AGENTS.md')).toBe(false)
   })

@@ -98,10 +98,10 @@ export async function detectConfig (): Promise<Partial<I18nextToolkitConfig> | n
             locales,
             extract: {
               input: [
-                'src/**/*.{js,jsx,ts,tsx}',
-                'app/**/*.{js,jsx,ts,tsx}',
-                'pages/**/*.{js,jsx,ts,tsx}',
-                'components/**/*.{js,jsx,ts,tsx}'
+                'src/**/*.{js,jsx,mjs,ts,tsx}',
+                'app/**/*.{js,jsx,mjs,ts,tsx}',
+                'pages/**/*.{js,jsx,mjs,ts,tsx}',
+                'components/**/*.{js,jsx,mjs,ts,tsx}'
               ],
               output: join(basePath, '{{language}}', `{{namespace}}${extension}`),
               outputFormat,

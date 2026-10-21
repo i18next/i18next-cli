@@ -158,7 +158,7 @@ export async function runMigrator (customConfigPath?: string) {
   const newConfig = {
     locales: oldConfig.locales || ['en'],
     extract: {
-      input: oldConfig.input || 'src/**/*.{js,jsx,ts,tsx}',
+      input: oldConfig.input || 'src/**/*.{js,jsx,mjs,ts,tsx}',
       output: (oldConfig.output || 'locales/$LOCALE/$NAMESPACE.json')
         .replace('$LOCALE', '{{language}}')
         .replace('$NAMESPACE', '{{namespace}}'),

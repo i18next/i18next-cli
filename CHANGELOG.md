@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.79.1
+
+- fix(init, migrate-config): the default source glob includes `.mjs` (`src/**/*.{js,jsx,mjs,ts,tsx}`), in `init`, in the
+  config detected for a project without one, and in `migrate-config` when the old config has no `input`. Existing
+  configs do not change. [#309](https://github.com/i18next/i18next-cli/pull/309#issuecomment-6310275918)
+
 ## 1.79.0
 
 - feat(extract, instrument, lint): a `.mjs` file with JSX is parsed with the same JSX fallback as a `.js` file,
