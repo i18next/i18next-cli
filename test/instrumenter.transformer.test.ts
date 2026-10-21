@@ -689,21 +689,22 @@ describe('transformer', () => {
       expect(result.warnings).toHaveLength(0)
     })
 
-    it('does NOT warn for i18next.t() in .js files (non-React project)', () => {
+    it.for([['.js'], ['.mjs']])('does NOT warn for i18next.t() in %s files (non-React project)', ([ext]) => {
       const content = 'const msg = "Not found"'
+      const file = `src/utils/messages${ext}`
       const candidate: CandidateString = {
         content: 'Not found',
         confidence: 0.9,
         offset: 13,
         endOffset: 22,
         type: 'string-literal',
-        file: 'src/utils/messages.js',
+        file,
         line: 1,
         column: 13,
         key: 'notFound'
       }
 
-      const result = transformFile(content, 'src/utils/messages.js', [candidate], {
+      const result = transformFile(content, file, [candidate], {
         isDryRun: false,
         hasReact: false,
         isPrimaryLanguageFile: true,
@@ -739,21 +740,22 @@ describe('transformer', () => {
       expect(result.warnings[0]).toContain('constants.ts')
     })
 
-    it('warns when i18next.t() is used outside a component in a .js file (React project)', () => {
+    it.for([['.js'], ['.mjs']])('warns when i18next.t() is used outside a component in a %s file (React project)', ([ext]) => {
       const content = 'const msg = "Something went wrong"'
+      const file = `src/lib/errors${ext}`
       const candidate: CandidateString = {
         content: 'Something went wrong',
         confidence: 0.9,
         offset: 13,
         endOffset: 33,
         type: 'string-literal',
-        file: 'src/lib/errors.js',
+        file,
         line: 1,
         column: 13,
         key: 'somethingWentWrong'
       }
 
-      const result = transformFile(content, 'src/lib/errors.js', [candidate], {
+      const result = transformFile(content, file, [candidate], {
         isDryRun: false,
         hasReact: true,
         isPrimaryLanguageFile: true,

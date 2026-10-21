@@ -48,7 +48,8 @@ describe('extractor: runExtractor', () => {
         '/src/App.ts',
         '/src/ignored-file.ts',
         '/src/App.js',
-        '/src/App.jsx'
+        '/src/App.jsx',
+        '/src/App.mjs',
       ]
       // Only return files that actually exist in the memfs volume to avoid ENOENT
       const existing = candidates.filter(p => vol.existsSync(p))
@@ -2763,7 +2764,7 @@ describe('extractor: runExtractor', () => {
     }
   })
 
-  it('should extract keys from JSX in .js files', async () => {
+  it.for([['.js'], ['.mjs']])('should extract keys from JSX in %s files', async ([ext]) => {
     const sampleCode = `
       import React from 'react';
       import { Trans, useTranslation } from 'react-i18next';
@@ -2778,13 +2779,13 @@ describe('extractor: runExtractor', () => {
         );
       }
     `
-    vol.fromJSON({ '/src/App.js': sampleCode })
+    vol.fromJSON({ [`/src/App${ext}`]: sampleCode })
 
     const configWithJs = {
       ...mockConfig,
       extract: {
         ...mockConfig.extract,
-        input: ['src/**/*.{ts,tsx,js,jsx}'],
+        input: ['src/**/*.{ts,tsx,js,jsx,mjs}'],
       },
     }
 

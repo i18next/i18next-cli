@@ -297,7 +297,8 @@ async function scanFileForCandidates (
           dynamicImport: true,
           comments: true
         })
-      } else if (fileExt === '.js' && !isJSX) {
+      // Fallback for .js and .mjs files with JSX
+      } else if ((fileExt === '.js' || fileExt === '.mjs') && !isJSX) {
         ast = await parse(content, {
           syntax: 'ecmascript',
           jsx: true,

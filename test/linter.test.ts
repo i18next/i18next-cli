@@ -878,7 +878,8 @@ describe('Linter (core logic)', () => {
     expect(texts.some(t => t.includes("Don't flag this"))).toBe(false)
   })
 
-  it('should detect hardcoded strings in JSX inside .js files', async () => {
+  it.for([['.js'], ['.mjs']])('should detect hardcoded strings in JSX inside %s files', async ([ext]) => {
+    const filename = `/src/App${ext}`
     const sampleCode = `
       import React from 'react';
       export default function App() {
@@ -890,15 +891,15 @@ describe('Linter (core logic)', () => {
         );
       }
     `
-    vol.fromJSON({ '/src/App.js': sampleCode })
+    vol.fromJSON({ [filename]: sampleCode })
 
     const { glob } = await import('glob')
-    ;(glob as any).mockResolvedValue(['/src/App.js'])
+    ;(glob as any).mockResolvedValue([filename])
 
     const config: I18nextToolkitConfig = {
       locales: ['en'],
       extract: {
-        input: ['src/**/*.js'],
+        input: [`src/**/*${ext}`],
         output: '',
         transComponents: ['Trans'],
       },
@@ -908,8 +909,8 @@ describe('Linter (core logic)', () => {
 
     expect(result.success).toBe(false)
     expect(result.message).toContain('Linter found 3 potential issues')
-    expect(result.files['/src/App.js']).toHaveLength(3)
-    const texts = result.files['/src/App.js'].map(issue => issue.text)
+    expect(result.files[filename]).toHaveLength(3)
+    const texts = result.files[filename].map(issue => issue.text)
     expect(texts).toContain('This is a hardcoded heading')
     expect(texts).toContain('Hardcoded attribute')
     expect(texts).toContain('Some paragraph')

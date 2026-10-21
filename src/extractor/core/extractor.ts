@@ -313,8 +313,8 @@ export async function processFile (
         } catch (err2) {
           throw new ExtractorError('Failed to process file', file, err2 as Error)
         }
-      // Fallback for .js files with JSX
-      } else if (effectiveExt === '.js' && !isJSX) {
+      // Fallback for .js and .mjs files with JSX
+      } else if ((effectiveExt === '.js' || effectiveExt === '.mjs') && !isJSX) {
         try {
           ast = await parse(code, {
             syntax: 'ecmascript',
