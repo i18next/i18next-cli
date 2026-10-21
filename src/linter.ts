@@ -620,8 +620,8 @@ export class Linter extends EventEmitter<LinterEventMap> {
               this.emit('error', wrapped)
               continue
             }
-          // Fallback for .js files with JSX
-          } else if (fileExt === '.js' && !isJSX) {
+          // Fallback for .js and .mjs files with JSX
+          } else if ((fileExt === '.js' || fileExt === '.mjs') && !isJSX) {
             try {
               ast = await parse(code, {
                 syntax: 'ecmascript',
