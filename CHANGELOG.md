@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.79.0
+
+- feat(extract, instrument, lint): a `.mjs` file with JSX is parsed with the same JSX fallback as a `.js` file,
+  including the constants pre-scan of `extract`. Before, it failed with a syntax error and `extract` exited with 1.
+  [#309](https://github.com/i18next/i18next-cli/pull/309)
+
 ## 1.78.0
 
 - feat(lint): with `messageFormat: 'mf2'`, `lint` warns when whitespace at the start or end of a pattern differs from

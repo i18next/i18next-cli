@@ -2789,7 +2789,8 @@ describe('extractor: runExtractor', () => {
       },
     }
 
-    await runExtractor(configWithJs)
+    const { hasErrors } = await runExtractor(configWithJs)
+    expect(hasErrors).toBe(false)
 
     const enPath = resolve(process.cwd(), 'locales/en/translation.json')
     const enFileContent = await vol.promises.readFile(enPath, 'utf-8')

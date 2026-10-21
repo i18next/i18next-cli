@@ -438,7 +438,7 @@ export async function preScanFile (
         } catch (err2) {
           throw new ExtractorError('Failed to pre-scan file', file, err2 as Error)
         }
-      } else if (fileExt === '.js' && !isJSX) {
+      } else if ((fileExt === '.js' || fileExt === '.mjs') && !isJSX) {
         try {
           ast = await parse(code, { syntax: 'ecmascript', jsx: true, decorators: true, dynamicImport: true, comments: true })
         } catch (err2) {
