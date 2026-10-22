@@ -42,7 +42,9 @@ all commands.
    written (check the extract.output path in the config). If the developer
    chose repository files only: translate the extracted keys yourself or
    leave them to the team, run \`npx i18next-cli status\` to confirm every
-   language is complete, and stop here.
+   language is complete (it also lists values still identical to the primary
+   language) and \`npx i18next-cli lint\` to check that every translation keeps
+   the placeholders ({{name}}, $t(), <0>) of the primary language, and stop here.
 5. Locize (only if the developer chose it in step 2): ask them for
    LOCIZE_PROJECTID and LOCIZE_API_KEY (they create the project at
    https://www.locize.app/register?from=i18next_cli__agent-prompt

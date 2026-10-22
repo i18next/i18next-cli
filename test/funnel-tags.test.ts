@@ -21,6 +21,7 @@ vi.mock('../src/utils/funnel-msg-tracker', () => ({
 }))
 
 const { runStatus, runSyncer, runExtractor } = await import('../src/index')
+const { runLinterCli } = await import('../src/linter')
 
 /**
  * Attribution guard: every registration coming from a CLI funnel line must be
@@ -178,6 +179,63 @@ describe('locize funnel tags', () => {
       await runExtractor(config, { isDryRun: true })
 
       expect(funnelLine()).toBeUndefined()
+    })
+  })
+
+  describe('lint', () => {
+    const config: I18nextToolkitConfig = {
+      locales: ['en', 'de'],
+      extract: {
+        input: ['src/**/*.{ts,tsx}'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+      },
+    }
+    const enPath = resolve(process.cwd(), 'locales/en/translation.json')
+    const dePath = resolve(process.cwd(), 'locales/de/translation.json')
+
+    beforeEach(async () => {
+      const { glob } = await import('glob')
+      vi.mocked(glob).mockImplementation(async (pattern: any) => String(pattern).startsWith('locales/') ? [enPath] : [])
+    })
+
+    it('prints the lint-tagged register link after a placeholder mismatch', async () => {
+      vol.fromJSON({
+        [enPath]: JSON.stringify({ greeting: 'Hello {{name}}' }),
+        [dePath]: JSON.stringify({ greeting: 'Hallo {{nom}}' }),
+      })
+
+      await runLinterCli(config, { quiet: true })
+
+      const line = funnelLine()
+      expect(line).toContain('placeholder check while translators type')
+      expect(line).toContain(`${REGISTER}lint`)
+    })
+
+    it('prints nothing when the placeholders match', async () => {
+      vol.fromJSON({
+        [enPath]: JSON.stringify({ greeting: 'Hello {{name}}' }),
+        [dePath]: JSON.stringify({ greeting: 'Hallo {{name}}' }),
+      })
+
+      await runLinterCli(config, { quiet: true })
+
+      expect(funnelLine()).toBeUndefined()
+    })
+  })
+
+  describe('status: identical values', () => {
+    it('counts English copied into de as untranslated in the funnel line', async () => {
+      const { glob } = await import('glob')
+      vi.mocked(glob).mockImplementation(async () => Object.keys(vol.toJSON()).filter(p => p.includes('/src/')))
+      vol.fromJSON({
+        [resolve(process.cwd(), 'src/file1.ts')]: "import { t } from 'i18next'; t('title'); t('save'); t('cancel')",
+        [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify({ title: 'Welcome', save: 'Save', cancel: 'Cancel' }),
+        [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({ title: 'Willkommen', save: 'Save', cancel: '' }),
+      })
+
+      await runStatus({ locales: ['en', 'de'], extract: { input: ['src/**/*.ts'], output: 'locales/{{language}}/{{namespace}}.json' } }).catch(() => {})
+
+      expect(funnelLine()).toContain('2 untranslated keys in de, 1 of them still identical to the primary language')
     })
   })
 })

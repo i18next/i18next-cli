@@ -19,6 +19,25 @@ function globToRegex (glob: string): RegExp {
   return new RegExp(`^${escaped.replace(/\*/g, '.*')}$`)
 }
 
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * True for a value that may stay the same in every language: no letters once the placeholders,
+ * `$t()` references and tags are removed, a URL or e-mail address, or a short all-caps word ("OK", "FAQ").
+ */
+function staysTheSame (value: string, config: I18nextToolkitConfig): boolean {
+  const { interpolationPrefix = '{{', interpolationSuffix = '}}', nestingPrefix = '$t(', nestingSuffix = ')' } = config.extract
+  const text = value
+    .replace(new RegExp(`${escapeRegex(interpolationPrefix)}.*?${escapeRegex(interpolationSuffix)}`, 'g'), ' ')
+    .replace(new RegExp(`${escapeRegex(nestingPrefix)}.*?${escapeRegex(nestingSuffix)}`, 'g'), ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .trim()
+  const letters = text.match(/\p{L}/gu)?.length ?? 0
+  if (!letters) return true
+  if (/^(?:https?:\/\/|www\.|mailto:)\S*$|^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(text)) return true
+  return letters <= 5 && !/\p{Ll}/u.test(text)
+}
+
 /**
  * Options for configuring the status report display.
  */
@@ -39,8 +58,10 @@ interface StatusOptions {
  *                 (written by `extract` as a placeholder — needs a translator)
  * - `absent`:     key is not present in the file at all
  *                 (structural problem — `extract` or `sync` may not have run)
+ * - `identical`:  the value is the primary language's, e.g. English copied into
+ *                 `de` (`status.checkIdentical`)
  */
-type TranslationState = 'translated' | 'empty' | 'absent' | 'optional'
+type TranslationState = 'translated' | 'empty' | 'absent' | 'optional' | 'identical'
 
 function classifyValue (value: any): TranslationState {
   if (value === undefined || value === null) return 'absent'
@@ -114,6 +135,11 @@ interface LocaleStatus {
    * affect completion percentages or the command's pass/fail result.
    */
   totalOptional: number;
+  /**
+   * Values identical to the primary language. Counted as translated with
+   * `status.checkIdentical` `'warn'` (default), as untranslated with `'error'`.
+   */
+  totalIdentical: number;
   /** Map of namespace names to their translation details for this locale */
   namespaces: Map<string, {
     /** Total number of keys in this namespace */
@@ -126,6 +152,8 @@ interface LocaleStatus {
     absentKeys: number;
     /** Optional plural variants missing from the file in this namespace */
     optionalKeys: number;
+    /** Values identical to the primary language in this namespace */
+    identicalKeys: number;
     /** Detailed status for each key in this namespace */
     keyDetails: Array<{ key: string; state: TranslationState }>;
   }>;
@@ -410,12 +438,24 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
   // placeholder and counts as present — only truly absent keys are flagged.
   const localesToCheck = [primaryLanguage, ...secondaryLanguages.filter((l: string) => l !== primaryLanguage)]
 
+  // `status.checkIdentical`: values identical to the primary language's. Only `'error'` counts them as untranslated.
+  const identicalSetting = config.status?.checkIdentical
+  const checkIdentical = identicalSetting !== false && identicalSetting !== 'off'
+  const isDone = (state: TranslationState) => state === 'translated' || (state === 'identical' && identicalSetting !== 'error')
+  const primaryTranslationsByNs = new Map<string, any>()
+  const baseLanguage = (lng: string) => lng.split(/[-_]/)[0].toLowerCase()
+  // a plural form the primary language lacks (ru `_few`) is compared with its `_other`
+  const nonOtherPluralSuffix = new RegExp(`${escapeRegex(pluralSeparator)}(?:zero|one|two|few|many)$`)
+
   for (const locale of localesToCheck) {
     const isPrimary = locale === primaryLanguage
+    // en-GB keeps most of the en values
+    const compareWithPrimary = checkIdentical && !isPrimary && baseLanguage(locale) !== baseLanguage(primaryLanguage)
     let totalTranslatedForLocale = 0
     let totalEmptyForLocale = 0
     let totalAbsentForLocale = 0
     let totalOptionalForLocale = 0
+    let totalIdenticalForLocale = 0
     let totalKeysForLocale = 0
     const namespaces = new Map<string, any>()
 
@@ -464,6 +504,8 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
         // when mergedTranslations[ns] is missing.
         ? (mergedTranslations?.[ns] ?? mergedTranslations ?? {})
         : await loadTranslationFile(resolve(process.cwd(), getOutputPath(config.extract.output, locale, ns))) || {}
+      if (isPrimary) primaryTranslationsByNs.set(ns, translationsForNs)
+      const primaryTranslations = primaryTranslationsByNs.get(ns)
 
       const fallbackTranslationsList: any[] = []
       for (const fallbackNs of fallbackNamespaces) {
@@ -475,8 +517,17 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
       let emptyInNs = 0
       let absentInNs = 0
       let optionalInNs = 0
+      let identicalInNs = 0
       let totalInNs = 0
       const keyDetails: Array<{ key: string; state: TranslationState }> = []
+      const tally = (key: string, state: TranslationState) => {
+        totalInNs++
+        if (isDone(state)) translatedInNs++
+        else if (state === 'empty') emptyInNs++
+        else if (state === 'absent') absentInNs++
+        if (state === 'identical') identicalInNs++
+        keyDetails.push({ key, state })
+      }
 
       // Get the plural categories for THIS specific locale
       const getLocalePluralCategories = (locale: string, isOrdinal: boolean): string[] => {
@@ -522,6 +573,13 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
         // key (used in code, missing from the file) is a problem here.
         if (isPrimary && state === 'empty') return 'translated'
 
+        // English copied into `de` (a fallback-namespace value is not this locale's own)
+        if (compareWithPrimary && primaryState === 'translated' && primaryTranslations && typeof primaryValue === 'string') {
+          const sourceValue = getNestedValue(primaryTranslations, key, sep) ??
+            getNestedValue(primaryTranslations, key.replace(nonOtherPluralSuffix, `${pluralSeparator}other`), sep)
+          if (primaryValue === sourceValue && !staysTheSame(primaryValue, config)) return 'identical'
+        }
+
         return state
       }
 
@@ -559,15 +617,11 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
               // it isn't translated — whether absent or an empty placeholder that
               // `extract` wrote. It is never a hard failure. See #270 and
               // getOptionalPluralCategories.
-              if (state !== 'translated' && optionalCategories.has(category)) {
+              if (!isDone(state) && optionalCategories.has(category)) {
                 optionalInNs++
                 keyDetails.push({ key: baseKey, state: 'optional' })
               } else {
-                totalInNs++
-                if (state === 'translated') translatedInNs++
-                else if (state === 'empty') emptyInNs++
-                else absentInNs++
-                keyDetails.push({ key: baseKey, state })
+                tally(baseKey, state)
               }
             }
           } else {
@@ -595,11 +649,7 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
               // resolves count via the bare key, so it satisfies the family on
               // its own — don't demand plural variants that were never written.
               processedKeys.add(baseKey)
-              totalInNs++
-              if (bareState === 'translated') translatedInNs++
-              else if (bareState === 'empty') emptyInNs++
-              else absentInNs++
-              keyDetails.push({ key: baseKey, state: bareState })
+              tally(baseKey, bareState)
             } else {
               // Convention (b): plural variants exist (or the family is missing
               // entirely). Evaluate each CLDR category — a missing variant is a
@@ -611,28 +661,19 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
                 const state = resolveAndClassify(pluralKey)
                 // An optional category (e.g. French `_many`) is a soft note
                 // whenever it isn't translated — never a hard failure. See #270.
-                if (state !== 'translated' && optionalCategories.has(category)) {
+                if (!isDone(state) && optionalCategories.has(category)) {
                   optionalInNs++
                   keyDetails.push({ key: pluralKey, state: 'optional' })
                   continue
                 }
-                totalInNs++
-                if (state === 'translated') translatedInNs++
-                else if (state === 'empty') emptyInNs++
-                else absentInNs++
-                keyDetails.push({ key: pluralKey, state })
+                tally(pluralKey, state)
               }
             }
           }
         } else {
           if (!processedKeys.has(baseKey)) {
             processedKeys.add(baseKey)
-            totalInNs++
-            const state = resolveAndClassify(baseKey)
-            if (state === 'translated') translatedInNs++
-            else if (state === 'empty') emptyInNs++
-            else absentInNs++
-            keyDetails.push({ key: baseKey, state })
+            tally(baseKey, resolveAndClassify(baseKey))
           }
         }
       }
@@ -643,19 +684,15 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
       for (const variantKey of contextVariants) {
         if (processedKeys.has(variantKey)) continue
         processedKeys.add(variantKey)
-        totalInNs++
-        const state = resolveAndClassify(variantKey)
-        if (state === 'translated') translatedInNs++
-        else if (state === 'empty') emptyInNs++
-        else absentInNs++
-        keyDetails.push({ key: variantKey, state })
+        tally(variantKey, resolveAndClassify(variantKey))
       }
 
-      namespaces.set(ns, { totalKeys: totalInNs, translatedKeys: translatedInNs, emptyKeys: emptyInNs, absentKeys: absentInNs, optionalKeys: optionalInNs, keyDetails })
+      namespaces.set(ns, { totalKeys: totalInNs, translatedKeys: translatedInNs, emptyKeys: emptyInNs, absentKeys: absentInNs, optionalKeys: optionalInNs, identicalKeys: identicalInNs, keyDetails })
       totalTranslatedForLocale += translatedInNs
       totalEmptyForLocale += emptyInNs
       totalAbsentForLocale += absentInNs
       totalOptionalForLocale += optionalInNs
+      totalIdenticalForLocale += identicalInNs
       totalKeysForLocale += totalInNs
     }
     const localeStatus: LocaleStatus = {
@@ -664,6 +701,7 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
       totalEmpty: totalEmptyForLocale,
       totalAbsent: totalAbsentForLocale,
       totalOptional: totalOptionalForLocale,
+      totalIdentical: totalIdenticalForLocale,
       namespaces,
     }
     if (isPrimary) {
@@ -679,11 +717,21 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
  * Builds a compact breakdown string like "3 untranslated, 2 absent" for use in
  * summary lines. Returns an empty string when there is nothing to report.
  */
-function buildBreakdown (emptyCount: number, absentCount: number): string {
+function buildBreakdown (emptyCount: number, absentCount: number, identicalCount = 0, primaryLanguage = ''): string {
   const parts: string[] = []
   if (emptyCount > 0) parts.push(styleText('yellow', `${emptyCount} untranslated`))
+  if (identicalCount > 0) parts.push(styleText('yellow', `${identicalCount} identical to ${primaryLanguage}`))
   if (absentCount > 0) parts.push(styleText('red', `${absentCount} absent`))
   return parts.join(', ')
+}
+
+/**
+ * The funnel's gap for a locale: untranslated keys, plus the values identical to the
+ * primary language that `'warn'` (default) still counts as translated.
+ */
+function funnelGap (config: I18nextToolkitConfig, locale: string, data: { totalKeys: number, translated: number, identical: number }) {
+  const identicalCountedAsTranslated = config.status?.checkIdentical === 'error' ? 0 : data.identical
+  return { locale, untranslated: data.totalKeys - data.translated + identicalCountedAsTranslated, identical: data.identical }
 }
 
 /**
@@ -735,7 +783,8 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
   const totalKeysForLocale = localeData.totalKeys
   printProgressBar('Overall', localeData.totalTranslated, totalKeysForLocale)
 
-  const breakdown = buildBreakdown(localeData.totalEmpty, localeData.totalAbsent)
+  const primaryLanguage = config.extract.primaryLanguage ?? ''
+  const breakdown = buildBreakdown(localeData.totalEmpty, localeData.totalAbsent, localeData.totalIdentical, primaryLanguage)
   if (breakdown) console.log(`         ${breakdown}`)
 
   const namespacesToDisplay = namespaceFilter ? [namespaceFilter] : Array.from(localeData.namespaces.keys()).sort()
@@ -747,7 +796,7 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
     console.log(styleText(['cyan', 'bold'], `\nNamespace: ${ns}`))
     printProgressBar('Namespace Progress', nsData.translatedKeys, nsData.totalKeys)
 
-    const nsBreakdown = buildBreakdown(nsData.emptyKeys, nsData.absentKeys)
+    const nsBreakdown = buildBreakdown(nsData.emptyKeys, nsData.absentKeys, nsData.identicalKeys, primaryLanguage)
     if (nsBreakdown) console.log(`                   ${nsBreakdown}`)
 
     const keysToDisplay = hideTranslated
@@ -761,6 +810,8 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
         console.log(`  ${styleText('yellow', '~')} ${key}  ${styleText('yellow', '(untranslated)')}`)
       } else if (state === 'optional') {
         console.log(`  ${styleText('gray', '○')} ${key}  ${styleText('gray', '(optional plural form)')}`)
+      } else if (state === 'identical') {
+        console.log(`  ${styleText('yellow', '≈')} ${key}  ${styleText('yellow', `(identical to ${primaryLanguage})`)}`)
       } else {
         console.log(`  ${styleText('red', '✗')} ${key}  ${styleText('red', '(absent)')}`)
       }
@@ -772,7 +823,7 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
     if (isPrimary) {
       console.log(styleText(['red', 'bold'], `\nSummary: Found ${missingCount} key(s) used in code but absent from the "${locale}" translation files. Run "i18next-cli extract" to add them.`))
     } else {
-      const summaryBreakdown = buildBreakdown(localeData.totalEmpty, localeData.totalAbsent)
+      const summaryBreakdown = buildBreakdown(localeData.totalEmpty, localeData.totalAbsent, config.status?.checkIdentical === 'error' ? localeData.totalIdentical : 0, primaryLanguage)
       console.log(styleText(['yellow', 'bold'], `\nSummary: Found ${missingCount} incomplete translations for "${locale}" — ${summaryBreakdown}.`))
     }
   } else if (isPrimary) {
@@ -780,12 +831,17 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
   } else {
     console.log(styleText(['green', 'bold'], `\nSummary: 🎉 All keys are translated for "${locale}".`))
   }
+  if (localeData.totalIdentical > 0 && config.status?.checkIdentical !== 'error') {
+    console.log(styleText('yellow', `${localeData.totalIdentical} value(s) are identical to "${primaryLanguage}" and may still need translating. Values that stay the same go into status.ignoreKeys.`))
+  }
 
   // Untranslated keys in a secondary locale are the gap Locize fills; absent
   // keys in the primary language are an `extract` problem (handled above).
   const nsData = namespaceFilter ? localeData.namespaces.get(namespaceFilter) : undefined
-  const untranslated = nsData ? nsData.totalKeys - nsData.translatedKeys : missingCount
-  await printUntranslatedFunnel('status', isPrimary ? [] : [{ locale, untranslated }], LOCIZE_SIGNUP_URL)
+  const gap = nsData
+    ? funnelGap(config, locale, { totalKeys: nsData.totalKeys, translated: nsData.translatedKeys, identical: nsData.identicalKeys })
+    : funnelGap(config, locale, { totalKeys: totalKeysForLocale, translated: localeData.totalTranslated, identical: localeData.totalIdentical })
+  await printUntranslatedFunnel('status', isPrimary ? [] : [gap], LOCIZE_SIGNUP_URL)
 }
 
 /**
@@ -813,7 +869,7 @@ async function displayNamespaceSummaryReport (report: StatusReport, config: I18n
     if (nsLocaleData) {
       const percentage = nsLocaleData.totalKeys > 0 ? Math.round((nsLocaleData.translatedKeys / nsLocaleData.totalKeys) * 100) : 100
       const bar = generateProgressBarText(percentage)
-      const breakdown = buildBreakdown(nsLocaleData.emptyKeys, nsLocaleData.absentKeys)
+      const breakdown = buildBreakdown(nsLocaleData.emptyKeys, nsLocaleData.absentKeys, nsLocaleData.identicalKeys, config.extract.primaryLanguage)
       const suffix = breakdown ? `  — ${breakdown}` : ''
       console.log(`- ${locale}: ${bar} ${percentage}% (${nsLocaleData.translatedKeys}/${nsLocaleData.totalKeys} keys)${suffix}`)
     }
@@ -827,7 +883,9 @@ async function displayNamespaceSummaryReport (report: StatusReport, config: I18n
 
   const gaps = Array.from(report.locales, ([locale, localeData]) => {
     const nsLocaleData = localeData.namespaces.get(namespace)
-    return { locale, untranslated: nsLocaleData ? nsLocaleData.totalKeys - nsLocaleData.translatedKeys : 0 }
+    return nsLocaleData
+      ? funnelGap(config, locale, { totalKeys: nsLocaleData.totalKeys, translated: nsLocaleData.translatedKeys, identical: nsLocaleData.identicalKeys })
+      : { locale, untranslated: 0 }
   })
   await printUntranslatedFunnel('status', gaps, LOCIZE_SIGNUP_URL)
 }
@@ -857,7 +915,7 @@ async function displayOverallSummaryReport (report: StatusReport, config: I18nex
   for (const [locale, localeData] of report.locales.entries()) {
     const percentage = localeData.totalKeys > 0 ? Math.round((localeData.totalTranslated / localeData.totalKeys) * 100) : 100
     const bar = generateProgressBarText(percentage)
-    const breakdown = buildBreakdown(localeData.totalEmpty, localeData.totalAbsent)
+    const breakdown = buildBreakdown(localeData.totalEmpty, localeData.totalAbsent, localeData.totalIdentical, primaryLanguage)
     const suffix = breakdown ? `  — ${breakdown}` : ''
     console.log(`- ${locale}: ${bar} ${percentage}% (${localeData.totalTranslated}/${localeData.totalKeys} keys)${suffix}`)
   }
@@ -867,7 +925,8 @@ async function displayOverallSummaryReport (report: StatusReport, config: I18nex
     console.log(styleText('red', `  Run "i18next-cli status ${primaryLanguage}" for details, or "i18next-cli extract" to add them.`))
   }
 
-  const gaps = Array.from(report.locales, ([locale, localeData]) => ({ locale, untranslated: localeData.totalKeys - localeData.totalTranslated }))
+  const gaps = Array.from(report.locales, ([locale, localeData]) =>
+    funnelGap(config, locale, { totalKeys: localeData.totalKeys, translated: localeData.totalTranslated, identical: localeData.totalIdentical }))
   await printUntranslatedFunnel('status', gaps, LOCIZE_SIGNUP_URL)
 }
 

@@ -1,7 +1,7 @@
 import { glob } from 'glob'
 import { readFile } from 'node:fs/promises'
 import { parse } from '@swc/core'
-import { extname, resolve } from 'node:path'
+import { extname, relative, resolve } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { styleText } from 'node:util'
 import { ConsoleLogger } from './utils/logger.js'
@@ -9,8 +9,12 @@ import { createSpinnerLike } from './utils/wrap-ora.js'
 import { translatableAttributes, ignoredAttributeLowerSet, ignoredTags as sharedIgnoredTags, acceptedTags as sharedAcceptedTags } from './utils/jsx-attributes.js'
 import { normalizeSpansToCharIndices, collectIgnoredLineRanges, lineColumnFromOffset } from './extractor/parsers/ast-utils.js'
 import { matchesFunctionPattern } from './extractor/utils/function-matcher.js'
-import { loadMessageAnalyzer, lintMessageFormatResources, type MessageAnalyzer } from './utils/message-format.js'
+import { loadMessageAnalyzer, lintMessageFormatResources, lintI18nextResources, interpolationNames, type MessageAnalyzer } from './utils/message-format.js'
+import { applyLintBaseline, lintBaselinePath, readLintBaseline, writeLintBaseline } from './utils/lint-baseline.js'
+import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 import type { I18nextToolkitConfig, Logger, LintIssue, Plugin, LintPluginContext } from './types.js'
+
+const LOCIZE_SIGNUP_URL = 'https://www.locize.app/register?from=i18next_cli__lint'
 
 /**
  * Loads all translation values from the primary locale's JSON files and returns
@@ -72,23 +76,6 @@ async function loadPrimaryTranslationValues (config: I18nextToolkitConfig): Prom
   }
 
   return result
-}
-
-// Helper to extract interpolation keys from a translation string
-function extractInterpolationKeys (str: string, config: I18nextToolkitConfig): string[] {
-  const prefix = config.extract.interpolationPrefix ?? '{{'
-  const suffix = config.extract.interpolationSuffix ?? '}}'
-  // Regex to match {{key}} or {{key, format}} (i18next formatting syntax)
-  const regex = new RegExp(
-    `${prefix.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*([\\w.-]+)\\s*(?:,[^}]*)?${suffix.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}`,
-    'g'
-  )
-  const keys: string[] = []
-  let match
-  while ((match = regex.exec(str))) {
-    if (match[1]) keys.push(match[1])
-  }
-  return keys
 }
 
 // Known i18next t() option keys that are NOT interpolation parameters.
@@ -295,7 +282,7 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
     lastSearchIndex = position + searchText.length
 
     const issueLineNumber = getLineNumber(position)
-    const keys = analyze ? messageArgs(analyze, translationStr) : extractInterpolationKeys(translationStr, config)
+    const keys = analyze ? messageArgs(analyze, translationStr) : interpolationNames(translationStr, config.extract)
 
     // Only check for unused parameters if there is at least one interpolation key in the string
     if (keys.length > 0) {
@@ -520,6 +507,10 @@ type LinterEventMap = {
     success: boolean;
     message: string;
     files: Record<string, LintIssue[]>;
+    /** Issues left out because the baseline file holds them */
+    existingIssues: number;
+    /** Baseline entries that no longer occur */
+    staleBaselineEntries: number;
   }];
   error: [error: Error];
 }
@@ -553,7 +544,8 @@ export class Linter extends EventEmitter<LinterEventMap> {
     return new Error(`${prefix}${String(error)}`)
   }
 
-  async run () {
+  /** @param options.ignoreBaseline - report every issue, also those the baseline file holds (`lint --update-baseline`) */
+  async run (options: { ignoreBaseline?: boolean } = {}) {
     const { config } = this
     try {
       this.emit('progress', { message: 'Finding source files to analyze...' })
@@ -675,19 +667,36 @@ export class Linter extends EventEmitter<LinterEventMap> {
         }
       }
 
+      const placeholderSetting = config.lint?.checkTranslationPlaceholders
+      let resourceIssues = new Map<string, LintIssue[]>()
       if (analyze) {
         this.emit('progress', { message: `Checking ${messageFormat === 'mf2' ? 'MF2' : 'ICU'} messages in translation files...` })
-        for (const [file, issues] of await lintMessageFormatResources(config, analyze)) {
-          totalIssues += issues.length
-          issuesByFile.set(file, [...(issuesByFile.get(file) ?? []), ...issues])
-        }
+        resourceIssues = await lintMessageFormatResources(config, analyze)
+      } else if (placeholderSetting !== false && placeholderSetting !== 'off' && config.locales.length > 1) {
+        this.emit('progress', { message: 'Checking placeholders in translation files...' })
+        resourceIssues = await lintI18nextResources(config, placeholderSetting === 'error' ? 'error' : 'warning')
+      }
+      for (const [file, issues] of resourceIssues) {
+        totalIssues += issues.length
+        issuesByFile.set(file, [...(issuesByFile.get(file) ?? []), ...issues])
       }
 
-      const files = Object.fromEntries(issuesByFile.entries())
+      let files = Object.fromEntries(issuesByFile.entries())
+      // Issues the baseline file holds (`lint --update-baseline`) are counted, not reported
+      let existingIssues = 0
+      let staleBaselineEntries = 0
+      const baseline = options.ignoreBaseline ? undefined : await readLintBaseline(lintBaselinePath(config))
+      if (baseline) {
+        ({ files, existing: existingIssues, stale: staleBaselineEntries } = applyLintBaseline(files, baseline))
+        totalIssues -= existingIssues
+      }
       // `success` reflects errors only — warning-severity issues (e.g. string
       // concatenation) are reported but do not fail the run / CI.
-      const errorCount = Array.from(issuesByFile.values()).flat().filter(i => i.severity !== 'warning').length
-      const data = { success: errorCount === 0, message: totalIssues > 0 ? `Linter found ${totalIssues} potential issues.` : 'No issues found.', files }
+      const errorCount = Object.values(files).flat().filter(i => i.severity !== 'warning').length
+      const message = totalIssues > 0
+        ? `Linter found ${totalIssues} potential issues${existingIssues ? ` (${existingIssues} more in the baseline)` : ''}.`
+        : existingIssues ? `No new issues found (${existingIssues} in the baseline).` : 'No issues found.'
+      const data = { success: errorCount === 0, message, files, existingIssues, staleBaselineEntries }
       this.emit('done', data)
       return data
     } catch (error) {
@@ -800,16 +809,25 @@ export async function runLinter (config: I18nextToolkitConfig) {
 
 export async function runLinterCli (
   config: I18nextToolkitConfig,
-  options: { quiet?: boolean, logger?: Logger } = {}
+  options: { quiet?: boolean, logger?: Logger, updateBaseline?: boolean } = {}
 ) {
   const internalLogger = options.logger ?? new ConsoleLogger()
+  const log = (msg: string) => typeof internalLogger.info === 'function' ? internalLogger.info(msg) : console.log(msg)
   const linter = new Linter(config, internalLogger)
   const spinner = createSpinnerLike('', { quiet: !!options.quiet, logger: options.logger })
   linter.on('progress', (event) => {
     spinner.text = event.message
   })
   try {
-    const { message, files } = await linter.run()
+    if (options.updateBaseline) {
+      const { files } = await linter.run({ ignoreBaseline: true })
+      const path = lintBaselinePath(config)
+      const count = await writeLintBaseline(path, files)
+      spinner.succeed(styleText(['green', 'bold'], `Wrote ${count} existing issue${count === 1 ? '' : 's'} to ${relative(process.cwd(), path)}. Commit it: lint now fails only on new issues.`))
+      return
+    }
+
+    const { message, files, staleBaselineEntries } = await linter.run()
     const fileEntries = Object.entries(files)
     const allIssues = fileEntries.flatMap(([, issues]) => issues)
     const hasErrors = allIssues.some(i => i.severity !== 'warning')
@@ -831,13 +849,27 @@ export async function runLinterCli (
             ? 'String concatenation'
             : type === 'messageFormat'
               ? `${config.extract.messageFormat === 'mf2' ? 'MF2' : 'ICU'} message`
-              : 'Found hardcoded string'
+              : type === 'placeholder'
+                ? 'Placeholder mismatch'
+                : 'Found hardcoded string'
         const tag = severity === 'warning' ? styleText('yellow', 'Warning:') : styleText('red', 'Error:')
         // line 0: a translation file whose format has no line lookup (YAML, JS)
         const detail = `  ${line ? `${styleText('gray', `${line}:`)} ` : ''}${tag} ${label}: "${text}"`
         if (typeof internalLogger.info === 'function') internalLogger.info(detail)
         else console.log(detail)
       })
+    }
+
+    if (staleBaselineEntries > 0) {
+      log(styleText('gray', `\n${staleBaselineEntries} baseline entr${staleBaselineEntries === 1 ? 'y no longer occurs' : 'ies no longer occur'}. Run "npx i18next-cli lint --update-baseline" to drop ${staleBaselineEntries === 1 ? 'it' : 'them'}.`))
+    }
+
+    // A placeholder broken in a translation file was edited outside the code, usually by a
+    // translator or a tool: Locize runs the same check in its editor while they type.
+    // Gated like the other funnel messages (never in CI/non-TTY, 24h cooldown).
+    if (allIssues.some(i => i.type === 'placeholder') && await shouldShowFunnel('lint-placeholders')) {
+      log(`\n💡 Locize runs this placeholder check while translators type and can fix a mismatch with AI (sign up: ${LOCIZE_SIGNUP_URL})`)
+      await recordFunnelShown('lint-placeholders')
     }
 
     // Only errors fail the process; warning-only runs exit 0.

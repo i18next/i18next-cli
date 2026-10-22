@@ -112,7 +112,7 @@ export interface I18nextToolkitConfig {
      */
     acceptedTags?: string[] | 'all';
 
-    /** HTML tags to preserve in Trans component serialization (default: ['br', 'strong', 'i']) */
+    /** HTML tags to preserve in Trans component serialization (default: react-i18next's, ['br', 'strong', 'i', 'p']) */
     transKeepBasicHtmlNodesFor?: string[];
 
     /** Glob patterns for keys to preserve even if not found in source (for dynamic keys) */
@@ -329,6 +329,26 @@ export interface I18nextToolkitConfig {
      * Accepts the same values as {@link checkConcatenation}; defaults to `'off'`.
      */
     checkPunctuationConcatenation?: boolean | 'off' | 'warn' | 'error';
+
+    /** Compare the placeholders of every locale's translation files with the primary language (default: `'warn'`).
+     *
+     * For the i18next format: interpolations by name (`{{name}}`, `{{- name}}`, `{{val, number}}`),
+     * nested `$t(key)` references and tags (`<0>`, `<1/>`, `<bold>`), except the basic HTML in
+     * {@link transKeepBasicHtmlNodesFor}. Plural forms are compared as a group, so `{{count}}` may be
+     * left out of `_one` or `_zero`. With
+     * `extract.messageFormat` `'icu'` or `'mf2'` the arguments are always checked (as errors) instead.
+     *
+     * Accepts the same values as {@link checkConcatenation}.
+     */
+    checkTranslationPlaceholders?: boolean | 'off' | 'warn' | 'error';
+
+    /** Path of the baseline file `lint --update-baseline` writes (default: `'i18next-lint-baseline.json'`).
+     *
+     * When the file exists, `lint` reports and fails only on issues it does not hold, so existing
+     * issues of a codebase do not block CI. Commit the file; run `lint --update-baseline` again to
+     * drop fixed issues.
+     */
+    baseline?: string;
   };
 
   /** Configuration options for the `status` command */
@@ -341,6 +361,19 @@ export interface I18nextToolkitConfig {
      * `extract` still writes and keeps these keys.
      */
     ignoreKeys?: string[];
+
+    /**
+     * Report values identical to the primary language, e.g. English copied into `de` (default: `'warn'`).
+     *
+     * - `'warn'` / `true` — shown as "identical to en", still counted as translated; the exit code is unchanged.
+     * - `'error'` — counted as untranslated, so `status` exits non-zero.
+     * - `'off'` / `false` — not checked.
+     *
+     * Skipped: locales of the primary's language (`en-GB` with `en`), values without letters once
+     * placeholders, `$t()` and tags are removed, URLs, e-mail addresses and short all-caps words
+     * ("OK", "FAQ"). Brand names and other values that stay the same go into {@link ignoreKeys}.
+     */
+    checkIdentical?: boolean | 'off' | 'warn' | 'error';
   };
 
   /** Configuration options for TypeScript type generation */
@@ -466,8 +499,8 @@ export interface LintIssue {
   text: string;
   /** Line number where the issue was found (0 when unknown, e.g. a key in a YAML translation file) */
   line: number;
-  /** Issue category. `messageFormat` issues are reported for translation files (`extract.messageFormat` `'icu'` or `'mf2'`). */
-  type?: 'hardcoded' | 'interpolation' | 'concatenation' | 'messageFormat';
+  /** Issue category. `messageFormat` (`extract.messageFormat` `'icu'` or `'mf2'`) and `placeholder` (i18next format) issues are reported for translation files. */
+  type?: 'hardcoded' | 'interpolation' | 'concatenation' | 'messageFormat' | 'placeholder';
   /** Severity of the issue. Defaults to 'error' (fails the lint run / CI); 'warning' is
    * reported but does not fail the run. Concatenation issues are reported as warnings. */
   severity?: 'error' | 'warning';

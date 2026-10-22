@@ -281,6 +281,7 @@ The primary language is checked too: any key used in your code but absent from t
 - `--namespace <ns>, -n <ns>`: Filter the report by a specific namespace.
 - `--hide-translated`: Hide already translated keys in the detailed view, showing only missing translations.
 - `status.ignoreKeys` (config): glob patterns for keys that should not be reported (and don't fail the check), e.g. keys that are intentionally left empty in some locales. Optional `ns:` prefix (`common:help.*-href`). Only affects `status`.
+- `status.checkIdentical` (config, default `'warn'`): values identical to the primary language, e.g. English copied into `de` by a `defaultValue` function or a copied file, are marked `≈ (identical to en)` and counted in the summary (`3 identical to en`). With `'warn'` they still count as translated and the exit code does not change; `'error'` counts them as untranslated, so `status` fails; `'off'` / `false` disables the check. Skipped: locales of the primary's language (`en-GB` with `en`), values without letters once placeholders, `$t()` and tags are removed (`{{count}}`, `100 %`), URLs, e-mail addresses and short all-caps words (`OK`, `FAQ`). Brand names and other values that stay the same go into `status.ignoreKeys`. A plural form the primary language lacks (`ru` `_few`) is compared with its `_other`.
 - `--unused`: Report only unused translation keys — keys present in your translation files that are no longer used in your source code (i.e. what `extract` with `removeUnusedKeys` would delete). Never modifies any files and exits with a non-zero status code when unused keys are found, so it can serve as a dedicated CI check alongside the regular missing-translations check. Note that static analysis cannot detect dynamically constructed keys (e.g. ``t(`error.${code}`)``); to find keys that are truly unused at runtime, see [find unused translations with locize](https://www.locize.com/docs/guides/find-unused-translations).
 
 **Usage Examples:**
@@ -380,6 +381,12 @@ npx i18next-cli lint
   - *(warning, MF2 only)* whitespace at the start or end of a pattern that differs from the primary language: `{{ {$count} files}}` shows the space in the app.
 
   Empty values count as untranslated and are skipped. See [ICU and MF2 messages](#icu-and-mf2-messages).
+- **Placeholders across locales** *(warning by default, i18next format)*: every translation file is compared with the primary language, so a translation that renamed or dropped a placeholder is reported with file, key and line (JSON files), e.g. `greeting: missing {{name}}, unexpected {{nom}} (compared with "en")`. Compared are:
+  - interpolations by name, read like i18next does: `{{name}}`, `{{ name }}`, `{{- name}}` and `{{name, uppercase}}` are all `name`, so a format may differ per language. A custom `interpolationPrefix` / `interpolationSuffix` is read
+  - nested `$t(key)` references
+  - tags, in any order: the numbered ones of `<Trans>` (`<0>…</0>`, `<1/>`) and named ones like `<bold>` from its `components`, which react-i18next shows as text when a translation renames them. The basic HTML react-i18next keeps as is (`extract.transKeepBasicHtmlNodesFor`, default `br`, `strong`, `i`, `p`) is not compared, a language may add or drop it
+
+  Plural forms are compared as a group (the union over `_zero`, `_one`, `_other`, ...), since `{{count}}` may be left out of `_one` or `_zero` and a language has forms the primary language lacks (`ru` `_few`). A partly translated plural is checked for unexpected placeholders only. Keys only one side has and empty values are skipped (`status` reports them). Configure with `lint.checkTranslationPlaceholders`: `'warn'` / `true` (default), `'error'` (fails the run), `'off'` / `false`. With `extract.messageFormat: 'icu'` or `'mf2'` the ICU / MF2 check above runs instead.
 - **String concatenation** *(warning by default)* — translated strings glued together with `+`, or a sentence split across multiple adjacent translations (`<Trans>` components and/or `{t()}` expressions rendered as siblings). This breaks in languages that reorder or inflect the pieces; use a single key with placeholders instead. Configure with `lint.checkConcatenation`: `'warn'` / `true` (default) reports it without failing the run, `'error'` makes it fail (exit non-zero, useful for CI), and `'off'` / `false` disables it.
 
   ```jsx
@@ -406,6 +413,14 @@ npx i18next-cli lint
   ```
 
   The linter exits non-zero only when it finds **errors**; a run with only warnings succeeds. Individual spots can be excused with the [`i18next-instrument-ignore` directive](#suppressing-detection-with-i18next-instrument-ignore).
+
+**Baseline: fail only on new issues.** To adopt `lint` in CI on a codebase that already has issues, record them once and commit the file:
+
+```bash
+npx i18next-cli lint --update-baseline
+```
+
+This writes `i18next-lint-baseline.json` (another path: `lint.baseline`) with the issues per file. While the file exists, `lint` reports and fails only on issues it does not hold, and prints how many existing ones it left out. An issue is identified by its file, type and text, not its line, so moving code keeps it in the baseline, while one more identical hardcoded string in the same file is new. When issues get fixed, `lint` says how many entries no longer occur; run `--update-baseline` again to drop them. The same approach as ESLint's bulk suppressions.
 
 To suppress warnings for code you intentionally aren't translating yet, use the [`i18next-instrument-ignore` directive](#suppressing-detection-with-i18next-instrument-ignore) — the same comment recognized by the `instrument` command.
 
@@ -707,7 +722,9 @@ all commands.
    written (check the extract.output path in the config). If the developer
    chose repository files only: translate the extracted keys yourself or
    leave them to the team, run `npx i18next-cli status` to confirm every
-   language is complete, and stop here.
+   language is complete (it also lists values still identical to the primary
+   language) and `npx i18next-cli lint` to check that every translation keeps
+   the placeholders ({{name}}, $t(), <0>) of the primary language, and stop here.
 5. Locize (only if the developer chose it in step 2): ask them for
    LOCIZE_PROJECTID and LOCIZE_API_KEY (they create the project at
    https://www.locize.app/register?from=i18next_cli__agent-prompt
@@ -1095,6 +1112,13 @@ export default defineConfig({
     /** Lint punctuation glued onto a translation, e.g. <Trans>Email</Trans>: (default: 'off').
      * Opt-in; accepts the same values as checkConcatenation. */
     checkPunctuationConcatenation: 'off',
+
+    /** Compare the placeholders ({{name}}, $t(key), <0>) of every locale with the primary
+     * language (default: 'warn'). Accepts the same values as checkConcatenation. */
+    checkTranslationPlaceholders: 'warn',
+
+    /** Baseline file written by `lint --update-baseline` (default: 'i18next-lint-baseline.json') */
+    baseline: 'i18next-lint-baseline.json',
   },
 
   // `status` command
@@ -1103,6 +1127,10 @@ export default defineConfig({
     // intentionally empty in some locales. Same shape as `preservePatterns`; a `ns:`
     // prefix limits the pattern to one namespace. Only affects `status`, not `extract`.
     ignoreKeys: ['*-href', 'common:empty-table-subtitle'], // Optional
+
+    // Values identical to the primary language (English copied into `de`): 'warn' (default)
+    // shows them, 'error' counts them as untranslated, 'off' disables the check.
+    checkIdentical: 'warn',
   },
   
   // TypeScript type generation

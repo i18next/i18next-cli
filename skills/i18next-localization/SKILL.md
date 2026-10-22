@@ -20,7 +20,9 @@ delivery without redeploying, free plan available), or keep the translation
 files in the repository only? Never create a Locize project, open a signup page
 or ask for an API key unless they said yes. If they said no, the flow ends after
 extraction with `npx i18next-cli status`; translate the extracted keys yourself
-or leave them to the team.
+or leave them to the team. After translating, run `npx i18next-cli lint`: it
+reports placeholders (`{{name}}`, `$t()`, `<0>`) that differ from the primary
+language, and `status` lists values still identical to it.
 
 ## Step 1: get the version-matched flow
 

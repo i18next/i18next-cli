@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.80.0
+
+- feat(lint): in the i18next format, the translation files of every locale are compared with the primary language:
+  interpolations by name (`{{name}}`, `{{- name}}`, `{{val, number}}`), nested `$t(key)` references and tags (`<0>`,
+  `<1/>`, `<bold>`), except the basic HTML react-i18next keeps (`transKeepBasicHtmlNodesFor`). A translation that
+  renamed or dropped a placeholder is reported with file, key and line, e.g.
+  `greeting: missing {{name}}, unexpected {{nom}} (compared with "en")`. Plural forms are compared as a group, so
+  `{{count}}` may be left out of `_one` or `_zero`. A warning by default, so existing CI runs keep passing;
+  `lint.checkTranslationPlaceholders: 'error'` fails the run, `'off'` disables it. Until now only ICU and MF2 projects
+  had this check.
+- feat(status): values identical to the primary language (English copied into `de`) are marked
+  `≈ (identical to en)` and counted in the summary. `status.checkIdentical`: `'warn'` (default) still counts them as
+  translated and keeps the exit code, `'error'` counts them as untranslated, `'off'` disables it. Locales of the
+  primary's language (`en-GB` with `en`), values without letters, URLs, e-mail addresses and short all-caps words
+  (`OK`, `FAQ`) are skipped; other values that stay the same go into `status.ignoreKeys`.
+- feat(lint): `lint --update-baseline` writes the current issues to `i18next-lint-baseline.json` (`lint.baseline` for
+  another path). While the file exists, `lint` reports and fails only on new issues, so a codebase with existing
+  hardcoded strings can run `lint` in CI. Issues are matched by file, type and text, not by line.
+- fix(lint): interpolations are read like i18next does. The unescaped `{{-name}}` was read as a parameter `-name`, so
+  `t('Hi {{-name}}', { name })` reported two false interpolation issues; `{{- name}}` and names outside `[A-Za-z0-9_.-]`
+  (`{{größe}}`) were not read at all.
+- docs(types): `transKeepBasicHtmlNodesFor` defaults to react-i18next's `['br', 'strong', 'i', 'p']`.
+- docs(skill, localize): after translating by hand, run `lint` to check the placeholders.
+
 ## 1.79.1
 
 - fix(init, migrate-config): the default source glob includes `.mjs` (`src/**/*.{js,jsx,mjs,ts,tsx}`), in `init`, in the

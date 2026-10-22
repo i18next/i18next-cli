@@ -4,6 +4,28 @@ import { glob } from 'glob'
 import { parseTree, findNodeAtLocation } from 'jsonc-parser'
 import type { I18nextToolkitConfig, LintIssue } from '../types.js'
 import { getOutputPath, loadTranslationFile } from './file-utils.js'
+import { parseNestedReferences } from './nesting.js'
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * The variable names of the i18next interpolations in a value: `{{name}}`, `{{- name}}` (unescaped),
+ * `{{val, number}}` and `{{ user.name }}` give `name`, `name`, `val` and `user.name`.
+ * Read like i18next's Interpolator: anything between prefix and suffix, trimmed, a `-` right after the
+ * prefix marks it unescaped, and a format follows the first `,`.
+ * ponytail: i18next's defaults for unescapePrefix (`-`) and formatSeparator (`,`); custom ones are not read.
+ */
+export function interpolationNames (value: string, extract: Pick<I18nextToolkitConfig['extract'], 'interpolationPrefix' | 'interpolationSuffix'>): string[] {
+  const prefix = escapeRegExp(extract.interpolationPrefix ?? '{{')
+  const suffix = escapeRegExp(extract.interpolationSuffix ?? '}}')
+  const names: string[] = []
+  for (const [, inner] of value.matchAll(new RegExp(`${prefix}(.+?)${suffix}`, 'g'))) {
+    const name = inner.replace(/^-/, '').split(',')[0].trim()
+    // a brace means ICU (`one {{count} item}`) in a project without extract.messageFormat, not a variable
+    if (name && !/[{}]/.test(name)) names.push(name)
+  }
+  return names
+}
 
 /** What an ICU or MF2 message uses. */
 export interface MessageShape {
@@ -231,6 +253,15 @@ async function lineFinder (file: string): Promise<(path: Array<string | number>)
   }
 }
 
+// Namespace discovery as in `sync`: the primary language's files
+async function primaryNamespaces (config: I18nextToolkitConfig, primary: string): Promise<Array<string | undefined>> {
+  const { output, ignoreNamespaces = [] } = config.extract
+  if (typeof output === 'string' && !output.includes('{{namespace}}')) return [undefined]
+  return (await glob(getOutputPath(output, primary, '*').replace(/\\/g, '/')))
+    .map(file => basename(file).split('.')[0])
+    .filter(ns => !ignoreNamespaces.includes(ns))
+}
+
 /**
  * Checks every translation value of every locale for `extract.messageFormat` `'icu'` or `'mf2'`:
  * syntax, argument names against the primary language, and plural categories per locale.
@@ -240,17 +271,11 @@ export async function lintMessageFormatResources (config: I18nextToolkitConfig, 
   const isMf2 = config.extract.messageFormat === 'mf2'
   const formatName = isMf2 ? 'MF2' : 'ICU'
   const arg = (name: string) => isMf2 ? `{$${name}}` : `{${name}}`
-  const { output, ignoreNamespaces = [] } = config.extract
+  const { output } = config.extract
   const keySeparator = config.extract.keySeparator || '.'
   const primary = config.extract.primaryLanguage || config.locales[0] || 'en'
   const locales = [primary, ...config.locales.filter(l => l !== primary)]
-
-  // Namespace discovery as in `sync`: the primary language's files
-  const namespaces: Array<string | undefined> = typeof output === 'string' && !output.includes('{{namespace}}')
-    ? [undefined]
-    : (await glob(getOutputPath(output, primary, '*').replace(/\\/g, '/')))
-        .map(file => basename(file).split('.')[0])
-        .filter(ns => !ignoreNamespaces.includes(ns))
+  const namespaces = await primaryNamespaces(config, primary)
 
   const issuesByFile = new Map<string, LintIssue[]>()
   for (const ns of namespaces) {
@@ -308,6 +333,96 @@ export async function lintMessageFormatResources (config: I18nextToolkitConfig, 
       if (problems.length) {
         const lineOf = await lineFinder(file)
         issuesByFile.set(file, problems.map(({ path, text, severity }) => ({ text, line: lineOf(path), type: 'messageFormat', severity })))
+      }
+    }
+  }
+  return issuesByFile
+}
+
+/**
+ * Checks the translation values of every locale in the i18next format against the primary language: the
+ * interpolations (by name, so `{{val, number}}` and `{{ val }}` are both `val`), the nested `$t(key)` references and
+ * the tags (`<0>`, `<1/>`, `<bold>`), except the basic HTML react-i18next keeps (`transKeepBasicHtmlNodesFor`).
+ * Plural forms are compared as a group (the union over `_one`, `_other`, ...), since a language may leave `{{count}}`
+ * out of `_one` or `_zero` and has forms the primary language lacks.
+ * The same idea as Locize's check 240 (`checkI18nFeatures`). Returns the issues per translation file.
+ * ponytail: a placeholder dropped from one plural form while another form keeps it passes; a per-form rule would flag `{{count}}`.
+ */
+export async function lintI18nextResources (config: I18nextToolkitConfig, severity: 'error' | 'warning'): Promise<Map<string, LintIssue[]>> {
+  const { output, interpolationPrefix = '{{', interpolationSuffix = '}}', nestingPrefix = '$t(', nestingSuffix = ')', nestingOptionsSeparator } = config.extract
+  const keySeparator = config.extract.keySeparator || '.'
+  const nsSeparator = config.extract.nsSeparator ?? ':'
+  // the suffixes i18next's PluralResolver appends: `_one`, `_ordinal_two`, and `_zero` for a count of 0
+  const s = escapeRegExp(config.extract.pluralSeparator ?? '_')
+  const pluralSuffix = new RegExp(`(?:${s}ordinal)?${s}(?:zero|one|two|few|many|other)$`)
+  // react-i18next's default, src/defaults.js
+  const keptHtml = new Set(config.extract.transKeepBasicHtmlNodesFor ?? ['br', 'strong', 'i', 'p'])
+  const primary = config.extract.primaryLanguage || config.locales[0] || 'en'
+  const locales = config.locales.filter(l => l !== primary)
+
+  const placeholders = (value: string): string[] => [
+    ...interpolationNames(value, config.extract).map(name => `${interpolationPrefix}${name}${interpolationSuffix}`),
+    ...parseNestedReferences(value, { nestingPrefix, nestingSuffix, nestingOptionsSeparator, nsSeparator })
+      .map(ref => `${nestingPrefix}${ref.ns ? `${ref.ns}${nsSeparator}` : ''}${ref.key}${nestingSuffix}`),
+    // <Trans> renders <0>…</0> from its children and <bold> from its components; an unknown tag shows up as
+    // text. The kept basic HTML (<br/>, <strong>) is rendered as is, so a language may add or drop it.
+    ...[...value.matchAll(/<([A-Za-z0-9][\w.:-]*)(?:\s(?:"[^"]*"|'[^']*'|[^'">])*)?\/?>/g)]
+      .filter(match => !keptHtml.has(match[1]))
+      .map(match => `<${match[1]}>`),
+  ]
+
+  interface Group { path: Array<string | number>, label: string, values: number, empty: boolean, tokens: Set<string> }
+  const groupsOf = (resources: Record<string, any>): Map<string, Group> => {
+    const groups = new Map<string, Group>()
+    for (const [path, value] of leaves(resources)) {
+      if (typeof value !== 'string') continue
+      const key = path.join(keySeparator)
+      const base = key.replace(pluralSuffix, '')
+      let group = groups.get(base)
+      if (!group) groups.set(base, group = { path, label: key, values: 0, empty: false, tokens: new Set() })
+      else group.label = base
+      if (value === '') {
+        group.empty = true
+        continue
+      }
+      group.values++
+      for (const token of placeholders(value)) group.tokens.add(token)
+    }
+    return groups
+  }
+
+  // A file that does not parse makes `extract`, `sync` and `status` fail loudly, so `lint` skips it
+  const load = (file: string) => loadTranslationFile(file).catch(() => null)
+
+  const issuesByFile = new Map<string, LintIssue[]>()
+  for (const ns of await primaryNamespaces(config, primary)) {
+    const primaryResources = await load(getOutputPath(output, primary, ns))
+    if (!primaryResources) continue
+    const primaryGroups = groupsOf(primaryResources)
+
+    for (const lng of locales) {
+      const file = getOutputPath(output, lng, ns)
+      const resources = await load(file)
+      if (!resources) continue
+
+      const problems: Array<{ path: Array<string | number>, text: string }> = []
+      for (const [base, group] of groupsOf(resources)) {
+        const source = primaryGroups.get(base)
+        if (!source?.values || !group.values) continue
+        // a partly translated plural may still lack the form that carries {{count}}
+        const missing = group.empty ? [] : [...source.tokens].filter(t => !group.tokens.has(t))
+        const unexpected = [...group.tokens].filter(t => !source.tokens.has(t))
+        if (!missing.length && !unexpected.length) continue
+        const diff = [
+          missing.length ? `missing ${missing.join(', ')}` : '',
+          unexpected.length ? `unexpected ${unexpected.join(', ')}` : '',
+        ].filter(Boolean).join(', ')
+        problems.push({ path: group.path, text: `${group.label}: ${diff} (compared with "${primary}")` })
+      }
+
+      if (problems.length) {
+        const lineOf = await lineFinder(file)
+        issuesByFile.set(file, problems.map(({ path, text }) => ({ text, line: lineOf(path), type: 'placeholder', severity })))
       }
     }
   }

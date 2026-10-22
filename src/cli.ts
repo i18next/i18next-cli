@@ -244,6 +244,7 @@ program
   .description('Find potential issues like hardcoded strings in your codebase.')
   .option('-w, --watch', 'Watch for file changes and re-run the linter.')
   .option('-q, --quiet', 'Suppress spinner and output')
+  .option('--update-baseline', 'Write all current issues to the baseline file (lint.baseline, default i18next-lint-baseline.json); lint then fails only on new issues. Commit the file.')
   .action(async (options) => {
     const cfgPath = program.opts().config
 
@@ -261,7 +262,7 @@ program
         console.log(styleText('green', 'Project structure detected successfully!'))
         config = detected as I18nextToolkitConfig
       }
-      await runLinterCli(config, { quiet: !!options.quiet })
+      await runLinterCli(config, { quiet: !!options.quiet, updateBaseline: !!options.updateBaseline })
     }
 
     // Run the linter once initially
