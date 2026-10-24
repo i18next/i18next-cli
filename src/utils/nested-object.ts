@@ -89,7 +89,13 @@ export function getNestedValue (
   if (keySeparator === false) {
     return obj[path]
   }
-  return path.split(keySeparator).reduce((acc, key) => acc && acc[key], obj)
+  const value = path.split(keySeparator).reduce((acc, key) => acc && acc[key], obj)
+  // The extractor writes a key that cannot be used as a path ("Loading...", or a
+  // natural-language key such as "Hello. World") as a single flat top-level key.
+  if (value === undefined && obj != null && Object.prototype.hasOwnProperty.call(obj, path)) {
+    return obj[path]
+  }
+  return value
 }
 
 /**

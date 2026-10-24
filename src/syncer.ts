@@ -197,6 +197,14 @@ export async function runSyncer (
         // canonical order, a subsequent `sync` will read that order and reproduce
         // it exactly — the pipeline becomes idempotent.
         const existingSecondaryKeys = getNestedKeys(existingSecondaryTranslations, keySeparator ?? '.')
+        // Keep a key flat when the primary or the existing secondary file has it as one flat
+        // top-level key, which is how the extractor writes keys like "Loading..." or
+        // "Hello. World". Splitting them on the separator would nest them under new parents.
+        const keySeparatorFor = (key: string): string | false =>
+          Object.prototype.hasOwnProperty.call(primaryTranslations, key) ||
+          Object.prototype.hasOwnProperty.call(existingSecondaryTranslations, key)
+            ? false
+            : (keySeparator ?? '.')
         const handledKeys = new Set<string>()
 
         // Pass 1: existing keys in their current order (preserves extract's ordering)
@@ -205,7 +213,7 @@ export async function runSyncer (
             const primaryValue = getNestedValue(primaryTranslations, key, keySeparator ?? '.')
             const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
             const valueToSet = existingValue ?? resolveDefaultValue(defaultValue, key, ns, lang, primaryValue)
-            setNestedValue(newSecondaryTranslations, key, valueToSet, keySeparator ?? '.')
+            setNestedValue(newSecondaryTranslations, key, valueToSet, keySeparatorFor(key))
             handledKeys.add(key)
           } else if (isLocaleSpecificPluralExtension(key)) {
             const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
@@ -213,13 +221,13 @@ export async function runSyncer (
             // placeholder left by a previous (buggy) sync run and should not
             // be perpetuated. Under --changed-only nothing is ever dropped.
             if ((existingValue !== '' && existingValue != null) || isChangedKey) {
-              setNestedValue(newSecondaryTranslations, key, existingValue, keySeparator ?? '.')
+              setNestedValue(newSecondaryTranslations, key, existingValue, keySeparatorFor(key))
               handledKeys.add(key)
             }
           } else if (isChangedKey) {
             // --changed-only: removals are out of scope, keep obsolete keys as-is
             const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
-            setNestedValue(newSecondaryTranslations, key, existingValue, keySeparator ?? '.')
+            setNestedValue(newSecondaryTranslations, key, existingValue, keySeparatorFor(key))
           }
           // else: obsolete key — omit it from the output
         }
@@ -231,7 +239,7 @@ export async function runSyncer (
             if (isChangedKey && !isChangedKey(key)) continue
             const primaryValue = getNestedValue(primaryTranslations, key, keySeparator ?? '.')
             const valueToSet = resolveDefaultValue(defaultValue, key, ns, lang, primaryValue)
-            setNestedValue(newSecondaryTranslations, key, valueToSet, keySeparator ?? '.')
+            setNestedValue(newSecondaryTranslations, key, valueToSet, keySeparatorFor(key))
           }
         }
 
