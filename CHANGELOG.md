@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.80.1
+
+- fix(extract): a `<Trans>` interpolation variable named `format` is extracted. `<Trans>Export as {{ format }}</Trans>`
+  was extracted as `Export as `, because react-i18next read `format` as the formatter name and dropped the variable;
+  it is now `Export as {{format}}`, as react-i18next 17.1.8 renders it. Requires react-i18next `^17.1.8`.
+- chore(deps): update dependencies within their ranges and neostandard to 0.14.
+
 ## 1.80.0
 
 - feat(lint): in the i18next format, the translation files of every locale are compared with the primary language:

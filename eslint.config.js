@@ -1,11 +1,14 @@
+import { globalIgnores } from 'eslint/config'
 import neostandard from 'neostandard'
 import importPlugin from 'eslint-plugin-import'
 
 export default [
+  // since neostandard 0.14 its `ignores` only applies to its own layers, not to the import-plugin block below
+  globalIgnores(['dist/**/*', 'types/**/*', 'docs/**/*']),
+
   // — your neostandard base —
   ...neostandard({
-    ts: true,
-    ignores: ['dist/**/*', 'types/**/*', 'docs/**/*']
+    ts: true
   }),
 
   // — add import-plugin + import/no-unresolved —

@@ -504,6 +504,25 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should extract a single interpolation variable named format (react-i18next#1944)', async () => {
+    const sampleCode = `
+      <>
+        <Trans i18nKey="exportAs">Export as {{ format }}</Trans>
+        <Trans>Download as {{ format }}</Trans>
+      </>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    expect(translationFile).toBeDefined()
+    expect(translationFile!.newTranslations).toEqual({
+      exportAs: 'Export as {{format}}',
+      'Download as {{format}}': 'Download as {{format}}',
+    })
+  })
+
   it('should ignore boundary whitespace-only JSXText nodes so component indexes start at first meaningful child', async () => {
     const sampleCode = `
       <Trans i18nKey={'ticket_received_msg'} count={1}>
