@@ -91,7 +91,7 @@ export function getNestedValue (
   }
   const value = path.split(keySeparator).reduce((acc, key) => acc && acc[key], obj)
   // The extractor writes a key that cannot be used as a path ("Loading...", or a
-  // natural-language key such as "Hello. World") as a single flat top-level key.
+  // natural-language key such as "Hello world. Bye") as a single flat top-level key.
   if (value === undefined && obj != null && Object.prototype.hasOwnProperty.call(obj, path)) {
     return obj[path]
   }
@@ -158,7 +158,7 @@ export function naturalLanguageRegexFor (nsSeparator: string, keySeparator: stri
 /**
  * The separator a key is stored with in a translation file, or `false` when it is
  * stored as one flat key: a serialized Trans component (`<...`), a natural-language
- * key such as "Hello. World", or a key with empty segments such as "Loading...".
+ * key such as "Hello world. Bye", or a key with empty segments such as "Loading...".
  */
 export function storedKeySeparator (key: string, keySeparator: string | false, naturalLanguageRegex: RegExp | null): string | false {
   if (keySeparator === false || key.startsWith('<')) return false

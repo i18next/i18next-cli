@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.80.3
+
+- fix(rename-key): keys the extractor stores flat are renamed in the translation files. Renaming `"Loading..."` to
+  `"Saving..."` left the old key in place and wrote `{ "Saving": { "": { "": { "": "Loading..." } } } }`; renaming
+  `common.ok` to `"Okay, thanks."` wrote `{ "Okay, thanks": { "": "OK" } }`. The new key is now written where the next
+  `extract` puts it (flat for `"Loading..."`, natural-language and `<Trans>` keys), and the old key is removed however
+  the file stores it. [#311](https://github.com/i18next/i18next-cli/pull/311)
+
 ## 1.80.2
 
 - fix(sync): flat keys that contain the key separator keep their translations. The extractor writes keys like

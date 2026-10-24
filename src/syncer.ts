@@ -199,7 +199,7 @@ export async function runSyncer (
         const existingSecondaryKeys = getNestedKeys(existingSecondaryTranslations, keySeparator ?? '.')
         // Keep a key flat when the primary or the existing secondary file has it as one flat
         // top-level key, which is how the extractor writes keys like "Loading..." or
-        // "Hello. World". Splitting them on the separator would nest them under new parents.
+        // "Hello world. Bye". Splitting them on the separator would nest them under new parents.
         const keySeparatorFor = (key: string): string | false =>
           Object.prototype.hasOwnProperty.call(primaryTranslations, key) ||
           Object.prototype.hasOwnProperty.call(existingSecondaryTranslations, key)
