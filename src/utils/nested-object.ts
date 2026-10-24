@@ -139,3 +139,34 @@ export function getNestedKeys (obj: object, keySeparator: string | false, prefix
     return acc
   }, [] as string[])
 }
+
+const naturalLanguageChars = [' ', ',', '?', '!', ';']
+
+/**
+ * Builds the regex that marks a key as natural language (like i18next does): any of
+ * ` ,?!;` that is not itself used as the namespace or key separator.
+ */
+export function naturalLanguageRegexFor (nsSeparator: string, keySeparator: string | false): RegExp | null {
+  const possibleChars = naturalLanguageChars.filter(
+    (c) => nsSeparator.indexOf(c) < 0 && (typeof keySeparator === 'string' ? keySeparator.indexOf(c) < 0 : true)
+  )
+  return possibleChars.length > 0
+    ? new RegExp(`(${possibleChars.map((c) => (c === '?' ? '\\?' : c)).join('|')})`)
+    : null
+}
+
+/**
+ * The separator a key is stored with in a translation file, or `false` when it is
+ * stored as one flat key: a serialized Trans component (`<...`), a natural-language
+ * key such as "Hello. World", or a key with empty segments such as "Loading...".
+ */
+export function storedKeySeparator (key: string, keySeparator: string | false, naturalLanguageRegex: RegExp | null): string | false {
+  if (keySeparator === false || key.startsWith('<')) return false
+  if (naturalLanguageRegex) {
+    const ki = key.indexOf(keySeparator)
+    const isPath = !naturalLanguageRegex.test(key) || (ki > 0 && !naturalLanguageRegex.test(key.substring(0, ki)))
+    if (!isPath) return false
+  }
+  if (key.split(keySeparator).some(s => s === '')) return false
+  return keySeparator
+}

@@ -558,6 +558,37 @@ const d = t(\`old.key\`)`
       expect(translation.nested.new.key).toBe('Flat Value')
       expect(translation.flatkey).toBeUndefined()
     })
+
+    it('should rename keys the extractor stores flat because they contain the separator', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          keySeparator: '.'
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('Loading...'); t('Hello. World'); t('common.ok')")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/translation.json'),
+        JSON.stringify({ 'Loading...': 'Loading...', 'Hello. World': 'Hello. World', common: { ok: 'OK' } })
+      )
+
+      expect((await runRenameKey(config, 'Loading...', 'Saving...')).success).toBe(true)
+      expect((await runRenameKey(config, 'Hello. World', 'common.greeting')).success).toBe(true)
+      expect((await runRenameKey(config, 'common.ok', 'Okay, thanks.')).success).toBe(true)
+
+      const translation = JSON.parse(
+        await readFile(join(testDir, 'locales/en/translation.json'), 'utf-8')
+      )
+      expect(translation).toEqual({
+        'Saving...': 'Loading...',
+        common: { greeting: 'Hello. World' },
+        'Okay, thanks.': 'OK'
+      })
+    })
   })
 
   describe('selector api', () => {
