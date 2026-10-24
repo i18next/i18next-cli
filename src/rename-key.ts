@@ -369,6 +369,10 @@ function replaceKeyWithRegex (
 
   const configuredFunctions = config.extract.functions || ['t', '*.t']
 
+  // An optional string default value after the key: t('key', 'Default') or t('key', 'Default', { ... })
+  const stringLiteral = ['\'', '"', '`'].map(q => `${q}(?:[^${q}\\\\]|\\\\.)*${q}`).join('|')
+  const defaultValueArg = `(?:\\s*,\\s*(?:${stringLiteral}))?`
+
   // Helper to create function-prefix regex fragment
   const fnPrefixToRegex = (fnPattern: string) => {
     if (fnPattern.startsWith('*.')) {
@@ -421,7 +425,7 @@ function replaceKeyWithRegex (
       hasKeyInNamespace(oldParts.namespace)
     ) {
       const nsRegexToDefault = new RegExp(
-        `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*,\\s*\\{([^}]*)\\bns\\s*:\\s*(['"\`])${escapeRegex(oldParts.namespace)}\\3([^}]*)\\}\\s*\\)`,
+        `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1${defaultValueArg}\\s*,\\s*\\{([^}]*)\\bns\\s*:\\s*(['"\`])${escapeRegex(oldParts.namespace)}\\3([^}]*)\\}\\s*\\)`,
         'g'
       )
       newCode = newCode.replace(nsRegexToDefault, (match, keyQ, beforeNs, nsQ, afterNs) => {
@@ -430,9 +434,9 @@ function replaceKeyWithRegex (
         let updated = match.replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `${keyQ}${newParts.key}${keyQ}`)
 
         if (obj) {
-          updated = updated.replace(/\{\s*([^}]*)\s*\}/, `{${obj}}`)
+          updated = updated.replace(/\{[^}]*\}(?=\s*\)$)/, `{${obj}}`)
         } else {
-          updated = updated.replace(/\s*,\s*\{[^}]*\}\s*\)/, ')')
+          updated = updated.replace(/\s*,\s*\{[^}]*\}\s*\)$/, ')')
         }
 
         return updated
@@ -448,7 +452,7 @@ function replaceKeyWithRegex (
     //
     if (oldParts.namespace && newParts.namespace && hasKeyInNamespace(oldParts.namespace)) {
       const nsRegexFullKey = new RegExp(
-        `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*,\\s*\\{([^}]*)\\bns\\s*:\\s*(['"\`])${escapeRegex(oldParts.namespace)}\\3([^}]*)\\}\\s*\\)`,
+        `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1${defaultValueArg}\\s*,\\s*\\{([^}]*)\\bns\\s*:\\s*(['"\`])${escapeRegex(oldParts.namespace)}\\3([^}]*)\\}\\s*\\)`,
         'g'
       )
 
@@ -463,7 +467,7 @@ function replaceKeyWithRegex (
         if (oldParts.namespace === newParts.namespace) {
           // same namespace: keep ns value untouched, but keep other props
           if (obj) {
-            updated = updated.replace(/\{\s*([^}]*)\s*\}/, `{${obj}}`)
+            updated = updated.replace(/\{[^}]*\}(?=\s*\)$)/, `{${obj}}`)
           } else {
             // no other props -> keep the options with ns only
             // ensure we don't remove the ns prop accidentally; leave as-is
@@ -473,9 +477,9 @@ function replaceKeyWithRegex (
           if (config.extract.defaultNS === newParts.namespace) {
             // moving INTO the default namespace -> remove the ns property
             if (obj) {
-              updated = updated.replace(/\{\s*([^}]*)\s*\}/, `{${obj}}`)
+              updated = updated.replace(/\{[^}]*\}(?=\s*\)$)/, `{${obj}}`)
             } else {
-              updated = updated.replace(/\s*,\s*\{[^}]*\}\s*\)/, ')')
+              updated = updated.replace(/\s*,\s*\{[^}]*\}\s*\)$/, ')')
             }
           } else {
             // replace ns value to new namespace
@@ -569,7 +573,7 @@ function replaceKeyWithRegex (
         hasKeyInNamespace(oldParts.namespace)
       ) {
         const regexOptionsNoNs = new RegExp(
-          `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*,\\s*\\{([^}]*)\\}\\s*\\)`,
+          `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1${defaultValueArg}\\s*,\\s*\\{([^}]*)\\}\\s*\\)`,
           'g'
         )
         newCode = newCode.replace(regexOptionsNoNs, (match, q, objContents) => {
@@ -581,7 +585,7 @@ function replaceKeyWithRegex (
           // replace the key and the object contents (preserve spacing minimally)
           return match
             .replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `${q}${newParts.key}${q}`)
-            .replace(/\{\s*([^}]*)\s*\}/, `{ ${newObj} }`)
+            .replace(/\{[^}]*\}(?=\s*\)$)/, `{ ${newObj} }`)
         })
       }
 
@@ -589,7 +593,7 @@ function replaceKeyWithRegex (
       //        t('key', { user: 'name' }) -> t('key2', { user: 'name' })
       if (oldParts.namespace === newParts.namespace && oldParts.namespace === effectiveDefaultNS) {
         const regexKeyWithOptions = new RegExp(
-          `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*,\\s*\\{([^}]*)\\}\\s*\\)`,
+          `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1${defaultValueArg}\\s*,\\s*\\{([^}]*)\\}\\s*\\)`,
           'g'
         )
         newCode = newCode.replace(regexKeyWithOptions, (match, q, objContents) => {
@@ -612,13 +616,12 @@ function replaceKeyWithRegex (
       config.extract.defaultNS === oldParts.namespace &&
       hasKeyInNamespace(oldParts.namespace)
     ) {
-      const regexKeyWithParen = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*\\)`, 'g')
+      const regexKeyWithParen = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1${defaultValueArg}\\s*\\)`, 'g')
       newCode = newCode.replace(regexKeyWithParen, (match, quote) => {
         changes++
-        return match.replace(
-          new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1\\s*\\)`),
-          `${quote}${newParts.key}${quote}, { ns: '${newParts.namespace}' })`
-        )
+        return match
+          .replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `${quote}${newParts.key}${quote}`)
+          .replace(/\s*\)$/, `, { ns: '${newParts.namespace}' })`)
       })
     }
 
@@ -633,7 +636,7 @@ function replaceKeyWithRegex (
     {
       const effectiveDefaultNS = config.extract.defaultNS ?? 'translation'
       if (oldParts.namespace === effectiveDefaultNS) {
-        const regexKeyNoOptions = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1\\s*\\)`, 'g')
+        const regexKeyNoOptions = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1${defaultValueArg}\\s*\\)`, 'g')
         newCode = newCode.replace(regexKeyNoOptions, (match, q) => {
           changes++
           const replacementKey = newParts.key

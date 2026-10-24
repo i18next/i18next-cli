@@ -1,4 +1,5 @@
 import { vol } from 'memfs'
+import { resolve } from 'node:path'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { extract } from '../src/index'
 import type { I18nextToolkitConfig } from '../src/index'
@@ -110,6 +111,36 @@ describe('extractor: keySeparator issue #200', () => {
       expect(translationFile).toBeDefined()
       expect(translationFile!.newTranslations).toEqual({
         'a..b': 'a..b',
+      })
+    })
+
+    it('should keep plural forms of flat keys flat in secondary locales', async () => {
+      // Each form used to be written flat and once more nested: { "Loading": { "": { "": { "_one": … } } } }
+      vol.fromJSON({
+        '/src/App.tsx': 't("Loading...", { count: 2 }); t("Some items.", { count: 2 })',
+        [resolve(process.cwd(), 'locales/ru/translation.json')]: JSON.stringify({
+          'Loading..._zero': 'Ничего',
+          'Loading..._one': 'Загрузка одного...',
+          'Loading..._many': 'Загрузка многих...',
+          'Some items._few': 'Несколько',
+        }),
+      })
+
+      const results = await extract({ ...mockConfig, locales: ['en', 'ru'] })
+      const translationFile = results.find(r =>
+        pathEndsWith(r.path, '/locales/ru/translation.json')
+      )
+
+      expect(translationFile!.newTranslations).toEqual({
+        'Loading..._zero': 'Ничего',
+        'Loading..._one': 'Загрузка одного...',
+        'Loading..._few': '',
+        'Loading..._many': 'Загрузка многих...',
+        'Loading..._other': '',
+        'Some items._one': '',
+        'Some items._few': 'Несколько',
+        'Some items._many': '',
+        'Some items._other': '',
       })
     })
   })

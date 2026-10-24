@@ -591,6 +591,61 @@ const d = t(\`old.key\`)`
     })
   })
 
+  describe('string default value argument', () => {
+    it('should rename t("key", "Default") calls with or without options', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json')
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), [
+        "t('key', 'Default')",
+        't("key", "Hi {{name}}", { name })',
+        "t(`key`, 'it\\'s')",
+        "t('keyX', 'other')"
+      ].join('\n'))
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(join(testDir, 'locales/en/translation.json'), JSON.stringify({ key: 'Value' }))
+
+      const result = await runRenameKey(config, 'key', 'key2')
+
+      expect(result.success).toBe(true)
+      expect(await readFile(join(testDir, 'test.ts'), 'utf-8')).toBe([
+        "t('key2', 'Default')",
+        't("key2", "Hi {{name}}", { name })',
+        "t(`key2`, 'it\\'s')",
+        "t('keyX', 'other')"
+      ].join('\n'))
+    })
+
+    it('should keep the default value when the ns option is added or removed', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          nsSeparator: ':',
+          defaultNS: 'ns1'
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('key', 'Default')\nt('other', 'Hi {{name}}', { ns: 'ns2', name })")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(join(testDir, 'locales/en/ns1.json'), JSON.stringify({ key: 'Value' }))
+      await writeFile(join(testDir, 'locales/en/ns2.json'), JSON.stringify({ other: 'Hi {{name}}' }))
+
+      expect((await runRenameKey(config, 'ns1:key', 'ns2:key')).success).toBe(true)
+      expect((await runRenameKey(config, 'ns2:other', 'ns1:other')).success).toBe(true)
+
+      expect(await readFile(join(testDir, 'test.ts'), 'utf-8')).toBe(
+        "t('key', 'Default', { ns: 'ns2' })\nt('other', 'Hi {{name}}', {name})"
+      )
+    })
+  })
+
   describe('selector api', () => {
     it('should rename keys used with the selector API', async () => {
       const config = {

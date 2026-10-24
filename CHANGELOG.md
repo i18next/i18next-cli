@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.80.4
+
+- fix(rename-key): calls with a string default value are renamed in the source. `t('key', 'Default')` and
+  `t('key', 'Default', { … })` were left untouched while the translation files were renamed, so the next `extract`
+  brought the old key back. Moving such a key to another namespace keeps the default value:
+  `t('key', 'Default', { ns: 'ns2' })`.
+- fix(extract): plural forms of a key stored flat stay flat in secondary locales. With `"Loading..._one"` in
+  `ru/translation.json`, `extract` also wrote a nested copy, `{ "Loading": { "": { "": { "_one": … } } } }`; the same
+  happened for generated forms (`_few`, `_many`), preserved `_zero` forms, context variants and `preservePatterns`.
+  A file that already has these nested copies loses them on the next `extract`.
+
 ## 1.80.3
 
 - fix(rename-key): keys the extractor stores flat are renamed in the translation files. Renaming `"Loading..."` to
