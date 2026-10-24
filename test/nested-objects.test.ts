@@ -72,6 +72,14 @@ describe('getNestedValue', () => {
   it('should return undefined for a non-existent flat key', () => {
     expect(getNestedValue(flatObj, 'a.x.y', false)).toBeUndefined()
   })
+
+  it('should find a flat top-level key that contains the separator', () => {
+    const obj = { 'Loading...': 'Lädt...', 'Hello. World': 'Hallo. Welt', a: 'A', 'a.b': 'B' }
+    expect(getNestedValue(obj, 'Loading...', '.')).toBe('Lädt...')
+    expect(getNestedValue(obj, 'Hello. World', '.')).toBe('Hallo. Welt')
+    expect(getNestedValue(obj, 'a.b', '.')).toBe('B')
+    expect(getNestedValue({ a: { b: 'nested' }, 'a.b': 'flat' }, 'a.b', '.')).toBe('nested')
+  })
 })
 
 describe('getNestedKeys', () => {

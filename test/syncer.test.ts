@@ -186,6 +186,36 @@ describe('syncer', () => {
     })
   })
 
+  it('should keep flat keys that contain the key separator flat', async () => {
+    // The extractor writes keys like these as single flat keys
+    const enTranslations = {
+      'Loading...': 'Loading...',
+      'Hello. World': 'Hello. World',
+      'Saving...': 'Saving...',
+      header: { title: 'Welcome' },
+    }
+    const deTranslations = {
+      'Loading...': 'Lädt...',
+      'Hello. World': 'Hallo. Welt',
+      header: { title: 'Willkommen' },
+    }
+
+    vol.fromJSON({
+      [enPath]: JSON.stringify(enTranslations),
+      [dePath]: JSON.stringify(deTranslations),
+    })
+
+    await runSyncer(mockConfig)
+
+    const updatedDeJson = JSON.parse(await vol.promises.readFile(dePath, 'utf-8') as string)
+    expect(updatedDeJson).toEqual({
+      'Loading...': 'Lädt...',
+      'Hello. World': 'Hallo. Welt',
+      header: { title: 'Willkommen' },
+      'Saving...': '',
+    })
+  })
+
   it('should use the configured indentation for output files', async () => {
     const enTranslations = { key: 'Value' }
 
