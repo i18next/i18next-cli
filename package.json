@@ -80,7 +80,7 @@
     "execa": "^10.2.1",
     "glob": "^13.0.6",
     "i18next": "^26.5.10",
-    "i18next-resources-for-ts": "^2.1.1",
+    "i18next-resources-for-ts": "^2.1.2",
     "inquirer": "^14.2.4",
     "jiti": "^2.7.0",
     "jsonc-parser": "^3.3.1",

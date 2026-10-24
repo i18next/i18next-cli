@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.80.2
+
+- fix(sync): flat keys that contain the key separator keep their translations. The extractor writes keys like
+  `"Loading..."` or `"Hello world. Bye"` as one flat key, but `sync` split them on the separator, so a secondary file
+  with `{ "Loading...": "Lädt..." }` became `{ "Loading": { "": { "": { "": "" } } } }` and the translation was lost.
+  `sync` now writes them flat, and `status`, `localize` and `rename-key` find their values too. A secondary file
+  already broken this way gets its flat key back (with an empty value) on the next `sync`.
+  [#310](https://github.com/i18next/i18next-cli/pull/310)
+- fix(types): placeholders with spaces on one side only (`{{ name}}`) are trimmed, and `enableSelector` no longer
+  throws on plural keys whose base name is `constructor`, `toString`, … or also an object
+  (i18next-resources-for-ts 2.1.2).
+
 ## 1.80.1
 
 - fix(extract): a `<Trans>` interpolation variable named `format` is extracted. `<Trans>Export as {{ format }}</Trans>`
