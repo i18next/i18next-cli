@@ -1,7 +1,7 @@
 import { TranslationResult, ExtractedKey, I18nextToolkitConfig, Logger } from '../../types.js'
 import { basename, extname, resolve } from 'node:path'
 import { glob } from 'glob'
-import { getNestedValue, setNestedValue, getNestedKeys } from '../../utils/nested-object.js'
+import { getNestedValue, setNestedValue, getNestedKeys, naturalLanguageRegexFor, storedKeySeparator } from '../../utils/nested-object.js'
 import { getOutputPath, loadTranslationFile } from '../../utils/file-utils.js'
 import { resolveDefaultValue } from '../../utils/default-value.js'
 import { ConsoleLogger } from '../../utils/logger.js'
@@ -9,9 +9,6 @@ import { safePluralRules } from '../../utils/plural-rules.js'
 import { parseNestedReferences } from '../../utils/nesting.js'
 import { usesMessageFormat } from '../../utils/message-format.js'
 import { isContextVariantOfAcceptingKey } from '../../utils/context-variants.js'
-
-// used for natural language check
-const chars = [' ', ',', '?', '!', ';']
 
 const pluralForms = ['zero', 'one', 'two', 'few', 'many', 'other']
 
@@ -24,32 +21,6 @@ function globToRegex (glob: string): RegExp {
   const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
   const regexString = `^${escaped.replace(/\*/g, '.*')}$`
   return new RegExp(regexString)
-}
-
-/**
- * Checks if a key looks like an object path or natural language.
- * (like in i18next)
- */
-function looksLikeObjectPath (key: string, separator: string, regex: RegExp | null): boolean {
-  if (!regex) return true
-  let matched = !regex.test(key)
-  if (!matched) {
-    const ki = key.indexOf(separator)
-    if (ki > 0 && !regex.test(key.substring(0, ki))) {
-      matched = true
-    }
-  }
-  return matched
-}
-
-/**
- * Returns true when splitting `key` by `separator` would produce at least one
- * empty string segment (e.g. "Loading..." split by "." → ["Loading","","",""]).
- * Keys with empty segments must be treated as flat keys, not nested paths,
- * otherwise they create `{ "": { "": "..." } }` entries in the JSON output.
- */
-function hasEmptySegments (key: string, separator: string): boolean {
-  return key.split(separator).some(s => s === '')
 }
 
 /**
@@ -252,12 +223,7 @@ function buildNewTranslationsForNs (
   }
 
   // Prepare regex for natural language detection
-  const possibleChars = chars.filter(
-    (c) => nsSep.indexOf(c) < 0 && (typeof keySeparator === 'string' ? keySeparator.indexOf(c) < 0 : true)
-  )
-  const naturalLanguageRegex = possibleChars.length > 0
-    ? new RegExp(`(${possibleChars.map((c) => (c === '?' ? '\\?' : c)).join('|')})`)
-    : null
+  const naturalLanguageRegex = naturalLanguageRegexFor(nsSep, keySeparator ?? '.')
 
   // Build a set of base keys that accept context (only if preserveContextVariants is enabled)
   // These are keys that were called with a context parameter in the source code
@@ -834,20 +800,9 @@ function buildNewTranslationsForNs (
       }
     }
 
-    // If the key looks like a serialized Trans component (starts with <), treat it as a flat key
-    let separator = key.startsWith('<') ? false : (keySeparator ?? '.')
-
-    if (separator && typeof separator === 'string') {
-      if (!looksLikeObjectPath(key, separator, naturalLanguageRegex)) {
-        // Natural-language key — treat as flat
-        separator = false
-      } else if (hasEmptySegments(key, separator)) {
-        // Splitting would produce empty-string segments (e.g. "Loading..." split by "."
-        // yields ["Loading","","",""]). Storing those creates { "": { "": "…" } }
-        // noise in the JSON, so treat the whole key as a flat leaf instead.
-        separator = false
-      }
-    }
+    // Serialized Trans components, natural-language keys and keys with empty segments
+    // (e.g. "Loading..." would become { "Loading": { "": { "": "…" } } }) are stored flat
+    const separator = storedKeySeparator(key, keySeparator ?? '.', naturalLanguageRegex)
 
     const existingValue = getNestedValue(existingTranslations, key, separator)
     const primaryExistingValue = locale === primaryLanguage

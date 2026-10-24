@@ -4,7 +4,7 @@ import { resolve, basename } from 'node:path'
 import type { I18nextToolkitConfig, Logger, RenameKeyResult } from './types.js'
 import { ConsoleLogger } from './utils/logger.js'
 import { loadTranslationFile, serializeTranslationFile, getOutputPath } from './utils/file-utils.js'
-import { getNestedValue, setNestedValue } from './utils/nested-object.js'
+import { getNestedValue, setNestedValue, naturalLanguageRegexFor, storedKeySeparator } from './utils/nested-object.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 import { styleText } from 'node:util'
 
@@ -678,6 +678,13 @@ async function updateTranslationFiles (
 ): Promise<Array<{ path: string; updated: boolean }>> {
   const results: Array<{ path: string; updated: boolean }> = []
   const keySeparator = config.extract.keySeparator ?? '.'
+  // Write the new key the way the extractor would store it (flat for "Loading..." or
+  // natural-language keys), and remove the old one the way it is actually stored.
+  const nsSeparator = config.extract.nsSeparator
+  const naturalLanguageRegex = naturalLanguageRegexFor(typeof nsSeparator === 'string' ? nsSeparator : ':', keySeparator)
+  const newKeySeparator = storedKeySeparator(newParts.key, keySeparator, naturalLanguageRegex)
+  const oldKeySeparatorIn = (translations: any): string | false =>
+    Object.prototype.hasOwnProperty.call(translations, oldParts.key) ? false : keySeparator
 
   // Helper: determine whether a flattened key-set indicates presence of `baseKey`.
   const namespaceHasKey = (set: Set<string> | undefined, baseKey: string): boolean => {
@@ -822,8 +829,8 @@ async function updateTranslationFiles (
       if (oldValue !== undefined) {
         if (ns === targetNamespace) {
           // rename within same file (nested)
-          deleteNestedValue(oldTranslations, oldParts.key, keySeparator)
-          setNestedValue(oldTranslations, newParts.key, oldValue, keySeparator)
+          deleteNestedValue(oldTranslations, oldParts.key, oldKeySeparatorIn(oldTranslations))
+          setNestedValue(oldTranslations, newParts.key, oldValue, newKeySeparator)
           if (!dryRun) {
             const content = serializeTranslationFile(
               oldTranslations,
@@ -839,7 +846,7 @@ async function updateTranslationFiles (
         } else {
           // move nested value across namespaces
           const updatedOld = { ...oldTranslations }
-          deleteNestedValue(updatedOld, oldParts.key, keySeparator)
+          deleteNestedValue(updatedOld, oldParts.key, oldKeySeparatorIn(updatedOld))
           if (!dryRun) {
             const contentOld = serializeTranslationFile(
               updatedOld,
@@ -857,7 +864,7 @@ async function updateTranslationFiles (
             newTranslations = await loadTranslationFile(newFullPath)
           } catch {}
           if (!newTranslations) newTranslations = {}
-          setNestedValue(newTranslations, newParts.key, oldValue, keySeparator)
+          setNestedValue(newTranslations, newParts.key, oldValue, newKeySeparator)
           if (!dryRun) {
             const contentNew = serializeTranslationFile(
               newTranslations,
