@@ -72,4 +72,44 @@ describe('key order should not change with sort: false', () => {
     // Assert that the order is preserved between runs
     expect(order2).toEqual(order1)
   })
+
+  it('should keep arrays read with returnObjects as arrays', async () => {
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: 'src/**/*.{js,jsx,ts,tsx}',
+        output: 'locales/{{language}}/{{namespace}}.json',
+        defaultNS: 'translation',
+        functions: ['t'],
+        sort: false,
+      },
+    }
+
+    vol.fromJSON({
+      '/src/App.tsx': `
+        t('title')
+        t('faq', { returnObjects: true })
+      `,
+      '/locales/en/translation.json': JSON.stringify({
+        title: 'FAQ',
+        faq: [
+          { q: 'First question', a: 'First answer' },
+          { q: 'Second question', a: 'Second answer' },
+        ],
+      }),
+    })
+
+    await runExtractor(config)
+
+    const written = JSON.parse(
+      (await vol.promises.readFile(resolve(process.cwd(), 'locales/en/translation.json'), 'utf-8')).toString()
+    )
+    expect(written).toEqual({
+      title: 'FAQ',
+      faq: [
+        { q: 'First question', a: 'First answer' },
+        { q: 'Second question', a: 'Second answer' },
+      ],
+    })
+  })
 })
