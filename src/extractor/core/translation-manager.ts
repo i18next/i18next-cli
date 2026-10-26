@@ -1008,6 +1008,9 @@ function buildNewTranslationsForNs (
   if (sort === false && removeUnusedKeys) {
     const reorderToMatch = (newObj: Record<string, any>, refObj: Record<string, any>): Record<string, any> => {
       if (typeof newObj !== 'object' || newObj === null || typeof refObj !== 'object' || refObj === null) return newObj
+      // Arrays (e.g. values read with returnObjects) keep their own order;
+      // rebuilding them into `{}` would turn them into objects keyed "0", "1", …
+      if (Array.isArray(newObj)) return newObj
       const ordered: Record<string, any> = {}
       // First: keys from refObj in original order
       for (const key of Object.keys(refObj)) {
