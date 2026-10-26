@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.80.5
+
+- fix(extract): Svelte and Vue files with a generic arrow function in `<script lang="ts">` are no longer skipped.
+  Plugin output is parsed as TSX, where `<T>(value: T) => value` reads as a JSX tag, so the file failed with
+  `Skipping file due to error` and all its keys were missing. When TSX rejects plugin output, it is now parsed as plain
+  TypeScript. [#314](https://github.com/i18next/i18next-cli/pull/314)
+- fix(extract): with `sort: false`, arrays read with `returnObjects` stay arrays. `extract` wrote
+  `{ "faq": [{ … }] }` back as `{ "faq": { "0": { … } } }`, so `extract --ci` always failed for such a project.
+  [#315](https://github.com/i18next/i18next-cli/pull/315)
+
 ## 1.80.4
 
 - fix(rename-key): calls with a string default value are renamed in the source. `t('key', 'Default')` and
