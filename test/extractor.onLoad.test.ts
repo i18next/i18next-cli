@@ -98,6 +98,32 @@ describe('plugin onLoad: non-JS/TS file handling (issue #217)', () => {
     expect(allKeys.get('translation:svelte.button.label')?.defaultValue).toBe('Click me')
   })
 
+  // Plugin output is parsed as TSX, where `<T>(x: T) => x` reads as a JSX tag.
+  // In a `<script lang="ts">` block it is ordinary TypeScript and must not
+  // make the extractor skip the file.
+  it('extracts keys from a .svelte file with a generic arrow function', async () => {
+    const { glob } = await import('glob')
+    ;(glob as any).mockResolvedValue(['/src/App.svelte'])
+
+    const svelteSource = `
+      <script lang="ts">
+        const identity = <T>(value: T): T => value
+        const label = identity(t('svelte.generic.label', 'Generic'))
+      </script>
+    `
+
+    vol.fromJSON({ '/src/App.svelte': svelteSource })
+
+    const config: I18nextToolkitConfig = {
+      ...mockConfigBase,
+      plugins: [makeSveltePlugin()],
+    }
+
+    const { allKeys } = await findKeys(config)
+
+    expect(allKeys.has('translation:svelte.generic.label')).toBe(true)
+  })
+
   it('writes extracted keys to translation files for .svelte sources', async () => {
     const { glob } = await import('glob')
     ;(glob as any).mockResolvedValue(['/src/App.svelte'])

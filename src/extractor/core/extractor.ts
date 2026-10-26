@@ -327,6 +327,21 @@ export async function processFile (
         } catch (err2) {
           throw new ExtractorError('Failed to process file', file, err2 as Error)
         }
+      // Fallback for plugin output that is valid TypeScript but not valid TSX,
+      // e.g. a generic arrow function `<T>(x: T) => x` from `<script lang="ts">`
+      } else if (isTSX && !isNativeExt && wasTransformedByPlugin) {
+        try {
+          ast = await parse(code, {
+            syntax: 'typescript',
+            tsx: false,
+            decorators: true,
+            dynamicImport: true,
+            comments: true,
+          })
+          logger.info?.(`Parsed ${file} using TypeScript fallback`)
+        } catch (err2) {
+          throw new ExtractorError('Failed to process file', file, err2 as Error)
+        }
       } else {
         throw new ExtractorError('Failed to process file', file, err as Error)
       }
