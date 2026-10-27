@@ -4,6 +4,7 @@ A unified, high-performance i18next CLI toolchain, powered by SWC.
 
 [![Tests](https://github.com/i18next/i18next-cli/workflows/node/badge.svg)](https://github.com/i18next/i18next-cli/actions?query=workflow%3Anode)
 [![npm version](https://img.shields.io/npm/v/i18next-cli.svg?style=flat-square)](https://www.npmjs.com/package/i18next-cli)
+[![Socket Badge](https://badge.socket.dev/npm/package/i18next-cli)](https://socket.dev/npm/package/i18next-cli)
 
 ---
 
