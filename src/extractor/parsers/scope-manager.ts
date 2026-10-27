@@ -10,6 +10,7 @@ import type {
 } from '@swc/core'
 import type { ScopeInfo, UseTranslationHookConfig, I18nextToolkitConfig } from '../../types.js'
 import { getObjectPropValue } from './ast-utils.js'
+import { ValueTable } from './expression-resolver.js'
 
 export class ScopeManager {
   private scopeStack: Array<Map<string, ScopeInfo>> = []
@@ -23,22 +24,25 @@ export class ScopeManager {
   private thisFieldStack: Array<Map<string, ScopeInfo>> = []
 
   // Track simple local constants with string literal values to resolve identifier args
-  private simpleConstants: Map<string, string> = new Map()
+  private simpleConstants: Map<string, string> = new ValueTable(this)
 
   // Track simple local constant objects with string literal property values
-  private simpleConstantObjects: Map<string, Record<string, string>> = new Map()
+  private simpleConstantObjects: Map<string, Record<string, string>> = new ValueTable(this)
   // `const NS = ['a', 'b']` → used by resolveNsArg for `useTranslation(NS)`.
-  private simpleConstantArrays: Map<string, string[]> = new Map()
+  private simpleConstantArrays: Map<string, string[]> = new ValueTable(this)
   // `({ ns = 'x' }) =>` / `(ns = 'x') =>` param defaults, set/cleared per function by the visitor.
   private paramDefaults: Map<string, string> = new Map()
   // Last-resort identifier resolution for `useTranslation(ns)` (e.g. first member of
   // a param's union type), wired up by the visitor.
   public identifierFallback?: (name: string) => string | undefined
+  // Whether `name` is a parameter of a function being walked, wired up by the visitor. The
+  // constant tables are ValueTables: `useTranslation(ns)` in `useT(ns)` is no `const ns` of another file
+  public isParameter: (name: string) => boolean = () => false
 
   // Shared (cross-file) tables so that exported constants from one file can be
   // resolved when imported in another. These are NOT cleared by reset().
-  private sharedConstants: Map<string, string> = new Map()
-  private sharedConstantObjects: Map<string, Record<string, string>> = new Map()
+  private sharedConstants: Map<string, string> = new ValueTable(this)
+  private sharedConstantObjects: Map<string, Record<string, string>> = new ValueTable(this)
 
   constructor (config: Omit<I18nextToolkitConfig, 'plugins'>) {
     this.config = config

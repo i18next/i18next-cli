@@ -112,6 +112,7 @@ export class ASTVisitors {
     // `useTranslation(ns)` where `ns` is a param typed `'a' | 'b'` → first member
     // (same rule as `TFunction<'a' | 'b'>`).
     this.scopeManager.identifierFallback = (name) => this.expressionResolver.getVariableValues(name)?.[0]
+    this.scopeManager.isParameter = (name) => this.expressionResolver.isParameter(name)
     // use shared resolver when provided so captured enums/objects are visible across files
     this.expressionResolver = expressionResolver ?? new ExpressionResolver(this.hooks)
     this.callExpressionHandler = new CallExpressionHandler(
@@ -162,6 +163,8 @@ export class ASTVisitors {
    */
   private _walkForConstants (node: any): void {
     if (!node || typeof node !== 'object') return
+    // Like `walk`: a function's parameters hide the values declared under their names
+    const leaveParameters = Array.isArray(node.params) ? this.expressionResolver.enterParameters(node) : undefined
 
     switch (node.type) {
       case 'VariableDeclarator':
@@ -218,6 +221,7 @@ export class ASTVisitors {
         this._walkForConstants(child)
       }
     }
+    leaveParameters?.()
   }
 
   /**
@@ -290,6 +294,10 @@ export class ASTVisitors {
         }
       }
     }
+    // Any function, also a method or constructor: its parameters hide the values declared
+    // under their names while its body is walked (#316)
+    const leaveParameters = Array.isArray(node.params) ? this.expressionResolver.enterParameters(node) : undefined
+
     // ENTER SCOPE for functions
     // Accept many SWC/TS AST variants for function-like nodes (declarations, expressions, arrow functions)
     if (
@@ -666,6 +674,7 @@ export class ASTVisitors {
 
     // Remove temporary callback param binding if one was injected for this node
     arrayCallbackCleanup?.()
+    leaveParameters?.()
 
     // LEAVE SCOPE for functions
     if (isNewScope) {

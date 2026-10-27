@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(extract): a function parameter no longer resolves to a variable of the same name declared elsewhere.
+  `const getLabel = (options, value, t) => t(options[value])` extracted `GET` as a key because another file had a
+  `const options = { method: 'GET' }`. Inside a function, its parameters now hide same-named variables, object maps,
+  enums, functions and string constants from the module, other functions and other files, also when the value goes
+  through a local (`const key = options[value]; t(key)`) or a function's return value. This also fixes custom hooks
+  like `useT(ns) { const { t } = useTranslation(ns) }`, whose keys went to the namespace of any `const ns = 'admin'`
+  in the project (the same for `keyPrefix`). Parameters with a default value or typed with a union or an interface
+  still resolve as before. Fixes [#316](https://github.com/i18next/i18next-cli/issues/316).
+
 ## 1.80.5
 
 - fix(extract): Svelte and Vue files with a generic arrow function in `<script lang="ts">` are no longer skipped.

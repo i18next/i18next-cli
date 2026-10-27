@@ -63,6 +63,32 @@ const memberByKey = (members: any[], key: string): any => {
   return index.get(key)
 }
 
+// The names a function parameter binds: `options`, `{ a, b: [c] } = {}`, `...rest`, `private d`
+const bindingNames = (pat: any): string[] => {
+  switch (pat?.type) {
+    case 'Identifier': return [pat.value]
+    case 'Parameter': return bindingNames(pat.pat)
+    case 'TsParameterProperty': return bindingNames(pat.param)
+    case 'AssignmentPattern': return bindingNames(pat.left)
+    case 'RestElement': return bindingNames(pat.argument)
+    case 'ArrayPattern': return pat.elements.flatMap(bindingNames)
+    case 'ObjectPattern': return pat.properties.flatMap((p: any) => p.type === 'AssignmentPatternProperty' ? [p.key.value] : bindingNames(p.value ?? p.argument))
+    default: return []
+  }
+}
+
+// A table of values (variables, object maps, enums, functions). Inside a function, a parameter
+// hides the entry of its name: `options` there is never an `options` declared elsewhere (#316)
+export class ValueTable<V> extends Map<string, V> {
+  constructor (private readonly scope: { isParameter (name: string): boolean }) {
+    super()
+  }
+
+  get (name: string): V | undefined {
+    return this.scope.isParameter(name) ? undefined : super.get(name)
+  }
+}
+
 // `/src/api/github-api.ts`, `.d.ts`, or an import of `./github-api.js` -> `/src/api/github-api`
 const moduleKey = (path: string): string => path.replace(/(\.d)?\.[cm]?[jt]sx?$/, '')
 
@@ -74,11 +100,16 @@ const moduleKey = (path: string): string => path.replace(/(\.d)?\.[cm]?[jt]sx?$/
  * generated clients that both declare `components` no longer overwrite each other (#306).
  */
 class ModuleTable<V> extends Map<string, V> {
-  constructor (private readonly scope: { keysOf (name: string): string[], declaringKey (name: string): string | undefined }) {
+  constructor (
+    private readonly scope: { keysOf (name: string): string[], declaringKey (name: string): string | undefined, isParameter (name: string): boolean },
+    private readonly holdsValues = false
+  ) {
     super()
   }
 
   get (name: string): V | undefined {
+    // Like a ValueTable: a parameter hides the value declared under its name in any file
+    if (this.holdsValues && this.scope.isParameter(name)) return undefined
     for (const key of this.scope.keysOf(name)) {
       const value = super.get(key)
       if (value !== undefined) return value
@@ -136,10 +167,10 @@ export class ExpressionResolver {
   // Maps variableName -> either:
   //  - string[] (possible string values)
   //  - Record<string, string> (object of static string properties)
-  private variableTable: Map<string, string[] | Record<string, string>> = new Map()
+  private variableTable: Map<string, string[] | Record<string, string>> = new ValueTable(this)
 
   // Shared (cross-file) table for enums / exported object maps that should persist
-  private sharedEnumTable: Map<string, Record<string, string>> = new ModuleTable(this)
+  private sharedEnumTable: Map<string, Record<string, string>> = new ModuleTable(this, true)
 
   // Per-file table for type aliases: Maps typeName -> string[]
   // e.g. `type ChangeType = 'all' | 'next' | 'this'` -> { ChangeType: ['all', 'next', 'this'] }
@@ -147,11 +178,11 @@ export class ExpressionResolver {
 
   // Shared (cross-file) table for string-array constants (e.g. `as const` arrays).
   // Persists across resetFileSymbols() so exported arrays are visible to importers.
-  private sharedVariableTable: Map<string, string[]> = new ModuleTable(this)
+  private sharedVariableTable: Map<string, string[]> = new ModuleTable(this, true)
 
   // Shared (cross-file) table for as-const object maps, `export const LABELS = { … } as const`,
   // so `LABELS.save` and `Object.keys(LABELS)` resolve in importing files.
-  private sharedObjectMapTable: Map<string, Record<string, string>> = new ModuleTable(this)
+  private sharedObjectMapTable: Map<string, Record<string, string>> = new ModuleTable(this, true)
 
   // Shared (cross-file) table for type aliases — populated alongside typeAliasTable.
   // Persists across resetFileSymbols() so exported type aliases are visible to importers.
@@ -161,7 +192,7 @@ export class ExpressionResolver {
   // both explicit return-type annotations and body-inferred return values so
   // that `t(fn())` / `const x = fn(); t(\`...${x}...\`)` work across files.
   // Persists across resetFileSymbols() just like the other shared tables.
-  private sharedFunctionReturnTable: Map<string, string[]> = new ModuleTable(this)
+  private sharedFunctionReturnTable: Map<string, string[]> = new ModuleTable(this, true)
 
   // Temporary per-scope variable overrides, used to inject .map() / .forEach()
   // callback parameters while the callback body is being walked.
@@ -200,15 +231,15 @@ export class ExpressionResolver {
 
   // Shared (cross-file) member maps of functions returning an object type,
   // e.g. `const getAnimal = (): Animal => …` -> { getAnimal: { type: ['DUCK', 'DOG'] } }
-  private sharedFunctionReturnMembers: Map<string, Record<string, string[]>> = new ModuleTable(this)
+  private sharedFunctionReturnMembers: Map<string, Record<string, string[]>> = new ModuleTable(this, true)
 
   // Per-file identifiers holding an object type, from their annotation or from the
   // function they were initialised by: `const animal = getAnimal()` -> { animal: { type: [...] } }
-  private objectVariables: Map<string, Record<string, string[]>> = new Map()
+  private objectVariables: Map<string, Record<string, string[]>> = new ValueTable(this)
 
   // Per-file object literals by variable, so `const params = { count }; t('key', params)`
   // reads its options like an inline object (#307)
-  private objectLiterals: Map<string, ObjectExpression> = new Map()
+  private objectLiterals: Map<string, ObjectExpression> = new ValueTable(this)
 
   // Set while the pre-scan runs. Captures that read other declarations queue a
   // replay here, because what they read may be declared in a file scanned later.
@@ -232,6 +263,8 @@ export class ExpressionResolver {
   private fileNamespaces: Map<string, Map<string, string>> = new Map()
   // module -> the variables it declares, which shadow the same names declared in other files
   private fileVariables: Map<string, Set<string>> = new Map()
+  // The parameters of the functions being read, innermost last
+  private parameters: string[] = []
   // tsconfig `paths`, `@api` -> `/abs/src/api`
   public pathAliases: Record<string, string> = {}
 
@@ -272,6 +305,21 @@ export class ExpressionResolver {
     // value isn't captured (`const params = { count }` vs another file's `params` array) (#307)
     if (!this.fileVariables.get(this.currentModule)?.has(name)) keys.push(name)
     return keys
+  }
+
+  // ValueTable / ModuleTable: whether `name` is a parameter of a function being read
+  public isParameter (name: string): boolean {
+    return this.parameters.includes(name)
+  }
+
+  /**
+   * Hide the values declared under the names of `fn`'s parameters while its body is read.
+   * Call the returned function when leaving it.
+   */
+  public enterParameters (fn: any): () => void {
+    const names: string[] = (fn?.params ?? []).flatMap(bindingNames)
+    this.parameters.push(...names)
+    return () => { this.parameters.length -= names.length }
   }
 
   // ModuleTable: the key a declaration made in the current file is also stored under
@@ -318,6 +366,7 @@ export class ExpressionResolver {
     this.arrayElementMembers.clear()
     this.objectVariables.clear()
     this.objectLiterals.clear()
+    this.parameters = []
   }
 
   /**
@@ -986,15 +1035,25 @@ export class ExpressionResolver {
     //     if (...) return OrganizationType.CONTRACTOR;
     //   }
     const exprs = returnType ? [] : this.returnExpressions(fn)
-    const vals = returnType
-      ? this.resolvePossibleStringValuesFromType(returnType)
-      : [...new Set(exprs.flatMap(e => this.resolvePossibleStringValuesFromExpression(e)))]
+    // The body is read inside the function, where its parameters hide the values
+    // declared under their names (#316)
+    const leaveParameters = this.enterParameters(fn)
+    let vals: string[]
+    let refs: any[]
+    try {
+      vals = returnType
+        ? this.resolvePossibleStringValuesFromType(returnType)
+        : [...new Set(exprs.flatMap(e => this.resolvePossibleStringValuesFromExpression(e)))]
+      // A replay has lost the file's local bindings, so it re-resolves only the
+      // return type, or the returned enum / object members and calls of other
+      // functions, kept as small nodes so no function body stays in memory.
+      // It runs outside the function, so none of them may go through a parameter.
+      refs = this.recording ? crossFileRefs(exprs).filter(e => !this.isParameter((e.object ?? e.callee).value)) : []
+    } finally {
+      leaveParameters()
+    }
     if (vals.length > 0) this.variableTable.set(name, vals)
 
-    // A replay has lost the file's local bindings, so it re-resolves only the
-    // return type, or the returned enum / object members and calls of other
-    // functions, kept as small nodes so no function body stays in memory.
-    const refs = this.recording ? crossFileRefs(exprs) : []
     const store = (): void => {
       const all = returnType
         ? this.resolvePossibleStringValuesFromType(returnType)
