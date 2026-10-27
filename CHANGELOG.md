@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   like `useT(ns) { const { t } = useTranslation(ns) }`, whose keys went to the namespace of any `const ns = 'admin'`
   in the project (the same for `keyPrefix`). Parameters with a default value or typed with a union or an interface
   still resolve as before. Fixes [#316](https://github.com/i18next/i18next-cli/issues/316).
+- chore(deps): `ora`, `execa` and `inquirer` are replaced by `yocto-spinner`, `nano-spawn` and the single
+  `@inquirer/input`, `@inquirer/select`, `@inquirer/confirm` and `@inquirer/password` prompts. Prompts, spinners and
+  the `locize`, `git` and browser-opener subprocesses behave as before. The install tree no longer contains
+  `is-interactive`, `is-unicode-supported`, `safer-buffer`, `iconv-lite`, `@inquirer/external-editor`, `path-key` and
+  `get-east-asian-width`, including the three packages Socket rated as high-severity alerts.
 
 ## 1.80.5
 
