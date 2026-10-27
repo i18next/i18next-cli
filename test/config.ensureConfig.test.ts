@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { ensureConfig } from '../src/config'
 import { runInit } from '../src/init'
-import inquirer from 'inquirer'
+import { prompt } from '../src/utils/prompt'
 
 // --- MOCK MODULES ---
-// Mock inquirer to control its prompt answers
-vi.mock('inquirer')
+// Mock the prompt helper to control its prompt answers
+vi.mock('../src/utils/prompt')
 
 // Mock runInit so we can check if it's called, without running the whole wizard
 vi.mock('../src/init', () => ({
@@ -28,21 +28,21 @@ describe('config: ensureConfig', () => {
 
   it('should prompt the user and call runInit when user answers "Yes"', async () => {
     // Simulate the user answering "Yes" to the prompt
-    vi.mocked(inquirer.prompt).mockResolvedValue({ shouldInit: true })
+    vi.mocked(prompt).mockResolvedValue({ shouldInit: true })
 
     await ensureConfig()
 
-    expect(inquirer.prompt).toHaveBeenCalledTimes(1)
+    expect(prompt).toHaveBeenCalledTimes(1)
     expect(runInit).toHaveBeenCalledTimes(1)
   })
 
   it('should exit the process when user answers "No"', async () => {
     // Simulate the user answering "No" to the prompt
-    vi.mocked(inquirer.prompt).mockResolvedValue({ shouldInit: false })
+    vi.mocked(prompt).mockResolvedValue({ shouldInit: false })
 
     await ensureConfig()
 
-    expect(inquirer.prompt).toHaveBeenCalledTimes(1)
+    expect(prompt).toHaveBeenCalledTimes(1)
     expect(runInit).not.toHaveBeenCalled()
     expect(exitSpy).toHaveBeenCalledWith(0)
   })

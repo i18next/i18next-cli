@@ -1,7 +1,7 @@
-import { execa } from 'execa'
+import spawn from 'nano-spawn'
 import { styleText } from 'node:util'
-import ora from 'ora'
-import inquirer from 'inquirer'
+import yoctoSpinner from 'yocto-spinner'
+import { prompt } from './utils/prompt.js'
 import { resolve, sep } from 'node:path'
 import type { I18nextToolkitConfig } from './types.js'
 
@@ -21,7 +21,7 @@ import type { I18nextToolkitConfig } from './types.js'
 async function resolveLocizeBin (): Promise<{ cmd: string, prefixArgs: string[] } | null> {
   // 1. Try a locally / globally installed binary
   try {
-    await execa('locize', ['--version'])
+    await spawn('locize', ['--version'])
     return { cmd: 'locize', prefixArgs: [] }
   } catch {
     // not found – continue
@@ -30,7 +30,7 @@ async function resolveLocizeBin (): Promise<{ cmd: string, prefixArgs: string[] 
   // 2. Fall back to npx
   try {
     console.log(styleText('yellow', '`locize` command not found – trying npx...'))
-    await execa('npx', ['locize-cli', '--version'])
+    await spawn('npx', ['locize-cli', '--version'])
     return { cmd: 'npx', prefixArgs: ['locize-cli'] }
   } catch {
     // npx also failed
@@ -64,18 +64,18 @@ async function resolveLocizeBin (): Promise<{ cmd: string, prefixArgs: string[] 
 async function interactiveCredentialSetup (config: I18nextToolkitConfig): Promise<{ projectId?: string, apiKey?: string, version?: string } | undefined> {
   console.log(styleText('yellow', '\nLocize configuration is missing or invalid. Let\'s set it up!'))
 
-  const answers = await inquirer.prompt([
+  const answers = await prompt([
     {
       type: 'input',
       name: 'projectId',
       message: 'What is your Locize Project ID? (Find this in your project settings on www.locize.app)',
-      validate: input => !!input || 'Project ID cannot be empty.',
+      validate: (input: string) => !!input || 'Project ID cannot be empty.',
     },
     {
       type: 'password',
       name: 'apiKey',
       message: 'Enter your Locize API key (Project settings → API → API Keys). Any write-capable key works — missing languages are created automatically for new projects.',
-      validate: input => !!input || 'API Key cannot be empty.',
+      validate: (input: string) => !!input || 'API Key cannot be empty.',
     },
     {
       type: 'input',
@@ -90,7 +90,7 @@ async function interactiveCredentialSetup (config: I18nextToolkitConfig): Promis
     return undefined
   }
 
-  const { save } = await inquirer.prompt([{
+  const { save } = await prompt([{
     type: 'confirm',
     name: 'save',
     message: 'Would you like to see how to save these credentials for future use?',
@@ -183,7 +183,7 @@ function maskArgs (args: string[]): string[] {
 }
 
 /**
- * Helper function to build the array of arguments for the execa call.
+ * Helper function to build the array of arguments for the spawn call.
  * This ensures the logic is consistent for both the initial run and the retry.
  */
 function buildArgs (command: string, config: I18nextToolkitConfig, cliOptions: any): string[] {
@@ -334,7 +334,7 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
   }
   const { cmd, prefixArgs } = resolved
 
-  const spinner = ora(`Running 'locize ${command}'...\n`).start()
+  const spinner = yoctoSpinner({ text: `Running 'locize ${command}'...\n` }).start()
 
   let effectiveConfig = config
 
@@ -342,16 +342,16 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
     // 1. First attempt
     const initialArgs = [...prefixArgs, ...buildArgs(command, effectiveConfig, cliOptions)]
     console.log(styleText('cyan', `\nRunning 'locize ${maskArgs(initialArgs.slice(prefixArgs.length)).join(' ')}'...`))
-    const result = await execa(cmd, initialArgs, { stdio: 'pipe' })
+    const result = await spawn(cmd, initialArgs, { stdio: 'pipe' })
 
-    spinner.succeed(styleText('green', `'locize ${command}' completed successfully.`))
+    spinner.success(styleText('green', `'locize ${command}' completed successfully.`))
     if (result?.stdout) console.log(result.stdout) // Print captured output on success
   } catch (error: any) {
     const stderr = error.stderr || ''
     if (throwOnError) {
       // Orchestrating callers (e.g. `localize`) handle credentials and
       // messaging themselves — no interactive retry, no process.exit.
-      spinner.fail(styleText('red', `Error executing 'locize ${command}'.`))
+      spinner.error(styleText('red', `Error executing 'locize ${command}'.`))
       throw new LocizeCommandError(stderr || error.stdout || error.message, { stdout: error.stdout, stderr })
     }
     if (stderr.includes('missing required argument')) {
@@ -366,22 +366,22 @@ async function runLocizeCommand (command: 'sync' | 'download' | 'migrate', confi
           // 3. Retry attempt, rebuilding args with the NOW-UPDATED currentConfig object
           const retryArgs = [...prefixArgs, ...buildArgs(command, effectiveConfig, cliOptions)]
           console.log(styleText('cyan', `\nRunning 'locize ${maskArgs(retryArgs.slice(prefixArgs.length)).join(' ')}'...`))
-          const result = await execa(cmd, retryArgs, { stdio: 'pipe' })
+          const result = await spawn(cmd, retryArgs, { stdio: 'pipe' })
 
-          spinner.succeed(styleText('green', 'Retry successful!'))
+          spinner.success(styleText('green', 'Retry successful!'))
           if (result?.stdout) console.log(result.stdout)
         } catch (retryError: any) {
-          spinner.fail(styleText('red', 'Error during retry.'))
+          spinner.error(styleText('red', 'Error during retry.'))
           console.error(retryError.stderr || retryError.message)
           process.exit(1)
         }
       } else {
-        spinner.fail('Operation cancelled.')
+        spinner.error('Operation cancelled.')
         process.exit(1) // User aborted the prompt
       }
     } else {
       // Handle other errors
-      spinner.fail(styleText('red', `Error executing 'locize ${command}'.`))
+      spinner.error(styleText('red', `Error executing 'locize ${command}'.`))
       console.error(stderr || error.message)
       process.exit(1)
     }

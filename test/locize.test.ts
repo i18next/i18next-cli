@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { runLocizeSync, LocizeCommandError, maskApiKey } from '../src/locize'
 import { pathEndsWith } from './utils/path'
 import type { I18nextToolkitConfig } from '../src/types'
-import { execa } from 'execa'
-import inquirer from 'inquirer'
+import spawn from 'nano-spawn'
+import { prompt } from '../src/utils/prompt'
 
-vi.mock('inquirer')
-vi.mock('execa')
+vi.mock('../src/utils/prompt')
+vi.mock('nano-spawn')
 
 describe('locize', () => {
   let consoleErrorSpy: any
@@ -36,11 +36,11 @@ describe('locize', () => {
     vi.restoreAllMocks()
   })
 
-  it('should call execa with the correct arguments for a successful sync', async () => {
-    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+  it('should call spawn with the correct arguments for a successful sync', async () => {
+    vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
     await runLocizeSync(mockConfig)
     // Find the call that runs the actual `sync` command (the first call is `--version`)
-    const calls = vi.mocked(execa).mock.calls
+    const calls = vi.mocked(spawn).mock.calls
     const syncCall = calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
     expect(syncCall).toBeDefined()
     const syncArgs = syncCall![1] as string[]
@@ -58,26 +58,26 @@ describe('locize', () => {
 
   it('should forward --cdn-type to download and migrate, not only sync', async () => {
     // Guards the #156 class of bug: the option was once forwarded for sync only.
-    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
     mockConfig.locize!.cdnType = 'pro'
     const { runLocizeDownload, runLocizeMigrate } = await import('../src/locize')
 
     await runLocizeDownload(mockConfig)
-    const downloadCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('download'))
+    const downloadCall = vi.mocked(spawn).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('download'))
     expect(downloadCall).toBeDefined()
     expect(downloadCall![1] as string[]).toEqual(expect.arrayContaining(['--cdn-type', 'pro']))
 
-    vi.mocked(execa).mockClear()
+    vi.mocked(spawn).mockClear()
     await runLocizeMigrate(mockConfig)
-    const migrateCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('migrate'))
+    const migrateCall = vi.mocked(spawn).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('migrate'))
     expect(migrateCall).toBeDefined()
     expect(migrateCall![1] as string[]).toEqual(expect.arrayContaining(['--cdn-type', 'pro']))
   })
 
   it('should forward --reference-language-only false when --src-lng-only is "false"', async () => {
-    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
     await runLocizeSync(mockConfig, { srcLngOnly: 'false' })
-    const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+    const syncCall = vi.mocked(spawn).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
     const syncArgs = syncCall![1] as string[]
     const idx = syncArgs.findIndex(a => a === '--reference-language-only')
     expect(idx).toBeGreaterThan(-1)
@@ -85,9 +85,9 @@ describe('locize', () => {
   })
 
   it('should forward --reference-language-only true when --src-lng-only is "true"', async () => {
-    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
     await runLocizeSync(mockConfig, { srcLngOnly: 'true' })
-    const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+    const syncCall = vi.mocked(spawn).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
     const syncArgs = syncCall![1] as string[]
     const idx = syncArgs.findIndex(a => a === '--reference-language-only')
     expect(idx).toBeGreaterThan(-1)
@@ -95,9 +95,9 @@ describe('locize', () => {
   })
 
   it('should forward the boolean from config (sourceLanguageOnly: false)', async () => {
-    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
     await runLocizeSync({ ...mockConfig, locize: { ...mockConfig.locize, sourceLanguageOnly: false } })
-    const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+    const syncCall = vi.mocked(spawn).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
     const syncArgs = syncCall![1] as string[]
     const idx = syncArgs.findIndex(a => a === '--reference-language-only')
     expect(idx).toBeGreaterThan(-1)
@@ -105,26 +105,26 @@ describe('locize', () => {
   })
 
   it('should forward --changed-only and --base to locize-cli sync', async () => {
-    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
     await runLocizeSync(mockConfig, { changedOnly: true, base: 'develop' })
-    const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+    const syncCall = vi.mocked(spawn).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
     const syncArgs = syncCall![1] as string[]
     expect(syncArgs).toEqual(expect.arrayContaining(['--changed-only', 'true', '--base', 'develop']))
   })
 
   it('should not forward --changed-only when omitted', async () => {
-    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
     await runLocizeSync(mockConfig)
-    const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+    const syncCall = vi.mocked(spawn).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
     const syncArgs = syncCall![1] as string[]
     expect(syncArgs).not.toContain('--changed-only')
     expect(syncArgs).not.toContain('--base')
   })
 
   it('should not forward --reference-language-only when --src-lng-only is omitted', async () => {
-    vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+    vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
     await runLocizeSync(mockConfig)
-    const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+    const syncCall = vi.mocked(spawn).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
     const syncArgs = syncCall![1] as string[]
     expect(syncArgs).not.toContain('--reference-language-only')
   })
@@ -132,7 +132,7 @@ describe('locize', () => {
   it('should exit gracefully if locize-cli is not found', async () => {
     const error: any = new Error('Not found')
     error.code = 'ENOENT'
-    vi.mocked(execa).mockRejectedValue(error)
+    vi.mocked(spawn).mockRejectedValue(error)
     await runLocizeSync(mockConfig)
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('`locize-cli` command not found'))
     expect(exitSpy).toHaveBeenCalledWith(1)
@@ -141,13 +141,13 @@ describe('locize', () => {
   it('should trigger interactive setup on auth failure and retry with new credentials', async () => {
     const authError: any = new Error('Auth failed')
     authError.stderr = 'missing required argument'
-    // Mock the entire sequence of execa calls
-    vi.mocked(execa)
+    // Mock the entire sequence of spawn calls
+    vi.mocked(spawn)
       .mockResolvedValueOnce({ stdout: 'v1.0.0', stderr: '' } as any)   // 1. `checkLocizeCliExists` succeeds
       .mockRejectedValueOnce(authError)                                 // 2. First `sync` call fails
       .mockResolvedValueOnce({ stdout: 'Success!', stderr: '' } as any) // 3. Second `sync` call (retry) succeeds
 
-    vi.mocked(inquirer.prompt).mockResolvedValue({
+    vi.mocked(prompt).mockResolvedValue({
       projectId: 'new-project-id',
       apiKey: 'new-api-key',
       version: 'latest',
@@ -156,9 +156,9 @@ describe('locize', () => {
 
     await runLocizeSync(mockConfig)
 
-    expect(execa).toHaveBeenCalledTimes(3)
+    expect(spawn).toHaveBeenCalledTimes(3)
 
-    const secondCallArgs = vi.mocked(execa).mock.calls[2][1]
+    const secondCallArgs = vi.mocked(spawn).mock.calls[2][1]
     expect(secondCallArgs).toContain('new-project-id')
     expect(secondCallArgs).toContain('new-api-key')
     expect(exitSpy).not.toHaveBeenCalled()
@@ -166,12 +166,12 @@ describe('locize', () => {
 
   describe('auto-translate passthrough', () => {
     const getSyncArgs = () => {
-      const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+      const syncCall = vi.mocked(spawn).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
       return syncCall![1] as string[]
     }
 
     it('forwards --auto-translate true from CLI options', async () => {
-      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
       await runLocizeSync(mockConfig, { autoTranslate: true })
       const args = getSyncArgs()
       const idx = args.findIndex(a => a === '--auto-translate')
@@ -180,7 +180,7 @@ describe('locize', () => {
     })
 
     it('forwards --auto-translate false when explicitly disabled', async () => {
-      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
       await runLocizeSync(mockConfig, { autoTranslate: 'false' })
       const args = getSyncArgs()
       const idx = args.findIndex(a => a === '--auto-translate')
@@ -189,13 +189,13 @@ describe('locize', () => {
     })
 
     it('does not forward --auto-translate when omitted', async () => {
-      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
       await runLocizeSync(mockConfig)
       expect(getSyncArgs()).not.toContain('--auto-translate')
     })
 
     it('reads autoTranslate and autoTranslateReview from config', async () => {
-      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
       mockConfig.locize = { ...mockConfig.locize, autoTranslate: true, autoTranslateReview: true }
       await runLocizeSync(mockConfig)
       const args = getSyncArgs()
@@ -204,7 +204,7 @@ describe('locize', () => {
     })
 
     it('CLI option takes precedence over config for autoTranslate', async () => {
-      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
       mockConfig.locize = { ...mockConfig.locize, autoTranslate: true }
       await runLocizeSync(mockConfig, { autoTranslate: 'false' })
       const args = getSyncArgs()
@@ -212,7 +212,7 @@ describe('locize', () => {
     })
 
     it('joins autoTranslateLanguages array into a comma-separated list', async () => {
-      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
       mockConfig.locize = { ...mockConfig.locize, autoTranslateLanguages: ['de', 'fr'] }
       await runLocizeSync(mockConfig)
       const args = getSyncArgs()
@@ -224,19 +224,19 @@ describe('locize', () => {
     it('throws a LocizeCommandError instead of exiting on command failure', async () => {
       const cmdError: any = new Error('boom')
       cmdError.stderr = 'auto-translation is not enabled for this project'
-      vi.mocked(execa)
+      vi.mocked(spawn)
         .mockResolvedValueOnce({ stdout: 'v1.0.0', stderr: '' } as any) // version check
         .mockRejectedValueOnce(cmdError)
 
       await expect(runLocizeSync(mockConfig, { throwOnError: true })).rejects.toThrow(LocizeCommandError)
       expect(exitSpy).not.toHaveBeenCalled()
-      expect(inquirer.prompt).not.toHaveBeenCalled() // no interactive credential retry
+      expect(prompt).not.toHaveBeenCalled() // no interactive credential retry
     })
 
     it('exposes stderr on the thrown error', async () => {
       const cmdError: any = new Error('boom')
       cmdError.stderr = 'machine translation not activated'
-      vi.mocked(execa)
+      vi.mocked(spawn)
         .mockResolvedValueOnce({ stdout: 'v1.0.0', stderr: '' } as any)
         .mockRejectedValueOnce(cmdError)
 
@@ -252,7 +252,7 @@ describe('locize', () => {
     it('throws (not exits) when the locize-cli binary is missing', async () => {
       const error: any = new Error('Not found')
       error.code = 'ENOENT'
-      vi.mocked(execa).mockRejectedValue(error)
+      vi.mocked(spawn).mockRejectedValue(error)
       await expect(runLocizeSync(mockConfig, { throwOnError: true })).rejects.toThrow(/locize-cli/)
       expect(exitSpy).not.toHaveBeenCalled()
     })
@@ -260,7 +260,7 @@ describe('locize', () => {
     it('still exits without throwOnError (standalone command behavior unchanged)', async () => {
       const cmdError: any = new Error('boom')
       cmdError.stderr = 'some other failure'
-      vi.mocked(execa)
+      vi.mocked(spawn)
         .mockResolvedValueOnce({ stdout: 'v1.0.0', stderr: '' } as any)
         .mockRejectedValueOnce(cmdError)
 
@@ -271,7 +271,7 @@ describe('locize', () => {
 
   describe('credential resolution', () => {
     const getSyncArgs = () => {
-      const syncCall = vi.mocked(execa).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
+      const syncCall = vi.mocked(spawn).mock.calls.find(c => Array.isArray(c[1]) && (c[1] as string[]).includes('sync'))
       return syncCall![1] as string[]
     }
 
@@ -282,7 +282,7 @@ describe('locize', () => {
     it('falls back to LOCIZE_PROJECTID / LOCIZE_API_KEY env vars and forwards them as flags', async () => {
       // Explicit flags matter: locize-cli itself prefers a ~/.locize config
       // file over env vars, so a stale ~/.locize would otherwise hijack the run.
-      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
       vi.stubEnv('LOCIZE_PROJECTID', 'env-project-id')
       vi.stubEnv('LOCIZE_API_KEY', 'env-api-key')
       delete mockConfig.locize
@@ -293,7 +293,7 @@ describe('locize', () => {
     })
 
     it('config takes precedence over env vars', async () => {
-      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
       vi.stubEnv('LOCIZE_PROJECTID', 'env-project-id')
       await runLocizeSync(mockConfig) // config has projectId: 'test-project-id'
       const args = getSyncArgs()
@@ -301,14 +301,14 @@ describe('locize', () => {
     })
 
     it('forwards apiEndpoint from config / LOCIZE_API_ENDPOINT env', async () => {
-      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
       mockConfig.locize = { ...mockConfig.locize, apiEndpoint: 'https://api-dev.locize.app' }
       await runLocizeSync(mockConfig)
       let args = getSyncArgs()
       expect(args[args.findIndex(a => a === '--api-endpoint') + 1]).toBe('https://api-dev.locize.app')
 
-      vi.mocked(execa).mockClear()
-      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      vi.mocked(spawn).mockClear()
+      vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
       delete mockConfig.locize!.apiEndpoint
       vi.stubEnv('LOCIZE_API_ENDPOINT', 'https://api-staging.locize.app')
       await runLocizeSync(mockConfig)
@@ -317,7 +317,7 @@ describe('locize', () => {
     })
 
     it('does not forward --api-endpoint when unset', async () => {
-      vi.mocked(execa).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
+      vi.mocked(spawn).mockResolvedValue({ stdout: 'Success!', stderr: '' } as any)
       await runLocizeSync(mockConfig)
       expect(getSyncArgs()).not.toContain('--api-endpoint')
     })

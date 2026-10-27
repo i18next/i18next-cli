@@ -1,4 +1,4 @@
-import ora from 'ora'
+import yoctoSpinner, { type Spinner } from 'yocto-spinner'
 
 export interface SpinnerLike {
   text: string
@@ -14,7 +14,7 @@ export interface SpinnerLike {
  * Creates a spinner-like object that either:
  * - is fully silent (quiet mode),
  * - logs only start/succeed/fail events to a logger (no animation),
- * - or falls back to ora's default spinner.
+ * - or falls back to an animated yocto-spinner.
  *
  * This avoids flooding structured loggers with spinner frames and ensures clean output in CI, Vite, etc.
  */
@@ -26,10 +26,10 @@ export function createSpinnerLike (
   const { quiet, logger } = options
   let text = initialText
 
-  // If interactive (no logger and not quiet), create a single real ora spinner
-  let realSpinner: ReturnType<typeof ora> | null = null
+  // If interactive (no logger and not quiet), create a single real spinner
+  let realSpinner: Spinner | null = null
   if (!quiet && !logger) {
-    realSpinner = ora({ text }).start()
+    realSpinner = yoctoSpinner({ text }).start()
   }
 
   const self: SpinnerLike = {
@@ -47,8 +47,8 @@ export function createSpinnerLike (
         else if (typeof logger.log === 'function') logger.log(message)
         else process.stderr.write(message + '\n')
       } else {
-        if (!realSpinner) realSpinner = ora({ text }).start()
-        realSpinner.succeed(message)
+        if (!realSpinner) realSpinner = yoctoSpinner({ text }).start()
+        realSpinner.success(message)
       }
     },
     fail (msg?: string) {
@@ -59,8 +59,8 @@ export function createSpinnerLike (
         else if (typeof logger.log === 'function') logger.log(message)
         else process.stderr.write(message + '\n')
       } else {
-        if (!realSpinner) realSpinner = ora({ text }).start()
-        realSpinner.fail(message)
+        if (!realSpinner) realSpinner = yoctoSpinner({ text }).start()
+        realSpinner.error(message)
       }
     },
     warn (msg?: string) {
@@ -71,8 +71,8 @@ export function createSpinnerLike (
         else if (typeof logger.log === 'function') logger.log(message)
         else process.stderr.write(message + '\n')
       } else {
-        if (!realSpinner) realSpinner = ora({ text }).start()
-        try { (realSpinner as any).warn?.(message) } catch { realSpinner.stop(); process.stderr.write(message + '\n') }
+        if (!realSpinner) realSpinner = yoctoSpinner({ text }).start()
+        realSpinner.warning(message)
       }
     },
     stop () { if (realSpinner) realSpinner.stop() },
@@ -83,7 +83,7 @@ export function createSpinnerLike (
         else if (typeof logger.log === 'function') logger.log(msg)
         else process.stderr.write(msg + '\n')
       } else {
-        if (!realSpinner) realSpinner = ora({ text }).start()
+        if (!realSpinner) realSpinner = yoctoSpinner({ text }).start()
         realSpinner.text = String(msg)
       }
     }

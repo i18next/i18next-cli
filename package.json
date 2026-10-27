@@ -74,21 +74,24 @@
   "dependencies": {
     "@croct/json5-parser": "^0.2.2",
     "@formatjs/icu-messageformat-parser": "^3.5.22",
+    "@inquirer/confirm": "^6.3.5",
+    "@inquirer/input": "^5.1.9",
+    "@inquirer/password": "^5.2.5",
+    "@inquirer/select": "^5.2.8",
     "@swc/core": "^1.16.20",
     "chokidar": "^5.0.0",
     "commander": "^15.0.0",
-    "execa": "^10.2.1",
     "glob": "^13.0.6",
     "i18next": "^26.5.10",
     "i18next-resources-for-ts": "^2.1.2",
-    "inquirer": "^14.2.4",
     "jiti": "^2.7.0",
     "jsonc-parser": "^3.3.1",
     "magic-string": "^1.4.3",
     "messageformat": "^4.1.0",
     "minimatch": "^10.2.6",
-    "ora": "^9.4.1",
+    "nano-spawn": "^2.1.0",
     "react-i18next": "^17.1.8",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "yocto-spinner": "^1.2.2"
   }
 }

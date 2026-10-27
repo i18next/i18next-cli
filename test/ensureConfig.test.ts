@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock inquirer to detect if prompt is shown, and prevent hanging
+// Mock the prompt helper to detect if prompt is shown, and prevent hanging
 const mockPrompt = vi.fn()
-vi.mock('inquirer', () => ({ default: { prompt: mockPrompt } }))
+vi.mock('../src/utils/prompt', () => ({ prompt: mockPrompt }))
 
 // Mock runInit so it doesn't actually run
 vi.mock('../src/init', () => ({ runInit: vi.fn() }))

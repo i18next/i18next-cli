@@ -1,7 +1,7 @@
 import { styleText } from 'node:util'
 import { readFile } from 'node:fs/promises'
-import { execa } from 'execa'
-import inquirer from 'inquirer'
+import spawn from 'nano-spawn'
+import { prompt } from '../utils/prompt.js'
 import { glob } from 'glob'
 import { loadConfig, ensureConfig } from '../config.js'
 import { detectConfig } from '../heuristic-config.js'
@@ -66,7 +66,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
  */
 async function isGitTreeDirty (): Promise<boolean | null> {
   try {
-    const { stdout } = await execa('git', ['status', '--porcelain'])
+    const { stdout } = await spawn('git', ['status', '--porcelain'])
     return stdout.trim().length > 0
   } catch {
     return null
@@ -264,7 +264,7 @@ export async function runLocalize (options: LocalizeOptions = {}, configPath?: s
         warn("Not a git repository — you won't be able to review instrument's changes as a diff.")
       } else if (dirty) {
         if (interactive) {
-          const { proceed } = await inquirer.prompt([{
+          const { proceed } = await prompt([{
             type: 'confirm',
             name: 'proceed',
             message: 'Working tree has uncommitted changes. instrument rewrites source files — continue?',
@@ -283,7 +283,7 @@ export async function runLocalize (options: LocalizeOptions = {}, configPath?: s
 
     // Already-using-i18next heuristic (instrument is idempotent either way)
     if (stack.hasI18next && stack.initFile && interactive) {
-      const { proceed } = await inquirer.prompt([{
+      const { proceed } = await prompt([{
         type: 'confirm',
         name: 'proceed',
         message: `Your project already uses i18next (found ${stack.initFile}). Run instrumentation anyway to catch remaining hardcoded strings?`,

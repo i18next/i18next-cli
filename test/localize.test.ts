@@ -7,14 +7,14 @@ import { runExtractor } from '../src/extractor'
 import { runInstrumenter } from '../src/instrumenter/index'
 import { detectStack, hasStackPlugin } from '../src/localize/detect'
 import { openBrowser, promptLocizeCredentials } from '../src/utils/locize-onboarding'
-import { execa } from 'execa'
-import inquirer from 'inquirer'
+import spawn from 'nano-spawn'
+import { prompt } from '../src/utils/prompt'
 import { glob } from 'glob'
 import type { DetectedStack } from '../src/localize/detect'
 import type { I18nextToolkitConfig } from '../src/types'
 
-vi.mock('inquirer')
-vi.mock('execa')
+vi.mock('../src/utils/prompt')
+vi.mock('nano-spawn')
 vi.mock('glob', () => ({ glob: vi.fn().mockResolvedValue([]) }))
 vi.mock('fs/promises', async () => {
   const memfs = await vi.importActual<typeof import('memfs')>('memfs')
@@ -105,8 +105,8 @@ describe('runLocalize', () => {
     vi.mocked(runExtractor).mockResolvedValue({ anyFileUpdated: true, hasErrors: false, results: [] } as any)
     vi.mocked(runLocizeSync).mockResolvedValue(undefined as any)
     vi.mocked(runLocizeDownload).mockResolvedValue(undefined as any)
-    vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '' } as any) // clean git tree
-    vi.mocked(inquirer.prompt).mockResolvedValue({ proceed: true })
+    vi.mocked(spawn).mockResolvedValue({ stdout: '', stderr: '' } as any) // clean git tree
+    vi.mocked(prompt).mockResolvedValue({ proceed: true })
 
     delete process.env.LOCIZE_PROJECTID
     delete process.env.LOCIZE_API_KEY
@@ -209,25 +209,25 @@ describe('runLocalize', () => {
 
   it('prompts before re-instrumenting a project that already uses i18next', async () => {
     vi.mocked(detectStack).mockResolvedValue({ ...reactStack, hasI18next: true, initFile: 'src/i18n.ts' })
-    vi.mocked(inquirer.prompt).mockResolvedValue({ proceed: false })
+    vi.mocked(prompt).mockResolvedValue({ proceed: false })
     await runLocalize({})
-    expect(inquirer.prompt).toHaveBeenCalled()
+    expect(prompt).toHaveBeenCalled()
     expect(runInstrumenter).not.toHaveBeenCalled()
     expect(runExtractor).toHaveBeenCalled()
   })
 
   it('aborts when the git tree is dirty and the user declines', async () => {
-    vi.mocked(execa).mockResolvedValue({ stdout: ' M src/App.tsx', stderr: '' } as any)
-    vi.mocked(inquirer.prompt).mockResolvedValue({ proceed: false })
+    vi.mocked(spawn).mockResolvedValue({ stdout: ' M src/App.tsx', stderr: '' } as any)
+    vi.mocked(prompt).mockResolvedValue({ proceed: false })
     await runLocalize({})
     expect(exitSpy).toHaveBeenCalledWith(1)
     expect(runInstrumenter).not.toHaveBeenCalled()
   })
 
   it('continues with a warning on a dirty tree under --yes', async () => {
-    vi.mocked(execa).mockResolvedValue({ stdout: ' M src/App.tsx', stderr: '' } as any)
+    vi.mocked(spawn).mockResolvedValue({ stdout: ' M src/App.tsx', stderr: '' } as any)
     await runLocalize({ yes: true })
-    expect(inquirer.prompt).not.toHaveBeenCalled()
+    expect(prompt).not.toHaveBeenCalled()
     expect(runInstrumenter).toHaveBeenCalled()
   })
 
@@ -294,7 +294,7 @@ describe('runLocalize', () => {
   })
 
   it('ignores the echoed command line in error.message when classifying sync failures', async () => {
-    // execa error messages echo the invoked command (incl. --auto-translate);
+    // spawn error messages echo the invoked command (incl. --auto-translate);
     // only the captured stderr/stdout may drive the AI-not-enabled retry.
     vi.mocked(runLocizeSync).mockRejectedValue(
       new LocizeCommandError('Command failed: locize sync --auto-translate true', { stderr: '' })

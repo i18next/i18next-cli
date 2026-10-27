@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url'
 import { access, readFile } from 'node:fs/promises'
 import { createJiti } from 'jiti'
 import { parse } from 'jsonc-parser'
-import inquirer from 'inquirer'
+import { prompt } from './utils/prompt.js'
 import { styleText } from 'node:util'
 import type { I18nextToolkitConfig, Logger } from './types.js'
 import { runInit } from './init.js'
@@ -137,7 +137,7 @@ export async function ensureConfig (configPath?: string, logger: Logger = new Co
   }
 
   // No config found, so we prompt the user.
-  const { shouldInit } = await inquirer.prompt([{
+  const { shouldInit } = await prompt([{
     type: 'confirm',
     name: 'shouldInit',
     message: styleText('yellow', 'Configuration file not found. Would you like to create one now?'),

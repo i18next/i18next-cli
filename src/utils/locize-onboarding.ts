@@ -1,5 +1,5 @@
-import inquirer from 'inquirer'
-import { execa } from 'execa'
+import { prompt } from './prompt.js'
+import spawn from 'nano-spawn'
 
 /** Rough 8-4-4-4-12 hex UUID shape — not strict (locize project IDs may evolve). */
 export const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -22,24 +22,24 @@ export async function openBrowser (url: string, opts: { ci?: boolean } = {}): Pr
 
   try {
     if (process.platform === 'darwin') {
-      await execa('open', [url], { stdio: 'ignore' })
+      await spawn('open', [url], { stdio: 'ignore' })
     } else if (process.platform === 'win32') {
       // `start` is a cmd.exe builtin; the empty "" is the window-title slot
-      await execa('cmd', ['/c', 'start', '""', url], { stdio: 'ignore' })
+      await spawn('cmd', ['/c', 'start', '""', url], { stdio: 'ignore' })
     } else if (isWSL) {
       // WSL: try the wslu / wsl-open shims that bridge to the Windows side
       // before falling back to xdg-open (which usually isn't installed there).
       try {
-        await execa('wslview', [url], { stdio: 'ignore' })
+        await spawn('wslview', [url], { stdio: 'ignore' })
       } catch {
         try {
-          await execa('wsl-open', [url], { stdio: 'ignore' })
+          await spawn('wsl-open', [url], { stdio: 'ignore' })
         } catch {
-          await execa('xdg-open', [url], { stdio: 'ignore' })
+          await spawn('xdg-open', [url], { stdio: 'ignore' })
         }
       }
     } else {
-      await execa('xdg-open', [url], { stdio: 'ignore' })
+      await spawn('xdg-open', [url], { stdio: 'ignore' })
     }
     return true
   } catch {
@@ -52,7 +52,7 @@ export async function openBrowser (url: string, opts: { ci?: boolean } = {}): Pr
  * Warns (but does not block) when the Project ID does not look like a UUID.
  */
 export async function promptLocizeCredentials (): Promise<{ projectId: string, apiKey?: string }> {
-  const credentials = await inquirer.prompt([
+  const credentials = await prompt([
     {
       type: 'input',
       name: 'projectId',

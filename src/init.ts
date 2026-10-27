@@ -1,4 +1,4 @@
-import inquirer from 'inquirer'
+import { prompt } from './utils/prompt.js'
 import { writeFile, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { detectConfig } from './heuristic-config.js'
@@ -219,7 +219,7 @@ export async function runInit (options: InitOptions = {}) {
     }
     answers = { ...defaults, ...given }
   } else {
-    answers = { ...given, ...(remaining.length > 0 ? await inquirer.prompt(remaining) : {}) }
+    answers = { ...given, ...(remaining.length > 0 ? await prompt(remaining) : {}) }
   }
 
   let locizeConfig: { projectId: string, apiKey?: string } | undefined

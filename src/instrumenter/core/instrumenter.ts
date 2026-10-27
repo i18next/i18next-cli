@@ -4,7 +4,7 @@ import { extname, dirname, join, relative, resolve, isAbsolute } from 'node:path
 import { parse } from '@swc/core'
 import type { Module } from '@swc/types'
 import type { StringLiteral } from '@swc/core'
-import inquirer from 'inquirer'
+import { prompt } from '../../utils/prompt.js'
 import { styleText } from 'node:util'
 import type { Logger, I18nextToolkitConfig, InstrumenterOptions, CandidateString, FileInstrumentationResult, InstrumentationResults, ComponentBoundary, FileScanResult, LanguageChangeSite, Plugin } from '../../types.js'
 import { detectCandidate } from './string-detector.js'
@@ -62,7 +62,7 @@ export async function runInstrumenter (
     let targetNamespace = options.namespace
     if (!targetNamespace && options.isInteractive) {
       const defaultNS = config.extract.defaultNS ?? 'translation'
-      const { ns } = await inquirer.prompt([
+      const { ns } = await prompt([
         {
           type: 'input',
           name: 'ns',
@@ -112,7 +112,7 @@ export async function runInstrumenter (
         if (options.isInteractive) {
           // Ask user about each candidate
           for (const candidate of candidates) {
-            const { action } = await inquirer.prompt([
+            const { action } = await prompt([
               {
                 type: 'select',
                 name: 'action',
@@ -134,7 +134,7 @@ export async function runInstrumenter (
                 candidate.skipReason = 'User skipped'
                 break
               case 'edit-key': {
-                const { key } = await inquirer.prompt([
+                const { key } = await prompt([
                   {
                     type: 'input',
                     name: 'key',
@@ -146,7 +146,7 @@ export async function runInstrumenter (
                 break
               }
               case 'edit-value': {
-                const { value } = await inquirer.prompt([
+                const { value } = await prompt([
                   {
                     type: 'input',
                     name: 'value',

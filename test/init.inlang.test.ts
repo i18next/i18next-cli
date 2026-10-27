@@ -1,7 +1,7 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { runInit } from '../src/init'
-import inquirer from 'inquirer'
+import { prompt } from '../src/utils/prompt'
 import { resolve } from 'path'
 
 // Mocks
@@ -9,9 +9,9 @@ vi.mock('fs/promises', async () => {
   const memfs = await vi.importActual<typeof import('memfs')>('memfs')
   return memfs.fs.promises
 })
-vi.mock('inquirer')
-vi.mock('execa', () => ({
-  execa: vi.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+vi.mock('../src/utils/prompt')
+vi.mock('nano-spawn', () => ({
+  default: vi.fn().mockResolvedValue({ stdout: '', stderr: '' }),
 }))
 vi.mock('../src/heuristic-config', () => ({
   detectConfig: vi.fn(),
@@ -54,7 +54,7 @@ describe('init --inlang (inlang project scaffold)', () => {
       '/public/locales/en/app.json': '{}',
       '/public/locales/de/common.json': '{}',
     })
-    vi.mocked(inquirer.prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
+    vi.mocked(prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
 
     await runInit()
 
@@ -74,7 +74,7 @@ describe('init --inlang (inlang project scaffold)', () => {
   })
 
   it('does not scaffold when the wizard question is declined (default)', async () => {
-    vi.mocked(inquirer.prompt).mockResolvedValue({ ...baseAnswers, inlang: false })
+    vi.mocked(prompt).mockResolvedValue({ ...baseAnswers, inlang: false })
 
     await runInit()
 
@@ -83,20 +83,20 @@ describe('init --inlang (inlang project scaffold)', () => {
   })
 
   it('asks the wizard question by default and skips it when --inlang is passed', async () => {
-    vi.mocked(inquirer.prompt).mockResolvedValue({ ...baseAnswers })
+    vi.mocked(prompt).mockResolvedValue({ ...baseAnswers })
 
     await runInit()
-    const withoutFlag: any = vi.mocked(inquirer.prompt).mock.calls[0][0]
+    const withoutFlag: any = vi.mocked(prompt).mock.calls[0][0]
     const question = (withoutFlag as any[]).find(q => q.name === 'inlang')
     expect(question).toBeDefined()
     expect(question.default).toBe(false)
     expect(question.when()).toBe(true)
 
-    vi.mocked(inquirer.prompt).mockClear()
-    vi.mocked(inquirer.prompt).mockResolvedValue({ ...baseAnswers })
+    vi.mocked(prompt).mockClear()
+    vi.mocked(prompt).mockResolvedValue({ ...baseAnswers })
 
     await runInit({ inlang: true })
-    const withFlag: any = vi.mocked(inquirer.prompt).mock.calls[0][0]
+    const withFlag: any = vi.mocked(prompt).mock.calls[0][0]
     const skippedQuestion = (withFlag as any[]).find(q => q.name === 'inlang')
     expect(skippedQuestion.when()).toBe(false)
     // The flag scaffolds even though the wizard answer is absent.
@@ -104,7 +104,7 @@ describe('init --inlang (inlang project scaffold)', () => {
   })
 
   it('derives a string pathPattern for single-file outputs (no {{namespace}})', async () => {
-    vi.mocked(inquirer.prompt).mockResolvedValue({
+    vi.mocked(prompt).mockResolvedValue({
       ...baseAnswers,
       output: 'locales/{{language}}.json',
       inlang: true,
@@ -121,7 +121,7 @@ describe('init --inlang (inlang project scaffold)', () => {
       '/public/locales/en/common.json': '{}',
       '/public/locales/en/app.json': '{}',
     })
-    vi.mocked(inquirer.prompt).mockResolvedValue({
+    vi.mocked(prompt).mockResolvedValue({
       ...baseAnswers,
       output: 'public\\locales\\{{language}}\\{{namespace}}.json',
       inlang: true,
@@ -138,7 +138,7 @@ describe('init --inlang (inlang project scaffold)', () => {
 
   it('supports the {{lng}} placeholder alias', async () => {
     vol.fromJSON({ '/locales/en/main.json': '{}' })
-    vi.mocked(inquirer.prompt).mockResolvedValue({
+    vi.mocked(prompt).mockResolvedValue({
       ...baseAnswers,
       output: 'locales/{{lng}}/{{namespace}}.json',
       inlang: true,
@@ -153,7 +153,7 @@ describe('init --inlang (inlang project scaffold)', () => {
   })
 
   it('falls back to the "translation" namespace when no resource files exist yet', async () => {
-    vi.mocked(inquirer.prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
+    vi.mocked(prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
 
     await runInit()
 
@@ -166,7 +166,7 @@ describe('init --inlang (inlang project scaffold)', () => {
   it('never overwrites an existing project.inlang/settings.json', async () => {
     const existing = '{\n  "custom": true\n}\n'
     vol.fromJSON({ '/project.inlang/settings.json': existing })
-    vi.mocked(inquirer.prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
+    vi.mocked(prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
 
     await runInit()
 
@@ -178,7 +178,7 @@ describe('init --inlang (inlang project scaffold)', () => {
   })
 
   it('creates .vscode/extensions.json with the Sherlock recommendation', async () => {
-    vi.mocked(inquirer.prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
+    vi.mocked(prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
 
     await runInit()
 
@@ -190,7 +190,7 @@ describe('init --inlang (inlang project scaffold)', () => {
     vol.fromJSON({
       '/.vscode/extensions.json': '{\n  // team picks\n  "recommendations": [\n    "dbaeumer.vscode-eslint"\n  ]\n}\n',
     })
-    vi.mocked(inquirer.prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
+    vi.mocked(prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
 
     await runInit()
 
@@ -204,7 +204,7 @@ describe('init --inlang (inlang project scaffold)', () => {
     vol.fromJSON({
       '/.vscode/extensions.json': '{\n  "unwantedRecommendations": []\n}\n',
     })
-    vi.mocked(inquirer.prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
+    vi.mocked(prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
 
     await runInit()
 
@@ -216,7 +216,7 @@ describe('init --inlang (inlang project scaffold)', () => {
   it('does not duplicate an already-present Sherlock recommendation', async () => {
     const existing = `{\n  "recommendations": [\n    "${SHERLOCK}"\n  ]\n}\n`
     vol.fromJSON({ '/.vscode/extensions.json': existing })
-    vi.mocked(inquirer.prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
+    vi.mocked(prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
 
     await runInit()
 
@@ -227,7 +227,7 @@ describe('init --inlang (inlang project scaffold)', () => {
   it('leaves an unparseable extensions.json untouched and still completes', async () => {
     const broken = '{ this is not json'
     vol.fromJSON({ '/.vscode/extensions.json': broken })
-    vi.mocked(inquirer.prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
+    vi.mocked(prompt).mockResolvedValue({ ...baseAnswers, inlang: true })
 
     await runInit()
 
@@ -237,7 +237,7 @@ describe('init --inlang (inlang project scaffold)', () => {
   })
 
   it('skips the scaffold with a notice for non-JSON outputs', async () => {
-    vi.mocked(inquirer.prompt).mockResolvedValue({
+    vi.mocked(prompt).mockResolvedValue({
       ...baseAnswers,
       output: 'locales/{{language}}/{{namespace}}.yaml',
       inlang: true,

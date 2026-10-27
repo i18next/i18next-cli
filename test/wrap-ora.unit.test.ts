@@ -1,20 +1,20 @@
-import ora from 'ora'
+import yoctoSpinner from 'yocto-spinner'
 import { describe, it, expect, vi } from 'vitest'
 import { createSpinnerLike } from '../src/utils/wrap-ora'
 
-vi.mock('ora', () => {
-  // Mock ora to track calls and return a fake spinner object
+vi.mock('yocto-spinner', () => {
+  // Mock yocto-spinner to track calls and return a fake spinner object
   const spinnerMock = {
     text: 'initial',
-    succeed: vi.fn(),
-    fail: vi.fn(),
-    warn: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
     stop: vi.fn(),
     // @ts-ignore
     start: vi.fn(function () { return this }) // .start() returns itself
   }
-  const oraFn = vi.fn(() => spinnerMock)
-  return { default: oraFn }
+  const spinnerFn = vi.fn(() => spinnerMock)
+  return { default: spinnerFn }
 })
 
 describe('createSpinnerLike', () => {
@@ -51,7 +51,7 @@ describe('createSpinnerLike', () => {
     expect(spinner.start()).toBe(spinner)
   })
 
-  it('should use ora spinner in interactive mode', () => {
+  it('should use the animated spinner in interactive mode', () => {
     // We can't easily test ora's animation, but we can check that no error is thrown
     const spinner = createSpinnerLike('interactive')
     expect(() => spinner.succeed('done')).not.toThrow()
@@ -61,19 +61,19 @@ describe('createSpinnerLike', () => {
     expect(spinner.start()).toBe(spinner)
   })
 
-  it('creates and uses a real ora spinner when no logger and not quiet', () => {
+  it('creates and uses a real spinner when no logger and not quiet', () => {
     const spinner = createSpinnerLike('my spinner')
-    // The ora mock should have been called once to create the spinner
-    expect((ora as any).mock.calls.length).toBeGreaterThan(0)
+    // The spinner mock should have been called once to create the spinner
+    expect((yoctoSpinner as any).mock.calls.length).toBeGreaterThan(0)
     // The returned spinner should update the real spinner's text
     spinner.text = 'updated'
-    expect((ora as any).mock.results[0].value.text).toBe('updated')
+    expect((yoctoSpinner as any).mock.results[0].value.text).toBe('updated')
     // Calling succeed/fail/warn should call the real spinner's methods
     spinner.succeed('done')
     spinner.fail('fail')
     spinner.warn('warn')
-    expect((ora as any).mock.results[0].value.succeed).toHaveBeenCalledWith('done')
-    expect((ora as any).mock.results[0].value.fail).toHaveBeenCalledWith('fail')
-    expect((ora as any).mock.results[0].value.warn).toHaveBeenCalledWith('warn')
+    expect((yoctoSpinner as any).mock.results[0].value.success).toHaveBeenCalledWith('done')
+    expect((yoctoSpinner as any).mock.results[0].value.error).toHaveBeenCalledWith('fail')
+    expect((yoctoSpinner as any).mock.results[0].value.warning).toHaveBeenCalledWith('warn')
   })
 })

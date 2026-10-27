@@ -1,8 +1,8 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { openBrowser } from '../src/utils/locize-onboarding'
-import { execa } from 'execa'
+import spawn from 'nano-spawn'
 
-vi.mock('execa')
+vi.mock('nano-spawn')
 
 const URL = 'https://www.locize.app/register?from=i18next_cli__localize'
 
@@ -15,7 +15,7 @@ const setPlatform = (platform: string) => {
 describe('openBrowser', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '' } as any)
+    vi.mocked(spawn).mockResolvedValue({ stdout: '', stderr: '' } as any)
     vi.unstubAllEnvs()
     vi.stubEnv('CI', '')
     vi.stubEnv('WSL_DISTRO_NAME', '')
@@ -32,21 +32,21 @@ describe('openBrowser', () => {
     setPlatform('darwin')
     const opened = await openBrowser(URL)
     expect(opened).toBe(true)
-    expect(execa).toHaveBeenCalledWith('open', [URL], { stdio: 'ignore' })
+    expect(spawn).toHaveBeenCalledWith('open', [URL], { stdio: 'ignore' })
   })
 
   it('uses the cmd.exe `start` builtin on Windows', async () => {
     setPlatform('win32')
     const opened = await openBrowser(URL)
     expect(opened).toBe(true)
-    expect(execa).toHaveBeenCalledWith('cmd', ['/c', 'start', '""', URL], { stdio: 'ignore' })
+    expect(spawn).toHaveBeenCalledWith('cmd', ['/c', 'start', '""', URL], { stdio: 'ignore' })
   })
 
   it('does not spawn anything when the ci option is set', async () => {
     setPlatform('darwin')
     const opened = await openBrowser(URL, { ci: true })
     expect(opened).toBe(false)
-    expect(execa).not.toHaveBeenCalled()
+    expect(spawn).not.toHaveBeenCalled()
   })
 
   it('does not spawn anything when CI=true in the environment', async () => {
@@ -54,7 +54,7 @@ describe('openBrowser', () => {
     vi.stubEnv('CI', 'true')
     const opened = await openBrowser(URL)
     expect(opened).toBe(false)
-    expect(execa).not.toHaveBeenCalled()
+    expect(spawn).not.toHaveBeenCalled()
   })
 
   it('short-circuits on headless Linux (no DISPLAY/WAYLAND_DISPLAY)', async () => {
@@ -65,12 +65,12 @@ describe('openBrowser', () => {
     delete process.env.WAYLAND_DISPLAY
     const opened = await openBrowser(URL)
     expect(opened).toBe(false)
-    expect(execa).not.toHaveBeenCalled()
+    expect(spawn).not.toHaveBeenCalled()
   })
 
   it('returns false when the platform opener fails', async () => {
     setPlatform('darwin')
-    vi.mocked(execa).mockRejectedValue(new Error('no browser'))
+    vi.mocked(spawn).mockRejectedValue(new Error('no browser'))
     const opened = await openBrowser(URL)
     expect(opened).toBe(false)
   })

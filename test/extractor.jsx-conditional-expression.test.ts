@@ -16,14 +16,14 @@ vi.mock('fs/promises', async () => {
 
 vi.mock('glob', () => ({ glob: vi.fn() }))
 
-// Prevent ora from rewriting output (which can hide the real warning message in CI/TTY)
-vi.mock('ora', () => {
+// Prevent the spinner from rewriting output (which can hide the real warning message in CI/TTY)
+vi.mock('yocto-spinner', () => {
   const spinner = {
     start () {
       return spinner
     },
-    succeed: vi.fn(),
-    fail: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
     text: '',
   }
   return { default: () => spinner }

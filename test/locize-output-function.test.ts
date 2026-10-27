@@ -1,18 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { runLocizeSync } from '../src/locize'
-import { execa } from 'execa'
+import spawn from 'nano-spawn'
 import { pathEndsWith, pathContains } from './utils/path'
 
-// Mock execa as a named export (no default export in this environment)
-vi.mock('execa', () => {
+// Mock nano-spawn's default export
+vi.mock('nano-spawn', () => {
   return {
-    execa: vi.fn().mockResolvedValue({ stdout: 'locize 1.0.0' }),
+    default: vi.fn().mockResolvedValue({ stdout: 'locize 1.0.0' }),
   }
 })
-const execaMock = vi.mocked(execa)
+const spawnMock = vi.mocked(spawn)
 
 describe('locize: derive base path from functional extract.output', () => {
-  // use execaMock inside tests
+  // use spawnMock inside tests
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -47,10 +47,10 @@ describe('locize: derive base path from functional extract.output', () => {
 
     await runLocizeSync(config, { updateValues: true })
 
-    // execa should have been called at least once
-    expect(execaMock).toHaveBeenCalled()
+    // spawn should have been called at least once
+    expect(spawnMock).toHaveBeenCalled()
     // Find the call that runs the actual locize command (the one with 'sync' as first arg)
-    const syncCall = execaMock.mock.calls.find(call => call[0] === 'locize' && Array.isArray(call[1]) && (call[1] as string[]).includes('sync'))
+    const syncCall = spawnMock.mock.calls.find(call => call[0] === 'locize' && Array.isArray(call[1]) && (call[1] as string[]).includes('sync'))
     expect(syncCall).toBeDefined()
 
     // The command args should include --path and the derived base directory for the sample output

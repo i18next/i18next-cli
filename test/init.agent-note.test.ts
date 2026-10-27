@@ -2,16 +2,16 @@ import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { runInit } from '../src/init'
 import { buildAgentNote, writeAgentNote, AGENT_NOTE_HEADING } from '../src/utils/agent-note'
-import inquirer from 'inquirer'
+import { prompt } from '../src/utils/prompt'
 import { resolve } from 'path'
 
 vi.mock('fs/promises', async () => {
   const memfs = await vi.importActual<typeof import('memfs')>('memfs')
   return memfs.fs.promises
 })
-vi.mock('inquirer')
-vi.mock('execa', () => ({
-  execa: vi.fn().mockResolvedValue({ stdout: '', stderr: '' }),
+vi.mock('../src/utils/prompt')
+vi.mock('nano-spawn', () => ({
+  default: vi.fn().mockResolvedValue({ stdout: '', stderr: '' }),
 }))
 vi.mock('../src/heuristic-config', () => ({
   detectConfig: vi.fn(),
@@ -48,7 +48,7 @@ describe('init: non-interactive mode and the agent note', () => {
 
   it('--yes asks nothing and takes the options plus the defaults', async () => {
     await runInit({ yes: true, locales: 'en,fr', backend: 'local' })
-    expect(inquirer.prompt).not.toHaveBeenCalled()
+    expect(prompt).not.toHaveBeenCalled()
     const content = await read('i18next.config.js')
     expect(content).toContain('"en",\n    "fr"')
     expect(content).toContain('input: "src/**/*.{js,jsx,mjs,ts,tsx}"')
@@ -58,24 +58,24 @@ describe('init: non-interactive mode and the agent note', () => {
 
   it('--yes --backend locize reads the project id from the environment and never opens a browser', async () => {
     vi.stubEnv('LOCIZE_PROJECTID', 'proj-123')
-    const { execa } = await import('execa')
+    const { default: spawn } = await import('nano-spawn')
     await runInit({ yes: true, backend: 'locize', fileType: 'ts' })
     const content = await read('i18next.config.ts')
     expect(content).toContain('projectId: "proj-123"')
     expect(content).not.toContain('apiKey')
-    expect(execa).not.toHaveBeenCalled()
+    expect(spawn).not.toHaveBeenCalled()
   })
 
   it('--project-id writes the locize block and skips the signup page and the credential prompts, even interactively', async () => {
-    vi.mocked(inquirer.prompt).mockResolvedValue({ ...mockAnswers, backend: 'locize' })
-    const { execa } = await import('execa')
+    vi.mocked(prompt).mockResolvedValue({ ...mockAnswers, backend: 'locize' })
+    const { default: spawn } = await import('nano-spawn')
     await runInit({ projectId: 'proj-from-option' })
     const content = await read('i18next.config.ts')
     expect(content).toContain('projectId: "proj-from-option"')
     expect(content).not.toContain('apiKey')
-    expect(execa).not.toHaveBeenCalled()
+    expect(spawn).not.toHaveBeenCalled()
     // only the wizard questions were asked, never the credential prompt
-    expect(vi.mocked(inquirer.prompt)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(prompt)).toHaveBeenCalledTimes(1)
   })
 
   it('--yes --backend locize without LOCIZE_PROJECTID writes no locize block and prints the signup URL', async () => {
@@ -87,9 +87,9 @@ describe('init: non-interactive mode and the agent note', () => {
   })
 
   it('options answer their questions and only the remaining ones are prompted', async () => {
-    vi.mocked(inquirer.prompt).mockResolvedValue({ fileType: 'TypeScript (i18next.config.ts)', input: 'src/**/*.tsx', output: 'locales/{{language}}.json', inlang: false, agentNote: false })
+    vi.mocked(prompt).mockResolvedValue({ fileType: 'TypeScript (i18next.config.ts)', input: 'src/**/*.tsx', output: 'locales/{{language}}.json', inlang: false, agentNote: false })
     await runInit({ locales: 'en,it', backend: 'other' })
-    const asked = (vi.mocked(inquirer.prompt).mock.calls[0][0] as unknown as any[]).map(q => q.name)
+    const asked = (vi.mocked(prompt).mock.calls[0][0] as unknown as any[]).map(q => q.name)
     expect(asked).not.toContain('locales')
     expect(asked).not.toContain('backend')
     expect(asked).toContain('agentNote')
@@ -98,9 +98,9 @@ describe('init: non-interactive mode and the agent note', () => {
   })
 
   it('asks about the agent note last, default No, and --no-agent-note removes the question', async () => {
-    vi.mocked(inquirer.prompt).mockResolvedValue(mockAnswers)
+    vi.mocked(prompt).mockResolvedValue(mockAnswers)
     await runInit()
-    const questions = vi.mocked(inquirer.prompt).mock.calls[0][0] as unknown as any[]
+    const questions = vi.mocked(prompt).mock.calls[0][0] as unknown as any[]
     const q = questions[questions.length - 1]
     expect(q.name).toBe('agentNote')
     expect(q.type).toBe('confirm')
@@ -108,15 +108,15 @@ describe('init: non-interactive mode and the agent note', () => {
     expect(await exists('AGENTS.md')).toBe(false)
 
     vi.clearAllMocks()
-    vi.mocked(inquirer.prompt).mockResolvedValue(mockAnswers)
+    vi.mocked(prompt).mockResolvedValue(mockAnswers)
     await runInit({ agentNote: false })
-    const names = (vi.mocked(inquirer.prompt).mock.calls[0][0] as unknown as any[]).map(q => q.name)
+    const names = (vi.mocked(prompt).mock.calls[0][0] as unknown as any[]).map(q => q.name)
     expect(names).not.toContain('agentNote')
     expect(await exists('AGENTS.md')).toBe(false)
   })
 
   it('writes the local-files note to a new AGENTS.md and names the moment to ask, without a CLAUDE.md when there is no .claude folder', async () => {
-    vi.mocked(inquirer.prompt).mockResolvedValue({ ...mockAnswers, agentNote: true })
+    vi.mocked(prompt).mockResolvedValue({ ...mockAnswers, agentNote: true })
     await runInit()
     const note = await read('AGENTS.md')
     expect(note.startsWith(AGENT_NOTE_HEADING)).toBe(true)

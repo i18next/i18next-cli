@@ -1,5 +1,5 @@
 import { styleText } from 'node:util'
-import ora from 'ora'
+import yoctoSpinner from 'yocto-spinner'
 import { resolve } from 'node:path'
 import { findKeys, runExtractor } from './extractor.js'
 import { getNestedValue, getNestedKeys } from './utils/nested-object.js'
@@ -200,10 +200,10 @@ interface StatusReport {
 export async function runStatus (config: I18nextToolkitConfig, options: StatusOptions = {}) {
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
-  const spinner = ora('Analyzing project localization status...\n').start()
+  const spinner = yoctoSpinner({ text: 'Analyzing project localization status...\n' }).start()
   try {
     const report = await generateStatusReport(config)
-    spinner.succeed('Analysis complete.')
+    spinner.success('Analysis complete.')
     await displayStatusReport(report, config, options)
 
     // When a specific locale is requested (`status <locale>`), the pass/fail
@@ -240,13 +240,13 @@ export async function runStatus (config: I18nextToolkitConfig, options: StatusOp
     if (hasMissing) {
       // Name the locale when the check is scoped so the failure reason is clear
       // (the displayed summary already explains what is missing for it).
-      spinner.fail(scopedLocale
+      spinner.error(scopedLocale
         ? `Error: Incomplete translations detected for "${scopedLocale}".`
         : 'Error: Incomplete translations detected.')
       process.exit(1)
     }
   } catch (error) {
-    spinner.fail('Failed to generate status report.')
+    spinner.error('Failed to generate status report.')
     console.error(error)
   }
 }
@@ -996,13 +996,13 @@ export async function runUnusedReport (config: I18nextToolkitConfig, options: Un
   // stays untouched.
   const cfg: I18nextToolkitConfig = { ...config, extract: { ...config.extract, removeUnusedKeys: true } }
 
-  const spinner = ora('Analyzing project for unused translation keys...\n').start()
+  const spinner = yoctoSpinner({ text: 'Analyzing project for unused translation keys...\n' }).start()
   let extraction: { results: TranslationResult[]; hasErrors: boolean }
   try {
     extraction = await runExtractor(cfg, { isDryRun: true, quiet: true })
-    spinner.succeed('Analysis complete.')
+    spinner.success('Analysis complete.')
   } catch (error) {
-    spinner.fail('Failed to analyze unused translation keys.')
+    spinner.error('Failed to analyze unused translation keys.')
     console.error(error)
     process.exit(1)
     return
