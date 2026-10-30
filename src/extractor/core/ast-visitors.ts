@@ -894,12 +894,11 @@ export class ASTVisitors {
           // The single argument to Object.keys/values must be a known identifier
           const mapArg = this.expressionResolver.unwrapNamespace(obj.arguments?.[0]?.expression)
           if (mapArg?.type === 'Identifier') {
-            const mapEntry = this.expressionResolver.getObjectMap(mapArg.value)
-            if (mapEntry) {
-              const values = isKeys ? Object.keys(mapEntry) : Object.values(mapEntry)
-              if (values.length > 0) {
-                return this.extractCallbackParam(node, values, elementParamIndex)
-              }
+            const values = isKeys
+              ? this.expressionResolver.getObjectKeys(mapArg.value)
+              : Object.values(this.expressionResolver.getObjectMap(mapArg.value) ?? {})
+            if (values?.length) {
+              return this.extractCallbackParam(node, values, elementParamIndex)
             }
           }
         }

@@ -184,6 +184,11 @@ export class ExpressionResolver {
   // so `LABELS.save` and `Object.keys(LABELS)` resolve in importing files.
   private sharedObjectMapTable: Map<string, Record<string, string>> = new ModuleTable(this, true)
 
+  // Shared (cross-file) literal keys of every object declared as `const MAP = { … }`, whatever
+  // its values are: the map tables above only hold string values, `keyof typeof MAP` and
+  // `Object.keys(MAP)` need all keys (#317).
+  private sharedObjectKeysTable: Map<string, string[]> = new ModuleTable(this, true)
+
   // Shared (cross-file) table for type aliases — populated alongside typeAliasTable.
   // Persists across resetFileSymbols() so exported type aliases are visible to importers.
   private sharedTypeAliasTable: Map<string, string[]> = new ModuleTable(this)
@@ -524,11 +529,13 @@ export class ExpressionResolver {
       if (unwrappedInit.type === 'ObjectExpression' && Array.isArray(unwrappedInit.properties)) {
         this.objectLiterals.set(name, unwrappedInit)
         const map: Record<string, string> = {}
+        const keys: string[] = []
         for (const p of unwrappedInit.properties as any[]) {
           if (!p || p.type !== 'KeyValueProperty') continue
           const keyNode = p.key
           const keyName = keyNode?.type === 'Identifier' ? keyNode.value : keyNode?.type === 'StringLiteral' ? keyNode.value : undefined
           if (!keyName) continue
+          keys.push(keyName)
           const valExpr = p.value
           const vals = this.resolvePossibleStringValuesFromExpression(valExpr)
           // Only capture properties that we can statically resolve to a single string.
@@ -536,6 +543,7 @@ export class ExpressionResolver {
             map[keyName] = vals[0]
           }
         }
+        if (keys.length > 0) this.sharedObjectKeysTable.set(name, keys)
         // If at least one property was resolvable, record the partial map.
         if (Object.keys(map).length > 0) {
           this.variableTable.set(name, map)
@@ -1185,6 +1193,14 @@ export class ExpressionResolver {
     return this.sharedObjectMapTable.get(name) ?? this.sharedEnumTable.get(name)
   }
 
+  /** All keys of an object map, also those whose value is not a string, or of an enum. */
+  public getObjectKeys (name: string): string[] | undefined {
+    const keys = this.sharedObjectKeysTable.get(name)
+    if (keys) return keys
+    const map = this.getObjectMap(name)
+    return map ? Object.keys(map) : undefined
+  }
+
   /**
    * Capture a TypeScript enum declaration so members can be resolved later.
    * Accepts SWC node shapes like `TsEnumDeclaration` / `TSEnumDeclaration`.
@@ -1623,14 +1639,8 @@ export class ExpressionResolver {
             const exprName = inner.exprName ?? inner.expr ?? inner.entityName
             const varName: string | undefined = this.typeQueryName(exprName)
             if (varName) {
-              // Look up in variableTable (local) or sharedObjectMapTable (cross-file) for object maps
-              const v = this.variableTable.get(varName) ?? this.sharedObjectMapTable.get(varName)
-              if (v && !Array.isArray(v) && typeof v === 'object') {
-                return Object.keys(v as Record<string, string>)
-              }
-              // Also check sharedEnumTable (enum keys)
-              const ev = this.sharedEnumTable.get(varName)
-              if (ev) return Object.keys(ev)
+              const keys = this.getObjectKeys(varName)
+              if (keys) return keys
             }
           }
         }

@@ -454,6 +454,85 @@ describe('extractor: finite dynamic key resolution (issue #210)', () => {
       expect(translationFile!.newTranslations).toHaveProperty('icon.warn')
       expect(translationFile!.newTranslations).toHaveProperty('icon.error')
     })
+
+    // #317: the keys of a map whose values are objects (not strings)
+    it('should expand the keys of a map whose values are objects', async () => {
+      const sampleCode = `
+        const CONTENT = {
+          social_planner: { image: 'a.webp' },
+          link_apps: { image: 'b.webp' },
+        } as const;
+        declare const name: keyof typeof CONTENT;
+        t(\`addons.\${name}.heading\`);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile!.newTranslations).toEqual({
+        addons: {
+          link_apps: { heading: 'addons.link_apps.heading' },
+          social_planner: { heading: 'addons.social_planner.heading' },
+        },
+      })
+    })
+
+    it('should expand all keys of a map with mixed string and object values', async () => {
+      const sampleCode = `
+        const MIXED = { plain: 'x', nested: { a: 1 }, list: ['y'] } as const;
+        declare const k: keyof typeof MIXED;
+        t(\`mixed.\${k}\`);
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(Object.keys((translationFile!.newTranslations as any).mixed).sort()).toEqual(['list', 'nested', 'plain'])
+    })
+
+    it('should expand the keys of an imported map whose values are objects', async () => {
+      const { glob } = await import('glob')
+      ;(glob as any).mockResolvedValue(['/src/content.ts', '/src/App.tsx'])
+      vol.fromJSON({
+        '/src/content.ts': `
+          export const CONTENT = {
+            social_planner: { image: 'a.webp' },
+            link_apps: { image: 'b.webp' },
+          } as const;
+        `,
+        '/src/App.tsx': `
+          import { CONTENT } from './content';
+          type AddonName = keyof typeof CONTENT;
+          declare const name: AddonName;
+          t(\`addons.\${name}.heading\`);
+        `,
+      })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(Object.keys((translationFile!.newTranslations as any).addons).sort()).toEqual(['link_apps', 'social_planner'])
+    })
+
+    it('should iterate Object.keys of a map whose values are objects', async () => {
+      const sampleCode = `
+        const CONTENT = {
+          social_planner: { image: 'a.webp' },
+          link_apps: { image: 'b.webp' },
+        } as const;
+        Object.keys(CONTENT).forEach((name) => {
+          t(\`addons.\${name}.heading\`);
+        });
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(Object.keys((translationFile!.newTranslations as any).addons).sort()).toEqual(['link_apps', 'social_planner'])
+    })
   })
 
   // ─── Pattern 7: Object.keys / Object.values iteration ─────────────────────

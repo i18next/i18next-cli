@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(extract): `keyof typeof MAP` and `Object.keys(MAP)` now yield all keys of the object, also when its values are
+  objects or arrays. Only keys with a string value were recorded, so a registry like
+  `const CONTENT = { social_planner: { image: 'a.webp' } } as const` with `t(\`addons.${name}.heading\`)` and
+  `name: keyof typeof CONTENT` extracted nothing, in the same file or imported, and a map that mixes string and object
+  values only yielded its string-valued keys. Value lookups like `t(MAP[k])` still only use the string values.
+  Fixes [#317](https://github.com/i18next/i18next-cli/issues/317).
+
 ## 1.80.6
 
 - fix(extract): a function parameter no longer resolves to a variable of the same name declared elsewhere.
