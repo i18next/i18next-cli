@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 1.80.6
 
 - fix(extract): a function parameter no longer resolves to a variable of the same name declared elsewhere.
   `const getLabel = (options, value, t) => t(options[value])` extracted `GET` as a key because another file had a
