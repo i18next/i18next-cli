@@ -374,7 +374,7 @@ npx i18next-cli lint
 **What it checks:**
 
 - **Hardcoded strings** *(error)* — user-facing text in JSX elements and attributes that isn't wrapped in `t()`/`<Trans>`.
-- **Interpolation parameters** *(error)* — mismatches between `{{placeholders}}` in a translation and the params passed to `t()` (missing or unused). Toggle with `lint.checkInterpolationParams` (default: `true`). With `extract.messageFormat: 'icu'` or `'mf2'` the arguments come from the ICU or MF2 parser (`{name}`, `{$name}`), so plurals like `one {{count} row}` are not read as `{{…}}` interpolation.
+- **Interpolation parameters** *(error)* — mismatches between `{{placeholders}}` in a translation and the params passed to `t()` (missing or unused), also for selector calls like `t($ => $.user.greeting, { name })`. Toggle with `lint.checkInterpolationParams` (default: `true`). With `extract.messageFormat: 'icu'` or `'mf2'` the arguments come from the ICU or MF2 parser (`{name}`, `{$name}`), so plurals like `one {{count} row}` are not read as `{{…}}` interpolation.
 - **ICU / MF2 messages** *(error, only with `extract.messageFormat: 'icu'` or `'mf2'`)*: every value in the translation files of all locales is parsed. The linter reports, with file, key and line (JSON files):
   - syntax errors with the parser's message, e.g. `greeting: ICU syntax error: EXPECT_ARGUMENT_CLOSING_BRACE at column 7`
   - argument names that differ from the primary language (a renamed or missing `{name}`). `#` in a plural is not an argument

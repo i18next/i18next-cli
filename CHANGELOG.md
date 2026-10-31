@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- feat(lint): `lint.checkInterpolationParams` now also checks selector calls like `t($ => $.user.greeting, { name })`.
+  The key comes from the extractor, so a `keyPrefix` from `useTranslation` or the call options applies. Nested translation
+  files are read as nested keys now, so `t('user.greeting', { name })` against `{ "user": { "greeting": "…" } }` is
+  checked too.
+
 ## 1.80.7
 
 - fix(extract): `keyof typeof MAP` and `Object.keys(MAP)` now yield all keys of the object, also when its values are

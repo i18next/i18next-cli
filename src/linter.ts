@@ -9,6 +9,8 @@ import { createSpinnerLike } from './utils/wrap-ora.js'
 import { translatableAttributes, ignoredAttributeLowerSet, ignoredTags as sharedIgnoredTags, acceptedTags as sharedAcceptedTags } from './utils/jsx-attributes.js'
 import { normalizeSpansToCharIndices, collectIgnoredLineRanges, lineColumnFromOffset } from './extractor/parsers/ast-utils.js'
 import { matchesFunctionPattern } from './extractor/utils/function-matcher.js'
+import { ASTVisitors } from './extractor/core/ast-visitors.js'
+import { getNestedKeys, getNestedValue } from './utils/nested-object.js'
 import { loadMessageAnalyzer, lintMessageFormatResources, lintI18nextResources, interpolationNames, type MessageAnalyzer } from './utils/message-format.js'
 import { applyLintBaseline, lintBaselinePath, readLintBaseline, writeLintBaseline } from './utils/lint-baseline.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
@@ -66,7 +68,10 @@ async function loadPrimaryTranslationValues (config: I18nextToolkitConfig): Prom
     try {
       const raw = await readFile(filePath, 'utf-8')
       const json = JSON.parse(raw)
-      for (const [k, v] of Object.entries(json)) {
+      // Nested resources too: `{ "a": { "b": "…" } }` → "a.b"
+      const keySeparator = config.extract?.keySeparator ?? '.'
+      for (const k of getNestedKeys(json, keySeparator)) {
+        const v = getNestedValue(json, k, keySeparator)
         if (typeof v === 'string') result.set(k, v)
       }
       break // stop after first successful read
@@ -84,7 +89,7 @@ const i18nextOptionKeys = new Set([
   'defaultValue', 'count', 'context', 'ns', 'lng', 'lngs',
   'fallbackLng', 'returnDetails', 'returnObjects', 'joinArrays',
   'postProcess', 'interpolation', 'skipInterpolation', 'replace',
-  'ordinal', 'keySeparator', 'nsSeparator', 'tDescription',
+  'ordinal', 'keySeparator', 'nsSeparator', 'tDescription', 'keyPrefix',
 ])
 function isI18nextOptionKey (key: string): boolean {
   if (i18nextOptionKeys.has(key)) return true
@@ -182,6 +187,29 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
   }
   const callSites: CallSite[] = []
 
+  // The keys the extractor resolves for each call (selector path, keyPrefix and namespace scope
+  // included), walked once and only for a file with a selector call: `t($ => $.a.b)` → ['a.b']
+  let keysByCall: Map<any, string[]> | undefined
+  const keysOfCall = (call: any): string[] => {
+    if (!keysByCall) {
+      const found = new Map<any, string[]>()
+      let current: any
+      const silent: Logger = { info () {}, warn () {}, error () {} }
+      const context = {
+        addKey: ({ key }: { key: string }) => { found.set(current, [...(found.get(current) ?? []), key]) },
+        config,
+        logger: silent,
+        getVarFromScope: () => undefined,
+        setVarInScope: () => {},
+      }
+      const visitors = new ASTVisitors(config, context, silent, { onBeforeVisitNode: (node: any) => { current = node } })
+      visitors.setCurrentFile('', code)
+      visitors.visit(ast)
+      keysByCall = found
+    }
+    return keysByCall.get(call) ?? []
+  }
+
   // Traverse AST for CallExpressions matching t() or i18n.t()
   function walk (node: any, ancestors: any[]) {
     if (!node || typeof node !== 'object') return
@@ -217,8 +245,9 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
       const arg1 = arg1raw?.expression ?? arg1raw
       const arg2 = arg2raw?.expression ?? arg2raw
 
-      // Only check interpolation params if the first argument is a string literal
-      if (arg0?.type === 'StringLiteral') {
+      // Only check interpolation params if the first argument is a string literal or a selector
+      const isSelector = arg0?.type === 'ArrowFunctionExpression'
+      if (arg0?.type === 'StringLiteral' || isSelector) {
         const keyOrStr = arg0.value
 
         // Detect 3-argument form: t('key', 'Default string {{foo}}', { foo })
@@ -261,11 +290,17 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
         let resolvedStr: string
         if (isThreeArgForm) {
           resolvedStr = (translationArg as any).value
+        } else if (isSelector) {
+          // The first key with a value, like i18next's fallback (a ternary or plural yields several)
+          const value = keysOfCall(node).map(k => translationValues?.get(k)).find(v => v !== undefined)
+          if (value === undefined) return
+          resolvedStr = value
         } else {
           resolvedStr = translationValues?.get(keyOrStr) ?? keyOrStr
         }
 
-        const searchText = arg0.raw ?? `"${arg0.value}"`
+        // spans are file-relative character indices here (normalizeSpansToCharIndices)
+        const searchText = isSelector ? code.slice(arg0.span.start, arg0.span.end) : (arg0.raw ?? `"${arg0.value}"`)
         callSites.push({ translationStr: resolvedStr, searchText, paramKeys })
       }
     }
