@@ -344,6 +344,8 @@ Generates TypeScript definitions from your translation files for full type-safet
 
 > **Note:** With `extract.messageFormat: 'icu'` or `'mf2'` the generated `i18next.d.ts` sets `parseInterpolation: 'icu'` or `'mf2'` when the project's `i18next` is 26.5.0 or later, so `t()` options are type-checked against the arguments of each message (a missing or misspelled `{name}` is a type error). With `i18next` 26.2.0 to 26.4.x it sets `parseInterpolation: false` instead, so ICU plurals like `one {{count} row}` are not typed as `{{…}}` interpolation, but arguments are not checked. The installed version is read from `node_modules/i18next/package.json`, from the working directory upwards. The file is only written when it does not exist yet; for an existing one `types` prints a warning until you add the line, and a hint when it still sets `false` although your `i18next` supports the typed value.
 
+> **Note:** With `strictInterpolationChecks: true` in `CustomTypeOptions` (opt-in since i18next 26.6.0, the default from i18next 27), `t()` needs its options for every string with `{{variables}}`. Two additions of i18next 26.7.0 or later help: the `defaultVariables` type option declares the variables your `interpolation.defaultVariables` fills in (`defaultVariables: { appName: string }` in the generated `i18next.d.ts`, which is only written when it does not exist yet, so your additions stay), and the `ParseKeysWithoutVariables<'ns'>` type, used instead of `ParseKeys<'ns'>`, types the key of a wrapper around `t()`. The `lint` check for interpolation parameters does not read `defaultVariables` yet and reports those variables as not provided.
+
 ```bash
 npx i18next-cli types [options]
 ```
