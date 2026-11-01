@@ -172,6 +172,8 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
   // Only run if enabled (default true)
   const enabled = config.lint?.checkInterpolationParams !== false
   if (!enabled) return issues
+  // Variables that i18next's interpolation.defaultVariables fills in count as provided in every call
+  const defaultVariables = config.lint?.defaultVariables ?? []
 
   // Helper for line number
   const getLineNumber = (pos: number): number => {
@@ -323,9 +325,10 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
     if (keys.length > 0) {
       // i18next supports nested object access via dot notation (e.g. {{author.name}} with { author }).
       // For each interpolation key, check if the root (part before the first dot) matches a provided param.
+      const provided = [...paramKeys, ...defaultVariables]
       for (const k of keys) {
         const root = k.split('.')[0]
-        if (!paramKeys.includes(k) && !paramKeys.includes(root)) {
+        if (!provided.includes(k) && !provided.includes(root)) {
           issues.push({
             text: `Interpolation parameter "${k}" was not provided`,
             line: issueLineNumber,

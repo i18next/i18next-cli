@@ -304,6 +304,13 @@ export interface I18nextToolkitConfig {
     /** Enable linting for interpolation parameter errors in translation calls (default: true) */
     checkInterpolationParams?: boolean;
 
+    /** Names of the variables that i18next's `interpolation.defaultVariables` fills in at runtime (e.g. `['appName']`).
+     *
+     * {@link checkInterpolationParams} does not report them as not provided. A dotted placeholder
+     * counts when its root is listed (`{{user.name}}` with `'user'`). Passing one in `t()` is still allowed.
+     */
+    defaultVariables?: string[];
+
     /** Lint for string concatenation involving translated strings (default: `'warn'`).
      *
      * Flags patterns like `t('greeting') + ', ' + name` and sentences split across
