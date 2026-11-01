@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.82.0
+
+- feat(lint): `lint.defaultVariables` lists the variables that i18next's `interpolation.defaultVariables` fills in at
+  runtime, e.g. `defaultVariables: ['appName']`. `lint.checkInterpolationParams` no longer reports them as not provided
+  in `t()` calls (string keys, selector calls, ICU and MF2 messages), the lint counterpart of the `defaultVariables`
+  type option of i18next 26.7.0. A dotted placeholder like `{{user.name}}` counts when its root `user` is listed.
+  Passing a listed variable explicitly stays allowed, and the unused-parameter check is unchanged.
+
 ## 1.81.0
 
 - feat(lint): `lint.checkInterpolationParams` now also checks selector calls like `t($ => $.user.greeting, { name })`.
