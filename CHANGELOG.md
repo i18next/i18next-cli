@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 1.82.1
 
 - chore(deps): glob 14 (`^14.0.3`), which fixes [GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4):
   in glob 9.0.0 to 14.0.1 a walk cancelled through `signal` kept reading directories in the background. i18next-cli
