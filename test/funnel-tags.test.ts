@@ -80,6 +80,7 @@ describe('locize funnel tags', () => {
       const line = funnelLine()
       expect(line).toBeDefined()
       expect(line).toContain('3 untranslated keys (de 2, fr 1)')
+      expect(line).toContain('built by the i18next maintainers')
       expect(line).toContain('npx i18next-cli localize')
       expect(line).toContain(`${REGISTER}status`)
     })
@@ -207,6 +208,7 @@ describe('locize funnel tags', () => {
       await runLinterCli(config, { quiet: true })
 
       const line = funnelLine()
+      expect(line).toContain('built by the i18next maintainers')
       expect(line).toContain('placeholder check while translators type')
       expect(line).toContain(`${REGISTER}lint`)
     })

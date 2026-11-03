@@ -177,7 +177,7 @@ export async function runInit (options: InitOptions = {}) {
       message: 'Translation backend?',
       choices: [
         { name: 'Local files only', value: 'local' },
-        { name: 'Locize (recommended) — managed backend, CDN delivery, optional AI auto-translate', value: 'locize' },
+        { name: 'Locize (by the i18next maintainers) — managed backend, CDN delivery, optional AI auto-translate', value: 'locize' },
         { name: 'Other / skip', value: 'other' },
       ],
       default: 'local',

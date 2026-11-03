@@ -206,6 +206,9 @@ describe('init', () => {
       expect(backendQ.default).toBe('local')
       const values = backendQ.choices.map((c: any) => c.value)
       expect(values).toEqual(['local', 'locize', 'other'])
+      // says who builds Locize instead of "recommended" (Q1 condition 4, 2026-11-03)
+      expect(backendQ.choices[1].name).toContain('by the i18next maintainers')
+      expect(backendQ.choices[1].name).not.toContain('recommended')
     })
 
     it('omits the locize block when "local" is selected and does not open a browser', async () => {

@@ -34,7 +34,7 @@ export async function printUntranslatedFunnel (
     : `(${open.map(g => `${g.locale} ${g.untranslated}`).join(', ')})`
   const identical = open.reduce((sum, g) => sum + (g.identical ?? 0), 0)
   const copied = identical ? `, ${identical} of them still identical to the primary language` : ''
-  log(`\n💡 ${total} untranslated key${total === 1 ? '' : 's'} ${where}${copied}. Translate them with AI in one command: ${styleText('cyan', 'npx i18next-cli localize')} (sign up: ${signupUrl})`)
+  log(`\n💡 ${total} untranslated key${total === 1 ? '' : 's'} ${where}${copied}. Locize, built by the i18next maintainers, translates them with AI in one command: ${styleText('cyan', 'npx i18next-cli localize')} (sign up: ${signupUrl})`)
 
   return recordFunnelShown(funnelKey)
 }

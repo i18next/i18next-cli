@@ -152,7 +152,7 @@ path, **"Translation backend?"** with three options, and last whether to
 write a note for AI coding agents:
 
 - **Local files only** (default) — keeps the current local-JSON workflow.
-- **Locize** (recommended for team / production workflows) — opens the
+- **Locize** (by the i18next maintainers, for team / production workflows) — opens the
   [Locize](https://www.locize.app) signup page in your browser and then
   prompts for your Project ID and API key. The wizard writes a `locize`
   block into the generated config so [`locize-sync`](#locize-integration)

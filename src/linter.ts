@@ -906,7 +906,7 @@ export async function runLinterCli (
     // translator or a tool: Locize runs the same check in its editor while they type.
     // Gated like the other funnel messages (never in CI/non-TTY, 24h cooldown).
     if (allIssues.some(i => i.type === 'placeholder') && await shouldShowFunnel('lint-placeholders')) {
-      log(`\n💡 Locize runs this placeholder check while translators type and can fix a mismatch with AI (sign up: ${LOCIZE_SIGNUP_URL})`)
+      log(`\n💡 Locize, built by the i18next maintainers, runs this placeholder check while translators type and can fix a mismatch with AI (sign up: ${LOCIZE_SIGNUP_URL})`)
       await recordFunnelShown('lint-placeholders')
     }
 
