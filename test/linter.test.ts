@@ -1284,6 +1284,31 @@ describe('Linter (core logic)', () => {
     expect(Object.keys(result.files)).toHaveLength(0)
   })
 
+  it('should not flag formatParams, the per-value options of a formatter, as unused (#323)', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        input: ['src/**/*.tsx'],
+        functions: ['t'],
+      },
+      lint: {},
+    }
+    const sampleCode = `
+      t("{{val, datetime}}", {
+        val: new Date(),
+        formatParams: { val: { month: 'long', year: 'numeric' } },
+      })
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('No issues found.')
+    expect(Object.keys(result.files)).toHaveLength(0)
+  })
+
   it('should still flag genuinely unused params even when i18next options are present', async () => {
     const config: I18nextToolkitConfig = {
       ...mockConfig,

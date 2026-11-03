@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(lint): `lint.checkInterpolationParams` no longer reports `formatParams` as a parameter that is not used in the
+  translation string. It is the i18next option that passes per-value options to a formatter, as in
+  `t('date', { val, formatParams: { val: { month: 'long' } } })` with `"{{val, datetime}}"`. The check missed it since it
+  was added, and since 1.81.0 it also shows up for keys in nested translation files.
+  Fixes [#323](https://github.com/i18next/i18next-cli/issues/323).
+
 ## 1.82.2
 
 - fix(extract): a key kept through `preservePatterns` (or a preserved plural form or context variant) keeps the shape it

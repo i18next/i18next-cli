@@ -90,6 +90,7 @@ const i18nextOptionKeys = new Set([
   'fallbackLng', 'returnDetails', 'returnObjects', 'joinArrays',
   'postProcess', 'interpolation', 'skipInterpolation', 'replace',
   'ordinal', 'keySeparator', 'nsSeparator', 'tDescription', 'keyPrefix',
+  'formatParams',
 ])
 function isI18nextOptionKey (key: string): boolean {
   if (i18nextOptionKeys.has(key)) return true
