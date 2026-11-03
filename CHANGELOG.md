@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 1.82.3
 
 - fix(lint): `lint.checkInterpolationParams` no longer reports `formatParams` as a parameter that is not used in the
   translation string. It is the i18next option that passes per-value options to a formatter, as in
