@@ -2116,6 +2116,27 @@ describe('extractor: advanced t features', () => {
       expect(translationFile!.newTranslations.state).not.toHaveProperty('description_')
     })
 
+    it('should not generate plural keys for the interval postProcessor (i18next-intervalPlural-postProcessor#229)', async () => {
+      const sampleCode = `
+        t('helperText_interval', { postProcess: 'interval', count: remaining })
+        t('other_interval', { postProcess: ['interval'], count: remaining })
+        t('greeting_interval', { context: 'formal', postProcess: 'interval', count: remaining })
+        t('item', { postProcess: 'sprintf', count: remaining })
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile!.newTranslations).toEqual({
+        helperText_interval: 'helperText_interval',
+        other_interval: 'other_interval',
+        greeting_interval_formal: 'greeting_interval',
+        item_one: 'item',
+        item_other: 'item',
+      })
+    })
+
     describe('disablePlurals', () => {
       it('should not generate plural keys when disablePlurals is true', async () => {
         const sampleCode = `

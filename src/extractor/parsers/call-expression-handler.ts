@@ -413,8 +413,14 @@ export class CallExpressionHandler {
           return undefined
         }
 
+        // With `postProcess: 'interval'` (i18next-intervalPlural-postProcessor), `count` picks an
+        // interval from the plain key. Plural keys would be found first by i18next and break it.
+        const postProcess = getObjectPropValueExpression(options, 'postProcess')
+        const postProcessors = postProcess?.type === 'ArrayExpression' ? postProcess.elements.map(e => e?.expression) : [postProcess]
+        const usesIntervalPlural = postProcessors.some(e => e?.type === 'StringLiteral' && e.value === 'interval')
+
         const hasCount = (() => {
-          if (!options || !Array.isArray(options.properties)) return false
+          if (usesIntervalPlural || !options || !Array.isArray(options.properties)) return false
           for (const p of options.properties as any[]) {
             const name = propNameFromNode(p)
             if (name === 'count') return true
