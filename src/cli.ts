@@ -88,22 +88,48 @@ program
       // If in watch mode, set up the chokidar watcher
       if (options.watch) {
         console.log('\nWatching for changes...')
-        // expand configured input globs (keep original behavior for detection)
-        const expanded = await expandGlobs(config.extract.input)
         // build ignore list (configured + derived from output template)
         const configuredIgnore = toArray(config.extract.ignore)
         const derivedIgnore = deriveOutputIgnore(config.extract.output)
         const ignoreGlobs = [...configuredIgnore, ...derivedIgnore].filter(Boolean)
-        // filter expanded files by ignore globs
-        const watchFiles = expanded.filter(f => !ignoreGlobs.some(g => minimatch(f, g, { dot: true })))
+        // Watch the static base folder of each input glob, not the files that exist at
+        // startup, so files created later are extracted and deleted ones drop their keys.
+        const inputGlobs: string[] = toArray(config.extract.input).map((g: string) => g.replace(/^\.\//, ''))
+        const isInput = (file: string) => {
+          const f = file.replace(/\\/g, '/')
+          return inputGlobs.some(g => minimatch(f, g, { dot: true })) &&
+            !ignoreGlobs.some(g => minimatch(f, g, { dot: true }))
+        }
 
-        const watcher = chokidar.watch(watchFiles, {
-          ignored: /node_modules/,
+        const watcher = chokidar.watch(Array.from(new Set(inputGlobs.map(globBase))), {
+          ignored: (path, stats) => /node_modules/.test(path) || (!!stats?.isFile() && !isInput(path)),
+          ignoreInitial: true,
           persistent: true,
         })
-        watcher.on('change', path => {
-          console.log(`\nFile changed: ${path}`)
-          runExtract()
+
+        // One extraction at a time: each run parses every input file, so overlapping runs
+        // (a branch switch touches hundreds of files) multiply memory and race on the
+        // output writes. Changes during a run trigger exactly one more run.
+        let running = false
+        let rerun = false
+        const scheduleExtract = async () => {
+          if (running) {
+            rerun = true
+            return
+          }
+          running = true
+          do {
+            rerun = false
+            await runExtract().catch(error => console.error('Error running extractor:', error))
+          } while (rerun)
+          running = false
+        }
+
+        const labels: Record<string, string> = { add: 'added', change: 'changed', unlink: 'removed' }
+        watcher.on('all', (event, path) => {
+          if (!labels[event] || !isInput(path)) return
+          console.log(`\nFile ${labels[event]}: ${path}`)
+          scheduleExtract()
         })
       }
     } catch (error) {
@@ -442,6 +468,15 @@ const toArray = (v: any) => Array.isArray(v) ? v : (v ? [v] : [])
 const deriveOutputIgnore = (output?: string | ((language: string, namespace?: string) => string)) => {
   if (!output || typeof output !== 'string') return []
   return [output.replace(/\{\{[^}]+\}\}/g, '*')]
+}
+// static leading folder of a glob: 'src/**/*.ts' -> 'src'
+const globBase = (pattern: string) => {
+  const parts: string[] = []
+  for (const segment of pattern.split('/')) {
+    if (/[*?[\]{}()!]/.test(segment)) break
+    parts.push(segment)
+  }
+  return parts.join('/') || '.'
 }
 // helper to expand one or many glob patterns
 const expandGlobs = async (patterns: string | string[] = []) => {

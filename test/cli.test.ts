@@ -350,19 +350,13 @@ describe('CLI command parsing and dispatching', () => {
   it('should honor extract.ignore when running in watch mode', async () => {
     vi.resetModules()
     const mockWatch = (await import('chokidar')).watch as any
-    const mockGlob = (await import('glob')).glob as any
-    // simulate expanded files: one source file and one generated locale file
-    mockGlob.mockResolvedValue([
-      'src/app.tsx',
-      'src/i18n/locales/en/namespace.ts'
-    ])
 
     process.argv = ['node', 'cli.ts', 'extract', '--watch']
 
     const watchConfig = {
       locales: ['en-US'],
       extract: {
-        input: ['src/**/*.{ts,tsx}'],
+        input: ['./src/**/*.{ts,tsx}'],
         ignore: ['src/i18n/locales/**'],
         output: 'src/i18n/locales/{{language}}/{{namespace}}.ts',
       }
@@ -377,28 +371,24 @@ describe('CLI command parsing and dispatching', () => {
     await new Promise(resolve => setImmediate(resolve))
 
     expect(mockWatch).toHaveBeenCalledTimes(1)
-    const calledArgs = mockWatch.mock.calls[0]
-    const watchedFiles = calledArgs[0]
-    const calledOptions = calledArgs[1]
+    const [watchedPaths, calledOptions] = mockWatch.mock.calls[0]
 
-    // expanded files should be filtered to exclude the ignored generated file
-    expect(watchedFiles).toEqual(expect.arrayContaining(['src/app.tsx']))
-    expect(watchedFiles).not.toEqual(expect.arrayContaining(['src/i18n/locales/en/namespace.ts']))
+    // the base folder of the input glob is watched, so new files are picked up
+    expect(watchedPaths).toEqual(['src'])
+    expect(calledOptions).toEqual(expect.objectContaining({ ignoreInitial: true, persistent: true }))
 
-    // chokidar options still include node_modules ignore
-    expect(calledOptions).toEqual(expect.objectContaining({
-      ignored: /node_modules/,
-    }))
+    const file = { isFile: () => true }
+    const dir = { isFile: () => false }
+    expect(calledOptions.ignored('src/app.tsx', file)).toBe(false)
+    expect(calledOptions.ignored('src/i18n/locales/en/namespace.ts', file)).toBe(true)
+    expect(calledOptions.ignored('src/styles.css', file)).toBe(true)
+    expect(calledOptions.ignored('src/node_modules/x', dir)).toBe(true)
+    expect(calledOptions.ignored('src/i18n', dir)).toBe(false)
   })
 
-  it('watch mode should ignore generated output and listen for "change" events', async () => {
+  it('watch mode should re-extract when input files are added, changed or removed', async () => {
     vi.resetModules()
     const mockWatch = (await import('chokidar')).watch as any
-    const mockGlob = (await import('glob')).glob as any
-    mockGlob.mockResolvedValue([
-      'src/components/button.tsx',
-      'src/i18n/locales/en/translation.ts'
-    ])
 
     process.argv = ['node', 'cli.ts', 'extract', '--watch']
 
@@ -417,21 +407,54 @@ describe('CLI command parsing and dispatching', () => {
     await import('../src/cli')
     await new Promise(resolve => setImmediate(resolve))
 
-    expect(mockWatch).toHaveBeenCalledTimes(1)
-    const calledArgs = mockWatch.mock.calls[0]
-    const watchedFiles = calledArgs[0]
-    const calledOptions = calledArgs[1]
+    const watcher = mockWatch.mock.results[0].value
+    const onAll = watcher.on.mock.calls.find((c: any[]) => c[0] === 'all')[1]
+    mockRunExtractor.mockClear()
 
-    expect(watchedFiles).toEqual(expect.arrayContaining(['src/components/button.tsx']))
-    expect(watchedFiles).not.toEqual(expect.arrayContaining(['src/i18n/locales/en/translation.ts']))
+    for (const event of ['add', 'change', 'unlink']) {
+      onAll(event, 'src/components/button.tsx')
+      await new Promise(resolve => setImmediate(resolve))
+    }
+    expect(mockRunExtractor).toHaveBeenCalledTimes(3)
 
-    expect(calledOptions).toEqual(expect.objectContaining({
-      ignored: /node_modules/,
-      persistent: true,
+    // generated output and non-file events do not trigger a run
+    onAll('change', 'src/i18n/locales/en/translation.ts')
+    onAll('addDir', 'src/components')
+    await new Promise(resolve => setImmediate(resolve))
+    expect(mockRunExtractor).toHaveBeenCalledTimes(3)
+  })
+
+  it('watch mode should run one extraction at a time', async () => {
+    vi.resetModules()
+    const mockWatch = (await import('chokidar')).watch as any
+
+    process.argv = ['node', 'cli.ts', 'extract', '--watch']
+    mockEnsureConfig.mockResolvedValue({
+      locales: ['en'],
+      extract: { input: ['src/**/*.ts'], output: 'locales/{{language}}/{{namespace}}.json' }
+    })
+    mockRunExtractor.mockResolvedValue({ anyFileUpdated: false, hasErrors: false })
+
+    await import('../src/cli')
+    await new Promise(resolve => setImmediate(resolve))
+
+    const onAll = mockWatch.mock.results[0].value.on.mock.calls.find((c: any[]) => c[0] === 'all')[1]
+    mockRunExtractor.mockClear()
+
+    let finish!: () => void
+    mockRunExtractor.mockImplementationOnce(() => new Promise(resolve => {
+      finish = () => resolve({ anyFileUpdated: false, hasErrors: false })
     }))
 
-    const watcher = mockWatch.mock.results[0].value
-    expect(watcher.on).toHaveBeenCalledWith('change', expect.any(Function))
+    // a burst of changes while the first run is in flight queues exactly one more run
+    for (let i = 0; i < 5; i++) onAll('change', `src/file${i}.ts`)
+    await new Promise(resolve => setImmediate(resolve))
+    expect(mockRunExtractor).toHaveBeenCalledTimes(1)
+
+    finish()
+    await new Promise(resolve => setImmediate(resolve))
+    await new Promise(resolve => setImmediate(resolve))
+    expect(mockRunExtractor).toHaveBeenCalledTimes(2)
   })
 
   it('should forward --config to ensureConfig for extract', async () => {
