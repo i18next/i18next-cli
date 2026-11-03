@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix(extract): a `t()` call with `postProcess: 'interval'` (i18next-intervalPlural-postProcessor) is extracted as a
   plain key, without plural keys. There `count` picks the interval, and the extracted `helperText_interval_one`/`_other`
-  keys broke it at runtime, because i18next finds them before the interval key. The same for `postProcess: ['interval']`.
+  keys broke it at runtime, because i18next finds them before the interval key. The same for `postProcess: ['interval']`
+  and for `<Trans count={n} tOptions={{ postProcess: 'interval' }}>`.
   Fixes [i18next-intervalPlural-postProcessor#229](https://github.com/i18next/i18next-intervalPlural-postProcessor/issues/229).
 
 ## 1.82.3

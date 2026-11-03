@@ -350,6 +350,19 @@ export function getObjectPropValueExpression (object: ObjectExpression, propName
 }
 
 /**
+ * Checks if the options use the interval postProcessor (i18next-intervalPlural-postProcessor),
+ * as `postProcess: 'interval'` or `postProcess: ['interval']`. There `count` picks an interval
+ * from the plain key, so it gets no plural keys: i18next would find those first and break it.
+ *
+ * @private
+ */
+export function usesIntervalPostProcessor (options?: ObjectExpression): boolean {
+  const postProcess = options && getObjectPropValueExpression(options, 'postProcess')
+  const postProcessors = postProcess?.type === 'ArrayExpression' ? postProcess.elements.map(e => e?.expression) : [postProcess]
+  return postProcessors.some(e => e?.type === 'StringLiteral' && e.value === 'interval')
+}
+
+/**
  * Checks if the given template literal has no interpolation expressions
  *
  * @param literal - Template literal to check

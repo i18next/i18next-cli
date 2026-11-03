@@ -2137,6 +2137,31 @@ describe('extractor: advanced t features', () => {
       })
     })
 
+    it('should not generate plural keys for Trans with the interval postProcessor in tOptions', async () => {
+      const sampleCode = `
+        function App() {
+          return (
+            <div>
+              <Trans i18nKey="items_interval" count={count} tOptions={{ postProcess: 'interval' }}>Items</Trans>
+              <Trans i18nKey="things_interval" values={{ count }} tOptions={{ postProcess: ['interval'] }}>Things</Trans>
+              <Trans i18nKey="item" count={count}>Item</Trans>
+            </div>
+          );
+        }
+      `
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+      const results = await extract(mockConfig)
+      const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+      expect(translationFile!.newTranslations).toEqual({
+        items_interval: 'Items',
+        things_interval: 'Things',
+        item_one: 'Item',
+        item_other: 'Item',
+      })
+    })
+
     describe('disablePlurals', () => {
       it('should not generate plural keys when disablePlurals is true', async () => {
         const sampleCode = `

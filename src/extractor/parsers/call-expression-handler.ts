@@ -4,7 +4,7 @@ import { ExpressionResolver } from './expression-resolver.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
 import { parseNestedReferences } from '../../utils/nesting.js'
 import { usesMessageFormat } from '../../utils/message-format.js'
-import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset, unwrapParens } from './ast-utils.js'
+import { getObjectPropValueExpression, getObjectPropValue, isSimpleTemplateLiteral, lineColumnFromOffset, unwrapParens, usesIntervalPostProcessor } from './ast-utils.js'
 import { matchesFunctionPattern } from '../utils/function-matcher.js'
 
 // Helper to escape regex characters
@@ -413,14 +413,8 @@ export class CallExpressionHandler {
           return undefined
         }
 
-        // With `postProcess: 'interval'` (i18next-intervalPlural-postProcessor), `count` picks an
-        // interval from the plain key. Plural keys would be found first by i18next and break it.
-        const postProcess = getObjectPropValueExpression(options, 'postProcess')
-        const postProcessors = postProcess?.type === 'ArrayExpression' ? postProcess.elements.map(e => e?.expression) : [postProcess]
-        const usesIntervalPlural = postProcessors.some(e => e?.type === 'StringLiteral' && e.value === 'interval')
-
         const hasCount = (() => {
-          if (usesIntervalPlural || !options || !Array.isArray(options.properties)) return false
+          if (usesIntervalPostProcessor(options) || !options || !Array.isArray(options.properties)) return false
           for (const p of options.properties as any[]) {
             const name = propNameFromNode(p)
             if (name === 'count') return true

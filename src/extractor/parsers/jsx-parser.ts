@@ -1,6 +1,6 @@
 import type { Expression, JSXAttribute, JSXAttributeOrSpread, JSXElement, JSXElementChild, JSXElementName, JSXExpression, ObjectExpression } from '@swc/core'
 import type { I18nextToolkitConfig } from '../../types.js'
-import { getObjectPropValue, getObjectPropValueExpression, isSimpleTemplateLiteral } from './ast-utils.js'
+import { getObjectPropValue, getObjectPropValueExpression, isSimpleTemplateLiteral, usesIntervalPostProcessor } from './ast-utils.js'
 import { toMessageFormatPlaceholders } from '../../utils/message-format.js'
 import { createRequire } from 'node:module'
 import { parseSync } from '@swc/core'
@@ -246,8 +246,6 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
   // ObjectExpression interpolation that declares a `count` key.
   const hasInlineCount = !countAttr && !valuesCountProperty && childrenHaveInlineCount(node.children)
 
-  const hasCount = !!countAttr || !!valuesCountProperty || hasInlineCount
-
   const tOptionsAttr = node.opening.attributes?.find(
     (attr) =>
       attr.type === 'JSXAttribute' &&
@@ -257,6 +255,8 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
   const optionsNode = (tOptionsAttr?.type === 'JSXAttribute' && tOptionsAttr.value?.type === 'JSXExpressionContainer' && tOptionsAttr.value.expression.type === 'ObjectExpression')
     ? tOptionsAttr.value.expression
     : undefined
+
+  const hasCount = (!!countAttr || !!valuesCountProperty || hasInlineCount) && !usesIntervalPostProcessor(optionsNode)
 
   // Find isOrdinal prop on the <Trans> component
   const ordinalAttr = node.opening.attributes?.find(
