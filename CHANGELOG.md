@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.82.2
+
+- fix(extract): a key kept through `preservePatterns` (or a preserved plural form or context variant) keeps the shape it
+  has in the translation file. A nested key with an empty segment like `{ "gearTypes": { "": "Unknown" } }` was rewritten
+  as a flat `"gearTypes."` key, and a nested natural-language key like `{ "Hello world": { "x": "…" } }` as a flat
+  `"Hello world.x"`. Keys extracted from code are stored as before. Fixes
+  [#319](https://github.com/i18next/i18next-cli/issues/319) ([#321](https://github.com/i18next/i18next-cli/pull/321),
+  thanks [@j8seangel](https://github.com/j8seangel)).
+- fix(extract): `extract --watch` watches the base folder of each `extract.input` glob instead of the files that existed
+  at startup, and also reacts to added and deleted files: a new file is extracted, and the keys of a deleted one are
+  removed (with `removeUnusedKeys`). One extraction runs at a time, and changes during a run lead to exactly one more
+  run, so a branch switch no longer starts hundreds of extractions that race on the output files. Errors in a watch run
+  are logged instead of left unhandled. Fixes [#320](https://github.com/i18next/i18next-cli/issues/320)
+  ([#322](https://github.com/i18next/i18next-cli/pull/322), thanks [@j8seangel](https://github.com/j8seangel)).
+- chore(deps): minimatch 11, i18next 26.7.1, react-i18next 17.1.11 and other dependency updates.
+
 ## 1.82.1
 
 - chore(deps): glob 14 (`^14.0.3`), which fixes [GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4):
