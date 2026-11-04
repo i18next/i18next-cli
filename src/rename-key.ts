@@ -1,9 +1,9 @@
 import { glob } from 'glob'
 import { readFile, writeFile } from 'node:fs/promises'
-import { resolve, basename } from 'node:path'
+import { resolve } from 'node:path'
 import type { I18nextToolkitConfig, Logger, RenameKeyResult } from './types.js'
 import { ConsoleLogger } from './utils/logger.js'
-import { loadTranslationFile, serializeTranslationFile, getOutputPath } from './utils/file-utils.js'
+import { loadTranslationFile, serializeTranslationFile, getOutputPath, getNamespaceFromOutputPath } from './utils/file-utils.js'
 import { getNestedValue, setNestedValue, naturalLanguageRegexFor, storedKeySeparator } from './utils/nested-object.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 import { styleText } from 'node:util'
@@ -250,29 +250,20 @@ async function buildNamespaceKeyMap (config: I18nextToolkitConfig): Promise<Map<
   // Map namespace -> set of flattened keys present in that namespace (union across locales)
   const map = new Map<string, Set<string>>()
 
-  // config.extract.output may be either a string template or a function(language, namespace) => string.
-  // Produce a string we can turn into a glob pattern. For functions, call with wildcard values.
-  const rawOutput = config.extract.output
-  const outputTemplate = typeof rawOutput === 'function'
-    ? rawOutput('*', '*') // produce a path with wildcards we can glob
-    : String(rawOutput)
-
-  // make a glob pattern by replacing placeholders with *
-  const pat = outputTemplate
-    .replace(/\{\{language\}\}/g, '*')
-    .replace(/\{\{namespace\}\}/g, '*')
-
-  // glob expects unix-style
-  const files = await glob([pat.replace(/\\/g, '/')], { nodir: true })
+  // glob each locale's files, so the namespace can be read from where the output template has it
+  const files: Array<[string, string]> = []
+  for (const locale of config.locales) {
+    // glob expects unix-style
+    for (const f of await glob(getOutputPath(config.extract.output, locale, '*').replace(/\\/g, '/'), { nodir: true })) {
+      files.push([f, getNamespaceFromOutputPath(config.extract.output, locale, f)])
+    }
+  }
   const keySeparator = config.extract.keySeparator ?? '.'
 
-  for (const f of files) {
+  for (const [f, ns] of files) {
     try {
       const translations = await loadTranslationFile(resolve(process.cwd(), f))
       if (!translations) continue
-      // derive namespace name from filename: basename without extension (platform-safe)
-      const base = basename(f)
-      const ns = base.replace(/\.[^.]+$/, '') // remove extension
       const set = map.get(ns) ?? new Set<string>()
       // flatten keys recursively
       const collect = (obj: any, prefix = '') => {

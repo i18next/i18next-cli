@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix: with an `extract.output` that puts the namespace in a folder, like `locales/{{namespace}}/{{language}}.json`,
+  `lint`, `sync`, `extract` and `rename-key` now read the namespace from where the template has it instead of from the
+  file name, which there is the language. `lint` checked no ICU/MF2 message at all, `sync` wrote the secondary languages
+  to `locales/en/de.json` instead of `locales/common/de.json`, and `rename-key` missed calls like
+  `t('hello', { ns: 'common' })`. `sync` and `lint` also read a namespace with a dot, like `app.settings.json`, whole.
+  Fixes [#324](https://github.com/i18next/i18next-cli/issues/324).
+
 ## 1.82.4
 
 - fix(extract): a `t()` call with `postProcess: 'interval'` (i18next-intervalPlural-postProcessor) is extracted as a

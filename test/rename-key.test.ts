@@ -48,6 +48,25 @@ describe('runRenameKey', () => {
       expect(updatedTranslation.old?.key).toBeUndefined()
     })
 
+    it('should rename keys with an ns option when the namespace is a folder (#324)', async () => {
+      const config = {
+        locales: ['en', 'de'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{namespace}}/{{language}}.json')
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('hello', { ns: 'common' })")
+      await mkdir(join(testDir, 'locales/common'), { recursive: true })
+      await writeFile(join(testDir, 'locales/common/en.json'), JSON.stringify({ hello: 'Hello' }))
+
+      await runRenameKey(config, 'common:hello', 'common:greeting')
+
+      expect(await readFile(join(testDir, 'test.ts'), 'utf-8')).toBe("t('greeting', { ns: 'common' })")
+      expect(JSON.parse(await readFile(join(testDir, 'locales/common/en.json'), 'utf-8'))).toEqual({ greeting: 'Hello' })
+    })
+
     it('should detect conflicts', async () => {
       const config = {
         locales: ['en'],

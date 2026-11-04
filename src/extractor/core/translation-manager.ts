@@ -1,8 +1,8 @@
 import { TranslationResult, ExtractedKey, I18nextToolkitConfig, Logger } from '../../types.js'
-import { basename, extname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { glob } from 'glob'
 import { getNestedValue, setNestedValue, getNestedKeys, naturalLanguageRegexFor, storedKeySeparator } from '../../utils/nested-object.js'
-import { getOutputPath, loadTranslationFile } from '../../utils/file-utils.js'
+import { getNamespaceFromOutputPath, getOutputPath, loadTranslationFile } from '../../utils/file-utils.js'
 import { resolveDefaultValue } from '../../utils/default-value.js'
 import { ConsoleLogger } from '../../utils/logger.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
@@ -1420,7 +1420,7 @@ export async function getTranslations (
       const existingNsGlobPattern = existingNsPattern.replace(/\\/g, '/')
       const existingNsFiles = await glob(existingNsGlobPattern, { ignore: userIgnore })
       for (const file of existingNsFiles) {
-        const ns = basename(file, extname(file))
+        const ns = getNamespaceFromOutputPath(config.extract.output, locale, file)
         if (ns) {
           namespacesToProcess.add(ns)
         }

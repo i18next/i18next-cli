@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
-import { dirname, extname, resolve, normalize } from 'node:path'
+import { basename, dirname, extname, resolve, normalize } from 'node:path'
 import { createJiti } from 'jiti'
 import type { I18nextToolkitConfig } from '../types.js'
 import { getTsConfigAliases } from '../config.js'
@@ -113,6 +113,26 @@ export function getOutputPath (
   // collapse duplicate slashes and normalize to platform-specific separators
   out = out.replace(/\/\/+/g, '/')
   return normalize(out)
+}
+
+/**
+ * The namespace of a file found with `getOutputPath(outputTemplate, language, '*')`: the part of its path
+ * where the template has the namespace, so `locales/{{namespace}}/{{language}}.json` works like
+ * `locales/{{language}}/{{namespace}}.json`. Falls back to the file name without its extension.
+ */
+export function getNamespaceFromOutputPath (
+  outputTemplate: Parameters<typeof getOutputPath>[0],
+  language: string,
+  filePath: string
+): string {
+  const marker = '\u0000'
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // compare absolute paths: glob returns relative or absolute paths depending on the pattern
+  const [first, ...rest] = resolve(getOutputPath(outputTemplate, language, marker)).replace(/\\/g, '/').split(marker)
+  // a namespace that appears more than once in the template must be the same each time;
+  // case-insensitive like glob on macOS and Windows
+  const match = rest.length > 0 && new RegExp(`^${escape(first)}([^/]+)${rest.map(escape).join('\\1')}$`, 'i').exec(resolve(filePath).replace(/\\/g, '/'))
+  return match ? match[1] : basename(filePath, extname(filePath))
 }
 
 /**

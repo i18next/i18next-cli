@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises'
-import { basename, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { glob } from 'glob'
 import { parseTree, findNodeAtLocation } from 'jsonc-parser'
 import type { I18nextToolkitConfig, LintIssue } from '../types.js'
-import { getOutputPath, loadTranslationFile } from './file-utils.js'
+import { getNamespaceFromOutputPath, getOutputPath, loadTranslationFile } from './file-utils.js'
 import { parseNestedReferences } from './nesting.js'
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -258,7 +258,7 @@ async function primaryNamespaces (config: I18nextToolkitConfig, primary: string)
   const { output, ignoreNamespaces = [] } = config.extract
   if (typeof output === 'string' && !output.includes('{{namespace}}')) return [undefined]
   return (await glob(getOutputPath(output, primary, '*').replace(/\\/g, '/')))
-    .map(file => basename(file).split('.')[0])
+    .map(file => getNamespaceFromOutputPath(output, primary, file))
     .filter(ns => !ignoreNamespaces.includes(ns))
 }
 
