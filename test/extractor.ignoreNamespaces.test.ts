@@ -1,6 +1,7 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { runExtractor } from '../src/index'
+import { ignoredNamespaceMatcher } from '../src/utils/file-utils'
 import type { I18nextToolkitConfig } from '../src/index'
 import { resolve } from 'path'
 
@@ -342,5 +343,69 @@ describe('extractor: ignoreNamespaces', () => {
     const enNs1Content = await vol.promises.readFile(enNs1Path, 'utf-8')
     const enNs1Json = JSON.parse(enNs1Content as string)
     expect(enNs1Json).toHaveProperty('hello')
+  })
+
+  it('should match ignoreNamespaces glob patterns (#325)', async () => {
+    const isIgnored = ignoredNamespaceMatcher({ extract: { ...mockConfig.extract, ignoreNamespaces: ['dev.*', 'mocks'] } })
+    expect(['dev.tools', 'dev.a.b', 'mocks'].filter(isIgnored)).toEqual(['dev.tools', 'dev.a.b', 'mocks'])
+    expect(['dev', 'devtools', 'app.dev.x', 'mocks2'].some(isIgnored)).toBe(false)
+  })
+
+  it('should not touch files of namespaces matching an ignoreNamespaces glob (#325)', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+
+      function App() {
+        const { t } = useTranslation(['app.home', 'dev.mocks', 'devtools']);
+        return <p>{t('app.home:title')}{t('dev.mocks:fake')}{t('devtools:panel')}</p>;
+      }
+    `
+    const existingDevTools = { key: 'value' }
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      '/locales/en/dev.tools.json': JSON.stringify(existingDevTools),
+    })
+
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async (pattern: any) => {
+      const allFiles = Object.keys(vol.toJSON())
+      return String(pattern).includes('src/') ? allFiles.filter(p => p.includes('/src/')) : allFiles.filter(p => p.startsWith('/locales/'))
+    })
+
+    await runExtractor({
+      ...mockConfig,
+      extract: { ...mockConfig.extract, ignoreNamespaces: ['dev.*'], removeUnusedKeys: true },
+    })
+
+    const files = vol.toJSON()
+    expect(JSON.parse(files['/locales/en/dev.tools.json'] as string)).toEqual(existingDevTools)
+    expect(files['/locales/en/dev.mocks.json']).toBeUndefined()
+    expect(JSON.parse(files['/locales/en/app.home.json'] as string)).toHaveProperty('title')
+    expect(JSON.parse(files['/locales/en/devtools.json'] as string)).toHaveProperty('panel')
+  })
+
+  it('should keep sections matching an ignoreNamespaces glob in a merged file (#325)', async () => {
+    const sampleCode = `
+      import { useTranslation } from 'react-i18next';
+
+      function App() {
+        const { t } = useTranslation(['app.home', 'dev.mocks']);
+        return <p>{t('app.home:title')}{t('dev.mocks:fake')}</p>;
+      }
+    `
+    vol.fromJSON({
+      '/src/App.tsx': sampleCode,
+      '/locales/en.json': JSON.stringify({ 'dev.tools': { key: 'value' }, 'app.home': { old: 'gone' } }),
+    })
+
+    await runExtractor({
+      ...mockConfig,
+      extract: { ...mockConfig.extract, output: 'locales/{{language}}.json', mergeNamespaces: true, ignoreNamespaces: ['dev.*'], removeUnusedKeys: true },
+    })
+
+    const merged = JSON.parse(vol.toJSON()['/locales/en.json'] as string)
+    expect(merged['dev.tools']).toEqual({ key: 'value' })
+    expect(Object.keys(merged).sort()).toEqual(['app.home', 'dev.tools'])
+    expect(Object.keys(merged['app.home'])).toEqual(['title'])
   })
 })

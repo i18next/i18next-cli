@@ -1,6 +1,7 @@
 import type { PluginContext, I18nextToolkitConfig, ExtractedKey } from '../../types.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
 import { usesMessageFormat } from '../../utils/message-format.js'
+import { globToRegex } from '../../utils/file-utils.js'
 
 // Checks if a string looks like natural language (contains spaces, punctuation, etc.)
 const naturalLanguageChars = /[ ,?!;]/
@@ -441,19 +442,4 @@ function parseOrdinalFromComment (remainder: string): boolean | undefined {
   if (ordinalObj) return ordinalObj[1] === 'true'
 
   return undefined
-}
-
-/**
- * Converts a glob pattern to a regular expression.
- * Supports basic glob patterns with * wildcards.
- *
- * @param glob - The glob pattern to convert
- * @returns A RegExp that matches the glob pattern
- *
- * @internal
- */
-function globToRegex (glob: string): RegExp {
-  const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-  const regexString = `^${escaped.replace(/\*/g, '.*')}$`
-  return new RegExp(regexString)
 }

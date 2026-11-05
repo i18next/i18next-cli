@@ -2,7 +2,7 @@ import { TranslationResult, ExtractedKey, I18nextToolkitConfig, Logger } from '.
 import { resolve } from 'node:path'
 import { glob } from 'glob'
 import { getNestedValue, setNestedValue, getNestedKeys, naturalLanguageRegexFor, storedKeySeparator } from '../../utils/nested-object.js'
-import { getNamespaceFromOutputPath, getOutputPath, loadTranslationFile } from '../../utils/file-utils.js'
+import { getNamespaceFromOutputPath, getOutputPath, globToRegex, ignoredNamespaceMatcher, loadTranslationFile } from '../../utils/file-utils.js'
 import { resolveDefaultValue } from '../../utils/default-value.js'
 import { ConsoleLogger } from '../../utils/logger.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
@@ -11,17 +11,6 @@ import { usesMessageFormat } from '../../utils/message-format.js'
 import { isContextVariantOfAcceptingKey } from '../../utils/context-variants.js'
 
 const pluralForms = ['zero', 'one', 'two', 'few', 'many', 'other']
-
-/**
- * Converts a glob pattern to a regular expression for matching keys
- * @param glob - The glob pattern to convert
- * @returns A RegExp object that matches the glob pattern
- */
-function globToRegex (glob: string): RegExp {
-  const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-  const regexString = `^${escaped.replace(/\*/g, '.*')}$`
-  return new RegExp(regexString)
-}
 
 /**
  * Detects a nesting conflict for `key` against the object being built.
@@ -1314,9 +1303,9 @@ export async function getTranslations (
   }
 
   // Filter out ignored namespaces
-  const ignoreNamespaces = new Set(config.extract.ignoreNamespaces ?? [])
-  for (const ns of ignoreNamespaces) {
-    keysByNS.delete(ns)
+  const isIgnoredNs = ignoredNamespaceMatcher(config)
+  for (const ns of keysByNS.keys()) {
+    if (isIgnoredNs(ns)) keysByNS.delete(ns)
   }
 
   // Respect fallbackNS (#272): a key extracted for another namespace that is
@@ -1372,8 +1361,8 @@ export async function getTranslations (
         : new Set<string>([...keysByNS.keys(), NO_NS_TOKEN])
 
       // Remove ignored namespaces so their section is never modified
-      for (const ns of ignoreNamespaces) {
-        namespacesToProcess.delete(ns)
+      for (const ns of namespacesToProcess) {
+        if (isIgnoredNs(ns)) namespacesToProcess.delete(ns)
       }
 
       // When nsSeparator is false, keys resolved to the defaultNS (e.g. from
@@ -1400,10 +1389,8 @@ export async function getTranslations (
       }
 
       // Preserve ignored namespaces as-is from the existing merged file
-      for (const ns of ignoreNamespaces) {
-        if (ns in existingMergedFile) {
-          newMergedTranslations[ns] = existingMergedFile[ns]
-        }
+      for (const ns of existingKeys) {
+        if (isIgnoredNs(ns)) newMergedTranslations[ns] = existingMergedFile[ns]
       }
 
       const oldContent = JSON.stringify(existingMergedFile, null, indentation)
@@ -1427,8 +1414,8 @@ export async function getTranslations (
       }
 
       // Remove ignored namespaces so their files are never modified
-      for (const ns of ignoreNamespaces) {
-        namespacesToProcess.delete(ns)
+      for (const ns of namespacesToProcess) {
+        if (isIgnoredNs(ns)) namespacesToProcess.delete(ns)
       }
 
       // Process each namespace individually and create a result for each one

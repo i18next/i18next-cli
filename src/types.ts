@@ -173,7 +173,8 @@ export interface I18nextToolkitConfig {
      * Array of namespace names to ignore during extraction, status, and sync operations.
      * Keys using these namespaces will be excluded from processing.
      * Useful for monorepos where shared namespaces are managed elsewhere.
-     * @example ['shared', 'common']
+     * Supports glob patterns, where `*` matches any characters (`'dev.*'`).
+     * @example ['shared', 'common', 'dev.*']
      */
     ignoreNamespaces?: string[];
 

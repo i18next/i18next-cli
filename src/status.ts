@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { findKeys, runExtractor } from './extractor.js'
 import { getNestedValue, getNestedKeys } from './utils/nested-object.js'
 import type { I18nextToolkitConfig, ExtractedKey, TranslationResult } from './types.js'
-import { getOutputPath, loadTranslationFile } from './utils/file-utils.js'
+import { getOutputPath, globToRegex, ignoredNamespaceMatcher, loadTranslationFile } from './utils/file-utils.js'
 import { safePluralRules } from './utils/plural-rules.js'
 import { isContextVariantOfAcceptingKey } from './utils/context-variants.js'
 import { parseNestedReferences } from './utils/nesting.js'
@@ -13,11 +13,6 @@ import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.
 import { printUntranslatedFunnel } from './utils/locize-funnel.js'
 
 const LOCIZE_SIGNUP_URL = 'https://www.locize.app/register?from=i18next_cli__status'
-
-function globToRegex (glob: string): RegExp {
-  const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`^${escaped.replace(/\*/g, '.*')}$`)
-}
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -285,9 +280,9 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
   }
 
   // Filter out ignored namespaces
-  const ignoreNamespaces = new Set(config.extract.ignoreNamespaces ?? [])
-  for (const ns of ignoreNamespaces) {
-    keysByNs.delete(ns)
+  const isIgnoredNs = ignoredNamespaceMatcher(config)
+  for (const ns of keysByNs.keys()) {
+    if (isIgnoredNs(ns)) keysByNs.delete(ns)
   }
 
   // Filter out ignored keys (`status.ignoreKeys`, glob, optional `ns:` prefix)
@@ -482,7 +477,7 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
             catalog = (await loadTranslationFile(nsPath)) ?? undefined
           }
         }
-        if (catalog === undefined && isPrimary && ignoreNamespaces.has(fallbackNs)) {
+        if (catalog === undefined && isPrimary && isIgnoredNs(fallbackNs)) {
           console.warn(`⚠️  fallbackNS "${fallbackNs}" is listed in ignoreNamespaces, but no translations for it were found — keys resolving through it will be reported as absent. If the namespace lives in its own file, use an \`output\` function that maps it to that path.`)
         }
         // If it's still not found, fall back to the top level of the merged
@@ -491,7 +486,7 @@ async function generateStatusReport (config: I18nextToolkitConfig): Promise<Stat
       } else {
         const nsPath = resolve(process.cwd(), getOutputPath(config.extract.output, locale, fallbackNs))
         const catalog = await loadTranslationFile(nsPath)
-        if (!catalog && isPrimary && ignoreNamespaces.has(fallbackNs)) {
+        if (!catalog && isPrimary && isIgnoredNs(fallbackNs)) {
           console.warn(`⚠️  fallbackNS "${fallbackNs}" is listed in ignoreNamespaces, but no translations for it were found at "${nsPath}" — keys resolving through it will be reported as absent.`)
         }
         fallbackCatalogs.set(fallbackNs, catalog || {})

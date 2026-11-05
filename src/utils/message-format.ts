@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { glob } from 'glob'
 import { parseTree, findNodeAtLocation } from 'jsonc-parser'
 import type { I18nextToolkitConfig, LintIssue } from '../types.js'
-import { getNamespaceFromOutputPath, getOutputPath, loadTranslationFile } from './file-utils.js'
+import { getNamespaceFromOutputPath, getOutputPath, ignoredNamespaceMatcher, loadTranslationFile } from './file-utils.js'
 import { parseNestedReferences } from './nesting.js'
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -255,11 +255,12 @@ async function lineFinder (file: string): Promise<(path: Array<string | number>)
 
 // Namespace discovery as in `sync`: the primary language's files
 async function primaryNamespaces (config: I18nextToolkitConfig, primary: string): Promise<Array<string | undefined>> {
-  const { output, ignoreNamespaces = [] } = config.extract
+  const { output } = config.extract
   if (typeof output === 'string' && !output.includes('{{namespace}}')) return [undefined]
+  const isIgnoredNs = ignoredNamespaceMatcher(config)
   return (await glob(getOutputPath(output, primary, '*').replace(/\\/g, '/')))
     .map(file => getNamespaceFromOutputPath(output, primary, file))
-    .filter(ns => !ignoreNamespaces.includes(ns))
+    .filter(ns => !isIgnoredNs(ns))
 }
 
 /**

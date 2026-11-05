@@ -6,7 +6,7 @@ import { createSpinnerLike } from './utils/wrap-ora.js'
 import { ConsoleLogger } from './utils/logger.js'
 import type { I18nextToolkitConfig, Logger } from './types.js'
 import { resolveDefaultValue } from './utils/default-value.js'
-import { getNamespaceFromOutputPath, getOutputPath, loadTranslationFile, serializeTranslationFile, loadRawJson5Content, inferFormatFromPath } from './utils/file-utils.js'
+import { getNamespaceFromOutputPath, getOutputPath, ignoredNamespaceMatcher, loadTranslationFile, serializeTranslationFile, loadRawJson5Content, inferFormatFromPath } from './utils/file-utils.js'
 import { printUntranslatedFunnel } from './utils/locize-funnel.js'
 import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-object.js'
 import { safePluralRules } from './utils/plural-rules.js'
@@ -86,13 +86,13 @@ export async function runSyncer (
     }
 
     // Filter out ignored namespaces
-    const ignoreNamespaces = new Set(config.extract.ignoreNamespaces ?? [])
+    const isIgnoredNs = ignoredNamespaceMatcher(config)
 
     // 2. Loop through each primary namespace file
     for (const primaryPath of primaryNsFiles) {
       const ns = getNamespaceFromOutputPath(output, primaryLanguage, primaryPath)
       // Skip ignored namespaces
-      if (ignoreNamespaces.has(ns)) continue
+      if (isIgnoredNs(ns)) continue
       const primaryTranslations = await loadTranslationFile(primaryPath)
 
       if (!primaryTranslations) {

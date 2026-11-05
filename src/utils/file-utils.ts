@@ -136,6 +136,22 @@ export function getNamespaceFromOutputPath (
 }
 
 /**
+ * Converts a glob pattern to a regular expression: `*` matches any characters, everything else literally.
+ */
+export function globToRegex (glob: string): RegExp {
+  const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`^${escaped.replace(/\*/g, '.*')}$`)
+}
+
+/**
+ * Whether a namespace is listed in `extract.ignoreNamespaces`, whose entries may be glob patterns (`'dev.*'`).
+ */
+export function ignoredNamespaceMatcher (config: Pick<I18nextToolkitConfig, 'extract'>): (ns: string) => boolean {
+  const patterns = (config.extract.ignoreNamespaces ?? []).map(globToRegex)
+  return ns => patterns.some(re => re.test(ns))
+}
+
+/**
  * Dynamically loads a translation file, supporting .json, .js, and .ts formats.
  * @param filePath - The path to the translation file.
  * @returns The parsed content of the file, or null if not found or failed to parse.
