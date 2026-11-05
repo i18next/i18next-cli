@@ -3,7 +3,7 @@ import type { Expression } from '@swc/core'
 import type { ExtractedKey, Logger, I18nextToolkitConfig, ASTVisitorHooks } from '../../types.js'
 import { processFile, preScanFile } from './extractor.js'
 import { ConsoleLogger } from '../../utils/logger.js'
-import { initializePlugins, createPluginContext } from '../plugin-manager.js'
+import { initializePlugins, createPluginContext, ConflictError } from '../plugin-manager.js'
 import { ASTVisitors } from './ast-visitors.js'
 import { ExpressionResolver } from '../parsers/expression-resolver.js'
 import { getTsConfigAliases } from '../../config.js'
@@ -88,6 +88,7 @@ export async function findKeys (
   const sharedExpressionResolver = new ExpressionResolver(hooks)
   sharedExpressionResolver.maxMemberDepth = config.extract.maxTypeDepth ?? 5
   sharedExpressionResolver.pathAliases = await getTsConfigAliases()
+  sharedExpressionResolver.warnOnAmbiguous = !!config.extract.warnOnAmbiguousTypes
   const astVisitors = new ASTVisitors(otherConfig, pluginContext, logger, hooks, sharedExpressionResolver)
 
   // 4. "Wire up" the visitor's scope method to the context.
@@ -116,6 +117,11 @@ export async function findKeys (
   for (const file of sourceFiles) {
     await processFile(file, plugins, astVisitors, pluginContext, otherConfig, logger, fileErrors)
   }
+
+  // 7a. Names the extraction pass had to guess between same-named declarations of different files
+  const { ambiguities } = sharedExpressionResolver
+  if (ambiguities.length > 0 && config.extract.warnOnAmbiguousTypes === 'error') throw new ConflictError(ambiguities.join('\n'))
+  for (const msg of ambiguities) logger.warn(msg)
 
   // 7. Run onEnd hooks
   for (const plugin of plugins) {

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(extractor): a type, enum or constant imported through a barrel file (`export * from './abc'`,
+  `export { ABC } from './abc'`, `import { ABC } from './abc'; export { ABC }`, also through a namespace
+  import `import * as Types from './types'`) resolves to the declaration the barrel re-exports, instead of
+  to whichever scanned file declared that name last.
+- fix(extractor): a name a file declares itself (a type, interface, enum or function, like variables since
+  [#307](https://github.com/i18next/i18next-cli/issues/307)), or imports from a scanned file that declares
+  it, no longer resolves to another file's same-named declaration, also when the extractor cannot read its
+  values (`interface Props { size: string }`).
+- fix(extractor): `useTranslation(NS)` and `{ ns: NS }` read `NS` from the file it is imported from. A file
+  whose own `NS` the extractor cannot read (`const NS = getNs()`) no longer takes another file's `NS`, so its
+  keys go to the default namespace.
+- feat(extractor): new `extract.warnOnAmbiguousTypes` (`true` / `'warn'` / `'error'`, default `false`):
+  warns, or aborts extraction, when the extractor has to guess which of several differently declared
+  same-named types, enums or constants a file means.
+  Fixes [#327](https://github.com/i18next/i18next-cli/issues/327)
+
 ## 1.84.0
 
 - feat: plugins' `afterSync` gets a third argument `{ isDryRun }`, true for `extract --dry-run` and

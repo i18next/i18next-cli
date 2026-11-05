@@ -40,9 +40,10 @@ export class ScopeManager {
   public isParameter: (name: string) => boolean = () => false
 
   // Shared (cross-file) tables so that exported constants from one file can be
-  // resolved when imported in another. These are NOT cleared by reset().
-  private sharedConstants: Map<string, string> = new ValueTable(this)
-  private sharedConstantObjects: Map<string, Record<string, string>> = new ValueTable(this)
+  // resolved when imported in another. These are NOT cleared by reset(). The visitor
+  // replaces them by tables that know which module a name is imported from.
+  public sharedConstants: Map<string, string> = new ValueTable(this)
+  public sharedConstantObjects: Map<string, Record<string, string>> = new ValueTable(this)
 
   constructor (config: Omit<I18nextToolkitConfig, 'plugins'>) {
     this.config = config

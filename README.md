@@ -1084,7 +1084,13 @@ export default defineConfig({
     messageFormat: 'i18next', // Default: 'i18next'
 
     // Warn (or error) when the same ns:key is extracted with different default values.
-    warnOnConflicts: true // Default: false
+    warnOnConflicts: true, // Default: false
+
+    // Warn (or error) when the extractor has to guess which declaration a name means: a type, enum or
+    // constant declared differently in more than one scanned file, which the file reading it neither
+    // declares nor imports from a file the extractor can follow (a global, a package, an unscanned file).
+    // It also reports guesses no key ends up built from.
+    warnOnAmbiguousTypes: 'error' // Default: false
   },
 
   // options for linter

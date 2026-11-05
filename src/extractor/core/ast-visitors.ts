@@ -115,6 +115,9 @@ export class ASTVisitors {
     this.scopeManager.isParameter = (name) => this.expressionResolver.isParameter(name)
     // use shared resolver when provided so captured enums/objects are visible across files
     this.expressionResolver = expressionResolver ?? new ExpressionResolver(this.hooks)
+    // `useTranslation(NS)` reads the `NS` of the module it is imported from, like the resolver's tables (#327)
+    this.scopeManager.sharedConstants = this.expressionResolver.valueTable()
+    this.scopeManager.sharedConstantObjects = this.expressionResolver.valueTable()
     this.callExpressionHandler = new CallExpressionHandler(
       config,
       pluginContext,
@@ -203,9 +206,10 @@ export class ASTVisitors {
         break
       case 'ImportDeclaration':
       case 'ExportNamedDeclaration':
+      case 'ExportAllDeclaration':
         // `import { X as Y }` → ExpressionResolver.sharedImportAliases, resolved
         // once the pre-scan has seen every file; `import * as Types` / `export * as Types`
-        // → namespace names.
+        // → namespace names; `export * from` / `export { X } from` → barrels.
         this.expressionResolver.captureImportDeclaration(node)
         break
     }

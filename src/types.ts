@@ -271,6 +271,19 @@ export interface I18nextToolkitConfig {
      * - `false` or omitted: silent (default)
      */
     warnOnConflicts?: boolean | 'warn' | 'error';
+
+    /**
+     * Warn (or error) when the extractor has to guess which declaration a name means: a type, interface,
+     * enum, constant or function is declared differently in more than one scanned file, and the file reading
+     * it neither declares it nor imports it from a file the extractor can follow (it is a global, or comes
+     * from a package, an unscanned file, a path outside tsconfig `paths`, or `export { default as X }`).
+     * Keys built from it may then come from the wrong declaration. It also reports guesses no key ends up
+     * built from, e.g. a parameter typed by a package's `Props` while two scanned files declare their own.
+     * - `true` or `'warn'`: log a warning for each such name
+     * - `'error'`: abort extraction, listing them
+     * - `false` or omitted: silent (default)
+     */
+    warnOnAmbiguousTypes?: boolean | 'warn' | 'error';
   };
 
   /** Configuration options for linter */

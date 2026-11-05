@@ -1,6 +1,6 @@
 import type { Expression, ObjectExpression, TsType, TemplateLiteral, TsTemplateLiteralType } from '@swc/core'
 import type { ASTVisitorHooks } from '../../types.js'
-import { dirname, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 import { unwrapParens } from './ast-utils.js'
 
 // Whether `next` holds everything `prev` does: every value of a list, every
@@ -100,8 +100,17 @@ const moduleKey = (path: string): string => path.replace(/(\.d)?\.[cm]?[jt]sx?$/
  * generated clients that both declare `components` no longer overwrite each other (#306).
  */
 class ModuleTable<V> extends Map<string, V> {
+  // declared name -> the modules declaring it
+  private declarers: Map<string, Set<string>> = new Map()
+
   constructor (
-    private readonly scope: { keysOf (name: string): string[], declaringKey (name: string): string | undefined, isParameter (name: string): boolean },
+    private readonly scope: {
+      keysOf (name: string): string[],
+      declaringKey (name: string): string | undefined,
+      declare (name: string): void,
+      isParameter (name: string): boolean,
+      guessed (name: string, table: { declarations (name: string): Array<[string, unknown]> }): void
+    },
     private readonly holdsValues = false
   ) {
     super()
@@ -112,9 +121,20 @@ class ModuleTable<V> extends Map<string, V> {
     if (this.holdsValues && this.scope.isParameter(name)) return undefined
     for (const key of this.scope.keysOf(name)) {
       const value = super.get(key)
-      if (value !== undefined) return value
+      if (value === undefined) continue
+      // The bare name holds whichever file declared it last (#327)
+      if (!key.includes('#')) this.scope.guessed(key, this)
+      return value
     }
     return undefined
+  }
+
+  // [module, what it declares] for every module declaring `name`
+  declarations (name: string): Array<[string, V]> {
+    return [...this.declarers.get(name) ?? []].flatMap(module => {
+      const value = super.get(`${module}#${name}`)
+      return value === undefined ? [] : [[module, value] as [string, V]]
+    })
   }
 
   has (name: string): boolean {
@@ -123,7 +143,11 @@ class ModuleTable<V> extends Map<string, V> {
 
   set (name: string, value: V): this {
     const key = this.scope.declaringKey(name)
-    if (key) super.set(key, value)
+    if (key) {
+      super.set(key, value)
+      this.scope.declare(name)
+      this.declarers.set(name, (this.declarers.get(name) ?? new Set<string>()).add(key.slice(0, -name.length - 1)))
+    }
     return super.set(name, value)
   }
 
@@ -262,16 +286,31 @@ export class ExpressionResolver {
   // names from (see ModuleTable)
   private currentModule: string | undefined
   private knownModules: Set<string> = new Set()
-  // module -> local name -> { from: the import's resolved path, name: the declared name }
-  private fileImports: Map<string, Map<string, { from: string, name: string }>> = new Map()
+  // module -> local name -> { from: the import's resolved path, if it is one of this project, name: the declared name }
+  private fileImports: Map<string, Map<string, { from?: string, name: string }>> = new Map()
+  // module -> exported name -> the same for its re-exports: `export { ABC as Letters } from './abc'`
+  private fileExports: Map<string, Map<string, { from?: string, name: string }>> = new Map()
+  // module -> the paths it re-exports everything of: `export * from './abc'`
+  private fileStarExports: Map<string, string[]> = new Map()
   // module -> namespace import's local name -> the import's resolved path
   private fileNamespaces: Map<string, Map<string, string>> = new Map()
-  // module -> the variables it declares, which shadow the same names declared in other files
-  private fileVariables: Map<string, Set<string>> = new Map()
+  // `module#name` of every name a module declares (variable, type, interface, enum, function), also
+  // when its value isn't captured: it shadows the same names declared in other files (#307, #327)
+  private declaredKeys: Set<string> = new Set()
+  // module -> its file, for messages
+  private moduleFiles: Map<string, string> = new Map()
+  // `exportKey` results: a declaration found stays found, one not found may be in a file the
+  // pre-scan has not read yet, so misses are only kept once it is done
+  private exportKeyCache: Map<string, string | undefined> = new Map()
+  private preScanned = false
   // The parameters of the functions being read, innermost last
   private parameters: string[] = []
   // tsconfig `paths`, `@api` -> `/abs/src/api`
   public pathAliases: Record<string, string> = {}
+  // `extract.warnOnAmbiguousTypes`: collect the names the extraction pass had to guess (see `guessed`)
+  public warnOnAmbiguous = false
+  public ambiguities: string[] = []
+  private checkedAmbiguous: Map<object, Set<string>> = new Map()
 
   constructor (hooks: ASTVisitorHooks) {
     this.hooks = hooks
@@ -280,6 +319,7 @@ export class ExpressionResolver {
   public setCurrentFile (file: string): void {
     this.currentModule = moduleKey(resolve(file))
     this.knownModules.add(this.currentModule)
+    this.moduleFiles.set(this.currentModule, file)
   }
 
   // `./api/github-api` / `@api/github-api` imported in the current file -> its path, or undefined
@@ -300,16 +340,85 @@ export class ExpressionResolver {
 
   // ModuleTable: the keys `name` read in the current file may be stored under, most specific first
   public keysOf (name: string): string[] {
-    if (name.includes('#') || !this.currentModule) return [name]
-    const keys: string[] = []
+    // `GH.components` through `import * as GH from './github-api'`, which may be a barrel
+    const at = name.lastIndexOf('#')
+    if (at >= 0) {
+      const key = this.exportKey(name.slice(0, at), name.slice(at + 1))
+      return [key ?? name.slice(at + 1)]
+    }
+    if (!this.currentModule) return [name]
     const imported = this.fileImports.get(this.currentModule)?.get(name)
-    const module = imported && this.moduleOf(imported.from)
-    if (module) keys.push(`${module}#${imported.name}`)
-    keys.push(`${this.currentModule}#${name}`)
-    // A variable of this file never means another file's same-named one, even when its own
-    // value isn't captured (`const params = { count }` vs another file's `params` array) (#307)
-    if (!this.fileVariables.get(this.currentModule)?.has(name)) keys.push(name)
-    return keys
+    const key = imported && this.exportKey(imported.from, imported.name)
+    if (key) return [key]
+    // The bare name holds whichever file declared it last: a guess, only made for a name this file
+    // neither declares nor imports from a file that does (a global, a package, an unscanned file) (#307, #327)
+    const own = `${this.currentModule}#${name}`
+    return this.declaredKeys.has(own) ? [own] : [own, name]
+  }
+
+  /**
+   * The key of the declaration of `name` exported by the module at `path`: in that module, or in the
+   * module it re-exports it from, `export { ABC } from './abc'` / `export * from './abc'` (#327)
+   */
+  private exportKey (path: string | undefined, name: string): string | undefined {
+    const id = `${path}#${name}`
+    if (this.exportKeyCache.has(id)) return this.exportKeyCache.get(id)
+    const key = this.findExportKey(path, name, new Set())
+    if (key || this.preScanned) this.exportKeyCache.set(id, key)
+    return key
+  }
+
+  // ponytail: one search per imported name, cached; nested barrels of thousands of modules make it ~2x slower
+  // than direct imports, a per-module export map (built once the pre-scan is done) if that ever matters
+  private findExportKey (path: string | undefined, name: string, seen: Set<string>): string | undefined {
+    const module = path && this.moduleOf(path)
+    const key = `${module}#${name}`
+    if (!module || seen.has(key)) return undefined
+    seen.add(key)
+    if (this.declaredKeys.has(key)) return key
+    // `export { ABC } from './abc'`, or `import { ABC } from './abc'; export { ABC }`
+    const via = this.fileExports.get(module)?.get(name) ?? this.fileImports.get(module)?.get(name)
+    const found = via && this.findExportKey(via.from, via.name, seen)
+    if (found) return found
+    for (const from of this.fileStarExports.get(module) ?? []) {
+      const starred = this.findExportKey(from, name, seen)
+      if (starred) return starred
+    }
+    return undefined
+  }
+
+  // Record that the current file declares `name`, whether or not its value is captured
+  public declare (name: string): void {
+    if (this.currentModule) this.declaredKeys.add(`${this.currentModule}#${name}`)
+  }
+
+  /**
+   * ModuleTable: `name`, read in the current file, resolved to whichever file declared it last. With
+   * `warnOnAmbiguous`, the extraction pass records it in `ambiguities` when several files declare it
+   * differently (#327).
+   */
+  public guessed (name: string, table: { declarations (name: string): Array<[string, unknown]> }): void {
+    if (!this.warnOnAmbiguous || this.recording || this.replaying || !this.currentModule) return
+    const declared = this.fileImports.get(this.currentModule)?.get(name)?.name ?? name
+    const checked = this.checkedAmbiguous.get(table) ?? new Set<string>()
+    this.checkedAmbiguous.set(table, checked)
+    if (checked.has(`${this.currentModule}#${declared}`)) return
+    checked.add(`${this.currentModule}#${declared}`)
+    const found = table.declarations(declared)
+    // AST nodes of identical declarations differ only by their position, unions only by their order
+    const variants = new Set(found.map(([, value]) => JSON.stringify(value, (k, v) =>
+      k === 'span' || k === 'ctxt' ? undefined : Array.isArray(v) && v.every(x => typeof x === 'string') ? [...v].sort() : v)))
+    if (variants.size < 2) return
+    const fileOf = (module: string) => relative(process.cwd(), this.moduleFiles.get(module) ?? module)
+    const file = fileOf(this.currentModule)
+    const msg = `Cannot tell which "${declared}" ${file} means: ${found.map(([module]) => fileOf(module)).join(', ')} declare it differently, ` +
+      `and ${file} neither declares it nor imports it from a file the extractor can follow. Keys built from it may come from the wrong one.`
+    if (!this.ambiguities.includes(msg)) this.ambiguities.push(msg)
+  }
+
+  // A cross-file table of values that knows which module a name is imported from, for ScopeManager
+  public valueTable<V> (): Map<string, V> {
+    return new ModuleTable<V>(this, true)
   }
 
   // ValueTable / ModuleTable: whether `name` is a parameter of a function being read
@@ -397,6 +506,7 @@ export class ExpressionResolver {
     this.applyImportAliases()
     this.replays = []
     this.resetFileSymbols()
+    this.preScanned = true
   }
 
   /**
@@ -485,10 +595,7 @@ export class ExpressionResolver {
       // only handle simple identifier bindings like `const x = ...`
       if (node.id.type !== 'Identifier') return
       const name = node.id.value
-      if (this.currentModule) {
-        if (!this.fileVariables.has(this.currentModule)) this.fileVariables.set(this.currentModule, new Set())
-        this.fileVariables.get(this.currentModule)!.add(name)
-      }
+      this.declare(name)
 
       // `const items: IProps[] = …` → remember the element's member map so
       // `items.map(({ size }) => …)` can bind the callback parameter.
@@ -613,6 +720,7 @@ export class ExpressionResolver {
     try {
       const name: string | undefined = node?.id?.type === 'Identifier' ? node.id.value : undefined
       if (!name) return
+      this.declare(name)
       // SWC puts the actual type in `.typeAnnotation`
       const tsType = node.typeAnnotation ?? node.typeAnn
       if (!tsType) return
@@ -649,9 +757,17 @@ export class ExpressionResolver {
    */
   captureImportDeclaration (node: any): void {
     try {
-      const from = node?.type === 'ImportDeclaration' && typeof node.source?.value === 'string' ? this.importPath(node.source.value) : undefined
-      const imports = from && this.currentModule ? (this.fileImports.get(this.currentModule) ?? new Map()) : undefined
-      if (imports) this.fileImports.set(this.currentModule!, imports)
+      const module = this.currentModule
+      const from = typeof node?.source?.value === 'string' ? this.importPath(node.source.value) : undefined
+      // `export * from './abc'`
+      if (node?.type === 'ExportAllDeclaration') {
+        if (module && from) this.fileStarExports.set(module, [...this.fileStarExports.get(module) ?? [], from])
+        return
+      }
+      // `import { ABC } from …` / `export { ABC } from …`: local or exported name -> where it is declared
+      const table = node?.type === 'ImportDeclaration' ? this.fileImports : node?.source ? this.fileExports : undefined
+      const imports = module && table ? (table.get(module) ?? new Map()) : undefined
+      if (imports) table!.set(module!, imports)
       for (const spec of node?.specifiers ?? []) {
         // `import * as Types from …` / `export * as Types from …`
         if (spec?.type === 'ImportNamespaceSpecifier' && spec.local?.value) {
@@ -662,12 +778,14 @@ export class ExpressionResolver {
           }
         }
         if (spec?.type === 'ExportNamespaceSpecifier' && spec.name?.value) this.sharedNamespaceNames.add(spec.name.value)
+        // `export { ABC as Letters } from './abc'`
+        if (spec?.type === 'ExportSpecifier' && spec.orig?.value) imports?.set(spec.exported?.value ?? spec.orig.value, { from, name: spec.orig.value })
         if (spec?.type !== 'ImportSpecifier') continue
         const local: string | undefined = spec.local?.value
         const imported: string | undefined = spec.imported?.value ?? local
         if (local && imported && local !== imported) this.sharedImportAliases.set(local, imported)
         // `import { components as githubComponents } from './github-api'` → that module's `components`
-        if (local && imported && imports) imports.set(local, { from: from!, name: imported })
+        if (local && imported) imports?.set(local, { from, name: imported })
       }
     } catch {
       // noop
@@ -735,6 +853,7 @@ export class ExpressionResolver {
     try {
       const name: string | undefined = node?.id?.type === 'Identifier' ? node.id.value : undefined
       if (!name) return
+      this.declare(name)
       if (this.recording) this.replays.push(this.inCurrentFile(() => this.captureInterfaceDeclaration(node)))
       const params = node.typeParams?.parameters
       if (!this.replaying && Array.isArray(node?.body?.body)) this.setObjectTypeRaw(name, node.body.body, params)
@@ -1016,6 +1135,7 @@ export class ExpressionResolver {
     try {
       const name: string | undefined = node?.identifier?.value ?? node?.id?.value
       if (!name) return
+      this.declare(name)
       // SWC places the return type annotation in `.function.returnType` (FunctionDeclaration)
       // or directly in `.returnType` (FunctionExpression / ArrowFunctionExpression).
       this.captureFunctionReturn(name, node.function ?? node)
@@ -1212,6 +1332,7 @@ export class ExpressionResolver {
       if (!node || !node.id || !Array.isArray(node.members)) return
       const name = node.id.type === 'Identifier' ? node.id.value : undefined
       if (!name) return
+      this.declare(name)
       const map: Record<string, string> = {}
       for (const m of node.members) {
         if (!m || !m.id) continue
