@@ -89,8 +89,9 @@ export class ValueTable<V> extends Map<string, V> {
   }
 }
 
-// `/src/api/github-api.ts`, `.d.ts`, or an import of `./github-api.js` -> `/src/api/github-api`
-const moduleKey = (path: string): string => path.replace(/(\.d)?\.[cm]?[jt]sx?$/, '')
+// `/src/api/github-api.ts`, `.d.ts`, or an import of `./github-api.js` -> `/src/api/github-api`;
+// `C:\src\types` -> `C:/src/types`, so `moduleOf` finds its `/index` on Windows too
+const moduleKey = (path: string): string => path.replace(/\\/g, '/').replace(/(\.d)?\.[cm]?[jt]sx?$/, '')
 
 /**
  * A cross-file table keyed by declared name. Every entry is also kept under the module that

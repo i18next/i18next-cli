@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(extractor): names imported through a barrel's `index` file (1.85.0,
+  [#327](https://github.com/i18next/i18next-cli/issues/327)) also resolve on Windows, where the
+  import path kept its backslashes and never matched the `index` file.
+
 ## 1.85.0
 
 - fix(extractor): a type, enum or constant imported through a barrel file (`export * from './abc'`,

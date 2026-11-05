@@ -151,12 +151,12 @@ describe('extractor: names imported through a barrel file (#327)', () => {
         `,
       }, { warnOnAmbiguousTypes: 'warn' }, log)
       expect(log.warnings).toHaveLength(2)
-      expect(log.warnings[0]).toMatch(/^Cannot tell which "ABC" .*src\/use\.ts means: .*src\/types\/abc\.ts, .*src\/types\/xy\.ts declare it differently/)
-      expect(log.warnings[1]).toMatch(/^Cannot tell which "ABC" .*src\/use2\.ts means/)
+      expect(log.warnings[0]).toMatch(/^Cannot tell which "ABC" .*src[\\/]use\.ts means: .*src[\\/]types[\\/]abc\.ts, .*src[\\/]types[\\/]xy\.ts declare it differently/)
+      expect(log.warnings[1]).toMatch(/^Cannot tell which "ABC" .*src[\\/]use2\.ts means/)
     })
 
     it('aborts extraction with "error"', async () => {
-      await expect(keysOf(ambiguous, { warnOnAmbiguousTypes: 'error' })).rejects.toThrow(/Cannot tell which "ABC" .*src\/use\.ts means/)
+      await expect(keysOf(ambiguous, { warnOnAmbiguousTypes: 'error' })).rejects.toThrow(/Cannot tell which "ABC" .*src[\\/]use\.ts means/)
     })
 
     it('does not warn when the file declares the name or imports it from where it is declared, or the declarations agree', async () => {
@@ -184,7 +184,7 @@ describe('extractor: names imported through a barrel file (#327)', () => {
         '/src/c.ts': 'import { LABELS } from "@acme/labels";\ntype K = keyof typeof LABELS;\nt(LABELS.save);',
       }, { warnOnAmbiguousTypes: true }, log)
       expect(log.warnings).toHaveLength(1)
-      expect(log.warnings[0]).toMatch(/^Cannot tell which "LABELS" .*src\/c\.ts means/)
+      expect(log.warnings[0]).toMatch(/^Cannot tell which "LABELS" .*src[\\/]c\.ts means/)
     })
   })
 })
