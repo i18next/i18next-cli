@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- feat: plugins' `afterSync` gets a third argument `{ isDryRun }`, true for `extract --dry-run` and
+  `runExtractor(config, { isDryRun: true })`, so a plugin that writes files can skip that on a dry run.
+  Fixes [#326](https://github.com/i18next/i18next-cli/issues/326)
+
 ## 1.83.0
 
 - feat: `extract.ignoreNamespaces` accepts glob patterns like `status.ignoreKeys` does, so `['dev.*', 'test.*']`

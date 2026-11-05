@@ -733,10 +733,14 @@ export interface Plugin extends LinterPlugin, InstrumenterPlugin {
    * Hook called after all files have been processed and translation files have been generated.
    * Useful for post-processing, validation, or reporting based on the final results.
    *
+   * Also called on a dry run, where no translation file was written.
+   *
    * @param results - Array of translation results with update status and content.
    * @param config - The i18next toolkit configuration object.
+   * @param options - `isDryRun` is true for `extract --dry-run` and `runExtractor(config, { isDryRun: true })`;
+   *   a plugin that writes files should skip that then.
    */
-  afterSync?: (results: TranslationResult[], config: I18nextToolkitConfig) => MaybePromise<void>;
+  afterSync?: (results: TranslationResult[], config: I18nextToolkitConfig, options: { isDryRun: boolean }) => MaybePromise<void>;
 }
 
 /**

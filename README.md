@@ -1200,7 +1200,7 @@ Create custom plugins to extend the capabilities of `i18next-cli`. The plugin sy
 - `extractKeysFromExpression`: Runs for specific expressions during AST traversal to extract additional translation keys. This is ideal for handling custom syntax patterns or complex key generation logic without managing pluralization manually.
 - `extractContextFromExpression`: Runs for specific expressions to extract context values that can't be statically analyzed. Useful for dynamic context patterns or custom context resolution logic.
 - `onEnd`: Runs after all JS/TS files have been parsed but *before* the final keys are compared with existing translation files. This is the ideal hook for parsing non-JavaScript files (like `.html`, `.vue`, or `.svelte`) and adding their keys to the collection.
-- `afterSync`: Runs after the extractor has compared the found keys with your translation files and generated the final results. This is perfect for post-processing tasks, like generating a report of newly added keys.
+- `afterSync`: Runs after the extractor has compared the found keys with your translation files and generated the final results. This is perfect for post-processing tasks, like generating a report of newly added keys. It also runs on a dry run, where no translation file was written: its third argument `{ isDryRun }` tells, so a plugin that writes files can skip that (`afterSync(results, config, { isDryRun }) { if (isDryRun) return; ... }`).
 
 **Lint Plugin Hooks:**
 

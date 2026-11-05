@@ -111,7 +111,7 @@ export async function runExtractor (
     if (plugins.length > 0) {
       spinner.text = 'Running post-extraction plugins...'
       for (const plugin of plugins) {
-        await plugin.afterSync?.(results, config)
+        await plugin.afterSync?.(results, config, { isDryRun: !!options.isDryRun })
       }
     }
 

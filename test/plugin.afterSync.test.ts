@@ -73,9 +73,10 @@ describe('plugin system: afterSync hook', () => {
     expect(afterSyncSpy).toHaveBeenCalledTimes(1)
 
     // 2. Inspect the arguments passed to the hook
-    const [results, receivedConfig] = afterSyncSpy.mock.calls[0]
+    const [results, receivedConfig, options] = afterSyncSpy.mock.calls[0]
     expect(results).toHaveLength(1)
     expect(receivedConfig).toEqual(config)
+    expect(options).toEqual({ isDryRun: false })
 
     // 3. Verify locale and namespace are present on the result
     const primaryLangResult = results[0]
@@ -89,5 +90,21 @@ describe('plugin system: afterSync hook', () => {
     const addedKeys = newKeys.filter(k => !existingKeys.includes(k))
 
     expect(addedKeys).toEqual(['key.new'])
+  })
+
+  it('should tell a dry run apart (#326)', async () => {
+    vol.fromJSON({ '/src/App.tsx': "t('key.new', 'A new key');" })
+    const afterSyncSpy = vi.fn()
+
+    await runExtractor({
+      locales: ['en'],
+      extract: { input: ['src/App.tsx'], output: 'locales/{{language}}/{{namespace}}.json' },
+      plugins: [{ name: 'dry-run-aware', afterSync: afterSyncSpy }],
+    }, { isDryRun: true })
+
+    expect(afterSyncSpy).toHaveBeenCalledTimes(1)
+    expect(afterSyncSpy.mock.calls[0][0][0].updated).toBe(true)
+    expect(afterSyncSpy.mock.calls[0][2]).toEqual({ isDryRun: true })
+    expect(vol.existsSync('/locales/en/translation.json')).toBe(false)
   })
 })
