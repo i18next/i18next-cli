@@ -84,6 +84,24 @@ describe('syncer', () => {
     expect(updatedDeJson).toEqual(expectedDeJson)
   })
 
+  it('leaves missing keys out for the languages in omitMissingKeys', async () => {
+    const frPath = resolve(process.cwd(), 'locales/fr/translation.json')
+    vol.fromJSON({
+      [enPath]: JSON.stringify({ header: { title: 'Welcome', subtitle: 'To the app' }, save: 'Save' }),
+      [dePath]: JSON.stringify({ header: { title: 'Willkommen' }, extra: 'Bonus' }),
+      [frPath]: JSON.stringify({ header: { title: 'Bienvenue' } }),
+    })
+
+    await runSyncer({ ...mockConfig, locales: ['en', 'de', 'fr'], extract: { ...mockConfig.extract, omitMissingKeys: ['de'] } })
+
+    // existing translations stay, obsolete keys go, missing keys are not added
+    expect(JSON.parse(await vol.promises.readFile(dePath, 'utf-8') as string)).toEqual({ header: { title: 'Willkommen' } })
+    expect(JSON.parse(await vol.promises.readFile(frPath, 'utf-8') as string)).toEqual({ header: { title: 'Bienvenue', subtitle: '' }, save: '' })
+
+    await runSyncer({ ...mockConfig, locales: ['en', 'de', 'fr'], extract: { ...mockConfig.extract, omitMissingKeys: true } })
+    expect(JSON.parse(await vol.promises.readFile(enPath, 'utf-8') as string)).toEqual({ header: { title: 'Welcome', subtitle: 'To the app' }, save: 'Save' })
+  })
+
   it('should use the configured defaultValue for missing keys', async () => {
     const enTranslations = { key1: 'Value 1', key2: 'Value 2' }
     const deTranslations = { key1: 'Wert 1' } // key2 is missing

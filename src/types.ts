@@ -148,12 +148,12 @@ export interface I18nextToolkitConfig {
 
     /**
      * Languages that must not receive placeholder keys for newly extracted keys.
-     * A key that does not exist in a listed language's file is left out instead of
-     * being written with `defaultValue`, so i18next falls back to `fallbackLng`
-     * at runtime instead of resolving an empty string. Existing translations are
-     * preserved and unused keys are still removed. `true` omits missing keys for
+     * A key that does not exist in a listed language's file is left out by `extract`
+     * and `sync` instead of being written with `defaultValue`, so i18next falls back to
+     * `fallbackLng` at runtime instead of resolving an empty string. Existing translations
+     * are preserved and unused keys are still removed. `true` omits missing keys for
      * every secondary language. The primary language is never affected.
-     * (default: false — every secondary language gets placeholders)
+     * (default: false, every secondary language gets placeholders)
      */
     omitMissingKeys?: boolean | string[];
 

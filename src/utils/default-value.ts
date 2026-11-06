@@ -1,3 +1,5 @@
+import type { I18nextToolkitConfig } from '../types.js'
+
 /**
  * Resolves the default value for a missing key in secondary languages.
  * Supports both string and function-based default values.
@@ -42,4 +44,19 @@ export function resolveDefaultValue (
   }
 
   return defaultValue || ''
+}
+
+/**
+ * Whether keys missing from `locale`'s file must be left out instead of being written
+ * with a placeholder value (`extract.omitMissingKeys`), by `extract` and by `sync`.
+ * The primary language is never omitted.
+ */
+export function omitsMissingKeysFor (
+  config: Pick<I18nextToolkitConfig, 'extract'>,
+  locale: string,
+  primaryLanguage: string
+): boolean {
+  if (locale === primaryLanguage) return false
+  const omit = config.extract.omitMissingKeys
+  return omit === true || (Array.isArray(omit) && omit.includes(locale))
 }

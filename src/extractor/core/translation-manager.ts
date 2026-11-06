@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { glob } from 'glob'
 import { getNestedValue, setNestedValue, getNestedKeys, deleteNestedValue, naturalLanguageRegexFor, storedKeySeparator } from '../../utils/nested-object.js'
 import { getNamespaceFromOutputPath, getOutputPath, globToRegex, ignoredNamespaceMatcher, loadTranslationFile } from '../../utils/file-utils.js'
-import { resolveDefaultValue } from '../../utils/default-value.js'
+import { resolveDefaultValue, omitsMissingKeysFor } from '../../utils/default-value.js'
 import { ConsoleLogger } from '../../utils/logger.js'
 import { safePluralRules } from '../../utils/plural-rules.js'
 import { parseNestedReferences } from '../../utils/nesting.js'
@@ -11,20 +11,6 @@ import { usesMessageFormat } from '../../utils/message-format.js'
 import { isContextVariantOfAcceptingKey } from '../../utils/context-variants.js'
 
 const pluralForms = ['zero', 'one', 'two', 'few', 'many', 'other']
-
-/**
- * Whether newly extracted keys must be left out of `locale`'s file instead of
- * being written with a placeholder value. The primary language is never omitted.
- */
-function omitsMissingKeysFor (
-  config: I18nextToolkitConfig,
-  locale: string,
-  primaryLanguage: string
-): boolean {
-  if (locale === primaryLanguage) return false
-  const omit = config.extract.omitMissingKeys
-  return omit === true || (Array.isArray(omit) && omit.includes(locale))
-}
 
 /**
  * Detects a nesting conflict for `key` against the object being built.

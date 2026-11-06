@@ -5,7 +5,7 @@ import { dirname, resolve } from 'node:path'
 import { createSpinnerLike } from './utils/wrap-ora.js'
 import { ConsoleLogger } from './utils/logger.js'
 import type { I18nextToolkitConfig, Logger } from './types.js'
-import { resolveDefaultValue } from './utils/default-value.js'
+import { resolveDefaultValue, omitsMissingKeysFor } from './utils/default-value.js'
 import { getNamespaceFromOutputPath, getOutputPath, ignoredNamespaceMatcher, loadTranslationFile, serializeTranslationFile, loadRawJson5Content, inferFormatFromPath } from './utils/file-utils.js'
 import { printUntranslatedFunnel } from './utils/locize-funnel.js'
 import { getNestedKeys, getNestedValue, setNestedValue } from './utils/nested-object.js'
@@ -232,9 +232,12 @@ export async function runSyncer (
           // else: obsolete key — omit it from the output
         }
 
-        // Pass 2: new primary keys not yet in the secondary file
+        // Pass 2: new primary keys not yet in the secondary file, unless the language
+        // leaves them out (`extract.omitMissingKeys`) so i18next falls back to `fallbackLng`
+        const omitMissing = omitsMissingKeysFor(config, lang, primaryLanguage)
         for (const key of primaryKeys) {
           if (!handledKeys.has(key)) {
+            if (omitMissing) continue
             // --changed-only: only propagate keys that changed on this branch
             if (isChangedKey && !isChangedKey(key)) continue
             const primaryValue = getNestedValue(primaryTranslations, key, keySeparator ?? '.')

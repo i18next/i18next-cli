@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- feat: new `extract.omitMissingKeys` (`true` or a list of languages): `extract` and `sync` leave keys
+  that are missing in those secondary languages out of their files instead of writing `defaultValue`
+  (`""`), so i18next falls back to `fallbackLng` at runtime, also where `returnEmptyString: false`
+  can't be set or translators treat an empty string as done. Existing translations stay, unused keys
+  are still removed, and `status` still counts the omitted keys as missing.
+  ([#328](https://github.com/i18next/i18next-cli/pull/328), thanks [@BenjaminVanRyseghem](https://github.com/BenjaminVanRyseghem)).
+
 ## 1.85.1
 
 - fix(extractor): names imported through a barrel's `index` file (1.85.0,
