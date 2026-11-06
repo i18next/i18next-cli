@@ -1,7 +1,7 @@
 import { TranslationResult, ExtractedKey, I18nextToolkitConfig, Logger } from '../../types.js'
 import { resolve } from 'node:path'
 import { glob } from 'glob'
-import { getNestedValue, setNestedValue, getNestedKeys, naturalLanguageRegexFor, storedKeySeparator } from '../../utils/nested-object.js'
+import { getNestedValue, setNestedValue, getNestedKeys, deleteNestedValue, naturalLanguageRegexFor, storedKeySeparator } from '../../utils/nested-object.js'
 import { getNamespaceFromOutputPath, getOutputPath, globToRegex, ignoredNamespaceMatcher, loadTranslationFile } from '../../utils/file-utils.js'
 import { resolveDefaultValue } from '../../utils/default-value.js'
 import { ConsoleLogger } from '../../utils/logger.js'
@@ -11,6 +11,20 @@ import { usesMessageFormat } from '../../utils/message-format.js'
 import { isContextVariantOfAcceptingKey } from '../../utils/context-variants.js'
 
 const pluralForms = ['zero', 'one', 'two', 'few', 'many', 'other']
+
+/**
+ * Whether newly extracted keys must be left out of `locale`'s file instead of
+ * being written with a placeholder value. The primary language is never omitted.
+ */
+function omitsMissingKeysFor (
+  config: I18nextToolkitConfig,
+  locale: string,
+  primaryLanguage: string
+): boolean {
+  if (locale === primaryLanguage) return false
+  const omit = config.extract.omitMissingKeys
+  return omit === true || (Array.isArray(omit) && omit.includes(locale))
+}
 
 /**
  * Detects a nesting conflict for `key` against the object being built.
@@ -946,6 +960,12 @@ function buildNewTranslationsForNs (
           // When syncAll is requested and the primary value has actually diverged from the
           // code-provided default, clear secondary translations so the new primary default
           // can be propagated while secondary locales get a blank/placeholder value.
+          if (omitsMissingKeysFor(config, locale, primaryLanguage)) {
+            // Languages that omit missing keys must not keep a cleared key: dropping it
+            // lets i18next fall back to the (new) primary value at runtime.
+            deleteNestedValue(newTranslations, key, separator)
+            continue
+          }
           valueToSet = resolveDefaultValue(emptyDefaultValue, key, namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
         } else {
           // Preserve existing translation by default
@@ -993,6 +1013,20 @@ function buildNewTranslationsForNs (
             setNestedValue(newTranslations, finalKey, resolvedValue, separator)
           }
         }
+      }
+    }
+  }
+
+  // Omit newly extracted keys for languages configured in `extract.omitMissingKeys`.
+  // A key that did not exist in the file before this run is dropped again, so i18next
+  // falls back to `fallbackLng` at runtime instead of resolving an empty string or
+  // placeholder value. Existing translations are kept untouched.
+  if (omitsMissingKeysFor(config, locale, primaryLanguage)) {
+    const omitSeparator = keySeparator ?? '.'
+    const existingKeyPaths = new Set(getNestedKeys(existingTranslations, omitSeparator))
+    for (const key of getNestedKeys(newTranslations, omitSeparator)) {
+      if (!existingKeyPaths.has(key)) {
+        deleteNestedValue(newTranslations, key, omitSeparator)
       }
     }
   }

@@ -1002,6 +1002,15 @@ export default defineConfig({
     primaryLanguage: 'en', // Defaults to the first locale in the `locales` array
     secondaryLanguages: ['de', 'fr'], // Defaults to all locales except primaryLanguage
 
+    // Languages that should not receive placeholder keys for newly extracted keys.
+    // Missing keys are left out of these files, so i18next falls back to `fallbackLng`
+    // at runtime (an empty string would otherwise win over the fallback). Existing
+    // translations are preserved and unused keys are still removed; `status` still
+    // counts the omitted keys as missing translations. Empty strings already present
+    // in these files are not deleted — remove them once when enabling this option.
+    // `true` omits missing keys for every secondary language. (default: false)
+    omitMissingKeys: ['fr'],
+
     // Default value for missing keys in secondary languages
     // Can be a string, function, or object for flexible fallback strategies
     defaultValue: '', // Simple string: all missing keys get this value

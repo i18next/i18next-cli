@@ -62,6 +62,69 @@ export function setNestedValue (
 }
 
 /**
+ * Deletes a nested value from an object using a key path and separator.
+ * Parent objects that become empty are removed as well, so deleting the only
+ * child of `{ a: { b: 'x' } }` leaves `{}` instead of `{ a: {} }`.
+ *
+ * @param obj - The object to modify
+ * @param path - The key path (e.g., 'user.profile.name')
+ * @param keySeparator - The separator used to split the path, or false for flat keys
+ * @returns true when a value was deleted
+ *
+ * @example
+ * ```typescript
+ * const obj = { user: { profile: { name: 'John' } } }
+ * deleteNestedValue(obj, 'user.profile.name', '.')
+ * // Result: {}
+ * ```
+ */
+export function deleteNestedValue (
+  obj: Record<string, unknown>,
+  path: string,
+  keySeparator: string | false
+): boolean {
+  if (keySeparator === false) {
+    if (!Object.prototype.hasOwnProperty.call(obj, path)) return false
+    delete obj[path]
+    return true
+  }
+
+  // Keys that cannot be used as a path are stored flat (see getNestedValue).
+  if (Object.prototype.hasOwnProperty.call(obj, path)) {
+    delete obj[path]
+    return true
+  }
+
+  const keys = path.split(keySeparator)
+  const parents: Array<[Record<string, unknown>, string]> = []
+  let current: Record<string, unknown> = obj
+
+  for (let i = 0; i < keys.length - 1; i++) {
+    const key = keys[i]
+    const next = current[key]
+    if (typeof next !== 'object' || next === null || Array.isArray(next)) return false
+    parents.push([current, key])
+    current = next as Record<string, unknown>
+  }
+
+  const leaf = keys[keys.length - 1]
+  if (!Object.prototype.hasOwnProperty.call(current, leaf)) return false
+  delete current[leaf]
+
+  for (let i = parents.length - 1; i >= 0; i--) {
+    const [parent, key] = parents[i]
+    const value = parent[key]
+    if (typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).length === 0) {
+      delete parent[key]
+    } else {
+      break
+    }
+  }
+
+  return true
+}
+
+/**
  * Retrieves a nested value from an object using a key path and separator.
  *
  * @param obj - The object to search in
