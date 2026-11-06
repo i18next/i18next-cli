@@ -22,7 +22,8 @@ const config: I18nextToolkitConfig = {
   },
 }
 
-describe('syncer --changed-only', () => {
+// real git repos: on Windows CI the first tests of this file take 3-6s while git warms up
+describe('syncer --changed-only', { timeout: 30_000 }, () => {
   const originalCwd = process.cwd()
   let repo: string
 
