@@ -435,7 +435,7 @@ export function Notices () {
     expect(initContent).toContain("import i18next from 'i18next'")
     expect(initContent).toContain("import Backend from 'i18next-fs-backend'")
     expect(initContent).toContain('.use(Backend)')
-    expect(initContent).toContain('initImmediate: false,')
+    expect(initContent).toContain('initAsync: false,')
     expect(initContent).toContain("preload: ['en', 'de']")
     expect(initContent).toContain('backend: {')
     expect(initContent).toContain('loadPath:')
@@ -490,7 +490,7 @@ export function Notices () {
     // Should NOT use fs-backend (can't assume filesystem) or React imports
     expect(initContent).not.toContain('i18next-fs-backend')
     expect(initContent).not.toContain('initReactI18next')
-    expect(initContent).not.toContain('initImmediate')
+    expect(initContent).not.toContain('initAsync')
   })
 
   it('generates bundled-resources init for edge runtime project', async () => {
@@ -525,7 +525,7 @@ export function Notices () {
     // Should NOT have fs-backend or React-specific imports
     expect(initContent).not.toContain('i18next-fs-backend')
     expect(initContent).not.toContain('initReactI18next')
-    expect(initContent).not.toContain('initImmediate')
+    expect(initContent).not.toContain('initAsync')
   })
 
   // ─────────────────────────────────────────────────────────────────────

@@ -1744,7 +1744,7 @@ function buildDynamicImportPath (outputTemplate: string, initDir: string): strin
  * The generated file's backend strategy depends on the project context:
  * - React app without i18next.t() → `i18next-resources-to-backend` (async dynamic imports)
  * - React app with i18next.t()    → bundled resources (static imports, synchronous)
- * - Server-side (no React)        → `i18next-fs-backend` (filesystem, initImmediate: false + preload)
+ * - Server-side (no React)        → `i18next-fs-backend` (filesystem, initAsync: false + preload)
  */
 async function ensureI18nInitFile (
   hasReact: boolean,
@@ -1816,7 +1816,7 @@ type BackendStrategy = 'resources-to-backend' | 'bundled-resources' | 'fs-backen
  *
  * Decision logic:
  *   1. Node.js server with filesystem → `fs-backend`
- *      (synchronous with `initImmediate: false` + `preload`)
+ *      (synchronous with `initAsync: false` + `preload`)
  *   2. Browser / edge / unknown with `i18next.t()` outside React components →
  *      `bundled-resources` (static imports so resources are available synchronously)
  *   3. Otherwise → `resources-to-backend` (async dynamic imports, lazy-loaded)
@@ -1938,9 +1938,9 @@ function buildInitFileContent (opts: {
   const initOpts: string[] = []
 
   if (strategy === 'fs-backend' && outputTemplate) {
-    initOpts.push('    initImmediate: false,')
+    initOpts.push('    initAsync: false,')
   }
-  initOpts.push('    returnEmptyString: false, // allows empty string as valid translation')
+  initOpts.push('    returnEmptyString: false, // an empty translation falls back (the default since i18next 27)')
   initOpts.push(`    // lng: '${config.locales.at(-1)}', // or add a language detector to detect the preferred language of your user`)
   initOpts.push(`    fallbackLng: '${primaryLang}',`)
   if (defaultNS) {
