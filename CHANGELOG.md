@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.87.0
+
+- chore: depends on i18next 27 and react-i18next 18 (`^27.0.0`, `^18.0.0`). The cli loads react-i18next
+  only to build `<Trans>` keys with its `nodesToString`, whose output is the same in 18, so extracted
+  keys do not change. Projects on i18next 26 or react-i18next 17 keep working: npm installs the cli's
+  own copies next to theirs.
+- fix(instrument): the generated i18next init file for i18next-fs-backend sets `initAsync: false`
+  instead of `initImmediate: false`, an option i18next 26 removed, so it was ignored.
+- fix(instrument): the comment on `returnEmptyString: false` in the generated init file said the
+  opposite of what the option does. It now says that an empty translation falls back, which is the
+  default since i18next 27.
+
 ## 1.86.0
 
 - feat: new `extract.omitMissingKeys` (`true` or a list of languages): `extract` and `sync` leave keys
