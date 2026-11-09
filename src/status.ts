@@ -72,10 +72,11 @@ function classifyValue (value: any): TranslationState {
  *
  * Any category NOT produced by these counts is treated as "optional". The prime
  * example is French `many`, which `Intl.PluralRules` only selects for values
- * ≥ 1,000,000 — the i18next runtime can technically request it, but real apps
- * almost never hit those values (and the runtime falls back to the base key
- * when the variant is missing), so a missing `_many` should be a soft note
- * rather than a hard "missing key" failure.
+ * for exact millions — the i18next runtime can technically request it, but real
+ * apps rarely hit those values (and since i18next 27.1.0 the runtime falls back
+ * to the `_other` form of the same language when the variant is missing; older
+ * versions show the key or the fallback language), so a missing `_many` should
+ * be a soft note rather than a hard "missing key" failure.
  */
 const REPRESENTATIVE_COUNTS: number[] = (() => {
   const counts: number[] = []
