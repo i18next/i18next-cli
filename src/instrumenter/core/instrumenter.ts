@@ -6,13 +6,13 @@ import type { Module } from '@swc/types'
 import type { StringLiteral } from '@swc/core'
 import { prompt } from '../../utils/prompt.js'
 import { styleText } from 'node:util'
-import type { Logger, I18nextToolkitConfig, InstrumenterOptions, CandidateString, FileInstrumentationResult, InstrumentationResults, ComponentBoundary, FileScanResult, LanguageChangeSite, Plugin } from '../../types.js'
+import type { AttributeRules, Logger, I18nextToolkitConfig, InstrumenterOptions, CandidateString, FileInstrumentationResult, InstrumentationResults, ComponentBoundary, FileScanResult, LanguageChangeSite, Plugin } from '../../types.js'
 import { detectCandidate } from './string-detector.js'
 import { transformFile as performTransformation } from './transformer.js'
 import { generateKeyFromContent, createKeyRegistry } from './key-generator.js'
 import { createSpinnerLike } from '../../utils/wrap-ora.js'
 import { ConsoleLogger } from '../../utils/logger.js'
-import { ignoredAttributeSet } from '../../utils/jsx-attributes.js'
+import { ignoredAttributeSet, importAliases, jsxElementName, resolveElementAttributes } from '../../utils/jsx-attributes.js'
 import { normalizeSpansToCharIndices, collectIgnoredLineRanges } from '../../extractor/parsers/ast-utils.js'
 import { getOutputPath } from '../../utils/file-utils.js'
 import { usesMessageFormat, toMessageFormatPlaceholders } from '../../utils/message-format.js'
@@ -324,8 +324,13 @@ async function scanFileForCandidates (
     const functionSpans: Array<{ start: number, end: number }> = []
     collectFunctionSpans(ast, functionSpans)
 
-    // Visit AST to find string literals
-    visitNodeForStrings(ast, content, file, config, candidates)
+    // Visit AST to find string literals; the object form of extract.acceptedAttributes
+    // sets which attributes hold text per JSX element
+    const attributeRules = config.extract.acceptedAttributes
+    const jsx = attributeRules && !Array.isArray(attributeRules)
+      ? { rules: attributeRules, aliases: importAliases(ast) }
+      : undefined
+    visitNodeForStrings(ast, content, file, config, candidates, jsx)
 
     // Detect JSX interpolation patterns (merge adjacent text + expression children)
     detectJSXInterpolation(ast, content, file, config, candidates)
@@ -599,15 +604,26 @@ function isTranslationCall (node: any): boolean {
 
 /**
  * Recursively visits AST nodes to find string literals.
+ * `jsx` carries the per-element attribute rules; at each JSX opening tag it gets
+ * that element's resolved attributes, which apply to the tag's own attributes.
  */
 function visitNodeForStrings (
   node: any,
   content: string,
   file: string,
   config: I18nextToolkitConfig,
-  candidates: CandidateString[]
+  candidates: CandidateString[],
+  jsx?: {
+    rules: AttributeRules,
+    aliases: Map<string, string>,
+    element?: { accepted: Set<string>, removed: Set<string> }
+  }
 ): void {
   if (!node) return
+
+  if (node.type === 'JSXOpeningElement' && jsx) {
+    jsx = { ...jsx, element: resolveElementAttributes(jsx.rules, jsxElementName(node.name, jsx.aliases)) }
+  }
 
   // Skip already-instrumented t() / i18next.t() calls entirely so that
   // strings inside the options object (defaultValue_one, etc.) are not
@@ -627,7 +643,11 @@ function visitNodeForStrings (
       // e.g. data-testid
       attrName = `${nameNode.namespace?.value ?? ''}:${nameNode.name?.value ?? ''}`
     }
-    if (attrName && ignoredAttributeSet.has(attrName)) return
+    // A rule that adds an attribute on this element wins over the built-in skip list (e.g. `name`)
+    const added = attrName != null && jsx?.element?.accepted.has(attrName.toLowerCase())
+    if (attrName && ignoredAttributeSet.has(attrName) && !added) return
+    // A rule removed this attribute on this element: its value is not text, skip it entirely
+    if (attrName && jsx?.element?.removed.has(attrName.toLowerCase())) return
     // For hyphenated names (data-testid), also check with the raw text
     if (attrName?.includes(':')) {
       const hyphenated = attrName.replace(':', '-')
@@ -645,7 +665,8 @@ function visitNodeForStrings (
         stringNode.span.end,
         file,
         content,
-        config
+        config,
+        jsx?.element?.accepted
       )
       if (candidate && candidate.confidence >= 0.7) {
         // Detect JSX attribute context: in JSX, attr="value" has = right before the opening quote
@@ -749,9 +770,9 @@ function visitNodeForStrings (
     const value = node[key]
     if (value && typeof value === 'object') {
       if (Array.isArray(value)) {
-        value.forEach(item => visitNodeForStrings(item, content, file, config, candidates))
+        value.forEach(item => visitNodeForStrings(item, content, file, config, candidates, jsx))
       } else {
-        visitNodeForStrings(value, content, file, config, candidates)
+        visitNodeForStrings(value, content, file, config, candidates, jsx)
       }
     }
   }

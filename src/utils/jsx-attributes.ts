@@ -1,3 +1,5 @@
+import type { AttributeRules } from '../types.js'
+
 /**
  * Shared constants for JSX / HTML attribute classification.
  *
@@ -38,6 +40,67 @@ export const translatableAttributes: readonly string[] = [
 export const translatableAttributeSet: ReadonlySet<string> = new Set(
   translatableAttributes.map(s => s.toLowerCase())
 )
+
+// ────────────────────────────────────────────────────────────────────────
+// Per-element rules (object form of `acceptedAttributes`)
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolves the translatable attributes of one JSX element. The rules are deltas on
+ * the built-in list: a name adds an attribute, `!name` removes it. `'*'` applies first,
+ * then the element's own entry, so an element can re-add what `'*'` removed.
+ * `Select.Option` uses its own key when there is one, else the last segment (`Option`).
+ * Attribute names are lower-cased; `removed` holds those a rule took away.
+ */
+export function resolveElementAttributes (
+  rules: AttributeRules,
+  element: string | null
+): { accepted: Set<string>, removed: Set<string> } {
+  const own = (key: string | undefined) => key && Object.hasOwn(rules, key) && Array.isArray(rules[key]) ? rules[key] : undefined
+  const elementRules = element ? own(element) ?? own(element.split('.').pop()) : undefined
+  const accepted = new Set(translatableAttributeSet)
+  const removed = new Set<string>()
+  for (const entry of [...own('*') ?? [], ...elementRules ?? []]) {
+    const attr = entry.replace(/^!/, '').toLowerCase()
+    if (entry.startsWith('!')) {
+      accepted.delete(attr)
+      removed.add(attr)
+    } else {
+      accepted.add(attr)
+      removed.delete(attr)
+    }
+  }
+  return { accepted, removed }
+}
+
+/**
+ * The name a JSX element is written under, with an imported alias resolved to the
+ * exported name: `<PT>` after `import { PageTitle as PT }` is `PageTitle`, and `<S.Option>`
+ * after `import { Select as S }` is `Select.Option`. Null for `<svg:rect>`-style names.
+ */
+export function jsxElementName (name: any, aliases: ReadonlyMap<string, string>): string | null {
+  if (name?.type === 'Identifier') return aliases.get(name.value) ?? name.value
+  if (name?.type === 'JSXMemberExpression') {
+    const object = jsxElementName(name.object, aliases)
+    return object && name.property?.value ? `${object}.${name.property.value}` : null
+  }
+  return null
+}
+
+/** `import { X as Y }` in a module: local name `Y` → exported name `X`. */
+export function importAliases (ast: any): Map<string, string> {
+  const aliases = new Map<string, string>()
+  for (const item of ast?.body ?? []) {
+    if (item.type !== 'ImportDeclaration') continue
+    for (const spec of item.specifiers ?? []) {
+      // `import { default as Button }` names the component after its local name
+      if (spec.type === 'ImportSpecifier' && spec.imported?.value && spec.imported.value !== 'default') {
+        aliases.set(spec.local.value, spec.imported.value)
+      }
+    }
+  }
+  return aliases
+}
 
 // ────────────────────────────────────────────────────────────────────────
 // Non-translatable (ignored) attributes

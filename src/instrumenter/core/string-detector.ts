@@ -24,6 +24,8 @@ import { translatableAttributeSet, translatablePropertySet } from '../../utils/j
  * @param file - Source file path
  * @param code - Full source code for context
  * @param config - Toolkit configuration
+ * @param translatableAttributes - Lower-cased attribute names that hold text on the enclosing JSX element
+ *   (from the per-element `extract.acceptedAttributes` rules); defaults to the built-in list
  * @returns CandidateString with confidence score, or null if should be skipped
  */
 export function detectCandidate (
@@ -32,9 +34,10 @@ export function detectCandidate (
   endOffset: number,
   file: string,
   code: string,
-  config: Omit<I18nextToolkitConfig, 'plugins'>
+  config: Omit<I18nextToolkitConfig, 'plugins'>,
+  translatableAttributes: ReadonlySet<string> = translatableAttributeSet
 ): CandidateString | null {
-  const skipReason = shouldSkip(content, file, code, offset, endOffset, config)
+  const skipReason = shouldSkip(content, file, code, offset, endOffset, translatableAttributes)
   if (skipReason) {
     return null
   }
@@ -69,7 +72,7 @@ export function detectCandidate (
     // customResult === undefined → fall through to built-in heuristic
   }
 
-  const confidence = calculateConfidence(content, code, offset)
+  const confidence = calculateConfidence(content, code, offset, translatableAttributes)
 
   return {
     content,
@@ -94,7 +97,7 @@ function shouldSkip (
   code: string,
   offset: number,
   endOffset: number,
-  config: Omit<I18nextToolkitConfig, 'plugins'>
+  translatableAttributes: ReadonlySet<string>
 ): string | null {
   // Skip test files
   if (file.match(/\.(test|spec)\.(ts|tsx|js|jsx)$/i)) {
@@ -142,7 +145,7 @@ function shouldSkip (
   }
 
   // Skip HTML/JSX attribute values that are clearly technical
-  if (isAttributeValue(code, offset)) {
+  if (isAttributeValue(code, offset, translatableAttributes)) {
     return 'HTML attribute value'
   }
 
@@ -231,7 +234,6 @@ function isConsoleArgument (code: string, offset: number): boolean {
 
 // Translatable attribute and property sets are defined in
 // utils/jsx-attributes.ts and shared with the linter.
-const TRANSLATABLE_ATTRIBUTES = translatableAttributeSet
 const TRANSLATABLE_PROPERTIES = translatablePropertySet
 
 /**
@@ -240,7 +242,7 @@ const TRANSLATABLE_PROPERTIES = translatablePropertySet
  * Translatable attributes (placeholder, title, alt, aria-label, etc.) are
  * allowed through so they can be instrumented.
  */
-function isAttributeValue (code: string, offset: number): boolean {
+function isAttributeValue (code: string, offset: number, translatableAttributes: ReadonlySet<string>): boolean {
   // Note: offset points at the opening quote character, so beforeStr goes up to
   // (but does not include) that quote. We check for `attr=` at the end.
   const beforeStr = code.substring(Math.max(0, offset - 50), offset)
@@ -253,7 +255,7 @@ function isAttributeValue (code: string, offset: number): boolean {
   if (match) {
     const attrName = match[1].toLowerCase()
     // Allow translatable attributes to pass through
-    if (TRANSLATABLE_ATTRIBUTES.has(attrName)) {
+    if (translatableAttributes.has(attrName)) {
       return false
     }
     return true
@@ -270,7 +272,7 @@ function isAttributeValue (code: string, offset: number): boolean {
  * High-confidence strings should still be reviewed by developers before final deployment.
  * Use this as a first pass to identify candidates, not as an authoritative decision.
  */
-function calculateConfidence (content: string, code: string, offset: number): number {
+function calculateConfidence (content: string, code: string, offset: number, translatableAttributes: ReadonlySet<string>): number {
   let confidence = 0.5 // Base confidence
 
   // Longer sentences are more likely to be translatable
@@ -319,7 +321,7 @@ function calculateConfidence (content: string, code: string, offset: number): nu
   const attrCtxMatch = beforeContext.match(/([\w-]+)\s*=$/)
   if (attrCtxMatch) {
     const attrName = attrCtxMatch[1].toLowerCase()
-    if (TRANSLATABLE_ATTRIBUTES.has(attrName)) {
+    if (translatableAttributes.has(attrName)) {
       confidence += 0.15 // Translatable attribute — boost
     } else {
       confidence -= 0.2

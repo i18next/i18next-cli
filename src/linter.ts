@@ -6,7 +6,7 @@ import { EventEmitter } from 'node:events'
 import { styleText } from 'node:util'
 import { ConsoleLogger } from './utils/logger.js'
 import { createSpinnerLike } from './utils/wrap-ora.js'
-import { translatableAttributes, ignoredAttributeLowerSet, ignoredTags as sharedIgnoredTags, acceptedTags as sharedAcceptedTags } from './utils/jsx-attributes.js'
+import { translatableAttributes, ignoredAttributeLowerSet, ignoredTags as sharedIgnoredTags, acceptedTags as sharedAcceptedTags, importAliases, jsxElementName, resolveElementAttributes } from './utils/jsx-attributes.js'
 import { normalizeSpansToCharIndices, collectIgnoredLineRanges, lineColumnFromOffset } from './extractor/parsers/ast-utils.js'
 import { matchesFunctionPattern } from './extractor/utils/function-matcher.js'
 import { ASTVisitors } from './extractor/core/ast-visitors.js'
@@ -978,9 +978,15 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
   const acceptedTagsList = acceptAllTags ? null : (rawAcceptedTags?.map((s: string) => s.toLowerCase()) ?? null)
   const lintAcceptedAttrs = config?.lint?.acceptedAttributes ? config.lint.acceptedAttributes : null
   const extractAcceptedAttrs = config?.extract?.acceptedAttributes ? config.extract.acceptedAttributes : null
-  const acceptedAttributesList = (lintAcceptedAttrs ?? extractAcceptedAttrs ?? recommendedAcceptedAttributes)?.map((s: string) => s.toLowerCase()) ?? null
+  const rawAcceptedAttrs = lintAcceptedAttrs ?? extractAcceptedAttrs ?? recommendedAcceptedAttributes
+  // The object form sets the accepted attributes per JSX element (resolveElementAttributes)
+  const attributeRules = Array.isArray(rawAcceptedAttrs) ? null : rawAcceptedAttrs
+  const aliases = attributeRules ? importAliases(ast) : new Map<string, string>()
+  const acceptedAttributesList = Array.isArray(rawAcceptedAttrs) ? rawAcceptedAttrs.map((s: string) => s.toLowerCase()) : null
   const acceptedTagsSet = acceptedTagsList && acceptedTagsList.length > 0 ? new Set(acceptedTagsList) : null
   const acceptedAttributesSet = acceptedAttributesList && acceptedAttributesList.length > 0 ? new Set(acceptedAttributesList) : null
+  // Attribute-only mode: accepted attributes are set, accepted tags are not (acceptedTags: 'all' is not attribute-only)
+  const attributesOnly = (acceptedAttributesSet || attributeRules) && !acceptedTagsSet && !acceptAllTags
 
   // Helper: robustly extract a JSX element name from different node shapes
   const extractJSXName = (node: any): string | null => {
@@ -1095,7 +1101,7 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
       // If acceptedAttributesSet exists but acceptedTagsSet does not, we're in attribute-only mode:
       // do not collect JSXText nodes when attribute-only mode is active.
       // (acceptedTags: 'all' is not attribute-only mode — it lints text in every tag.)
-      if (acceptedAttributesSet && !acceptedTagsSet && !acceptAllTags) {
+      if (attributesOnly) {
         // attribute-only mode: skip JSXText
       } else {
         const isIgnored = isWithinIgnoredElement(currentAncestors)
@@ -1139,10 +1145,12 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
           return
         }
 
-        // If acceptedAttributesSet exists, only lint attributes explicitly accepted.
-        const shouldLintAttribute = acceptedAttributesSet
-          ? (attrNameLower != null && acceptedAttributesSet.has(attrNameLower))
-          : (attrNameLower != null ? !ignoredAttributes.has(attrNameLower) : false)
+        // If accepted attributes are set (per element or globally), only lint attributes explicitly accepted.
+        const shouldLintAttribute = attributeRules
+          ? (attrNameLower != null && resolveElementAttributes(attributeRules, jsxElementName(parentElement?.name, aliases)).accepted.has(attrNameLower))
+          : acceptedAttributesSet
+            ? (attrNameLower != null && acceptedAttributesSet.has(attrNameLower))
+            : (attrNameLower != null ? !ignoredAttributes.has(attrNameLower) : false)
         if (shouldLintAttribute) {
           const text = node.value.trim()
           // Filter out: empty strings, URLs, numbers, and ellipsis
@@ -1160,7 +1168,7 @@ function findHardcodedStrings (ast: any, code: string, config: I18nextToolkitCon
       if (isJsxChildExpression && !insideIgnored) {
         // Respect attribute-only mode: when acceptedAttributes is set without acceptedTags,
         // only attribute strings are linted — skip JSX child text.
-        if (!(acceptedAttributesSet && !acceptedTagsSet && !acceptAllTags)) {
+        if (!attributesOnly) {
           const text = node.value.trim()
           if (text && text.length > 1 && text !== '...' && !isUrlOrPath(text) && isNaN(Number(text)) && !text.startsWith('{{')) {
             nodesToLint.push(node)

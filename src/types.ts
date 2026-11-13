@@ -1,6 +1,13 @@
 import type { Expression, Node, ObjectExpression } from '@swc/core'
 
 /**
+ * Which attributes hold translatable text, per JSX element (the object form of `acceptedAttributes`),
+ * e.g. `{ '*': ['!label'], Button: ['label'], 'Select.Option': ['hint'] }`. The same prop name can mean
+ * different things on different components: `label` is a button's text but a chart axis's data key.
+ */
+export type AttributeRules = Record<string, string[]>
+
+/**
  * Main configuration interface for the i18next toolkit.
  * Defines all available options for extraction, type generation, synchronization, and integrations.
  *
@@ -94,13 +101,18 @@ export interface I18nextToolkitConfig {
     /** A list of JSX tag names whose content should be ignored when linting (e.g., 'code', 'pre'). */
     ignoredTags?: string[];
 
-    /** for linting: Optional accept-list of JSX attribute names to exclusively lint (takes precedence over ignoredAttributes).
+    /** The JSX attributes that hold translatable text.
      *
-     * If not provided (and no `extract.acceptedAttributes` is set), the linter will fall back to a recommended
-     * built-in accepted-list of common translatable attributes (e.g. `alt`, `title`, `placeholder`, `aria-label`, ...).
-     * See README for the exact recommended list.
+     * An array is an accept-list of attribute names to exclusively lint (takes precedence over ignoredAttributes).
+     * If not provided, the linter will fall back to a recommended built-in accepted-list of common translatable
+     * attributes (e.g. `alt`, `title`, `placeholder`, `aria-label`, ...). See README for the exact recommended list.
+     *
+     * An object sets them per JSX element, for `lint` and `instrument`:
+     * `{ '*': ['!label'], Button: ['label'], 'Select.Option': ['hint'] }`. A name adds an attribute to the
+     * recommended list, `!name` removes it; `'*'` applies first, then the element's own entry. Attribute names
+     * are case-insensitive; element keys are case-sensitive and match through `import { X as Y }` aliases.
      */
-    acceptedAttributes?: string[];
+    acceptedAttributes?: string[] | AttributeRules;
 
     /** for linting: Optional accept-list of JSX tag names to exclusively lint (takes precedence over ignoredTags).
      *
@@ -310,8 +322,10 @@ export interface I18nextToolkitConfig {
      * If not provided (and no `extract.acceptedAttributes` is set), the linter will fall back to a recommended
      * built-in accepted-list of common translatable attributes (e.g. `alt`, `title`, `placeholder`, `aria-label`, ...).
      * See README for the exact recommended list.
+     *
+     * Also takes the per-element object form described at `extract.acceptedAttributes` (here for `lint` only).
      */
-    acceptedAttributes?: string[];
+    acceptedAttributes?: string[] | AttributeRules;
 
     /** for linting: Optional accept-list of JSX tag names to exclusively lint (takes precedence over ignoredTags).
      *

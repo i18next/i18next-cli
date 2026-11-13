@@ -529,7 +529,7 @@ The instrumenter uses confidence heuristics to avoid transforming:
 - CSS class names and technical identifiers
 - Developer-facing error codes (all-caps patterns like `ERROR_NOT_FOUND`)
 - `console.log/warn/error` arguments
-- HTML attribute values that appear technical
+- HTML attribute values that appear technical (which attributes hold text can be set per element, see [Translatable attributes per element](#translatable-attributes-per-element))
 - Template literals with only expressions (no static text)
 - Strings already inside `t()` calls or `<Trans>` components
 - **Module-scope strings** — anything outside a function body, e.g. a top-level config/registry array:
@@ -1104,7 +1104,8 @@ export default defineConfig({
 
   // options for linter
   lint: {
-    /** Optional accept-list of JSX attribute names to exclusively lint (takes precedence over ignoredAttributes). */
+    /** Optional accept-list of JSX attribute names to exclusively lint (takes precedence over ignoredAttributes).
+     * An object sets them per element, see "Translatable attributes per element". */
     acceptedAttributes: ['title'],
 
     /** Optional accept-list of JSX tag names to exclusively lint (takes precedence over ignoredTags).
@@ -1199,6 +1200,38 @@ export default defineConfig({
   }
 });
 ```
+
+### Translatable attributes per element
+
+The same prop name can mean different things on different components: `label` is a button's text but a chart axis's data key. Give `acceptedAttributes` an object to say per JSX element which props hold text:
+
+```typescript
+import { defineConfig } from 'i18next-cli';
+
+export default defineConfig({
+  locales: ['en', 'de'],
+  extract: {
+    input: ['src/**/*.{js,jsx,ts,tsx}'],
+    output: 'public/locales/{{language}}/{{namespace}}.json',
+    acceptedAttributes: {
+      '*': ['!label'],         // label is not text, except where an element adds it back
+      Button: ['label'],
+      PageTitle: ['heading'],
+      'Select.Option': ['hint']
+    }
+  },
+  lint: {
+    acceptedTags: 'all' // lint checks attributes only on the elements acceptedTags lets through
+  }
+});
+```
+
+- A name adds an attribute to the recommended list (`recommendedAcceptedAttributes`), `!name` removes it. `'*'` applies to every element first, then the element's own entry, so an element can add back what `'*'` removed.
+- Attribute names are case-insensitive (`helpText` and `helptext` are the same attribute).
+- Element keys are case-sensitive, as in JSX (`Select` is a component, `select` the HTML element), and match the imported name through aliases: after `import { PageTitle as PT }`, `<PT>` uses the `PageTitle` entry.
+- `<Select.Option>` uses the `Select.Option` entry when there is one, otherwise `Option`.
+- Set in `extract`, the rules apply to `instrument` and `lint`; `lint.acceptedAttributes` overrides them for `lint` only. `instrument` wraps the values of added attributes (also ones it skips by default, such as `name`) and leaves the strings of removed ones alone, `{...}` expressions included; JSX and `count === 1 ? … : …` plurals inside a removed attribute are still checked. The array form stays a `lint`-only accept-list.
+- `lint` checks attributes only on the elements `acceptedTags` lets through, and the recommended tags are HTML tags: for your components use `acceptedTags: 'all'` or list them.
 
 ## Advanced Features
 

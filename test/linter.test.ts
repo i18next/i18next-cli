@@ -803,6 +803,43 @@ describe('Linter (core logic)', () => {
     expect(texts).toContain('Default title text')
   })
 
+  it('per-element acceptedAttributes (object form in extract) decide which props hold text on which element', async () => {
+    const customConfig: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: {
+        ...mockConfig.extract,
+        // `label` is a button's text but a chart's data key
+        acceptedAttributes: { '*': ['!label'], Button: ['label'], PageTitle: ['heading'], 'Select.Option': ['HINT'] },
+      },
+      lint: { acceptedTags: 'all' },
+    }
+    const sampleCode = `
+      import { PageTitle as PT, Select as S } from './ui'
+      const el = (
+        <div>
+          <PT heading="Welcome to the dashboard" />
+          <Chart label="revenue by month" title="Revenue by month" />
+          <Button label="Save changes" />
+          <S.Option hint="Pick a region" />
+          <Option hint="Not text here" />
+        </div>
+      )
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const texts = (await runLinter(customConfig)).files['/src/App.tsx'].map(i => i.text)
+    expect(texts.sort()).toEqual(['Pick a region', 'Revenue by month', 'Save changes', 'Welcome to the dashboard'])
+
+    // lint.acceptedAttributes still overrides extract.acceptedAttributes
+    const lintOnly = await runLinter({ ...customConfig, lint: { acceptedTags: 'all', acceptedAttributes: ['label'] } })
+    expect(lintOnly.files['/src/App.tsx'].map(i => i.text).sort()).toEqual(['Save changes', 'revenue by month'])
+
+    // attribute-only mode (acceptedTags: []) also works with the object form: JSX text is left out
+    vol.fromJSON({ '/src/App.tsx': '<Button label="Save changes">Some button text</Button>' })
+    const attributesOnly = await runLinter({ ...customConfig, lint: { acceptedTags: [] } })
+    expect(attributesOnly.files['/src/App.tsx'].map(i => i.text)).toEqual(['Save changes'])
+  })
+
   it('defaults: recommendedAcceptedTags are respected but default ignoredTags still win (code is ignored)', async () => {
     const sampleCode = `
       <div>
