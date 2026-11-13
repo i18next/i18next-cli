@@ -93,23 +93,66 @@ describe('native source-default selection', () => {
     expect(allKeys.get('labels:welcome')?.defaultValueSource).toBe('fallback')
   })
 
-  it('preserves explicit empty defaults and literal namespace-like JSX text', async () => {
-    source(`
-      const text = <Trans i18nKey="labels|welcome">Welcome</Trans>;
-      const empty = <Trans i18nKey="labels|welcome" defaults="" />;
-      const literal = <Trans i18nKey="labels|literal">labels|literal</Trans>;
-      t('labels|literal');
-    `)
-    expect(await labels()).toEqual({ welcome: '', literal: 'labels|literal' })
+  it('never lets an empty default outrank text, and keeps literal namespace-like JSX text', async () => {
+    for (const order of [['text', 'empty'], ['empty', 'text']]) {
+      const lines = {
+        text: 'const text = <Trans i18nKey="labels|welcome">Welcome</Trans>;',
+        empty: 'const empty = <Trans i18nKey="labels|welcome" defaults="" />;',
+      }
+      vol.reset()
+      source(`
+        ${order.map(name => lines[name as keyof typeof lines]).join('\n')}
+        const literal = <Trans i18nKey="labels|literal">labels|literal</Trans>;
+        t('labels|literal');
+      `)
+      expect(await labels()).toEqual({ welcome: 'Welcome', literal: 'labels|literal' })
+    }
     vol.fromJSON({
       '/locales/en/labels.json': JSON.stringify({ welcome: { old: 'Stale object' } }),
       '/locales/fr/labels.json': JSON.stringify({ welcome: 'Bienvenue' }),
     })
     const results = await extract(config)
     expect(results.find(r => r.locale === 'en' && r.namespace === 'labels')?.newTranslations)
-      .toEqual({ welcome: '', literal: 'labels|literal' })
+      .toEqual({ welcome: 'Welcome', literal: 'labels|literal' })
     expect(results.find(r => r.locale === 'fr' && r.namespace === 'labels')?.newTranslations)
       .toMatchObject({ welcome: 'Bienvenue' })
+  })
+
+  it('settles an empty default against a key fallback the same way in every order', async () => {
+    const emptyConfig = { ...config, extract: { ...config.extract, defaultValue: '' } }
+    const outputs = []
+    for (const calls of [
+      "t('labels|k'); t('labels|k', ''); t('labels|n', { count: 2 }); t('labels|n', '', { count: 2 });",
+      "t('labels|k', ''); t('labels|k'); t('labels|n', '', { count: 2 }); t('labels|n', { count: 2 });",
+    ]) {
+      vol.reset()
+      source(calls)
+      const results = await extract(emptyConfig)
+      outputs.push(results.find(r => r.locale === 'en' && r.namespace === 'labels')?.newTranslations)
+    }
+    expect(outputs[0]).toEqual(outputs[1])
+    expect(outputs[0]).toMatchObject({ k: '' })
+  })
+
+  it('writes what i18next 27 and react-i18next 18 render for an empty default', async () => {
+    source(`
+      t('labels|call', '');
+      t('labels|option', { defaultValue: '' });
+      const blank = <Trans i18nKey="labels|blank" defaults="" />;
+      const children = <Trans i18nKey="labels|children" defaults="">Children text</Trans>;
+    `)
+    const results = await extract({ ...config, extract: { ...config.extract, defaultValue: undefined } })
+    // t() returns an explicit '' default; Trans falls back to its children, then the key
+    expect(results.find(r => r.locale === 'en' && r.namespace === 'labels')?.newTranslations)
+      .toEqual({ call: '', option: '', blank: 'blank', children: 'Children text' })
+  })
+
+  it('uses the children when defaults is not a string literal', async () => {
+    source(`
+      const dynamic = <Trans i18nKey="labels|dynamic" defaults={someDefault}>Children text</Trans>;
+      const counted = <Trans i18nKey="labels|counted" count={2} defaults={someDefault}>{{ count }} children</Trans>;
+    `)
+    expect(await labels()).toMatchObject({ dynamic: 'Children text', counted_other: '{{count}} children' })
   })
 
   it('selects resolved defaults across files and ordinal/context variants without erasing translations', async () => {

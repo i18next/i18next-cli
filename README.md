@@ -1261,8 +1261,8 @@ Create custom plugins to extend the capabilities of `i18next-cli`. The plugin sy
 Native `t()` and `<Trans>` submissions include `defaultValueSource`: `'explicit'`
 for supplied defaults, `'inferred'` for serialized JSX children, or `'fallback'`
 for synthesized key text. When both submissions have this metadata, duplicate
-keys prefer explicit defaults over inferred text over fallbacks; equal-priority
-defaults keep the first occurrence. Plugins may also supply this optional field.
+keys prefer explicit defaults over inferred text over an empty default (`''`) over
+fallbacks; equal-priority defaults keep the first occurrence. Plugins may also supply this optional field.
 It is independent of `explicitDefault`, which controls whether existing plural
 translations may be overwritten: a count-interpolated shorthand default can have
 `defaultValueSource: 'explicit'` while `explicitDefault` remains `false`.

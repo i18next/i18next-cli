@@ -389,7 +389,8 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
   }
 
   const explicitDefault = defaultAttributeLiteral !== undefined || optionsHasDefaultProps(optionsNode)
-  const defaultValueSource = defaultAttributeLiteral !== undefined
+  // `defaults=""` is not a default: react-i18next falls back to the children, then the key
+  const defaultValueSource = defaultAttributeLiteral
     ? 'explicit'
     : serialized.trim() ? 'inferred' : 'fallback'
 

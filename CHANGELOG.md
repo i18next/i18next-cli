@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.88.0
+
+- feat(lint, instrument): `acceptedAttributes` also takes an object that sets the translatable attributes
+  per JSX element, e.g. `{ '*': ['!label'], Button: ['label'], 'Select.Option': ['hint'] }`: a name adds
+  an attribute to the recommended list, `!name` removes it, `'*'` applies first. The same prop name can
+  mean different things on different components (`label` is a button's text but a chart axis's data
+  key). Set in `extract`, the rules apply to `lint` and now also to `instrument`; the array form is
+  unchanged. See "Translatable attributes per element" in the README.
+- fix(extract): when a `t()` or `<Trans>` key appears more than once, a default given in source
+  (`t('key', 'Text')`, `defaults="..."`) now wins over `<Trans>` children, and both win over a fallback
+  built from the key, whatever the order of files and calls; an empty default (`''`) beats only the
+  key fallback, never text. An empty `<Trans i18nKey="ns:key" />` no longer blocks the text of a later
+  `<Trans>`. A default equal to the key now counts as a source default: `t('key', 'key')` keeps its
+  value next to `t('key', 'Text')` (the first one wins), and `warnOnConflicts` flags the pair.
+  `warnOnConflicts` no longer flags a plural key without a default. Plugins get where a default came
+  from in the new optional `ExtractedKey.defaultValueSource`.
+  ([#329](https://github.com/i18next/i18next-cli/pull/329), thanks [@skoeva](https://github.com/skoeva)).
+- fix(extract): the primary language gets what i18next 27 and react-i18next 18 render for an empty
+  default. `t('key', '')` and `t('key', { defaultValue: '' })` write `""` instead of the key, since
+  i18next 27 returns `''` for them (plural forms included). `<Trans defaults="">` still writes its
+  children or the key, which is what react-i18next falls back to.
+- docs: the Quick Start has a copyable one-prompt setup for coding agents
+  (`npx i18next-cli localize --print-agent-prompt`).
+
 ## 1.87.0
 
 - chore: depends on i18next 27 and react-i18next 18 (`^27.0.0`, `^18.0.0`). The cli loads react-i18next

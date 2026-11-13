@@ -282,7 +282,7 @@ export class JSXHandler {
             return {
               key,
               ns,
-              defaultValue: defaultValue ?? serializedChildren,
+              defaultValue: defaultValue || serializedChildren,
               defaultValueSource,
               hasCount,
               isOrdinal,
@@ -335,7 +335,7 @@ export class JSXHandler {
             return {
               key,
               ns,
-              defaultValue: defaultValue ?? serializedChildren,
+              defaultValue: defaultValue || serializedChildren,
               defaultValueSource,
               hasCount,
               isOrdinal,

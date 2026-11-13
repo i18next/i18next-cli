@@ -143,9 +143,11 @@ export function createPluginContext (
         }
 
         // Prefer source defaults when origins are known; keep legacy plugin deduplication otherwise.
-        const priorities = { fallback: 0, inferred: 1, explicit: 2 }
+        // An empty default ranks between a key fallback and text: it beats the key, never real text.
+        const priorities = { fallback: 0, empty: 1, inferred: 2, explicit: 3 }
+        const rank = (source: NonNullable<ExtractedKey['defaultValueSource']>, value?: string) => value === '' ? priorities.empty : priorities[source]
         const replaceDefault = existingKey.defaultValueSource && keyInfo.defaultValueSource
-          ? priorities[keyInfo.defaultValueSource] > priorities[existingKey.defaultValueSource]
+          ? rank(keyInfo.defaultValueSource, defaultValue) > rank(existingKey.defaultValueSource, existingKey.defaultValue)
           : isExistingGenericFallback && !isNewGenericFallback
         if (replaceDefault) {
           allKeys.set(uniqueKey, {
