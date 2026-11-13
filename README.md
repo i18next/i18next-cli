@@ -1250,6 +1250,15 @@ Create custom plugins to extend the capabilities of `i18next-cli`. The plugin sy
 - `onEnd`: Runs after all JS/TS files have been parsed but *before* the final keys are compared with existing translation files. This is the ideal hook for parsing non-JavaScript files (like `.html`, `.vue`, or `.svelte`) and adding their keys to the collection.
 - `afterSync`: Runs after the extractor has compared the found keys with your translation files and generated the final results. This is perfect for post-processing tasks, like generating a report of newly added keys. It also runs on a dry run, where no translation file was written: its third argument `{ isDryRun }` tells, so a plugin that writes files can skip that (`afterSync(results, config, { isDryRun }) { if (isDryRun) return; ... }`).
 
+Native `t()` and `<Trans>` submissions include `defaultValueSource`: `'explicit'`
+for supplied defaults, `'inferred'` for serialized JSX children, or `'fallback'`
+for synthesized key text. When both submissions have this metadata, duplicate
+keys prefer explicit defaults over inferred text over fallbacks; equal-priority
+defaults keep the first occurrence. Plugins may also supply this optional field.
+It is independent of `explicitDefault`, which controls whether existing plural
+translations may be overwritten: a count-interpolated shorthand default can have
+`defaultValueSource: 'explicit'` while `explicitDefault` remains `false`.
+
 **Lint Plugin Hooks:**
 
 - `lintSetup(context)`: Runs once before linting starts. Receives `LintPluginContext` with `config` and `logger`.

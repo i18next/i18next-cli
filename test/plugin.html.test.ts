@@ -118,6 +118,7 @@ describe('plugin system: html', () => {
       key: 'a.tsx.key',
       ns: 'translation',
       defaultValue: 'From TSX',
+      defaultValueSource: 'explicit',
       nsIsImplicit: false
     })
     // Verify locations field exists
@@ -146,6 +147,7 @@ describe('plugin system: html', () => {
         explicitDefault: true,
         ns: 'translation',
         defaultValue: 'From TSX',
+        defaultValueSource: 'explicit',
         nsIsImplicit: false,
         locations: [
           {
