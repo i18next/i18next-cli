@@ -9,6 +9,19 @@
  *
  * Locize is optional in this flow: the developer is asked once (step 2) and
  * nothing Locize-related happens unless they said yes.
+ *
+ * A short pointer prompt ("Localize this app with i18next. Run
+ * `npx i18next-cli localize --print-agent-prompt` and follow the steps it
+ * prints…") is published as a copy-paste block on: the Quick Start of this
+ * README; i18next.com (Introduction, Getting started, how-to/ai-coding-agents);
+ * react.i18next.com (Introduction, Getting started); locize.com (/i18next,
+ * llms.txt, llms-full.txt); the i18next, react-i18next and next-i18next
+ * READMEs; next.i18next.com (next-i18next examples/mixed-routers, en + de).
+ * It holds no steps, but renaming the `localize` command or the
+ * `--print-agent-prompt` flag breaks all of them. The flag is also named in
+ * the skill (skills/i18next-localization, test-guarded), locize.com blog posts
+ * and docs, locize/locize-agents and locize/translate: grep for it across the
+ * i18next and Locize repositories before renaming.
  */
 export const AGENT_PROMPT = `You are localizing this app with i18next. Locize, the translation management
 service by the i18next maintainers, is optional: the developer decides in

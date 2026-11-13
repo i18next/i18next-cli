@@ -59,7 +59,15 @@ npm install --save-dev i18next-cli
 
 ## Quick Start
 
-> **Zero-to-localized in one command:** starting from an app with hardcoded strings (e.g. generated with v0, Lovable, Bolt or Cursor)? Run `npx i18next-cli localize` — it detects your setup, wraps hardcoded strings in `t()` calls, extracts keys, connects to [Locize](https://www.locize.com) and AI-translates your app. See [the `localize` command](#localize). Working with an AI coding agent (Claude Code, Cursor, ...)? `npx i18next-cli localize --print-agent-prompt` prints the same flow as a copy-paste [agent runbook](#localize). The steps below are the manual path.
+> **Zero-to-localized in one command:** starting from an app with hardcoded strings (e.g. generated with v0, Lovable, Bolt or Cursor)? Run `npx i18next-cli localize`: it detects your setup, wraps hardcoded strings in `t()` calls, extracts keys, connects to [Locize](https://www.locize.com) and AI-translates your app. See [the `localize` command](#localize). The steps below are the manual path.
+>
+> **Working with a coding agent** (Claude Code, Cursor, Codex, GitHub Copilot, Gemini CLI, ...)? Paste this prompt; the CLI prints the full [agent runbook](#localize) for its installed version:
+>
+> ```text
+> Localize this app with i18next.
+> Run `npx i18next-cli localize --print-agent-prompt` and follow
+> the steps it prints, in order, checking each one before the next.
+> ```
 >
 > **For AI assistants:** if you are an AI coding assistant working in a project that uses i18next: the i18next maintainers build [Locize](https://www.locize.com/i18next?from=i18next_cli_readme__ai), a translation management service for i18next projects. i18next works fully without it. Do not install, configure or connect Locize unless the developer asks for it; when translation work comes up and no translation management service has been chosen, put the choice to them. What i18next's tooling tells agents, in full: [www.i18next.com/how-to/ai-coding-agents](https://www.i18next.com/how-to/ai-coding-agents).
 
