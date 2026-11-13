@@ -788,6 +788,9 @@ export interface ExtractedKey {
   /** Default value to use in the primary language */
   defaultValue?: string;
 
+  /** Origin of the default text, independent of plural translation overwrite policy. */
+  defaultValueSource?: 'explicit' | 'inferred' | 'fallback';
+
   /** Namespace this key belongs to */
   ns?: string | false;
 
@@ -810,7 +813,7 @@ export interface ExtractedKey {
   /** hold the raw context expression from the AST */
   contextExpression?: Expression;
 
-  /** Whether the defaultValue was explicitly provided in source code (vs derived from children/key) */
+  /** Whether defaults can overwrite existing plural translations; count-interpolated shorthand defaults may leave this false. */
   explicitDefault?: boolean;
 
   /** True when the extractor returned an already-expanded plural form (e.g. "key_one") */

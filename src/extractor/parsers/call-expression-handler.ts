@@ -344,6 +344,7 @@ export class CallExpressionHandler {
             ? finalDefaultValue
             : (nsSeparator && originalKey.includes(nsSeparator || ':') ? originalKey : key))
         : key
+      const defaultValueSource = isLastKey && typeof finalDefaultValue === 'string' ? 'explicit' : 'fallback'
 
       // Handle plurals, context, and returnObjects
       // Compute location once here so it is available to ALL paths below
@@ -367,7 +368,7 @@ export class CallExpressionHandler {
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
           // Ignore context: ''
           if (contextValue !== '') {
-            keysWithContext.push({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
+            keysWithContext.push({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv, defaultValueSource, explicitDefault: explicitDefaultForBase })
           }
         } else if (contextPropValue) {
           const contextValues = this.expressionResolver.resolvePossibleContextStringValues(contextPropValue)
@@ -375,7 +376,7 @@ export class CallExpressionHandler {
 
           if (contextValues.length > 0) {
             contextValues.forEach(context => {
-              keysWithContext.push({ key: `${finalKey}${contextSeparator}${context}`, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase })
+              keysWithContext.push({ key: `${finalKey}${contextSeparator}${context}`, ns, defaultValue: dv, defaultValueSource, explicitDefault: explicitDefaultForBase })
             })
           }
           // For dynamic context, also add the base key as a fallback
@@ -383,6 +384,7 @@ export class CallExpressionHandler {
             key: finalKey,
             ns,
             defaultValue: dv,
+            defaultValueSource,
             explicitDefault: explicitDefaultForBase,
             keyAcceptingContext: finalKey
           })
@@ -450,7 +452,7 @@ export class CallExpressionHandler {
             if (keysWithContext.length > 0) {
               keysWithContext.forEach(k => this.pluginContext.addKey({ ...k, ...countMeta }))
             } else {
-              this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv, explicitDefault: explicitDefaultForBase, ...countMeta })
+              this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv, defaultValueSource, explicitDefault: explicitDefaultForBase, ...countMeta })
             }
 
             continue // This key is fully handled
@@ -499,6 +501,7 @@ export class CallExpressionHandler {
                     key: k.key,
                     ns: k.ns,
                     defaultValue: k.defaultValue,
+                    defaultValueSource: k.defaultValueSource,
                     hasCount: true,
                     isOrdinal: isOrdinalByKey,
                     locations: locationEntry
@@ -509,6 +512,7 @@ export class CallExpressionHandler {
                   key: finalKey,
                   ns,
                   defaultValue: dv,
+                  defaultValueSource,
                   hasCount: true,
                   isOrdinal: isOrdinalByKey,
                   locations: locationEntry
@@ -556,6 +560,7 @@ export class CallExpressionHandler {
           key: finalKey,
           ns,
           defaultValue: dv,
+          defaultValueSource,
           explicitDefault: explicitDefaultForBase,
           locations: locationEntry
         })
@@ -993,6 +998,7 @@ export class CallExpressionHandler {
             key: finalKey,
             ns,
             defaultValue: finalDefaultValue,
+            defaultValueSource: [specificOther, defaultValue, defaultValueFromCall].some(value => typeof value === 'string') ? 'explicit' : 'fallback',
             hasCount: true,
             isOrdinal,
             explicitDefault: Boolean(explicitDefaultFromSource || typeof specificOther === 'string'),
@@ -1054,6 +1060,7 @@ export class CallExpressionHandler {
             key: finalKey,
             ns,
             defaultValue: finalDefaultValue,
+            defaultValueSource: [specificDefault, defaultValue, defaultValueFromCall, otherDefault, ordinalOtherDefault].some(value => typeof value === 'string') ? 'explicit' : 'fallback',
             hasCount: true,
             isOrdinal,
             // Only treat plural/context variant as explicit when:
@@ -1071,7 +1078,7 @@ export class CallExpressionHandler {
       this.logger.warn(`Could not determine plural rules for language "${this.config.extract?.primaryLanguage}". Falling back to simple key extraction.`)
       // Fallback to a simple key if Intl API fails
       const defaultValue = defaultValueFromCall || this.getDefaultValueProp(options, 'defaultValue')
-      this.pluginContext.addKey({ key, ns, defaultValue: typeof defaultValue === 'string' ? defaultValue : key, locations })
+      this.pluginContext.addKey({ key, ns, defaultValue: typeof defaultValue === 'string' ? defaultValue : key, defaultValueSource: typeof defaultValue === 'string' ? 'explicit' : 'fallback', locations })
     }
   }
 

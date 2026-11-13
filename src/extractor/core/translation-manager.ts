@@ -677,7 +677,7 @@ function buildNewTranslationsForNs (
   }
 
   // 1. Build the object first, without any sorting.
-  for (const { key, defaultValue, explicitDefault, hasCount, isExpandedPlural, isOrdinal } of filteredKeys) {
+  for (const { key, defaultValue, defaultValueSource, explicitDefault, hasCount, isExpandedPlural, isOrdinal } of filteredKeys) {
     // If this is a base plural key (hasCount true but not an already-expanded variant)
     // and we detected explicit expanded variants for this base, skip expanding the base.
     if (hasCount && !isExpandedPlural) {
@@ -812,18 +812,19 @@ function buildNewTranslationsForNs (
       : !parentPrefixesInNewKeys.has(key)
 
     const isDerivedDefault = isDerivedFromKey(key, defaultValue, explicitDefault)
+    const hasDefaultValue = Boolean(defaultValue) || (defaultValue === '' && defaultValueSource === 'explicit')
 
     // Determine if we should preserve an existing object
     const shouldPreserveObject = typeof existingValue === 'object' && existingValue !== null && (
       objectKeys.has(key) || // Explicit returnObjects
-      !defaultValue || defaultValue === key // No explicit default or default equals key
+      !hasDefaultValue || defaultValue === key // No explicit default or default equals key
     )
 
     const isStaleObject = typeof existingValue === 'object' && existingValue !== null && isLeafInNewKeys && !objectKeys.has(key) && !shouldPreserveObject
 
     const primaryShouldPreserveObject = typeof primaryExistingValue === 'object' && primaryExistingValue !== null && (
       objectKeys.has(key) ||
-      !defaultValue || defaultValue === key
+      !hasDefaultValue || defaultValue === key
     )
 
     const primaryIsStaleObject = typeof primaryExistingValue === 'object' && primaryExistingValue !== null && isLeafInNewKeys && !objectKeys.has(key) && !primaryShouldPreserveObject
@@ -840,7 +841,7 @@ function buildNewTranslationsForNs (
       if (locale === primaryLanguage) {
         if (syncPrimaryWithDefaults) {
           valueToSet =
-            (defaultValue && (!isDerivedDefault || trustDerivedDefaults))
+            (hasDefaultValue && (!isDerivedDefault || trustDerivedDefaults))
               ? (defaultValue as any)
               : resolveDefaultValue(
                 emptyDefaultValue,
@@ -855,7 +856,7 @@ function buildNewTranslationsForNs (
           if (isDerivedDefault && configuredDefaultValue !== undefined) {
             valueToSet = resolveDefaultValue(configuredDefaultValue as any, key, namespace || config?.extract?.defaultNS || 'translation', locale, defaultValue)
           } else {
-            valueToSet = (defaultValue as any) || key
+            valueToSet = hasDefaultValue ? (defaultValue as any) : key
           }
         }
       } else {
@@ -880,7 +881,7 @@ function buildNewTranslationsForNs (
         // provided in source code, preserve the existing value.
         if (isVariantKey && !explicitDefault) {
           valueToSet = existingValue
-        } else if (defaultValue && (!isDerivedDefault || trustDerivedDefaults)) {
+        } else if (hasDefaultValue && (!isDerivedDefault || trustDerivedDefaults)) {
           valueToSet = resolveDefaultValue(
             defaultValue as any,
             key,

@@ -1,5 +1,5 @@
 import type { Expression, JSXAttribute, JSXAttributeOrSpread, JSXElement, JSXElementChild, JSXElementName, JSXExpression, ObjectExpression } from '@swc/core'
-import type { I18nextToolkitConfig } from '../../types.js'
+import type { ExtractedKey, I18nextToolkitConfig } from '../../types.js'
 import { getObjectPropValue, getObjectPropValueExpression, isSimpleTemplateLiteral, usesIntervalPostProcessor } from './ast-utils.js'
 import { toMessageFormatPlaceholders } from '../../utils/message-format.js'
 import { createRequire } from 'node:module'
@@ -124,6 +124,8 @@ export interface ExtractedJSXAttributes {
 
   /** Default value to use in the primary language */
   defaultValue?: string;
+
+  defaultValueSource?: ExtractedKey['defaultValueSource'];
 
   /** Namespace this key belongs to (if defined on <Trans />) */
   ns?: string;
@@ -387,12 +389,16 @@ export function extractFromTransComponent (node: JSXElement, config: I18nextTool
   }
 
   const explicitDefault = defaultAttributeLiteral !== undefined || optionsHasDefaultProps(optionsNode)
+  const defaultValueSource = defaultAttributeLiteral !== undefined
+    ? 'explicit'
+    : serialized.trim() ? 'inferred' : 'fallback'
 
   return {
     keyExpression,
     serializedChildren: serialized,
     ns,
     defaultValue,
+    defaultValueSource,
     hasCount,
     isOrdinal,
     contextExpression,

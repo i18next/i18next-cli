@@ -96,10 +96,12 @@ export function createPluginContext (
 
       // Built-in warnOnConflicts check
       if (warnOnConflicts) {
-        // Skip generic fallbacks (defaultValue === key) — these are the normal
+        // Skip generic fallbacks — these are the normal
         // "override generic with specific" path handled by deduplication and
         // should not trigger a conflict warning.
-        const isGenericFallback = defaultValue === keyInfo.key
+        const isGenericFallback = keyInfo.defaultValueSource
+          ? keyInfo.defaultValueSource === 'fallback'
+          : defaultValue === keyInfo.key
         const prev = seenDefaults.get(uniqueKey)
         if (prev !== undefined && prev !== defaultValue && !isGenericFallback) {
           const msg =
@@ -140,8 +142,12 @@ export function createPluginContext (
           ]
         }
 
-        // If existing value is a generic fallback and new value is specific, replace it
-        if (isExistingGenericFallback && !isNewGenericFallback) {
+        // Prefer source defaults when origins are known; keep legacy plugin deduplication otherwise.
+        const priorities = { fallback: 0, inferred: 1, explicit: 2 }
+        const replaceDefault = existingKey.defaultValueSource && keyInfo.defaultValueSource
+          ? priorities[keyInfo.defaultValueSource] > priorities[existingKey.defaultValueSource]
+          : isExistingGenericFallback && !isNewGenericFallback
+        if (replaceDefault) {
           allKeys.set(uniqueKey, {
             ...keyInfo,
             ns: storedNs || config.extract?.defaultNS || 'translation',
