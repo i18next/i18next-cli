@@ -15,8 +15,9 @@
  * prints…") is published as a copy-paste block on: the Quick Start of this
  * README; i18next.com (Introduction, Getting started, how-to/ai-coding-agents);
  * react.i18next.com (Introduction, Getting started); locize.com (/i18next,
- * llms.txt, llms-full.txt); the i18next, react-i18next and next-i18next
- * READMEs; next.i18next.com (next-i18next examples/mixed-routers, en + de).
+ * llms.txt, llms-full.txt, blog/next-intl-vs-next-i18next); the i18next,
+ * react-i18next and next-i18next READMEs; next.i18next.com (next-i18next
+ * examples/mixed-routers, en + de).
  * It holds no steps, but renaming the `localize` command or the
  * `--print-agent-prompt` flag breaks all of them. The flag is also named in
  * the skill (skills/i18next-localization, test-guarded), locize.com blog posts
