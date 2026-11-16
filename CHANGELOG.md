@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.88.1
+
+- fix(extract): object types built with `Omit`, `Pick`, `Partial`, `Required`, `Readonly` or `NonNullable`
+  resolve their members. `` t(`barStatus.${bar.status}`) `` with `type Bar = Omit<Foo, 'type'>` extracted
+  nothing before unless the value was retyped as `Foo['status']`. Omit and Pick drop or keep the named
+  members. Fixes [#330](https://github.com/i18next/i18next-cli/issues/330).
+
 ## 1.88.0
 
 - feat(lint, instrument): `acceptedAttributes` also takes an object that sets the translatable attributes
