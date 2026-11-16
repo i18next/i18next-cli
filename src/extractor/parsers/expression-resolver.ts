@@ -988,6 +988,14 @@ export class ExpressionResolver {
         if (args?.length && params) {
           return this.withTypeParams(params, args, () => this.collectObjectTypeMembers(this.objectTypeMembersRaw.get(name) ?? []))
         }
+        // `Omit<Foo, 'type'>`, `Pick<Foo, 'status'>`, `Partial<Foo>` → Foo's members, without or only the named ones
+        if (args?.length && ['Omit', 'Pick', 'Partial', 'Required', 'Readonly', 'NonNullable'].includes(name)) {
+          const members = this.resolveTypeMembers(args[0])
+          if (!members || (name !== 'Omit' && name !== 'Pick')) return members
+          const keys = new Set(this.resolvePossibleStringValuesFromType(args[1]))
+          const kept = Object.entries(members).filter(([path]) => keys.has(path.split('.')[0]) === (name === 'Pick'))
+          return kept.length > 0 ? Object.fromEntries(kept) : undefined
+        }
         return this.objectTypeTable.get(name)
       }
     } catch {}

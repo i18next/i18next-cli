@@ -70,3 +70,44 @@ describe('extractor: types inferred from function returns and derived types (#29
     `)).toEqual(['first.BLUE', 'inferred.BLUE', 'inferred.YELLOW', 'typed.BLUE', 'typed.YELLOW'])
   })
 })
+
+describe('extractor: object types built with utility types (#330)', () => {
+  beforeEach(() => {
+    vol.reset()
+  })
+
+  it('resolves the members of Omit, Pick, Partial, Required, Readonly and NonNullable', async () => {
+    expect(await keysOf(`
+      type Foo = { type: string; status: 'A' | 'B'; kind: 'x' | 'y'; nested?: { level: 'lo' | 'hi' } }
+      type Bar = Omit<Foo, 'type'>
+      declare function getBar(): Bar
+      const bar: Bar = getBar()
+      t(\`barStatus.\${bar.status}\`)
+      t(\`level.\${bar.nested?.level}\`)
+      const kindOf = (v: Pick<Foo, 'kind'>) => t(\`kind.\${v.kind}\`)
+      const statusOf = ({ status }: Partial<Readonly<Required<Foo>>>) => t(\`partial.\${status}\`)
+      declare const nested: NonNullable<Foo['nested']>
+      t(\`nonNullable.\${nested.level}\`)
+      declare const raw: string
+      t(\`indexed.\${raw as Bar['status']}\`)
+    `)).toEqual([
+      'barStatus.A', 'barStatus.B',
+      'indexed.A', 'indexed.B',
+      'kind.x', 'kind.y',
+      'level.hi', 'level.lo',
+      'nonNullable.hi', 'nonNullable.lo',
+      'partial.A', 'partial.B',
+    ])
+  })
+
+  it('drops the members Omit removes and Pick leaves out', async () => {
+    expect(await keysOf(`
+      type Foo = { type: string; status: 'A' | 'B'; kind: 'x' | 'y' }
+      declare const omitted: Omit<Foo, 'status' | 'type'> & { status: 'C' }
+      t(\`omitted.\${omitted.status}\`)
+      declare const picked: Pick<Foo, 'kind'> & { status: 'D' }
+      t(\`picked.\${picked.status}\`)
+      t(\`pickedKind.\${picked.kind}\`)
+    `)).toEqual(['omitted.C', 'picked.D', 'pickedKind.x', 'pickedKind.y'])
+  })
+})
