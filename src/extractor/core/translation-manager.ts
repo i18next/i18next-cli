@@ -972,10 +972,17 @@ function buildNewTranslationsForNs (
     if (separator && typeof separator === 'string') {
       const conflictingPath = findNestingConflict(newTranslations, key, separator)
       if (conflictingPath !== null) {
-        logger.error(
-          `Error: Nesting conflict: key "${key}" conflicts with existing key "${conflictingPath}". ` +
-          `"${key}" will be skipped — fix the overlapping key paths in your source code to avoid missing translations at runtime.`
-        )
+        // The keys come from the code, the same for every language: reported once, with the primary one (or
+        // the first language, when the primary one is not among them)
+        if (locale === (config.locales.includes(primaryLanguage) ? primaryLanguage : config.locales[0])) {
+          const conflict = conflictingPath === key
+            ? `key "${key}" is also the parent of nested keys ("${key}${separator}…")`
+            : `key "${key}" conflicts with existing key "${conflictingPath}"`
+          logger.error(
+            `Error: Nesting conflict: ${conflict}. ` +
+            `"${key}" will be skipped — fix the overlapping key paths in your source code to avoid missing translations at runtime.`
+          )
+        }
         continue
       }
     }

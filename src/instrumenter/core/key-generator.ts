@@ -12,6 +12,9 @@
 export function generateKeyFromContent (content: string): string {
   // Remove punctuation and split by whitespace and word boundaries
   const normalized = content
+    // A placeholder's name gives words of its own: `{{unreadNews}}` → unread News
+    .replace(/\{\{\s*([^}]*?)\s*\}\}/g, (_, name: string) => ` ${name.replace(/([a-z0-9])([A-Z])/g, '$1 $2')} `)
+    .replace(/_/g, ' ') // `_` separates plural and context suffixes in i18next keys: none in a generated one
     .replace(/[^\w\s\d]/g, '') // Remove punctuation
     .trim()
 
@@ -19,20 +22,21 @@ export function generateKeyFromContent (content: string): string {
     return 'key'
   }
 
-  // Split on whitespace and camelCase
+  // Split on whitespace and camelCase; whole words up to MAX_KEY_LENGTH, the first word always
   const words = normalized.split(/\s+/)
-  const camelCased = words
-    .map((word, index) => {
-      if (index === 0) {
-        return word.toLowerCase()
-      }
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-    })
-    .join('')
+  let camelCased = ''
+  for (const [index, word] of words.entries()) {
+    const part = index === 0 ? word.toLowerCase() : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    if (index > 0 && camelCased.length + part.length > MAX_KEY_LENGTH) break
+    camelCased += part
+  }
 
   // If result is empty, use fallback
   return camelCased.length > 0 ? camelCased : 'key'
 }
+
+/** A key names its text, it does not repeat it: a long sentence's key keeps its first words. */
+const MAX_KEY_LENGTH = 40
 
 /**
  * Interface for tracking generated keys and managing collisions
@@ -40,7 +44,12 @@ export function generateKeyFromContent (content: string): string {
 export interface KeyRegistry {
   keys: Map<string, string> // key -> original content that generated it
   add (key: string, content: string): string // Returns the final key (may have suffix if collision)
+  /** Marks a key as taken, by a text (reused for the same text) or, without one, by nested keys under it. */
+  reserve (key: string, content?: string): void
 }
+
+/** The content of a key reserved as the parent of nested keys: no text matches it. */
+const PARENT_KEY = '\u0000'
 
 /**
  * Creates a new key registry with collision detection.
@@ -50,6 +59,9 @@ export function createKeyRegistry (): KeyRegistry {
 
   return {
     keys,
+    reserve (key: string, content?: string): void {
+      if (!keys.has(key)) keys.set(key, content ?? PARENT_KEY)
+    },
     add (baseKey: string, content: string): string {
       const existing = keys.get(baseKey)
 

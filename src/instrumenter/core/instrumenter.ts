@@ -6,15 +6,17 @@ import type { Module } from '@swc/types'
 import type { StringLiteral } from '@swc/core'
 import { prompt } from '../../utils/prompt.js'
 import { styleText } from 'node:util'
-import type { AttributeRules, Logger, I18nextToolkitConfig, InstrumenterOptions, CandidateString, FileInstrumentationResult, InstrumentationResults, ComponentBoundary, FileScanResult, LanguageChangeSite, Plugin } from '../../types.js'
-import { detectCandidate } from './string-detector.js'
+import type { AttributeRules, ExtractedKey, Logger, I18nextToolkitConfig, InstrumenterOptions, CandidateString, FileInstrumentationResult, InstrumentationResults, ComponentBoundary, FileScanResult, ImportDeclarationSpan, LanguageChangeSite, MemoHookSpan, Plugin, PluralHelperImport } from '../../types.js'
+import { detectCandidate, HTML_ENTITY_RE } from './string-detector.js'
 import { transformFile as performTransformation } from './transformer.js'
 import { generateKeyFromContent, createKeyRegistry } from './key-generator.js'
 import { createSpinnerLike } from '../../utils/wrap-ora.js'
 import { ConsoleLogger } from '../../utils/logger.js'
-import { ignoredAttributeSet, importAliases, jsxElementName, resolveElementAttributes } from '../../utils/jsx-attributes.js'
+import { ignoredAttributeSet, ignoredTags, importAliases, jsxElementName, resolveElementAttributes, translatablePropertySet } from '../../utils/jsx-attributes.js'
 import { normalizeSpansToCharIndices, collectIgnoredLineRanges } from '../../extractor/parsers/ast-utils.js'
-import { getOutputPath } from '../../utils/file-utils.js'
+import { getOutputPath, readProjectDeps } from '../../utils/file-utils.js'
+import { findKeys } from '../../extractor/core/key-finder.js'
+import { matchesFunctionPattern } from '../../extractor/utils/function-matcher.js'
 import { usesMessageFormat, toMessageFormatPlaceholders } from '../../utils/message-format.js'
 
 /**
@@ -49,6 +51,26 @@ export async function runInstrumenter (
     let totalSkipped = 0
     let totalLanguageChanges = 0
     let usesI18nextT = false
+    // The same warning for many files is printed once, with the files below it
+    const warnings = new Map<string, string[]>()
+    const warnFor = (where: string, message: string) => {
+      warnings.set(message, [...(warnings.get(message) ?? []), where])
+    }
+    let moduleScopeTotal = 0
+    // The code imports i18next before it is instrumented: it is set up already, here or in a shared package
+    let i18nextInUse = false
+
+    // Keys the code uses already: a new text gets another key, unless it is the same text, and no new key is
+    // the parent of nested ones (`tenants` beside `tenants.title` is a nesting conflict at extract)
+    // Best effort, without plugins (their hooks are for extract): a file it cannot read reserves nothing
+    const separator = config.extract.keySeparator ?? '.'
+    const existingKeys = await findKeys({ ...config, plugins: [] }, { info () {}, warn () {}, error () {} })
+      .then(found => found.allKeys, () => new Map<string, ExtractedKey>())
+    for (const { key, defaultValue } of existingKeys.values()) {
+      const parent = separator ? key.split(separator)[0] : key
+      if (parent !== key) keyRegistry.reserve(parent)
+      else keyRegistry.reserve(key, defaultValue ?? key)
+    }
 
     // Detect framework and language
     const hasReact = await isProjectUsingReact()
@@ -83,23 +105,26 @@ export async function runInstrumenter (
         const loadResult = await runInstrumentOnLoadPipeline(content, file, plugins, logger)
         if (loadResult === null) continue // plugin says skip this file
         content = loadResult
+        i18nextInUse ||= I18NEXT_IMPORT_RE.test(content)
 
         const scanResult = await scanFileForCandidates(content, file, config)
         let { candidates } = scanResult
-        const { components, languageChangeSites } = scanResult
+        const { components, languageChangeSites, imports, memoHooks, pluralHelperImports } = scanResult
 
         // Run instrumentOnResult plugin pipeline
         candidates = await runInstrumentOnResultPipeline(file, candidates, plugins, logger)
 
+        if (scanResult.ownTSkipped) {
+          totalCandidates += scanResult.ownTSkipped
+          totalSkipped += scanResult.ownTSkipped
+          warnFor(`${file} (${scanResult.ownTSkipped})`, 'Skipped the texts of components that declare a `t` of their own (not a translation function): rename it, then run instrument again.')
+        }
+
         if (scanResult.moduleScopeSkipped > 0) {
           totalCandidates += scanResult.moduleScopeSkipped
           totalSkipped += scanResult.moduleScopeSkipped
-          logger.warn(
-            `${file}: skipped ${scanResult.moduleScopeSkipped} module-scope string(s). ` +
-            'A t() call there runs once at import time — before i18next may be initialized — and never updates on language change. ' +
-            'Move the text into a component/hook (e.g. a useSections() hook calling useTranslation()), or read the key at render time. ' +
-            'See: https://www.locize.com/blog/how-to-use-i18next-t-outside-react-components/'
-          )
+          moduleScopeTotal += scanResult.moduleScopeSkipped
+          warnFor(`${file} (${scanResult.moduleScopeSkipped})`, MODULE_SCOPE_WARNING)
         }
 
         if (candidates.length === 0 && languageChangeSites.length === 0) {
@@ -128,7 +153,7 @@ export async function runInstrumenter (
 
             switch (action) {
               case 'approve':
-                candidate.key = generateKeyFromContent(candidate.content)
+                candidate.key = keyRegistry.add(generateKeyFromContent(keySourceOf(candidate)), candidate.content)
                 break
               case 'skip':
                 candidate.skipReason = 'User skipped'
@@ -139,10 +164,11 @@ export async function runInstrumenter (
                     type: 'input',
                     name: 'key',
                     message: 'New key:',
-                    default: generateKeyFromContent(candidate.content)
+                    default: generateKeyFromContent(keySourceOf(candidate))
                   }
                 ])
                 candidate.key = key
+                keyRegistry.reserve(key, candidate.content)
                 break
               }
               case 'edit-value': {
@@ -155,7 +181,7 @@ export async function runInstrumenter (
                   }
                 ])
                 candidate.content = value
-                candidate.key = generateKeyFromContent(value)
+                candidate.key = keyRegistry.add(generateKeyFromContent(value), value)
                 break
               }
             }
@@ -169,10 +195,7 @@ export async function runInstrumenter (
           // Generate keys for approved candidates
           for (const candidate of approvedCandidates) {
             if (!candidate.key) {
-              candidate.key = keyRegistry.add(
-                generateKeyFromContent(candidate.content),
-                candidate.content
-              )
+              candidate.key = keyRegistry.add(generateKeyFromContent(keySourceOf(candidate)), candidate.content)
             }
           }
 
@@ -191,7 +214,10 @@ export async function runInstrumenter (
               config,
               components,
               namespace: targetNamespace,
-              languageChangeSites
+              languageChangeSites,
+              imports,
+              memoHooks,
+              pluralHelperImports
             }
           )
 
@@ -210,17 +236,16 @@ export async function runInstrumenter (
             usesI18nextT = true
           }
 
-          // Log any warnings (e.g. i18next.t() in React files)
-          if (transformResult.warnings?.length) {
-            for (const warning of transformResult.warnings) {
-              logger.warn(warning)
-            }
+          // Collect warnings (e.g. i18next.t() in React files) and candidates that could not be rewritten
+          for (const warning of [...(transformResult.warnings ?? []), ...transformResult.errors]) {
+            warnFor(file, warning.startsWith(`${file}: `) ? warning.slice(file.length + 2) : warning)
           }
 
           results.push({
             file,
             candidates: approvedCandidates,
-            result: transformResult
+            result: transformResult,
+            languageChangeSites
           })
         } else {
           totalSkipped += candidates.length
@@ -235,8 +260,16 @@ export async function runInstrumenter (
       styleText('bold', `Scanned complete: ${totalCandidates} candidates, ${totalTransformed} approved${langChangeSuffix}`)
     )
 
+    for (const [message, where] of warnings) {
+      const head = message === MODULE_SCOPE_WARNING ? `Skipped ${moduleScopeTotal} module-scope string(s). ${message}` : message
+      logger.warn(`${head}\n${where.map(w => `  ${w}`).join('\n')}`)
+    }
+
     // Generate i18n init file if needed and any transformations were made
-    if ((totalTransformed > 0 || totalLanguageChanges > 0) && !options.isDryRun) {
+    if ((totalTransformed > 0 || totalLanguageChanges > 0) && !options.isDryRun && i18nextInUse) {
+      logger.info('Your code imports i18next already, so it is set up somewhere: no i18n init file generated.')
+    }
+    if ((totalTransformed > 0 || totalLanguageChanges > 0) && !options.isDryRun && !i18nextInUse) {
       const initFilePath = await ensureI18nInitFile(hasReact, hasTypeScript, config, logger, usesI18nextT)
       if (initFilePath) {
         await injectI18nImportIntoEntryFile(initFilePath, logger)
@@ -258,6 +291,19 @@ export async function runInstrumenter (
   }
 }
 
+/** The text a key is made from: a <Trans> candidate's words, not its JSX source (`<a href=…>`). */
+function keySourceOf (candidate: CandidateString): string {
+  return candidate.transValue?.replace(/<\/?\d+>/g, '') ?? candidate.content
+}
+
+/** An import of i18next or react-i18next (`.init()` alone is any library's: `Sentry.init()`). */
+const I18NEXT_IMPORT_RE = /\bfrom\s*['"](?:i18next|react-i18next)['"]|\brequire\(\s*['"](?:i18next|react-i18next)['"]\s*\)/
+
+const MODULE_SCOPE_WARNING =
+  'A t() call there runs once at import time — before i18next may be initialized — and never updates on language change. ' +
+  'Move the text into a component/hook (e.g. a useSections() hook calling useTranslation()), or read the key at render time. ' +
+  'See: https://www.locize.com/blog/how-to-use-i18next-t-outside-react-components/'
+
 /**
  * Scans a source file for hardcoded string candidates and React component boundaries.
  */
@@ -270,6 +316,10 @@ async function scanFileForCandidates (
   const components: ComponentBoundary[] = []
   const languageChangeSites: LanguageChangeSite[] = []
   let moduleScopeSkipped = 0
+  let ownTSkipped = 0
+  let imports: ImportDeclarationSpan[] | undefined
+  const memoHooks: MemoHookSpan[] = []
+  let pluralHelperImports: PluralHelperImport[] | undefined
   const fileExt = extname(file).toLowerCase()
   const isTypeScriptFile = ['.ts', '.tsx', '.mts', '.cts'].includes(fileExt)
   const isTSX = fileExt === '.tsx'
@@ -317,6 +367,16 @@ async function scanFileForCandidates (
     // shifts all subsequent offsets.
     normalizeSpansToCharIndices(ast, content)
 
+    imports = ast.body
+      .filter((item: any) => item.type === 'ImportDeclaration')
+      .map((item: any) => ({
+        source: item.source.value,
+        start: item.span.start,
+        end: item.span.end,
+        locals: (item.specifiers ?? []).map((spec: any) => spec.local?.value).filter(Boolean)
+      }))
+    collectMemoHooks(ast, memoHooks)
+
     // Detect React function component boundaries
     detectComponentBoundaries(ast, content, components)
 
@@ -330,13 +390,20 @@ async function scanFileForCandidates (
     const jsx = attributeRules && !Array.isArray(attributeRules)
       ? { rules: attributeRules, aliases: importAliases(ast) }
       : undefined
-    visitNodeForStrings(ast, content, file, config, candidates, jsx)
+    consoleOnlyNames.set(file, collectConsoleOnlyNames(ast))
+    fileDataStrings.set(file, collectDataStrings(ast))
+    try {
+      visitNodeForStrings(ast, content, file, config, candidates, jsx)
 
-    // Detect JSX interpolation patterns (merge adjacent text + expression children)
-    detectJSXInterpolation(ast, content, file, config, candidates)
+      // Detect JSX interpolation patterns (merge adjacent text + expression children)
+      detectJSXInterpolation(ast, content, file, config, candidates)
 
-    // Detect plural conditional patterns (ternary chains checking count === 0/1/other)
-    detectPluralPatterns(ast, content, file, config, candidates)
+      // Detect plural conditional patterns (ternary chains checking count === 0/1/other)
+      detectPluralPatterns(ast, content, file, config, candidates)
+    } finally {
+      consoleOnlyNames.delete(file)
+      fileDataStrings.delete(file)
+    }
 
     // Detect language-change call sites (e.g. updateSettings({ language: code }))
     detectLanguageChangeSites(ast, content, languageChangeSites)
@@ -349,6 +416,16 @@ async function scanFileForCandidates (
           break
         }
       }
+    }
+
+    // A component whose `t` is something else (`const [t, setT] = useState(0)`) keeps its texts: a t() call
+    // there would call that `t`
+    const ownT = new Set(components.filter(c => c.ownT).map(c => c.name))
+    if (ownT.size) {
+      const keep = candidates.filter(c => !c.insideComponent || !ownT.has(c.insideComponent))
+      ownTSkipped = candidates.length - keep.length
+      candidates.length = 0
+      candidates.push(...keep)
     }
 
     // Drop module-scope candidates: wrapping them yields a t() call evaluated
@@ -394,11 +471,27 @@ async function scanFileForCandidates (
       candidates.length = 0
       candidates.push(...keep)
     }
+
+    const helperNames = new Set(candidates.map(c => c.pluralHelper).filter((n): n is string => !!n))
+    if (helperNames.size) pluralHelperImports = findPluralHelperImports(ast, content, helperNames)
+
+    // Two candidates whose spans overlap cannot both be rewritten (a template literal in another one's `${}`):
+    // the outer one wins, the inner text stays in its interpolation value as written
+    const bySize = [...candidates].sort((a, b) => (b.endOffset - b.offset) - (a.endOffset - a.offset))
+    const kept = new Set<CandidateString>()
+    for (const c of bySize) {
+      if (![...kept].some(k => c.offset < k.endOffset && k.offset < c.endOffset)) kept.add(c)
+    }
+    if (kept.size < candidates.length) {
+      const keep = candidates.filter(c => kept.has(c))
+      candidates.length = 0
+      candidates.push(...keep)
+    }
   } catch (err) {
     // Silently skip files that can't be parsed
   }
 
-  return { candidates, components, languageChangeSites, moduleScopeSkipped }
+  return { candidates, components, languageChangeSites, moduleScopeSkipped, ownTSkipped, imports, memoHooks, pluralHelperImports }
 }
 
 /**
@@ -480,7 +573,7 @@ function detectComponentBoundaries (
         name: node.identifier.value,
         bodyStart: body.span.start,
         bodyEnd: body.span.end,
-        hasUseTranslation: content.slice(body.span.start, body.span.end).includes('useTranslation')
+        ...tBinding(node, body)
       })
     }
   }
@@ -501,7 +594,7 @@ function detectComponentBoundaries (
           name: node.identifier.value,
           bodyStart: body.span.start,
           bodyEnd: body.span.end,
-          hasUseTranslation: content.slice(body.span.start, body.span.end).includes('useTranslation')
+          ...tBinding(node, body)
         })
       }
     }
@@ -567,13 +660,74 @@ function addComponentFromFunctionNode (
   components: ComponentBoundary[]
 ): void {
   const body = fnNode.body
-  if (body?.type === 'BlockStatement' && body.span) {
+  if (isBlockBody(body) && body.span) {
     components.push({
       name,
       bodyStart: body.span.start,
       bodyEnd: body.span.end,
-      hasUseTranslation: content.slice(body.span.start, body.span.end).includes('useTranslation')
+      ...tBinding(fnNode, body)
     })
+  } else if (isJSXExpression(body) && body.span) {
+    // `const Hint = () => <p>…</p>`: a component too; its body becomes a block when it needs the hook
+    components.push({
+      name,
+      bodyStart: body.span.start,
+      bodyEnd: body.span.end,
+      ...tBinding(fnNode, {}),
+      expressionBody: true
+    })
+  }
+}
+
+/** JSX, possibly in parentheses. */
+function isJSXExpression (expr: any): boolean {
+  if (expr?.type === 'ParenthesisExpression') return isJSXExpression(expr.expression)
+  return expr?.type === 'JSXElement' || expr?.type === 'JSXFragment'
+}
+
+/**
+ * The `t` a component has already: `'translation'` for a parameter (`({ t })`, a prop passed down) or one
+ * destructured from a translation hook (`const { t } = useTranslation('ns')`, also re-exported or renamed:
+ * `useT`, `useAppTranslation`, `getTranslations`), `'other'` for any other `t` in its body
+ * (`const [t, setT] = useState(0)`), null for none. Another `const { t }` would be a redeclaration, and the
+ * `t()` calls would call the other `t`.
+ */
+function bindsT (fnNode: any, body: any): 'translation' | 'other' | null {
+  if ((fnNode.params ?? []).some((p: any) => patternBinds(p, 't'))) return 'translation'
+  for (const stmt of body.stmts ?? []) {
+    if (stmt.type === 'FunctionDeclaration' && stmt.identifier?.value === 't') return 'other'
+    for (const d of stmt.type === 'VariableDeclaration' ? stmt.declarations ?? [] : []) {
+      if (!patternBinds(d.id, 't')) continue
+      const call = d.init?.type === 'AwaitExpression' ? d.init.argument : d.init
+      const hook = call?.type === 'CallExpression' ? dottedName(call.callee)?.split('.').pop() : null
+      return d.id.type === 'ObjectPattern' && hook && TRANSLATION_HOOK_RE.test(hook) ? 'translation' : 'other'
+    }
+  }
+  return null
+}
+
+/** Names of the hooks and functions that give a translation `t`. */
+const TRANSLATION_HOOK_RE = /^(?:use|get)\w*(?:Translation|T|I18n|Intl)\w*$/
+
+/** A component's `hasUseTranslation`, and `ownT` when its `t` is something else (see `bindsT`). */
+function tBinding (fnNode: any, body: any): { hasUseTranslation: boolean, ownT?: true } {
+  const kind = bindsT(fnNode, body)
+  return kind === 'other' ? { hasUseTranslation: true, ownT: true } : { hasUseTranslation: kind === 'translation' }
+}
+
+/** Whether a binding pattern (a parameter, a destructuring) binds `name`; defaults and renamed keys aside. */
+function patternBinds (pat: any, name: string): boolean {
+  switch (pat?.type) {
+    case 'Identifier': return pat.value === name
+    case 'Parameter': return patternBinds(pat.pat, name)
+    case 'AssignmentPattern': return patternBinds(pat.left, name)
+    case 'RestElement': return patternBinds(pat.argument, name)
+    case 'ArrayPattern': return (pat.elements ?? []).some((e: any) => patternBinds(e, name))
+    case 'ObjectPattern': return (pat.properties ?? []).some((p: any) =>
+      p.type === 'KeyValuePatternProperty'
+        ? patternBinds(p.value, name)
+        : p.type === 'AssignmentPatternProperty' ? p.key?.value === name : patternBinds(p.argument, name))
+    default: return false
   }
 }
 
@@ -585,21 +739,155 @@ function addComponentFromFunctionNode (
  * Returns true when the AST node is a `t(...)` or `i18next.t(...)` call
  * expression — i.e. code that was already instrumented.
  */
-function isTranslationCall (node: any): boolean {
+function isTranslationCall (node: any, functions: readonly string[] = []): boolean {
+  const name = dottedName(node.callee)
+  if (!name) return false
+  // t(...), $t(...), i18next.t(...), props.t(...), this.$t(...), and the project's own (`extract.functions`)
+  return name === 't' || name === '$t' || /\.\$?t$/.test(name) || functions.some(fn => matchesFunctionPattern(name, fn))
+}
+
+/** A callee as a dotted name (`this.props.t`, `i18n.t`), or null for a computed one. */
+function dottedName (callee: any): string | null {
+  if (callee?.type === 'Identifier') return callee.value
+  if (callee?.type === 'ThisExpression') return 'this'
+  if (callee?.type !== 'MemberExpression' || callee.property?.type !== 'Identifier') return null
+  const object = dottedName(callee.object)
+  return object && `${object}.${callee.property.value}`
+}
+
+/**
+ * Methods whose string arguments are never text shown to a user: selectors, attribute and storage names,
+ * and the strings a text is searched for or compared with (translating `msg.includes('not found')` breaks it).
+ */
+const NON_TEXT_METHODS = new Set([
+  'querySelector', 'querySelectorAll', 'closest', 'matches', 'getElementById', 'getElementsByClassName',
+  'getElementsByTagName', 'getElementsByName', 'addEventListener', 'removeEventListener',
+  'getAttribute', 'hasAttribute', 'removeAttribute', 'getPropertyValue', 'setProperty', 'removeProperty',
+  'getItem', 'setItem', 'removeItem',
+  // analytics event and user names: a translated one splits the data by language
+  'track', 'trackEvent', 'logEvent', 'capture', 'captureMessage', 'captureException', 'identify',
+  // event names, and format patterns (`dayjs(d).format('DD MMM YYYY')`)
+  'emit', 'on', 'once', 'off', 'addListener', 'removeListener', 'format',
+  'indexOf', 'lastIndexOf', 'includes', 'startsWith', 'endsWith', 'match', 'matchAll', 'search', 'replace',
+  'replaceAll', 'split', 'localeCompare'
+])
+
+/**
+ * Functions whose string arguments are never text: `gtag('event', 'Sign Up Completed')`, `require('x')`,
+ * `RegExp('…')`, `format(date, 'yyyy-MM-dd')`.
+ */
+const NON_TEXT_FUNCTIONS = new Set(['gtag', 'require', 'RegExp', 'format'])
+
+/** Objects whose method calls are logs or error reports, for developers whatever they say. */
+const LOG_OBJECTS = /^(?:logger|log|Sentry|sentry|Bugsnag|bugsnag|Rollbar|rollbar|winston|pino)$/
+
+/** A call to one of `NON_TEXT_METHODS` or `NON_TEXT_FUNCTIONS` (`el.closest('button, a')`, `gtag(…)`). */
+function isNonTextMethodCall (node: any): boolean {
   const callee = node.callee
-  if (!callee) return false
-  // t(...)
-  if (callee.type === 'Identifier' && callee.value === 't') return true
-  // i18next.t(...)
-  if (
-    callee.type === 'MemberExpression' &&
-    !callee.computed &&
-    callee.property?.type === 'Identifier' &&
-    callee.property.value === 't' &&
-    callee.object?.type === 'Identifier' &&
-    callee.object.value === 'i18next'
-  ) return true
-  return false
+  if (callee?.type === 'Identifier') return NON_TEXT_FUNCTIONS.has(callee.value)
+  if (callee?.type !== 'MemberExpression' || callee.property?.type !== 'Identifier') return false
+  return NON_TEXT_METHODS.has(callee.property.value) || (callee.object?.type === 'Identifier' && LOG_OBJECTS.test(callee.object.value))
+}
+
+/**
+ * The names of a file's variables whose every use is inside a `console.*` call: a variable declared twice
+ * counts as one name, and any use elsewhere takes it out.
+ */
+function collectConsoleOnlyNames (ast: any): Set<string> {
+  const declared = new Set<string>()
+  const inConsole = new Set<string>()
+  const elsewhere = new Set<string>()
+  const walk = (node: any, inLog: boolean): void => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) { node.forEach(n => walk(n, inLog)); return }
+    if (node.type === 'VariableDeclarator') {
+      if (node.id?.type === 'Identifier') declared.add(node.id.value)
+      else walk(node.id, inLog)
+      walk(node.init, inLog)
+      return
+    }
+    if (node.type === 'MemberExpression') {
+      walk(node.object, inLog)
+      if (node.property?.type === 'Computed') walk(node.property, inLog)
+      return
+    }
+    if (node.type === 'KeyValueProperty') { walk(node.value, inLog); return }
+    if (node.type === 'Identifier') (inLog ? inConsole : elsewhere).add(node.value)
+    const log = inLog || (node.type === 'CallExpression' && isConsoleCall(node))
+    for (const key in node) if (key !== 'span') walk(node[key], log)
+  }
+  walk(ast, false)
+  return new Set([...declared].filter(n => inConsole.has(n) && !elsewhere.has(n)))
+}
+
+/** Per file, the names `collectConsoleOnlyNames` found for its content (set by the scan, read by the visit). */
+const consoleOnlyNames = new Map<string, Set<string>>()
+
+/** The property names whose value is text (`label`, `title`, …), lower-cased. */
+const translatablePropertyLowerSet = new Set([...translatablePropertySet].map(p => p.toLowerCase()))
+
+/** String literals a JSX element renders (see `markRendered`): text whatever their words. */
+const renderedStrings = new WeakSet<object>()
+
+/** Marks the strings an expression rendered as a JSX child can produce: itself, a branch, a fallback. */
+function markRendered (expr: any): void {
+  if (!expr) return
+  if (expr.type === 'StringLiteral') renderedStrings.add(expr)
+  else if (expr.type === 'ConditionalExpression') {
+    markRendered(expr.consequent)
+    markRendered(expr.alternate)
+  } else if (expr.type === 'BinaryExpression' && LOGICAL_OPERATORS.has(expr.operator)) {
+    // swc types `&&`, `||` and `??` as a BinaryExpression
+    markRendered(expr.right)
+  } else if (expr.type === 'ParenthesisExpression') markRendered(expr.expression)
+}
+
+/** Per file, the strings `collectDataStrings` found (set by the scan, read by the visit). */
+const fileDataStrings = new Map<string, Set<string>>()
+
+/** Property and attribute names whose string value is data the code matches against. */
+const DATA_KEYS = new Set(['id', 'key', 'value', 'type', 'code', 'kind'])
+
+/** Names of lists whose strings are values to match (`order: ['2FA', 'no 2FA']`). */
+const DATA_LISTS = /^(?:order|ids|keys|values|types|kinds|codes)$/i
+
+/**
+ * The strings a file uses as data: compared (`=== 'no 2FA'`), a `case`, an object key, the value of an `id`,
+ * `key`, `value`, `type`, `code` or `kind`, an entry of an `order`/`ids`/`values` list, or an argument of a
+ * method that compares (`includes`). The same string as text elsewhere in that file is then data too: a
+ * facet's `of()` returning `'no 2FA'` must keep matching `order: ['2FA', 'no 2FA']`.
+ */
+function collectDataStrings (ast: any): Set<string> {
+  const found = new Set<string>()
+  const add = (node: any) => { if (node?.type === 'StringLiteral') found.add(node.value) }
+  const addList = (node: any) => { if (node?.type === 'ArrayExpression') for (const e of node.elements ?? []) add(e?.expression) }
+  const walk = (node: any): void => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) { node.forEach(walk); return }
+    if (node.type === 'BinaryExpression' && COMPARISON_OPERATORS.has(node.operator)) { add(node.left); add(node.right) }
+    if (node.type === 'SwitchCase') add(node.test)
+    if (node.type === 'KeyValueProperty') {
+      add(node.key)
+      const name = propertyName(node.key)
+      if (name && DATA_KEYS.has(name)) add(node.value)
+      if (name && DATA_LISTS.test(name)) addList(node.value)
+    }
+    if (node.type === 'VariableDeclarator' && DATA_LISTS.test(node.id?.value ?? '')) addList(node.init)
+    if (node.type === 'JSXAttribute' && DATA_KEYS.has(node.name?.value) && node.value?.type === 'StringLiteral') add(node.value)
+    if (node.type === 'CallExpression' && isNonTextMethodCall(node)) {
+      for (const arg of node.arguments ?? []) add(arg.expression)
+      if (node.callee?.type === 'MemberExpression') addList(node.callee.object)
+    }
+    for (const key in node) if (key !== 'span') walk(node[key])
+  }
+  walk(ast)
+  return found
+}
+
+/** `console.log(...)`, `console.warn(...)`: their arguments are for developers, however they are built. */
+function isConsoleCall (node: any): boolean {
+  const callee = node.callee
+  return callee?.type === 'MemberExpression' && callee.object?.type === 'Identifier' && callee.object.value === 'console'
 }
 
 /**
@@ -625,13 +913,22 @@ function visitNodeForStrings (
     jsx = { ...jsx, element: resolveElementAttributes(jsx.rules, jsxElementName(node.name, jsx.aliases)) }
   }
 
-  // Skip already-instrumented t() / i18next.t() calls entirely so that
-  // strings inside the options object (defaultValue_one, etc.) are not
-  // picked up as new candidates on a second run.
-  if (node.type === 'CallExpression' && isTranslationCall(node)) return
+  const visit = (child: any) => visitNodeForStrings(child, content, file, config, candidates, jsx)
 
-  // Skip <Trans> elements (already instrumented)
-  if (node.type === 'JSXElement' && isTransComponent(node)) return
+  // Its string arguments are not text; what it is called on and the functions it gets may hold some
+  // (`el.addEventListener('click', () => { status.textContent = 'Copied to clipboard' })`)
+  if (node.type === 'CallExpression' && isNonTextMethodCall(node)) {
+    visit(node.callee)
+    for (const arg of node.arguments ?? []) visitTextHolders(arg.expression, content, file, config, candidates, jsx)
+    return
+  }
+
+  const parts = nonTextParts(node, file, config, true)
+  if (parts === 'all') return
+  if (parts) {
+    forEachChild(node, parts, visit)
+    return
+  }
 
   // Skip non-translatable JSX attributes entirely (e.g. className={...})
   if (node.type === 'JSXAttribute') {
@@ -645,37 +942,47 @@ function visitNodeForStrings (
     }
     // A rule that adds an attribute on this element wins over the built-in skip list (e.g. `name`)
     const added = attrName != null && jsx?.element?.accepted.has(attrName.toLowerCase())
-    if (attrName && ignoredAttributeSet.has(attrName) && !added) return
-    // A rule removed this attribute on this element: its value is not text, skip it entirely
-    if (attrName && jsx?.element?.removed.has(attrName.toLowerCase())) return
-    // For hyphenated names (data-testid), also check with the raw text
-    if (attrName?.includes(':')) {
-      const hyphenated = attrName.replace(':', '-')
-      if (ignoredAttributeSet.has(hyphenated)) return
+    // The value of an ignored attribute, or one a rule removed on this element, is not text; but the
+    // elements and functions in it hold text as anywhere else (`action={<Button>change</Button>}`,
+    // `onClick={() => setMessage('Copied')}`)
+    const notText = !!attrName && (
+      (ignoredAttributeSet.has(attrName) && !added) ||
+      !!jsx?.element?.removed.has(attrName.toLowerCase()) ||
+      // For hyphenated names (data-testid), also check with the raw text
+      (attrName.includes(':') && ignoredAttributeSet.has(attrName.replace(':', '-')))
+    )
+    if (notText) {
+      visitTextHolders(node.value, content, file, config, candidates, jsx)
+      return
     }
+  }
+
+  // What a JSX element renders from an expression is text, a single word too: `{used ? <>…</> : 'Never used'}`,
+  // `{busy && 'saving'}`, `{name || 'the organization'}`
+  if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
+    for (const child of node.children ?? []) if (child.type === 'JSXExpressionContainer') markRendered(child.expression)
+  }
+
+  // The two branches of a ternary are alternatives of one text: when one is text, a string on the other side
+  // is too (`running ? 'Confirm all reviews' : 'stop'`, `n ? \`Pay invoice ${n}\` : 'Pay invoice'`)
+  if (node.type === 'ConditionalExpression') {
+    visit(node.test)
+    visit(node.consequent)
+    visit(node.alternate)
+    const branches = [node.consequent, node.alternate]
+    const found = (b: any) => candidates.some(c => c.offset === b?.span?.start && c.endOffset === b?.span?.end)
+    branches.forEach((b, i) => {
+      if (b?.type !== 'StringLiteral' || found(b) || !found(branches[1 - i])) return
+      const candidate = stringCandidate(b, content, file, config, jsx?.element?.accepted, true)
+      if (candidate) candidates.push(candidate)
+    })
+    return
   }
 
   // Check if this is a string literal
   if (node.type === 'StringLiteral') {
-    const stringNode = node as StringLiteral
-    if (stringNode.span && typeof stringNode.span.start === 'number') {
-      const candidate = detectCandidate(
-        stringNode.value,
-        stringNode.span.start,
-        stringNode.span.end,
-        file,
-        content,
-        config,
-        jsx?.element?.accepted
-      )
-      if (candidate && candidate.confidence >= 0.7) {
-        // Detect JSX attribute context: in JSX, attr="value" has = right before the opening quote
-        if (stringNode.span.start > 0 && content[stringNode.span.start - 1] === '=') {
-          candidate.type = 'jsx-attribute'
-        }
-        candidates.push(candidate)
-      }
-    }
+    const candidate = stringCandidate(node, content, file, config, jsx?.element?.accepted, renderedStrings.has(node))
+    if (candidate) candidates.push(candidate)
   }
 
   // Template literals
@@ -705,9 +1012,12 @@ function visitNodeForStrings (
         }
       }
     } else if (quasis?.length > 1 && expressions?.length > 0 && node.span) {
-      // Template literal with interpolation, e.g. `${count}-day streak`
-      const result = buildInterpolatedTemplate(quasis, expressions, content)
-      if (result) {
+      // Template literal with interpolation, e.g. `${count}-day streak`, possibly with a plural in it
+      const plural = buildPluralTemplate(quasis, expressions, content)
+      const result = plural
+        ? { text: plural.pluralForms.other, interpolations: plural.interpolations }
+        : buildInterpolatedTemplate(quasis, expressions, content)
+      if (result && hasWordsBesidePlaceholders(result.text)) {
         const trimmed = result.text.trim()
         if (trimmed) {
           const candidate = detectCandidate(
@@ -721,9 +1031,13 @@ function visitNodeForStrings (
           if (candidate) {
             candidate.content = trimmed
             candidate.type = 'template-literal'
-            candidate.interpolations = result.interpolations
-            // Template literals mixing text + expressions are likely user-facing
-            candidate.confidence = Math.min(1, candidate.confidence + 0.15)
+            if (result.interpolations.length) candidate.interpolations = result.interpolations
+            if (plural) {
+              candidate.pluralForms = plural.pluralForms
+              candidate.pluralHelper = plural.pluralHelper
+            }
+            // Template literals mixing text + expressions are likely user-facing, plurals always
+            candidate.confidence = Math.min(1, candidate.confidence + (plural ? 0.3 : 0.15))
             if (node.span.start > 0 && content[node.span.start - 1] === '=') {
               candidate.type = 'jsx-attribute'
             }
@@ -745,14 +1059,7 @@ function visitNodeForStrings (
         const trimmedStart = raw.indexOf(trimmed)
         const offset = node.span.start + trimmedStart
         const endOffset = offset + trimmed.length
-        const candidate = detectCandidate(
-          trimmed,
-          offset,
-          endOffset,
-          file,
-          content,
-          config
-        )
+        const candidate = detectCandidate(jsxTextValue(trimmed), offset, endOffset, file, content, config, undefined, true)
         if (candidate) {
           candidate.type = 'jsx-text'
           // JSXText is almost always user-visible content; boost confidence
@@ -778,6 +1085,186 @@ function visitNodeForStrings (
   }
 }
 
+/**
+ * Whether a name says it holds a language model's input: a function or variable (not a component) whose
+ * camelCase words include `prompt` and one of system, user, ai, llm, gpt, assistant, chat, model
+ * (`getSystemPrompt`, `aiFixPrompt`, `userPromptBatch`). A bare `prompt` may ask the user something
+ * (`deletePrompt`), and `EmailPrompt` or `UserPromptDialog` are components.
+ */
+function isModelPromptName (name: string | null | undefined): boolean {
+  if (!name || !/^[a-z]/.test(name)) return false
+  const words = name.split(/(?=[A-Z])|_/).map(w => w.toLowerCase())
+  return words.includes('prompt') && words.some(w => MODEL_WORDS.has(w))
+}
+
+const MODEL_WORDS = new Set(['system', 'user', 'ai', 'llm', 'gpt', 'assistant', 'chat', 'model'])
+
+/**
+ * JSX text as React renders it: each line trimmed where it meets a line break, the lines joined by one space,
+ * entities decoded (`can&apos;t` → `can't`). In a `t()` default the source form would show as written.
+ */
+function jsxTextValue (raw: string): string {
+  const lines = raw.split(/\r\n|\n|\r/)
+  let lastNonEmpty = 0
+  lines.forEach((line, i) => { if (/[^ \t]/.test(line)) lastNonEmpty = i })
+  let text = ''
+  lines.forEach((line, i) => {
+    let part = line.replace(/\t/g, ' ')
+    if (i > 0) part = part.replace(/^ +/, '')
+    if (i < lines.length - 1) part = part.replace(/ +$/, '')
+    if (part) text += i < lastNonEmpty ? `${part} ` : part
+  })
+  return text.replace(HTML_ENTITY_RE, entity => decodeEntity(entity))
+}
+
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: '\u00a0',
+  ndash: '–',
+  mdash: '—',
+  hellip: '…',
+  lsquo: '‘',
+  rsquo: '’',
+  ldquo: '“',
+  rdquo: '”',
+  laquo: '«',
+  raquo: '»',
+  middot: '·',
+  bull: '•',
+  times: '×',
+  copy: '©',
+  reg: '®',
+  trade: '™',
+  euro: '€',
+  deg: '°'
+}
+
+/** One HTML character reference as its character; an unknown name stays as written. */
+function decodeEntity (entity: string): string {
+  const body = entity.slice(1, -1)
+  if (body[0] === '#') {
+    const code = body[1] === 'x' || body[1] === 'X' ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10)
+    return Number.isFinite(code) && code <= 0x10FFFF ? String.fromCodePoint(code) : entity
+  }
+  return NAMED_ENTITIES[body] ?? NAMED_ENTITIES[body.toLowerCase()] ?? entity
+}
+
+/**
+ * What of a node is never text, the same for every walker looking for text: `'all'` (a t() call, a console
+ * call, a <Trans>, an icon, code, a prompt for a language model, a log line, an error or a pattern), the
+ * child keys that are not (an object key, a member property, a compared operand, a `case` value, the strings
+ * of a non-text call), or null (all of it may be). `withTextHolders` is for the walker that visits the
+ * functions and elements passed to a non-text call itself.
+ */
+function nonTextParts (node: any, file: string, config: I18nextToolkitConfig, withTextHolders: boolean): 'all' | string[] | null {
+  switch (node.type) {
+    case 'CallExpression':
+      // already instrumented (also its options on a second run), or for developers however it is built
+      if (isTranslationCall(node, config.extract.functions) || isConsoleCall(node)) return 'all'
+      return !withTextHolders && isNonTextMethodCall(node) ? ['arguments'] : null
+    case 'NewExpression':
+      // `new Error('…')` is for developers, `new RegExp('…')` a pattern
+      return node.callee?.type === 'Identifier' && /^RegExp$|Error$/.test(node.callee.value) ? 'all' : null
+    case 'JSXElement': {
+      if (isTransComponent(node, config.extract.transComponents) || isIconElement(node)) return 'all'
+      // what code, scripts and styles show (`ignoredTags`, as for lint); inside a sentence it stays in its <Trans>
+      const tag = node.opening?.name?.type === 'Identifier' ? node.opening.name.value.toLowerCase() : null
+      return tag && (ignoredTags.includes(tag) || config.extract.ignoredTags?.some(t => t.toLowerCase() === tag)) ? 'all' : null
+    }
+    case 'KeyValueProperty':
+      // a key names something and is never text; a call there is even a syntax error (`{ 'a b': 1 }`)
+      return isModelPromptName(propertyName(node.key)) ? 'all' : ['key']
+    case 'MemberExpression':
+      return ['property']
+    case 'BinaryExpression':
+      // the strings a value is compared with are data (`status === 'Active'`)
+      if (!COMPARISON_OPERATORS.has(node.operator)) return null
+      return ['left', 'right'].filter(k => node[k]?.type === 'StringLiteral' || node[k]?.type === 'TemplateLiteral')
+    case 'SwitchCase':
+      return ['test']
+    case 'FunctionDeclaration':
+      // a prompt is the input of a language model: translating it changes what the model does
+      return isModelPromptName(node.identifier?.value) ? 'all' : null
+    case 'VariableDeclarator':
+      // a prompt, or a variable used only in console calls (a log line: `const took = …; console.log(took)`)
+      return isModelPromptName(node.id?.value) ||
+        (node.id?.type === 'Identifier' && consoleOnlyNames.get(file)?.has(node.id.value))
+        ? 'all'
+        : null
+    default:
+      return null
+  }
+}
+
+/** Calls `visit` for each child node, but not those under the keys `except`. */
+function forEachChild (node: any, except: 'all' | string[] | null, visit: (child: any) => void): void {
+  if (except === 'all') return
+  for (const key in node) {
+    if (key === 'span' || except?.includes(key)) continue
+    const value = node[key]
+    if (Array.isArray(value)) value.forEach(item => item && typeof item === 'object' && visit(item))
+    else if (value && typeof value === 'object') visit(value)
+  }
+}
+
+/** A string literal as a candidate of enough confidence, or null; `textSlot` takes a single word as text. */
+function stringCandidate (
+  stringNode: StringLiteral,
+  content: string,
+  file: string,
+  config: I18nextToolkitConfig,
+  accepted: ReadonlySet<string> | undefined,
+  textSlot: boolean
+): CandidateString | null {
+  if (!stringNode.span || typeof stringNode.span.start !== 'number') return null
+  // the same string as data elsewhere in the file: translating it here breaks the match there (what a JSX
+  // element renders and an attribute's value, `data-tip='overridden'`, are shown, never matched)
+  // nor a text property's (`{ value: 'Weekly', label: 'Weekly' }`)
+  const attributeValue = stringNode.span.start > 0 && content[stringNode.span.start - 1] === '='
+  const property = /([\w]+)\s*:\s*$/.exec(content.slice(Math.max(0, stringNode.span.start - 40), stringNode.span.start))?.[1]
+  const textProperty = !!property && translatablePropertyLowerSet.has(property.toLowerCase())
+  if (fileDataStrings.get(file)?.has(stringNode.value) && !renderedStrings.has(stringNode) && !attributeValue && !textProperty) return null
+  const candidate = detectCandidate(stringNode.value, stringNode.span.start, stringNode.span.end, file, content, config, accepted, textSlot)
+  // in a text slot the place says it is text, whatever the words score
+  if (candidate && textSlot) candidate.confidence = Math.max(candidate.confidence, 0.7)
+  if (!candidate || candidate.confidence < 0.7) return null
+  // Detect JSX attribute context: in JSX, attr="value" has = right before the opening quote
+  if (stringNode.span.start > 0 && content[stringNode.span.start - 1] === '=') candidate.type = 'jsx-attribute'
+  return candidate
+}
+
+const LOGICAL_OPERATORS = new Set(['&&', '||', '??'])
+
+const COMPARISON_OPERATORS = new Set(['===', '!==', '==', '!=', 'in', 'instanceof'])
+
+/** The name of an object property's key (`label`, `'aria-label'`), or null for a computed one. */
+function propertyName (key: any): string | null {
+  return key?.type === 'Identifier' || key?.type === 'StringLiteral' ? key.value : null
+}
+
+/** Visits the JSX elements and functions inside a value that is not text itself, and nothing else of it. */
+function visitTextHolders (
+  node: any,
+  ...rest: [string, string, I18nextToolkitConfig, CandidateString[], Parameters<typeof visitNodeForStrings>[5]]
+): void {
+  if (!node || typeof node !== 'object') return
+  if (TEXT_HOLDERS.has(node.type)) {
+    visitNodeForStrings(node, ...rest)
+    return
+  }
+  for (const key in node) {
+    const value = node[key]
+    if (Array.isArray(value)) value.forEach(item => visitTextHolders(item, ...rest))
+    else visitTextHolders(value, ...rest)
+  }
+}
+
+const TEXT_HOLDERS = new Set(['JSXElement', 'JSXFragment', 'ArrowFunctionExpression', 'FunctionExpression'])
+
 // ─── Template-literal interpolation helpers ──────────────────────────────────
 
 /**
@@ -790,7 +1277,7 @@ function buildInterpolatedTemplate (
   content: string
 ): { text: string, interpolations: Array<{ name: string, expression: string }> } | null {
   const interpolations: Array<{ name: string, expression: string }> = []
-  const usedNames = new Set<string>()
+  const usedNames: UsedNames = new Map()
   let text = ''
 
   for (let i = 0; i < quasis.length; i++) {
@@ -801,7 +1288,7 @@ function buildInterpolatedTemplate (
       const info = resolveExpressionName(expressions[i], content, usedNames)
       if (!info) return null // un-resolvable expression — bail
       text += `{{${info.name}}}`
-      interpolations.push(info)
+      if (!info.reused) interpolations.push(info)
     }
   }
 
@@ -809,36 +1296,169 @@ function buildInterpolatedTemplate (
 }
 
 /**
- * Resolves a human-friendly interpolation name from an AST expression node.
- *
- * - `Identifier`        → uses the identifier value (`count`)
- * - `MemberExpression`  → uses the deepest property name (`profile.name` → `name`)
- * - anything else       → generated placeholder (`val`, `val2`, ...)
+ * Whether a text with `{{placeholders}}` holds at least one word standing on its own, and is not a
+ * kebab-case name. A word: two letters or more, not camelCase, punctuation around it, a placeholder only
+ * after it (`review{{suffix}}.`), not before it nor joined by `_`, `.` or `-`. Ids, paths, keys, flags and
+ * class names built in a template literal have none: `{{projectId}}-{{version}}`, `weight_{{code}}`,
+ * `{{baseUrl}}/api/{{id}}`, `{{id}}.collapsed`, `{{metric}}Avg`, `nameField{{i}}`, `--ct {{cdnType}}`,
+ * `locize-dropzone {{state}}`.
+ */
+function hasWordsBesidePlaceholders (text: string): boolean {
+  // a placeholder becomes one private-use character, neither letter nor punctuation
+  const bare = text.replace(HTML_ENTITY_RE, ' ').replace(/\{\{[^}]*\}\}/g, '\uE000')
+  if (/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(bare.replace(/\uE000/g, ' ').trim())) return false
+  return bare.split(/\s+/).some(token => {
+    const word = /^[^\p{L}\p{N}\uE000_.-]*(\p{L}{2,}(?:['’-]\p{L}+)*)[^\p{L}\p{N}_]*$/u.exec(token)?.[1]
+    // `zh-{{country}}`, `{{a}}/{{b}}`: a placeholder joined to the word by a separator makes an id, not a phrase
+    if (/[-_./:#@=&?|\\]\uE000/.test(token)) return false
+    // one Han, Kana or Hangul character is a word of its own (`共 {{n}} 条`)
+    return (!!word && !/\p{Ll}\p{Lu}/u.test(word)) || /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Hangul}]/u.test(token)
+  })
+}
+
+/**
+ * A template literal one of whose expressions is a plural (a plural helper call or a `count === 1` ternary),
+ * as one text per plural form: `${n(keys)} ${plural(keys, 'key', 'keys')} unused` → one: '{{keys}} key unused',
+ * other: '{{keys}} keys unused', count: keys. An expression that is the count itself becomes `{{count}}`.
+ */
+function buildPluralTemplate (
+  quasis: any[],
+  expressions: any[],
+  content: string
+): { pluralForms: NonNullable<CandidateString['pluralForms']>, interpolations: Array<{ name: string, expression: string }>, pluralHelper?: string } | null {
+  const pluralIndex = expressions.findIndex(e => parsePluralExpression(e, content))
+  if (pluralIndex < 0) return null
+  const plural = parsePluralExpression(expressions[pluralIndex], content)!
+
+  const usedNames: UsedNames = new Map()
+  const interpolations: Array<{ name: string, expression: string }> = []
+  const formText = (form: string): string | null => {
+    let text = ''
+    for (let i = 0; i < quasis.length; i++) {
+      text += quasis[i].cooked ?? quasis[i].raw ?? ''
+      if (i >= expressions.length) continue
+      if (i === pluralIndex) {
+        text += form
+        continue
+      }
+      const expression = content.slice(expressions[i].span.start, expressions[i].span.end)
+      if (expression === plural.countExpression) {
+        text += '{{count}}'
+        continue
+      }
+      const info = resolveExpressionName(expressions[i], content, usedNames)
+      if (!info) return null
+      text += `{{${info.name}}}`
+      if (!info.reused) interpolations.push(info)
+    }
+    return text.trim()
+  }
+
+  const other = formText(plural.other)
+  const one = plural.one !== undefined ? formText(plural.one) : undefined
+  const zero = plural.zero !== undefined ? formText(plural.zero) : undefined
+  if (!other || one === null || zero === null) return null
+  if (!mergeInterpolations(interpolations, plural.interpolations)) return null
+  return { pluralForms: { countExpression: plural.countExpression, zero, one, other }, interpolations, pluralHelper: pluralHelperOf(expressions[pluralIndex]) }
+}
+
+/** The name of the plural helper a call expression calls (`plural(n, …)` → `plural`), or undefined. */
+function pluralHelperOf (expr: any): string | undefined {
+  return expr?.type === 'CallExpression' && expr.callee?.type === 'Identifier' ? expr.callee.value : undefined
+}
+
+/**
+ * Adds a plural's own placeholders (from its forms) to the text's; false when a name stands for two
+ * different expressions.
+ */
+function mergeInterpolations (
+  into: Array<{ name: string, expression: string }>,
+  from: Array<{ name: string, expression: string }> = []
+): boolean {
+  for (const item of from) {
+    const same = into.find(i => i.name === item.name)
+    if (same && same.expression !== item.expression) return false
+    if (!same) into.push(item)
+  }
+  return true
+}
+
+/** Placeholder names given so far in one text, each with its expression. */
+type UsedNames = Map<string, string>
+
+/**
+ * The name an expression's value says best what it is, or null:
+ * - `Identifier` → itself (`count`); `MemberExpression` → its last property (`profile.name` → `name`)
+ * - a formatter's call, by its argument: `format.date(user.lastLogin)` → `lastLogin`, `n(queue)` → `queue`,
+ *   `Math.floor(m / 60)` → `m` (a namespace or a formatter keeps the meaning of what it gets)
+ * - a string method's call, by what it is called on: `input.value.trim()` → `value`
+ * - any other call, by the function: `price(plan)` → `price`, `api.calculatePercentage(stats)` → `calculatePercentage`
+ * - `a - b`, `a || b`, `(a)`, `a as T`, `a!` → the name of `a`
+ */
+function nameOfExpression (expr: any): string | null {
+  switch (expr?.type) {
+    case 'Identifier': return expr.value
+    case 'MemberExpression':
+      return !expr.computed && expr.property?.type === 'Identifier' ? expr.property.value : null
+    case 'CallExpression': {
+      const callee = expr.callee
+      const argument = () => nameOfExpression(expr.arguments?.[0]?.expression)
+      if (callee?.type === 'Identifier') return FORMATTER_RE.test(callee.value) ? argument() : callee.value
+      if (callee?.type !== 'MemberExpression' || callee.property?.type !== 'Identifier') return null
+      const object = callee.object
+      const method = callee.property.value
+      if (object?.type === 'Identifier' && (/^[A-Z]/.test(object.value) || FORMATTER_NAMESPACE_RE.test(object.value))) return argument()
+      // `date.toLocaleDateString()`, `terms.map(…).join(', ')`: still the value it is called on
+      if (STRING_METHODS.has(method) || ARRAY_METHODS.has(method)) return nameOfExpression(object)
+      return method
+    }
+    case 'BinaryExpression':
+      // `name || email` (swc types `||`, `&&`, `??` as a BinaryExpression), `i + 1`: the value meant; any other
+      // arithmetic is a new quantity (`segments * tokensPerSegment`), which no operand names
+      if (LOGICAL_OPERATORS.has(expr.operator)) return nameOfExpression(expr.left)
+      if ((expr.operator === '+' || expr.operator === '-') && expr.right?.type === 'NumericLiteral') return nameOfExpression(expr.left)
+      return null
+    case 'ParenthesisExpression':
+    case 'TsAsExpression':
+    case 'TsNonNullExpression':
+    case 'TsSatisfiesExpression': return nameOfExpression(expr.expression)
+    default: return null
+  }
+}
+
+/** Names of formatter functions: their call shows the value they get (`n(queue)`, `formatDate(createdAt)`). */
+const FORMATTER_RE = /^(?:format\w*|fmt|formatter|n|num|number|money|percent)$/i
+
+/** Names of formatting namespaces (`format.date(x)`); a capitalized one (`Math`, `Intl`) is one too. */
+const FORMATTER_NAMESPACE_RE = /^(?:format\w*|fmt|formatter|intl)$/i
+
+/** Array methods whose result still holds what they are called on. */
+const ARRAY_METHODS = new Set(['map', 'filter', 'sort', 'slice', 'flat', 'flatMap', 'concat', 'reverse'])
+
+/**
+ * Resolves a human-friendly interpolation name from an AST expression node (see `nameOfExpression`;
+ * `val`, `val2`, ... when none). The same expression twice in one text gets one name (`reused`), so the
+ * options name it once.
  */
 function resolveExpressionName (
   expr: any,
   content: string,
-  usedNames: Set<string>
-): { name: string, expression: string } | null {
+  usedNames: UsedNames
+): { name: string, expression: string, reused?: boolean } | null {
   if (!expr?.span) return null
 
   const expression = content.slice(expr.span.start, expr.span.end)
-  let baseName: string
-
-  if (expr.type === 'Identifier') {
-    baseName = expr.value
-  } else if (expr.type === 'MemberExpression' && !expr.computed && expr.property?.type === 'Identifier') {
-    baseName = expr.property.value
-  } else {
-    baseName = 'val'
+  for (const [name, expr] of usedNames) {
+    if (expr === expression) return { name, expression, reused: true }
   }
+  const baseName = nameOfExpression(expr) ?? 'val'
 
   let name = baseName
   let counter = 2
   while (usedNames.has(name)) {
     name = `${baseName}${counter++}`
   }
-  usedNames.add(name)
+  usedNames.set(name, expression)
 
   return { name, expression }
 }
@@ -861,8 +1481,9 @@ function detectJSXInterpolation (
 ): void {
   if (!node) return
 
-  // Skip <Trans> elements (already instrumented)
-  if (node.type === 'JSXElement' && isTransComponent(node)) return
+  // Not text (a <Trans>, code, an icon, a prompt, a log line, a key, …): nothing to merge in it
+  const parts = nonTextParts(node, file, config, false)
+  if (parts === 'all') return
 
   const children = (node.type === 'JSXElement' || node.type === 'JSXFragment') ? node.children : null
 
@@ -874,14 +1495,11 @@ function detectJSXInterpolation (
     for (const child of children) {
       if (child.type === 'JSXText') {
         currentRun.push(child)
-      } else if (child.type === 'JSXExpressionContainer' && isSimpleJSXExpression(child.expression)) {
+      } else if (child.type === 'JSXExpressionContainer' && (isSimpleJSXExpression(child.expression) || child.expression?.type === 'StringLiteral')) {
+        // a simple expression, or literal text such as {' '}
         currentRun.push(child)
-      } else if (
-        child.type === 'JSXExpressionContainer' &&
-        child.expression?.type === 'ConditionalExpression' &&
-        tryParsePluralTernary(child.expression, content)
-      ) {
-        // Plural ternary expression — include in the run for merged handling
+      } else if (child.type === 'JSXExpressionContainer' && parsePluralExpression(child.expression, content)) {
+        // Plural ternary or plural helper call: part of the run, merged with it
         currentRun.push(child)
       } else if (child.type === 'JSXElement' && isSimpleJSXElement(child)) {
         // Simple HTML element — include in the run for Trans detection
@@ -898,7 +1516,11 @@ function detectJSXInterpolation (
       runs.push(currentRun)
     }
 
-    for (const run of runs) {
+    for (const fullRun of runs) {
+      // Whitespace at a run's edges stays in the source: a rewrite of it would drop a space the page shows
+      // (`provider:{' '}<strong>…`)
+      const run = trimRun(fullRun)
+      if (!run.length) continue
       const hasText = run.some(c => c.type === 'JSXText' && c.value?.trim())
       const hasExpr = run.some(c => c.type === 'JSXExpressionContainer')
       const hasElement = run.some(c => c.type === 'JSXElement')
@@ -908,13 +1530,10 @@ function detectJSXInterpolation (
 
       // Check if any expression container in this run is a plural ternary
       let pluralChild: any = null
-      let pluralData: ReturnType<typeof tryParsePluralTernary> = null
+      let pluralData: ReturnType<typeof parsePluralExpression> = null
       for (const child of run) {
-        if (
-          child.type === 'JSXExpressionContainer' &&
-          child.expression?.type === 'ConditionalExpression'
-        ) {
-          const p = tryParsePluralTernary(child.expression, content)
+        if (child.type === 'JSXExpressionContainer') {
+          const p = parsePluralExpression(child.expression, content)
           if (p) {
             pluralChild = child
             pluralData = p
@@ -923,13 +1542,16 @@ function detectJSXInterpolation (
         }
       }
 
+      // A sentence with both an element and a plural stays in its parts: in a <Trans> the plural's forms would
+      // end up untranslated in an interpolation, and a plural t() cannot hold the element
+      if (hasElement && pluralChild) continue
+
       if (hasElement) {
         // ── JSX sibling run with nested HTML elements → <Trans> ──
-        const spanStart = run[0].span.start
-        const spanEnd = run[run.length - 1].span.end
+        const [spanStart, spanEnd] = runSpan(run, content)
 
         // Build the translation string (with indexed tags) and text-only version (for scoring)
-        const usedNames = new Set<string>()
+        const usedNames: UsedNames = new Map()
         const interpolations: Array<{ name: string, expression: string }> = []
         let transValue = ''
         let textOnly = ''
@@ -940,9 +1562,17 @@ function detectJSXInterpolation (
         for (const child of run) {
           if (child.type === 'JSXText') {
             const raw = content.slice(child.span.start, child.span.end)
-            transValue += raw
-            textOnly += raw
+            const text = jsxTextValue(raw)
+            transValue += text
+            textOnly += text
             transContent += raw
+            // whitespace with a line break is no child of the element at all
+            if (text) childIndex++
+          } else if (child.type === 'JSXExpressionContainer' && child.expression?.type === 'StringLiteral') {
+            // {' '} and other literal text: part of the sentence, kept as written
+            transValue += child.expression.value
+            textOnly += child.expression.value
+            transContent += content.slice(child.span.start, child.span.end)
             childIndex++
           } else if (child.type === 'JSXExpressionContainer') {
             const info = resolveExpressionName(child.expression, content, usedNames)
@@ -952,7 +1582,7 @@ function detectJSXInterpolation (
             // In <Trans> children, simple expressions become {{ obj }} syntax
             const objExpr = info.name === info.expression ? info.name : `${info.name}: ${info.expression}`
             transContent += `{{ ${objExpr} }}`
-            interpolations.push(info)
+            if (!info.reused) interpolations.push(info)
             childIndex++
           } else if (child.type === 'JSXElement') {
             const innerText = getJSXElementTextContent(child, content)
@@ -996,13 +1626,13 @@ function detectJSXInterpolation (
         const countExpr = pluralData.countExpression
 
         // Resolve names for non-count, non-plural expressions
-        const usedNames = new Set<string>()
+        const usedNames: UsedNames = new Map()
         const extraInterpolations: Array<{ name: string, expression: string }> = []
         const exprNameMap = new Map<any, string>()
         let valid = true
 
         for (const child of run) {
-          if (child.type === 'JSXExpressionContainer' && child !== pluralChild) {
+          if (child.type === 'JSXExpressionContainer' && child !== pluralChild && child.expression?.type !== 'StringLiteral') {
             const exprText = content.slice(child.expression.span.start, child.expression.span.end)
             if (exprText === countExpr) {
               exprNameMap.set(child, 'count')
@@ -1010,12 +1640,12 @@ function detectJSXInterpolation (
               const info = resolveExpressionName(child.expression, content, usedNames)
               if (!info) { valid = false; break }
               exprNameMap.set(child, info.name)
-              extraInterpolations.push(info)
+              if (!info.reused) extraInterpolations.push(info)
             }
           }
         }
 
-        if (!valid) continue
+        if (!valid || !mergeInterpolations(extraInterpolations, pluralData.interpolations)) continue
 
         // Build merged text for each plural form
         const forms = [
@@ -1029,7 +1659,9 @@ function detectJSXInterpolation (
           let text = ''
           for (const child of run) {
             if (child.type === 'JSXText') {
-              text += content.slice(child.span.start, child.span.end)
+              text += jsxTextValue(content.slice(child.span.start, child.span.end))
+            } else if (child.expression?.type === 'StringLiteral') {
+              text += child.expression.value
             } else if (child === pluralChild) {
               const formText = form === 'zero'
                 ? pluralData.zero!
@@ -1045,8 +1677,7 @@ function detectJSXInterpolation (
           formTexts[form] = text.trim()
         }
 
-        const spanStart = run[0].span.start
-        const spanEnd = run[run.length - 1].span.end
+        const [spanStart, spanEnd] = runSpan(run, content)
         const otherText = formTexts.other
         if (!otherText) continue
 
@@ -1063,6 +1694,7 @@ function detectJSXInterpolation (
           if (extraInterpolations.length > 0) {
             candidate.interpolations = extraInterpolations
           }
+          candidate.pluralHelper = pluralHelperOf(pluralChild.expression)
           // Plural + JSX merge is always user-facing
           candidate.confidence = Math.min(1, candidate.confidence + 0.3)
 
@@ -1079,35 +1711,37 @@ function detectJSXInterpolation (
       } else {
         // ── Original JSX sibling merging (text + expressions, no elements) ──
         // Build the interpolated text from the run
-        const usedNames = new Set<string>()
+        const usedNames: UsedNames = new Map()
         const interpolations: Array<{ name: string, expression: string }> = []
         let text = ''
         let valid = true
 
         for (const child of run) {
           if (child.type === 'JSXText') {
-            text += content.slice(child.span.start, child.span.end)
+            text += jsxTextValue(content.slice(child.span.start, child.span.end))
+          } else if (child.expression?.type === 'StringLiteral') {
+            text += child.expression.value
           } else {
             const info = resolveExpressionName(child.expression, content, usedNames)
             if (!info) { valid = false; break }
             text += `{{${info.name}}}`
-            interpolations.push(info)
+            if (!info.reused) interpolations.push(info)
           }
         }
 
         if (!valid) continue
 
         const trimmed = text.trim()
-        if (!trimmed || interpolations.length === 0) continue
+        const literalPiece = run.some(c => c.expression?.type === 'StringLiteral')
+        if (!trimmed || (interpolations.length === 0 && !literalPiece) || !hasWordsBesidePlaceholders(trimmed)) continue
 
-        const spanStart = run[0].span.start
-        const spanEnd = run[run.length - 1].span.end
+        const [spanStart, spanEnd] = runSpan(run, content)
 
         const candidate = detectCandidate(trimmed, spanStart, spanEnd, file, content, config)
         if (candidate) {
           candidate.type = 'jsx-text'
           candidate.content = trimmed
-          candidate.interpolations = interpolations
+          if (interpolations.length) candidate.interpolations = interpolations
           // Mixed text + expressions in JSX is almost always user-facing
           candidate.confidence = Math.min(1, candidate.confidence + 0.2)
 
@@ -1126,16 +1760,35 @@ function detectJSXInterpolation (
   }
 
   // Recurse into children
-  for (const key in node) {
-    const value = node[key]
-    if (value && typeof value === 'object') {
-      if (Array.isArray(value)) {
-        value.forEach(item => detectJSXInterpolation(item, content, file, config, candidates))
-      } else {
-        detectJSXInterpolation(value, content, file, config, candidates)
-      }
-    }
+  forEachChild(node, parts, child => detectJSXInterpolation(child, content, file, config, candidates))
+}
+
+/** A run without the whitespace-only text and `{' '}` pieces at its two ends. */
+function trimRun (run: any[]): any[] {
+  const blank = (c: any) => (c.type === 'JSXText' && !c.value?.trim()) ||
+    (c.type === 'JSXExpressionContainer' && c.expression?.type === 'StringLiteral' && !c.expression.value.trim())
+  let start = 0
+  let end = run.length
+  while (start < end && blank(run[start])) start++
+  while (end > start && blank(run[end - 1])) end--
+  return run.slice(start, end)
+}
+
+/** Where a run's rewrite starts and ends: inside the whitespace of its first and last text. */
+function runSpan (run: any[], content: string): [number, number] {
+  const first = run[0]
+  const last = run[run.length - 1]
+  let start = first.span.start
+  let end = last.span.end
+  if (first.type === 'JSXText') {
+    const raw = content.slice(first.span.start, first.span.end)
+    start += raw.length - raw.trimStart().length
   }
+  if (last.type === 'JSXText') {
+    const raw = content.slice(last.span.start, last.span.end)
+    end -= raw.length - raw.trimEnd().length
+  }
+  return [start, end]
 }
 
 /**
@@ -1146,33 +1799,73 @@ function isSimpleJSXExpression (expr: any): boolean {
   if (!expr) return false
   if (expr.type === 'Identifier') return true
   if (expr.type === 'MemberExpression' && !expr.computed && expr.property?.type === 'Identifier') return true
+  // A string or number made from one, inside a sentence as a placeholder (`up to {n.toLocaleString()} segments`,
+  // `{Math.round(score * 100)}%`, `+ {total - shown} more`); any other call may return elements
+  if (expr.type === 'ParenthesisExpression') return isSimpleJSXExpression(expr.expression)
+  if (expr.type === 'NumericLiteral') return true
+  if (expr.type === 'BinaryExpression' && ARITHMETIC_OPERATORS.has(expr.operator)) {
+    return isSimpleJSXExpression(expr.left) && isSimpleJSXExpression(expr.right)
+  }
+  // a choice between such values (`{young ? 3 : 2}`); a choice between strings is text of its own, which a
+  // placeholder would leave untranslated
+  if (expr.type === 'ConditionalExpression') {
+    return [expr.consequent, expr.alternate].every(b => b?.type !== 'StringLiteral' && b?.type !== 'TemplateLiteral' && isSimpleJSXExpression(b))
+  }
+  // `format.date(x)`, `formatPrice(x)`: a formatter returns a string
+  if (expr.type === 'CallExpression' && expr.callee?.type === 'Identifier') return /^format[A-Z]/.test(expr.callee.value)
+  if (expr.type === 'CallExpression' && expr.callee?.type === 'MemberExpression' && expr.callee.property?.type === 'Identifier') {
+    const object = expr.callee.object
+    const method = expr.callee.property.value
+    return STRING_METHODS.has(method) || /^format/.test(method) ||
+      (object?.type === 'Identifier' && (object.value === 'Math' || object.value === 'Number' || /^(?:format|formatter|fmt|intl)$/i.test(object.value)))
+  }
   return false
 }
+
+const ARITHMETIC_OPERATORS = new Set(['-', '*', '/', '%'])
+
+/**
+ * Methods that return a string whatever they are called on (`list.map(…).join(', ')`), so their call in JSX
+ * text is a placeholder like a variable; not `slice`, which keeps an array of elements.
+ */
+const STRING_METHODS = new Set([
+  'join', 'toString', 'toLocaleString', 'toLocaleDateString', 'toLocaleTimeString', 'toFixed', 'toPrecision',
+  'trim', 'toUpperCase', 'toLowerCase', 'padStart', 'padEnd', 'substring', 'replace', 'replaceAll'
+])
 
 /**
  * Returns true when a JSXElement is "simple" enough to be included in a
  * `<Trans>` JSX sibling run.  Accepts:
- * - Self-closing elements (`<br />`, `<img />`)
- * - Elements whose only children are `JSXText` nodes
- * Only HTML-like elements (lowercase tag name) are accepted; React
- * components (uppercase, e.g. `<Button />`) break the run.
+ * - Self-closing HTML elements (`<br />`, `<img />`)
+ * - HTML elements whose only children are `JSXText` nodes
+ * - Components whose only children are text, a link in a sentence
+ *   (`Leave your <DialogLink to='/'>projects</DialogLink> first.`); a component
+ *   without text (`<Icon />`) breaks the run
  */
 function isSimpleJSXElement (node: any): boolean {
-  if (node.type !== 'JSXElement') return false
+  if (node.type !== 'JSXElement' || isIconElement(node)) return false
   const namePart = node.opening?.name
   if (!namePart) return false
-  // Only include HTML-like elements (lowercase first char)
-  let tagName: string | null = null
-  if (namePart.type === 'Identifier') {
-    tagName = namePart.value
+  const children = node.children || []
+  const textOnly = children.every((c: any) => c.type === 'JSXText')
+  if (namePart.type === 'JSXMemberExpression') {
+    const name = `${namePart.object?.value ?? ''}.${namePart.property?.value ?? ''}`
+    return INLINE_COMPONENT_RE.test(name) && children.length > 0 && textOnly
   }
-  if (!tagName || tagName[0] !== tagName[0].toLowerCase()) return false
+  if (namePart.type !== 'Identifier') return false
+  const tagName: string = namePart.value
+  if (tagName[0] !== tagName[0].toLowerCase()) return INLINE_COMPONENT_RE.test(tagName) && children.some((c: any) => c.value?.trim()) && textOnly
   // Self-closing elements are simple
   if (node.opening?.selfClosing) return true
   // Elements with only text children (or empty) are simple
-  const children = node.children || []
-  return children.length === 0 || children.every((c: any) => c.type === 'JSXText')
+  return children.length === 0 || textOnly
 }
+
+/**
+ * Components that stand inside a sentence: links and text styles (`DialogLink`, `Text.Strong`). A button or a
+ * card next to a text is a piece of its own, not part of the sentence.
+ */
+const INLINE_COMPONENT_RE = /Link$|^Text\b|Text$|^(?:Strong|Em|B|I|Code|Mark|Highlight)$/
 
 /**
  * Returns the text content of a simple JSXElement's children.
@@ -1189,13 +1882,28 @@ function getJSXElementTextContent (node: any, content: string): string {
  * Returns true when a JSXElement is a `<Trans>` component
  * (already instrumented content).
  */
-function isTransComponent (node: any): boolean {
+function isTransComponent (node: any, transComponents: readonly string[] = []): boolean {
   const opening = node.opening
   if (!opening) return false
   const name = opening.name
-  if (name?.type === 'Identifier' && name.value === 'Trans') return true
-  if (name?.type === 'JSXMemberExpression' && name.property?.type === 'Identifier' && name.property.value === 'Trans') return true
+  if (name?.type === 'Identifier') return name.value === 'Trans' || transComponents.includes(name.value)
+  if (name?.type === 'JSXMemberExpression' && name.property?.type === 'Identifier') {
+    const object = name.object?.type === 'Identifier' ? name.object.value : ''
+    return name.property.value === 'Trans' || transComponents.includes(`${object}.${name.property.value}`)
+  }
   return false
+}
+
+/**
+ * An icon: an element whose name ends in `Icon`, or one with a Material icon class. Its text is a ligature
+ * (`<Icon>delete</Icon>`, `<span className='material-icons'>search</span>`) that a translation would break.
+ */
+function isIconElement (node: any): boolean {
+  const name = node.opening?.name
+  const tag = name?.type === 'Identifier' ? name.value : name?.type === 'JSXMemberExpression' ? name.property?.value : ''
+  if (/Icon$/.test(tag ?? '')) return true
+  return (node.opening?.attributes ?? []).some((a: any) =>
+    a.name?.value === 'className' && a.value?.type === 'StringLiteral' && /\bmaterial-(?:icons|symbols)/.test(a.value.value))
 }
 
 // ─── Plural conditional pattern detection ────────────────────────────────────
@@ -1305,8 +2013,11 @@ function detectPluralPatterns (
 ): void {
   if (!node) return
 
-  if (node.type === 'ConditionalExpression') {
-    const plural = tryParsePluralTernary(node, content)
+  const parts = nonTextParts(node, file, config, false)
+  if (parts === 'all') return
+
+  if (node.type === 'ConditionalExpression' || node.type === 'CallExpression') {
+    const plural = parsePluralExpression(node, content)
     if (plural) {
       // Use the "other" form as the candidate content (with {{count}})
       const spanStart = node.span.start
@@ -1336,6 +2047,8 @@ function detectPluralPatterns (
           one: plural.one,
           other: plural.other
         }
+        if (plural.interpolations) candidate.interpolations = plural.interpolations
+        candidate.pluralHelper = pluralHelperOf(node)
         // Plural patterns are always user-facing text — boost confidence
         candidate.confidence = Math.min(1, candidate.confidence + 0.3)
 
@@ -1355,20 +2068,80 @@ function detectPluralPatterns (
   }
 
   // Recurse into children
-  for (const key in node) {
-    const value = node[key]
-    if (value && typeof value === 'object') {
-      if (Array.isArray(value)) {
-        value.forEach(item => detectPluralPatterns(item, content, file, config, candidates))
-      } else {
-        detectPluralPatterns(value, content, file, config, candidates)
+  forEachChild(node, parts, child => detectPluralPatterns(child, content, file, config, candidates))
+}
+
+/** A plural helper call or a `count === 1` ternary as its plural forms, or null. */
+function parsePluralExpression (
+  expr: any,
+  content: string
+): { countExpression: string, zero?: string, one?: string, other: string, interpolations?: Array<{ name: string, expression: string }> } | null {
+  if (expr?.type === 'ConditionalExpression') return tryParsePluralTernary(expr, content)
+  if (expr?.type === 'CallExpression') return tryParsePluralCall(expr, content)
+  return null
+}
+
+/** Names of plural helpers whose call reads `(count, one, other)`. */
+const PLURAL_HELPER_RE = /^(?:plural|pluralize|pluralise)$/i
+
+/**
+ * Attempts to parse a plural helper call into a plural pattern:
+ *   plural(count, '# file', '# files')   →  one: '{{count}} file', other: '{{count}} files'
+ *   pluralize(n, 'item', `${n} items`)   →  one: 'item', other: '{{count}} items'
+ * `#` in a form stands for the number, as in ICU. Only a call whose two forms are text (a string, or a
+ * template literal whose only expression is the count) and whose count is not a string.
+ */
+function tryParsePluralCall (
+  node: any,
+  content: string
+): { countExpression: string, zero?: string, one: string, other: string, interpolations?: Array<{ name: string, expression: string }> } | null {
+  const callee = node.callee
+  const name = callee?.type === 'Identifier'
+    ? callee.value
+    : callee?.type === 'MemberExpression' && !callee.computed && callee.property?.type === 'Identifier' ? callee.property.value : null
+  if (!name || !PLURAL_HELPER_RE.test(name)) return null
+
+  const [count, one, other] = (node.arguments ?? []).map((a: any) => a?.spread ? null : a?.expression)
+  if (!count?.span || !one || !other || count.type === 'StringLiteral' || count.type === 'TemplateLiteral') return null
+
+  const countExpression = content.slice(count.span.start, count.span.end)
+  // A form's other expressions become placeholders, named once for both forms (`showing ${shown} of # user`)
+  const usedNames: UsedNames = new Map()
+  const interpolations: Array<{ name: string, expression: string }> = []
+  const formText = (form: any): string | null => {
+    const text = extractStaticText(form)
+    if (text !== null) return text
+    if (form?.type !== 'TemplateLiteral') return null
+    let result = ''
+    for (let i = 0; i < form.quasis.length; i++) {
+      result += form.quasis[i].cooked ?? form.quasis[i].raw ?? ''
+      const expr = form.expressions?.[i]
+      if (!expr) continue
+      if (content.slice(expr.span.start, expr.span.end) === countExpression) {
+        result += '{{count}}'
+        continue
       }
+      const info = resolveExpressionName(expr, content, usedNames)
+      if (!info) return null
+      result += `{{${info.name}}}`
+      if (!info.reused) interpolations.push(info)
     }
+    return result
+  }
+  const oneText = formText(one)
+  const otherText = formText(other)
+  if (oneText === null || otherText === null) return null
+
+  return {
+    countExpression,
+    one: oneText.replace(/#/g, '{{count}}'),
+    other: otherText.replace(/#/g, '{{count}}'),
+    ...(interpolations.length ? { interpolations } : {})
   }
 }
 
 /**
- * Attempts to parse a `ConditionalExpression` tree into a plural pattern.
+ * Parses the shape of a `ConditionalExpression` tree into a plural pattern (see `tryParsePluralTernary`).
  *
  * Supported shapes:
  *   count === 0 ? zeroText : count === 1 ? oneText : otherText   (3-way)
@@ -1376,7 +2149,7 @@ function detectPluralPatterns (
  *
  * Returns `null` when the node doesn't match any recognised plural shape.
  */
-function tryParsePluralTernary (
+function parsePluralTernaryShape (
   node: any,
   content: string
 ): { countExpression: string, zero?: string, one?: string, other: string } | null {
@@ -1422,6 +2195,27 @@ function tryParsePluralTernary (
   return null
 }
 
+/**
+ * A ternary on `count === 1` is a plural only when its branches are text: `score === 1 ? 'var(--ok)' :
+ * 'var(--warn)'` and `score === 1 ? 'item-full' : 'item-low'` pick a style.
+ */
+function tryParsePluralTernary (
+  node: any,
+  content: string
+): { countExpression: string, zero?: string, one?: string, other: string } | null {
+  const plural = parsePluralTernaryShape(node, content)
+  if (!plural) return null
+  // Fragments merged with the text around them (`''`, `'s'`, `${n}`) are fine; a technical form is not
+  const forms = [plural.zero, plural.one, plural.other].filter((f): f is string => f !== undefined)
+  const technical = forms.some(f => f.trim().length > 1 && detectsAsTechnical(f))
+  return !technical && forms.some(f => /\p{L}/u.test(f.replace(/\{\{[^}]*\}\}/g, ''))) ? plural : null
+}
+
+/** A form that the string detector skips as technical (a CSS value, a class name); a single word is text here. */
+function detectsAsTechnical (text: string): boolean {
+  return detectCandidate(text, 0, text.length, 'plural.js', text, { locales: [], extract: { input: [], output: '' } }, undefined, true) === null
+}
+
 // ─── Language-change detection ───────────────────────────────────────────────
 
 /**
@@ -1440,6 +2234,26 @@ const LANGUAGE_PROP_NAMES = new Set(['language', 'lang', 'locale', 'lng'])
 const LANGUAGE_SETTER_RE = /^(?:set|change|update|select)(?:Language|Lang|Locale|Lng)$/i
 
 /**
+ * A variable or a property (`code`, `lang.code`, `e.target.value`): the injected `changeLanguage()` repeats
+ * the expression, which must then give the same value without doing anything (`getDefault(…)` would run twice).
+ */
+function isPlainValue (expr: any): boolean {
+  if (expr?.type === 'Identifier') return true
+  return expr?.type === 'MemberExpression' && expr.property?.type === 'Identifier' && isPlainValue(expr.object)
+}
+
+/** Nodes whose statements are a list, where one more statement can go before another. */
+const STATEMENT_LISTS = new Set(['FunctionBody', 'BlockStatement', 'Module', 'Script', 'SwitchCase'])
+
+/**
+ * Callees whose object argument holds the user's settings, so a language property there is the app's
+ * language (`updateSettings({ language })`, `saveProfile({ locale })`, `setState({ locale })`). Elsewhere a
+ * `language`/`lng` property is data (`fetchTranslations({ lng })`, `list.push({ lng })`), and hooks
+ * (`useState({ lng: [] })`) never are.
+ */
+const SETTINGS_CALLEE_RE = /settings|preferences|prefs|profile|user|account|state|locale|language/i
+
+/**
  * Walks the AST looking for call expressions that appear to change the
  * application language.  Detected sites will later be augmented with an
  * `i18n.changeLanguage()` call by the transformer.
@@ -1454,15 +2268,24 @@ const LANGUAGE_SETTER_RE = /^(?:set|change|update|select)(?:Language|Lang|Locale
  *    `setLanguage(code)`
  *    `setLocale(lng)`
  *    `changeLanguage(selectedLng)`
+ *
+ * Only a call that is a statement of its own in a block or an arrow function's expression body: the
+ * injected call goes before it, which would change any other place (`const x = setLocale(l)`,
+ * `return save({ locale })`, `if (ok) setLocale(l)`).
  */
 function detectLanguageChangeSites (
   node: any,
   content: string,
-  sites: LanguageChangeSite[]
+  sites: LanguageChangeSite[],
+  parent?: any,
+  grandparent?: any
 ): void {
   if (!node) return
 
-  if (node.type === 'CallExpression' && node.span) {
+  const standsAlone = (parent?.type === 'ExpressionStatement' && parent.expression === node &&
+      STATEMENT_LISTS.has(grandparent?.type)) ||
+    (parent?.type === 'ArrowFunctionExpression' && parent.body === node)
+  if (node.type === 'CallExpression' && node.span && standsAlone) {
     const detected = tryParseLanguageChangeCall(node, content)
     if (detected) {
       // Check if changeLanguage() already exists nearby (e.g. same arrow body)
@@ -1495,10 +2318,76 @@ function detectLanguageChangeSites (
     const value = node[key]
     if (value && typeof value === 'object') {
       if (Array.isArray(value)) {
-        value.forEach(item => detectLanguageChangeSites(item, content, sites))
+        value.forEach(item => detectLanguageChangeSites(item, content, sites, node, parent))
       } else {
-        detectLanguageChangeSites(value, content, sites)
+        detectLanguageChangeSites(value, content, sites, node, parent)
       }
+    }
+  }
+}
+
+/**
+ * The imports of the plural helpers `names` (`import { plural, number } from './format'`), each with the
+ * number of other identifiers naming it in the file and the text that removes its import.
+ */
+function findPluralHelperImports (ast: any, content: string, names: Set<string>): PluralHelperImport[] {
+  const found: PluralHelperImport[] = []
+  for (const decl of ast.body ?? []) {
+    if (decl.type !== 'ImportDeclaration') continue
+    const specifiers = decl.specifiers ?? []
+    // `import fmt, { plural } from …` mixes a default with the braces: removing one of them takes more than a
+    // specifier and a comma, so such an import stays
+    const named = specifiers.every((spec: any) => spec.type === 'ImportSpecifier')
+    specifiers.forEach((spec: any, i: number) => {
+      const name = spec.local?.value
+      if (!names.has(name) || (!named && specifiers.length > 1)) return
+      let [removeStart, removeEnd] = specifiers.length === 1
+        ? [decl.span.start, decl.span.end]
+        : i < specifiers.length - 1
+          ? [spec.span.start, specifiers[i + 1].span.start]
+          : [specifiers[i - 1].span.end, spec.span.end]
+      if (specifiers.length === 1) removeEnd += /^\r?\n/.exec(content.slice(removeEnd))?.[0].length ?? 0
+      found.push({ name, references: 0, removeStart, removeEnd })
+    })
+  }
+  const count = (node: any): void => {
+    if (!node || typeof node !== 'object') return
+    if (node.type === 'ImportDeclaration') return
+    if (node.type === 'Identifier') {
+      const helper = found.find(h => h.name === node.value)
+      if (helper) helper.references++
+    }
+    for (const key in node) {
+      const value = node[key]
+      if (Array.isArray(value)) value.forEach(count)
+      else if (value && typeof value === 'object') count(value)
+    }
+  }
+  count(ast)
+  return found
+}
+
+/** The `useMemo`/`useCallback` calls with a callback and a dependency array (see `MemoHookSpan`). */
+function collectMemoHooks (node: any, hooks: MemoHookSpan[]): void {
+  if (!node || typeof node !== 'object') return
+  if (node.type === 'CallExpression' && ['useMemo', 'useCallback'].includes(getCalleeName(node.callee) ?? '')) {
+    const [callback, deps] = (node.arguments ?? []).map((a: any) => a?.expression)
+    if (callback?.span && deps?.type === 'ArrayExpression' && deps.span) {
+      const elements = (deps.elements ?? []).filter(Boolean).map((e: any) => e.expression)
+      hooks.push({
+        callbackStart: callback.span.start,
+        callbackEnd: callback.span.end,
+        insertAt: elements.length ? elements[elements.length - 1].span.end : deps.span.start + 1,
+        hasDeps: elements.length > 0,
+        hasT: elements.some((e: any) => e.type === 'Identifier' && e.value === 't')
+      })
+    }
+  }
+  for (const key in node) {
+    const value = node[key]
+    if (value && typeof value === 'object') {
+      if (Array.isArray(value)) value.forEach(item => collectMemoHooks(item, hooks))
+      else collectMemoHooks(value, hooks)
     }
   }
 }
@@ -1522,10 +2411,10 @@ function tryParseLanguageChangeCall (
     if (objName === 'i18n' || objName === 'i18next') return null
   }
 
-  // ── Pattern 1: direct setter — setLanguage(expr), changeLocale(expr) etc. ──
+  // ── Pattern 1: direct setter, setLanguage(expr), changeLocale(expr) etc. ──
   if (calleeName && LANGUAGE_SETTER_RE.test(calleeName)) {
     const firstArg = node.arguments[0]?.expression
-    if (firstArg?.span) {
+    if (firstArg?.span && isPlainValue(firstArg)) {
       const langExpr = content.slice(firstArg.span.start, firstArg.span.end)
       // Skip if the argument is already an i18next.changeLanguage call
       if (langExpr.includes('changeLanguage')) return null
@@ -1537,7 +2426,8 @@ function tryParseLanguageChangeCall (
     }
   }
 
-  // ── Pattern 2: object with language property — fn({ language: expr }) ──
+  // ── Pattern 2: object with language property, updateSettings({ language: expr }) ──
+  if (!calleeName || /^use[A-Z]/.test(calleeName) || !SETTINGS_CALLEE_RE.test(calleeName)) return null
   for (const arg of node.arguments) {
     const expr = arg.expression ?? arg
     if (expr?.type !== 'ObjectExpression') continue
@@ -1554,8 +2444,8 @@ function tryParseLanguageChangeCall (
       const valNode = prop.value
       if (valNode?.span) {
         const langExpr = content.slice(valNode.span.start, valNode.span.end)
-        // Skip if value is a static string (e.g. `{ language: 'en' }` in a config)
-        if (valNode.type === 'StringLiteral') continue
+        // Skip if value is a static string (e.g. `{ language: 'en' }` in a config), or not a plain value
+        if (valNode.type === 'StringLiteral' || !isPlainValue(valNode)) continue
         // Skip if already contains changeLanguage
         if (langExpr.includes('changeLanguage')) continue
         return {
@@ -1588,7 +2478,11 @@ function getCalleeName (callee: any): string | null {
  * Gets the list of source files to instrument.
  */
 async function getSourceFilesForInstrumentation (config: I18nextToolkitConfig): Promise<string[]> {
-  const defaultIgnore = ['node_modules/**', 'dist/**', 'build/**', '.next/**']
+  // Stories, mocks and fixtures hold sample data, not the app's texts
+  const defaultIgnore = [
+    'node_modules/**', 'dist/**', 'build/**', '.next/**',
+    '**/*.{stories,story,storybook}.*', '**/__mocks__/**', '**/__fixtures__/**', '**/__tests__/**'
+  ]
 
   const userIgnore = Array.isArray(config.extract.ignore)
     ? config.extract.ignore
@@ -1606,15 +2500,8 @@ async function getSourceFilesForInstrumentation (config: I18nextToolkitConfig): 
  * Checks if the project uses React.
  */
 export async function isProjectUsingReact (): Promise<boolean> {
-  try {
-    const packageJsonPath = process.cwd() + '/package.json'
-    const content = await readFile(packageJsonPath, 'utf-8')
-    const packageJson = JSON.parse(content)
-    const deps = { ...packageJson.dependencies, ...packageJson.devDependencies }
-    return !!deps.react || !!deps['react-i18next']
-  } catch {
-    return false
-  }
+  const deps = await readProjectDeps()
+  return !!deps.react || !!deps['react-i18next']
 }
 
 // ── Project environment detection ───────────────────────────────────────
@@ -1660,13 +2547,7 @@ const SERVER_FRAMEWORKS = [
  */
 export async function detectProjectEnvironment (): Promise<ProjectEnvironment> {
   try {
-    const packageJsonPath = process.cwd() + '/package.json'
-    const raw = await readFile(packageJsonPath, 'utf-8')
-    const packageJson = JSON.parse(raw)
-    const allDeps: Record<string, string> = {
-      ...packageJson.dependencies,
-      ...packageJson.devDependencies
-    }
+    const allDeps = await readProjectDeps()
     const has = (list: string[]) => list.some(dep => !!allDeps[dep])
 
     // 1. Edge / serverless (check first — these projects may also list a
@@ -1776,26 +2657,9 @@ async function ensureI18nInitFile (
 ): Promise<string | null> {
   const cwd = process.cwd()
 
-  // Check for existing init files in common locations
+  // Check for existing init files in common locations (an init elsewhere imports i18next, see runInstrumenter)
   if (await findExistingI18nInitFile()) {
     return null // Init file already exists
-  }
-
-  // Check if i18next.init() is called anywhere in the source
-  try {
-    const sourceFiles = await getSourceFilesForInstrumentation(config)
-    for (const file of sourceFiles) {
-      try {
-        const content = await readFile(file, 'utf-8')
-        if (content.includes('i18next.init') || content.includes('.init(') || content.includes('i18n.init')) {
-          return null // Init is already present somewhere
-        }
-      } catch {
-        // Skip unreadable files
-      }
-    }
-  } catch {
-    // Skip if file scanning fails
   }
 
   // Determine output location — prefer src/ if it exists

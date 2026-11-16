@@ -1,5 +1,5 @@
 import MagicString from 'magic-string'
-import type { I18nextToolkitConfig, CandidateString, TransformResult, ComponentBoundary, LanguageChangeSite } from '../../types.js'
+import type { I18nextToolkitConfig, CandidateString, TransformResult, ComponentBoundary, ImportDeclarationSpan, LanguageChangeSite, MemoHookSpan, PluralHelperImport } from '../../types.js'
 import { generateKeyFromContent } from './key-generator.js'
 
 interface TransformerOptions {
@@ -13,6 +13,15 @@ interface TransformerOptions {
   namespace?: string
   /** Detected language-change call sites to augment with i18n.changeLanguage() */
   languageChangeSites?: LanguageChangeSite[]
+  /**
+   * The file's import declarations from its AST. Without them imports are found by their text, which also
+   * matches an `import … from` inside a string (a code snippet the page shows).
+   */
+  imports?: ImportDeclarationSpan[]
+  /** The file's `useMemo`/`useCallback` calls: one whose callback gets a `t()` call gets `t` in its dependencies */
+  memoHooks?: MemoHookSpan[]
+  /** The imported plural helpers the candidates call: an import whose every use was rewritten goes */
+  pluralHelperImports?: PluralHelperImport[]
 }
 
 /**
@@ -41,12 +50,16 @@ export function transformFile (
     hookInjected: false
   }
 
+  // <Trans> attributes in the quotes the file's JSX attributes use (`title='…'` or `title="…"`)
+  // (a file without quoted attributes: the quotes of its imports)
+  const singleQuoted = (single: RegExp, double: RegExp) => Math.sign((content.match(single)?.length ?? 0) - (content.match(double)?.length ?? 0))
+  const jsxQuote = (singleQuoted(/\s[\w-]+='/g, /\s[\w-]+="/g) || singleQuoted(/\sfrom '/g, /\sfrom "/g)) > 0 ? "'" : '"'
+
   // Filter high-confidence candidates
   const highConfidenceCandidates = candidates.filter(c => c.confidence >= 0.7)
 
   // Track which components have transformed candidates
   const transformedComponents = new Set<string>()
-  let hasComponentCandidates = false
   let hasNonComponentCandidates = false
   let hasTransCandidates = false
 
@@ -85,7 +98,6 @@ export function transformFile (
       if (site.insideComponent) {
         componentsNeedingI18n.add(site.insideComponent)
         transformedComponents.add(site.insideComponent)
-        hasComponentCandidates = true
       } else {
         hasNonComponentCandidates = true
       }
@@ -93,6 +105,8 @@ export function transformFile (
       errors.push(`Failed to inject changeLanguage at offset ${site.callStart}: ${err}`)
     }
   }
+
+  const rewrittenHelperCalls = new Map<string, number>()
 
   // Apply transformations in reverse order (to maintain correct offsets)
   for (let i = highConfidenceCandidates.length - 1; i >= 0; i--) {
@@ -103,29 +117,44 @@ export function transformFile (
       const useHookStyle = !!candidate.insideComponent
       const defaultNS = options.config.extract?.defaultNS ?? 'translation'
       const nsForReplacement = (options.namespace && options.namespace !== defaultNS) ? options.namespace : undefined
-      const replacement = buildReplacement(candidate, key, useHookStyle, nsForReplacement)
+      // <Trans> works in any render code, a helper outside a component too; without React the text stays
+      if (candidate.type === 'jsx-mixed' && !options.hasReact) continue
+      const replacement = buildReplacement(candidate, key, useHookStyle, nsForReplacement, jsxQuote)
 
       if (replacement) {
         s.overwrite(candidate.offset, candidate.endOffset, replacement)
         transformCount++
+        if (candidate.pluralHelper) rewrittenHelperCalls.set(candidate.pluralHelper, (rewrittenHelperCalls.get(candidate.pluralHelper) ?? 0) + 1)
 
         if (candidate.type === 'jsx-mixed') {
           hasTransCandidates = true
         }
 
-        if (candidate.insideComponent) {
-          // jsx-mixed candidates use <Trans>, not t(), so they don't need useTranslation
-          if (candidate.type !== 'jsx-mixed') {
+        // jsx-mixed candidates use <Trans>, not t(), so they need neither useTranslation nor i18next
+        if (candidate.type !== 'jsx-mixed') {
+          if (candidate.insideComponent) {
             transformedComponents.add(candidate.insideComponent)
-            hasComponentCandidates = true
+          } else {
+            hasNonComponentCandidates = true
           }
-        } else {
-          hasNonComponentCandidates = true
         }
       }
     } catch (err) {
       errors.push(`Failed to transform candidate at offset ${candidate.offset}: ${err}`)
     }
+  }
+
+  // A plural helper whose every call became a plural t() is no longer used: its import goes
+  for (const helper of options.pluralHelperImports ?? []) {
+    const rewritten = rewrittenHelperCalls.get(helper.name) ?? 0
+    if (rewritten > 0 && rewritten === helper.references) s.remove(helper.removeStart, helper.removeEnd)
+  }
+
+  // A memoized callback that now calls t() must run again when the language changes: `t` joins its dependencies
+  for (const hook of options.memoHooks ?? []) {
+    const usesT = highConfidenceCandidates.some(c => c.insideComponent && c.type !== 'jsx-mixed' &&
+      c.offset >= hook.callbackStart && c.endOffset <= hook.callbackEnd)
+    if (usesT && !hook.hasT) s.appendLeft(hook.insertAt, hook.hasDeps ? ', t' : 't')
   }
 
   // Add necessary imports and hooks if any transformations were made
@@ -139,8 +168,19 @@ export function transformFile (
         .filter(c => transformedComponents.has(c.name) && !c.hasUseTranslation)
         .sort((a, b) => b.bodyStart - a.bodyStart)
 
+      const addHookLine = (comp: ComponentBoundary, line: string) => {
+        const indent = comp.expressionBody ? lineIndent(content, comp.bodyStart) + '  ' : detectIndent(content, comp.bodyStart)
+        if (comp.expressionBody) {
+          // `() => <p>…</p>` becomes `() => { const { t } = useTranslation(); return <p>…</p> }`
+          s.prependLeft(comp.bodyStart, `{\n${indent}${line}\n${indent}return `)
+          s.appendRight(comp.bodyEnd, `\n${indent.slice(2)}}`)
+        } else {
+          s.appendRight(comp.bodyStart + 1, `\n${indent}${line}`)
+        }
+        injections.hookInjected = true
+      }
+
       for (const comp of affectedComponents) {
-        const indent = detectIndent(content, comp.bodyStart)
         const defaultNS = options.config.extract?.defaultNS ?? 'translation'
         const nsArg = (options.namespace && options.namespace !== defaultNS) ? `'${options.namespace}'` : ''
         // Build destructuring: include `t` if the component has string candidates
@@ -154,9 +194,7 @@ export function transformFile (
         // Skip if component needs neither t nor i18n
         // (e.g. component only has jsx-mixed / <Trans> candidates)
         if (!needsT && !needsI18n) continue
-        const destructured = `{ ${parts.join(', ')} }`
-        s.appendRight(comp.bodyStart + 1, `\n${indent}const ${destructured} = useTranslation(${nsArg})`)
-        injections.hookInjected = true
+        addHookLine(comp, `const { ${parts.join(', ')} } = useTranslation(${nsArg})`)
       }
 
       // For components that already have useTranslation but need i18n added,
@@ -178,6 +216,9 @@ export function transformFile (
             const absEnd = absStart + hookMatch[0].length
             const upgraded = hookMatch[0].replace(/\{\s*t\s*\}/, '{ t, i18n }')
             s.overwrite(absStart, absEnd, upgraded)
+          } else {
+            // its `t` is a prop or comes from another hook: `i18n` needs a hook of its own
+            addHookLine(comp, 'const { i18n } = useTranslation()')
           }
         }
       }
@@ -185,10 +226,11 @@ export function transformFile (
 
     // Add import statements
     addImportStatements(s, content, {
-      needsUseTranslation: hasComponentCandidates && options.hasReact,
+      // only for a hook injected here: a component with a `t` of its own (a prop) needs none
+      needsUseTranslation: injections.hookInjected,
       needsI18next: hasNonComponentCandidates || !options.hasReact,
       needsTrans: hasTransCandidates && options.hasReact
-    })
+    }, options.imports)
     injections.importAdded = true
   }
 
@@ -230,7 +272,8 @@ function buildReplacement (
   candidate: CandidateString,
   key: string,
   useHookStyle: boolean,
-  namespace?: string
+  namespace?: string,
+  jsxQuote = '"'
 ): string {
   const tFunc = useHookStyle ? 't' : 'i18next.t'
   const escapedContent = escapeString(candidate.content)
@@ -290,12 +333,10 @@ function buildReplacement (
     case 'jsx-attribute':
       return `{${tCall}}`
 
-    case 'jsx-mixed':
-      if (useHookStyle) {
-        const nsAttr = namespace ? ` ns="${namespace}"` : ''
-        return `<Trans i18nKey="${key}"${nsAttr}>${candidate.content}</Trans>`
-      }
-      return candidate.content
+    case 'jsx-mixed': {
+      const nsAttr = namespace ? ` ns=${jsxQuote}${namespace}${jsxQuote}` : ''
+      return `<Trans i18nKey=${jsxQuote}${key}${jsxQuote}${nsAttr}>${candidate.content}</Trans>`
+    }
 
     case 'template-literal':
     case 'string-literal':
@@ -330,6 +371,12 @@ function hasImport (content: string, moduleName: string): boolean {
  * Detects the indentation level used after an opening brace.
  * Skips blank lines and reads the whitespace of the first line that has actual content.
  */
+/** The indentation of the line `offset` is on. */
+function lineIndent (content: string, offset: number): string {
+  const lineStart = content.lastIndexOf('\n', offset - 1) + 1
+  return /^[ \t]*/.exec(content.slice(lineStart))![0]
+}
+
 function detectIndent (content: string, braceOffset: number): string {
   let searchFrom = braceOffset
   while (searchFrom < content.length) {
@@ -358,25 +405,33 @@ function detectIndent (content: string, braceOffset: number): string {
 function addImportStatements (
   s: MagicString,
   content: string,
-  needs: { needsUseTranslation: boolean; needsI18next: boolean; needsTrans: boolean }
+  needs: { needsUseTranslation: boolean; needsI18next: boolean; needsTrans: boolean },
+  imports?: ImportDeclarationSpan[]
 ): void {
   let importStatement = ''
+  const imported = (moduleName: string) => imports
+    ? imports.some(i => i.source === moduleName) || new RegExp(`require\\(['"]${moduleName}['"]\\)`).test(content)
+    : hasImport(content, moduleName)
+  // A name the file imports already, from any module (`useTranslation` re-exported by a shared package)
+  const bound = (name: string) => !!imports?.some(i => i.locals?.includes(name))
 
   // Build a combined react-i18next import
   const reactI18nextImports: string[] = []
-  if (needs.needsUseTranslation) reactI18nextImports.push('useTranslation')
-  if (needs.needsTrans) reactI18nextImports.push('Trans')
+  if (needs.needsUseTranslation && !bound('useTranslation')) reactI18nextImports.push('useTranslation')
+  if (needs.needsTrans && !bound('Trans')) reactI18nextImports.push('Trans')
 
   if (reactI18nextImports.length > 0) {
-    if (!hasImport(content, 'react-i18next')) {
+    if (!imported('react-i18next')) {
       importStatement += `import { ${reactI18nextImports.join(', ')} } from 'react-i18next'\n`
     } else {
       // react-i18next is already imported — augment with any missing named exports
-      augmentReactI18nextImport(s, content, reactI18nextImports)
+      const existing = imports?.find(i => i.source === 'react-i18next')
+      augmentReactI18nextImport(s, content, reactI18nextImports, existing?.start ?? 0)
     }
   }
 
-  if (needs.needsI18next && !hasImport(content, 'i18next')) {
+  // `i18next.t()` needs that name: with the AST, an import of i18next under another name does not count
+  if (needs.needsI18next && (imports ? !bound('i18next') : !imported('i18next'))) {
     importStatement += "import i18next from 'i18next'\n"
   }
 
@@ -388,6 +443,18 @@ function addImportStatements (
   // Skip shebang if present
   if (content.startsWith('#!')) {
     insertPos = content.indexOf('\n') + 1
+  }
+
+  if (imports) {
+    // After the last import declaration's line
+    const lastEnd = Math.max(...imports.map(i => i.end), -1)
+    if (lastEnd >= 0) {
+      const newline = content.indexOf('\n', lastEnd)
+      insertPos = newline === -1 ? content.length : newline + 1
+    }
+    if (insertPos > 0 && content[insertPos - 1] !== '\n') importStatement = `\n${importStatement}`
+    s.appendRight(insertPos, importStatement)
+    return
   }
 
   // Find the end of the last import statement. Imports may span multiple lines
@@ -449,9 +516,12 @@ function findImportStatementEnd (content: string, start: number): number {
 function augmentReactI18nextImport (
   s: MagicString,
   content: string,
-  needed: string[]
+  needed: string[],
+  from = 0
 ): void {
-  const importMatch = /import\s*\{([^}]*)\}\s*from\s*['"]react-i18next['"]/.exec(content)
+  const importRegex = /import\s*\{([^}]*)\}\s*from\s*['"]react-i18next['"]/g
+  importRegex.lastIndex = from
+  const importMatch = importRegex.exec(content)
   if (!importMatch) return
 
   const existingImports = importMatch[1].split(',').map(x => x.trim()).filter(Boolean)

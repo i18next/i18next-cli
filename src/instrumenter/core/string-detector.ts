@@ -26,6 +26,8 @@ import { translatableAttributeSet, translatablePropertySet } from '../../utils/j
  * @param config - Toolkit configuration
  * @param translatableAttributes - Lower-cased attribute names that hold text on the enclosing JSX element
  *   (from the per-element `extract.acceptedAttributes` rules); defaults to the built-in list
+ * @param isJsxText - The string is JSX text, where a single lower-case word (`<Tag>expired</Tag>`) is text
+ *   rather than an identifier
  * @returns CandidateString with confidence score, or null if should be skipped
  */
 export function detectCandidate (
@@ -35,9 +37,10 @@ export function detectCandidate (
   file: string,
   code: string,
   config: Omit<I18nextToolkitConfig, 'plugins'>,
-  translatableAttributes: ReadonlySet<string> = translatableAttributeSet
+  translatableAttributes: ReadonlySet<string> = translatableAttributeSet,
+  isJsxText = false
 ): CandidateString | null {
-  const skipReason = shouldSkip(content, file, code, offset, endOffset, translatableAttributes)
+  const skipReason = shouldSkip(content, file, code, offset, translatableAttributes, isJsxText)
   if (skipReason) {
     return null
   }
@@ -86,6 +89,9 @@ export function detectCandidate (
   }
 }
 
+/** An HTML character reference in JSX text: `&nbsp;`, `&#8212;`, `&#x2014;`. */
+export const HTML_ENTITY_RE = /&(?:#\d+|#x[\da-f]+|[a-z][a-z\d]*);/gi
+
 /**
  * Determines if a string should be skipped from instrumentation.
  *
@@ -96,8 +102,8 @@ function shouldSkip (
   file: string,
   code: string,
   offset: number,
-  endOffset: number,
-  translatableAttributes: ReadonlySet<string>
+  translatableAttributes: ReadonlySet<string>,
+  isJsxText: boolean
 ): string | null {
   // Skip test files
   if (file.match(/\.(test|spec)\.(ts|tsx|js|jsx)$/i)) {
@@ -114,6 +120,11 @@ function shouldSkip (
     return 'Whitespace only'
   }
 
+  // Skip separators, symbols and numbers with units: no letter outside HTML entities (` / `, `·`, `100%`)
+  if (!/\p{L}/u.test(content.replace(HTML_ENTITY_RE, ''))) {
+    return 'No letters'
+  }
+
   // Skip pure numbers (including decimals and negative numbers)
   if (/^-?\d+(\.\d+)?$/.test(content)) {
     return 'Pure number'
@@ -124,9 +135,15 @@ function shouldSkip (
     return 'URL or path'
   }
 
-  // Skip technical strings: attribute values, class names, technical IDs
-  if (isTechnicalString(content)) {
+  // Skip technical strings: attribute values, class names, technical IDs; in a text slot (JSX text, a
+  // translatable attribute) a single word is text (`<Tag>expired</Tag>`, `aria-label='actions'`)
+  const textSlot = isJsxText || translatableAttributes.has(attributeNameBefore(code, offset) ?? '')
+  if (isTechnicalString(content) && !(textSlot && /^\p{L}+$/u.test(content) && !/\p{Ll}\p{Lu}/u.test(content))) {
     return 'Technical string'
+  }
+
+  if (isCodeSnippet(content)) {
+    return 'Code snippet'
   }
 
   // Skip developer-facing error codes (all-caps, underscore-delimited)
@@ -135,7 +152,7 @@ function shouldSkip (
   }
 
   // Skip strings that are already wrapped in t() or Trans components
-  if (isAlreadyInstrumented(code, offset, endOffset)) {
+  if (isAlreadyInstrumented(code, offset)) {
     return 'Already instrumented'
   }
 
@@ -162,8 +179,9 @@ function isURLLike (str: string): boolean {
   // File paths: ./path, ../path, /absolute/path, C:\windows\path
   if (/^(\.\.?\/|\/|[A-Za-z]:\\)/.test(str)) return true
 
-  // Import paths (common patterns) — must have no spaces to avoid false positives on sentences
-  if (/^['"]?[@a-z][\w-]*/.test(str.toLowerCase()) && !str.includes(' ') && (str.includes('/') || str.includes('.'))) {
+  // Import paths and module ids (`react-dom/client`, `lodash.debounce`): no spaces, a `/` or a `.` inside;
+  // a word that ends a sentence (`Done.`, `first.`) is not one
+  if (/^['"]?[@a-z][\w-]*/.test(str) && !str.includes(' ') && /[./][\w@]/.test(str)) {
     return true
   }
 
@@ -174,8 +192,8 @@ function isURLLike (str: string): boolean {
  * Checks if a string is technical (class name, HTML attribute, IDs, etc).
  */
 function isTechnicalString (str: string): boolean {
-  // kebab-case or camelCase all lowercase suggests CSS class or technical ID
-  if (/^[a-z0-9-_]+$/.test(str) && str.length < 30) {
+  // kebab-case or snake_case, or one lowercase word: a CSS class or a technical ID, however long
+  if (/^[a-z0-9-_]+$/.test(str)) {
     return true
   }
 
@@ -189,7 +207,64 @@ function isTechnicalString (str: string): boolean {
     return true
   }
 
+  // camelCase identifiers: object keys, event and feature names (`aiReview`, `apiKeys`)
+  if (/^[a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)+$/.test(str)) {
+    return true
+  }
+
+  if (isCSSValue(str)) {
+    return true
+  }
+
+  // An HTTP authorization value (`Bearer ${token}`)
+  if (/^(?:Bearer|Basic|Digest|Token) \{\{\w+\}\}$/.test(str)) {
+    return true
+  }
+
+  // One token holding `|`, `=` or an inner `:` is a rule, query or key path (`required|min:2`, `max:50`, `a=b`);
+  // a trailing colon is a label (`Note:`)
+  if (/^\S+$/.test(str) && /[|=]|:(?!$)/.test(str)) {
+    return true
+  }
+
   return false
+}
+
+/** A CSS keyword or named color, the words a CSS value may hold besides numbers, colors and functions. */
+const CSS_WORDS = new Set([
+  'inset', 'solid', 'dashed', 'dotted', 'double', 'none', 'auto', 'inherit', 'initial', 'unset', 'transparent',
+  'currentcolor', 'bold', 'normal', 'italic', 'center', 'left', 'right', 'top', 'bottom', 'flex', 'grid', 'block',
+  'inline', 'absolute', 'relative', 'fixed', 'sticky', 'hidden', 'visible', 'ease', 'ease-in', 'ease-out',
+  'ease-in-out', 'linear', 'black', 'white', 'red', 'green', 'blue', 'gray', 'grey', 'orange', 'yellow', 'purple'
+])
+
+/**
+ * Checks if a string is a CSS value: `var(--brand)`, `inset 0 0 5px 1px var(--shadow)`, `1px solid #ccc`. Only
+ * numbers (with a unit), colors, CSS functions and CSS keywords, at least one of them no keyword.
+ */
+function isCSSValue (str: string): boolean {
+  let rest = str.trim()
+  // CSS functions, nested ones from the inside out: var(--a, calc(1px + 2px))
+  for (let before = ''; before !== rest;) {
+    before = rest
+    rest = rest.replace(/[a-z-]+\([^()]*\)/gi, ' \u0001 ')
+  }
+  const tokens = rest.split(/[\s,/]+/).filter(Boolean)
+  const valueToken = (t: string) => t === '\u0001' || /^#[\da-f]{3,8}$/i.test(t) ||
+    /^-?\d*\.?\d+(?:px|em|rem|%|vh|vw|vmin|vmax|ch|ex|pt|s|ms|deg|fr)?$/i.test(t)
+  return tokens.length > 0 &&
+    tokens.every(t => valueToken(t) || CSS_WORDS.has(t.toLowerCase()) || t === '!important') &&
+    tokens.some(t => valueToken(t) && !/^-?\d*\.?\d+$/.test(t))
+}
+
+/**
+ * Checks if a string is a code or shell snippet shown to the user as is: several lines, one of them code
+ * (a statement, a block brace or semicolon at its end, a comment, a command-line flag).
+ */
+function isCodeSnippet (str: string): boolean {
+  if (!str.includes('\n')) return false
+  return str.split('\n').some(line =>
+    /[{};]\s*$|^\s*(import|export|const|let|var|function|return|npm|npx|yarn|pnpm)\s|^\s*\/\/|\s--[a-z]/.test(line))
 }
 
 /**
@@ -208,20 +283,12 @@ function isErrorCode (str: string): boolean {
 /**
  * Checks if a string is already wrapped in a t() call or Trans component.
  */
-function isAlreadyInstrumented (code: string, offset: number, endOffset: number): boolean {
-  // Look backwards for t( — use 20 chars to cover patterns like `i18next.t(`
+function isAlreadyInstrumented (code: string, offset: number): boolean {
+  // The string is the first argument of t(), $t(), i18next.t(), props.t(): `t(` right before it, not just any
+  // name ending in t (`alert(`, `toast(`, `format(`). The instrumenter's AST walk skips whole t() calls and
+  // <Trans> elements, so their other arguments and children never get here.
   const beforeStr = code.substring(Math.max(0, offset - 20), offset)
-  if (beforeStr.includes('t(') || beforeStr.includes('.t(')) {
-    return true
-  }
-
-  // Look forward for ) or Trans opening
-  const afterStr = code.substring(endOffset, Math.min(code.length, endOffset + 20))
-  if (afterStr.startsWith(')') || afterStr.includes('Trans')) {
-    return true
-  }
-
-  return false
+  return /(?:^|[^\w$])\$?t\(\s*$/.test(beforeStr)
 }
 
 /**
@@ -234,7 +301,20 @@ function isConsoleArgument (code: string, offset: number): boolean {
 
 // Translatable attribute and property sets are defined in
 // utils/jsx-attributes.ts and shared with the linter.
-const TRANSLATABLE_PROPERTIES = translatablePropertySet
+// lower-cased, as the property name is looked up lower-cased (`helpText` → `helptext`)
+const TRANSLATABLE_PROPERTIES = new Set([...translatablePropertySet].map(p => p.toLowerCase()))
+
+/** Object property names whose values are not text: headers, addresses, identifiers, styling. */
+const TECHNICAL_PROPERTIES = new Set([
+  'authorization', 'url', 'uri', 'href', 'src', 'path', 'pathname', 'endpoint', 'route', 'id', 'key',
+  'class', 'classname', 'classes', 'cls', 'style', 'styles', 'method', 'mimetype', 'contenttype', 'accept', 'encoding',
+  'icon', 'variant', 'color', 'type', 'code'
+])
+
+/** The lower-cased name of the JSX attribute whose value starts at `offset` (`title='…'`), or null. */
+function attributeNameBefore (code: string, offset: number): string | null {
+  return code.substring(Math.max(0, offset - 50), offset).match(/([\w-]+)=$/)?.[1].toLowerCase() ?? null
+}
 
 /**
  * Checks if the string appears to be an HTML/JSX attribute value.
@@ -284,7 +364,7 @@ function calculateConfidence (content: string, code: string, offset: number, tra
   }
 
   // Contains common sentence starters (user-facing)
-  if (/^(the|a|an|you|your|we|our|hello|welcome|please|thank|sorry)/i.test(content)) {
+  if (/^(the|a|an|you|your|we|our|hello|welcome|please|thank|sorry)\b/i.test(content)) {
     confidence += 0.15
   }
 
@@ -304,7 +384,7 @@ function calculateConfidence (content: string, code: string, offset: number, tra
   }
 
   // Contains action verb (likely a button or instruction)
-  if (/^(click|save|delete|create|update|submit|continue|back|next|yes|no|ok|close|open|download|upload|add|edit|remove|cancel|confirm|send|search|find|apply|reset|clear|done|finish|start|stop|retry|sign|log)/i.test(content)) {
+  if (/^(click|save|delete|create|update|submit|continue|back|next|yes|no|ok|close|open|download|upload|add|edit|remove|cancel|confirm|send|search|find|apply|reset|clear|done|finish|start|stop|retry|sign|log)\b/i.test(content)) {
     confidence += 0.1
   }
 
@@ -322,19 +402,25 @@ function calculateConfidence (content: string, code: string, offset: number, tra
   if (attrCtxMatch) {
     const attrName = attrCtxMatch[1].toLowerCase()
     if (translatableAttributes.has(attrName)) {
-      confidence += 0.15 // Translatable attribute — boost
+      confidence += 0.2 // Translatable attribute: its value is text, a single word too (`title='Publishing'`)
     } else {
       confidence -= 0.2
     }
   }
 
   // Object-property context:  { label: 'All', description: 'Some text' }
-  // When the property name is a translatable-sounding key, boost confidence
-  const propMatch = beforeContext.match(/(\w+)\s*:\s*$/)
-  if (propMatch && !attrCtxMatch) {
-    const propName = propMatch[1].toLowerCase()
+  // When the property name is a translatable-sounding key, boost confidence;
+  // a technical one ({ Authorization: `Bearer ${token}` }, { iconName: 'Lock' }) lowers it
+  // …and so does a variable a technical name is given (`const classes = …`, `cls = …`)
+  // (a quoted key has both quotes: `'…API key' :`, a ternary's string before its `:`, names no property)
+  const keyMatch = beforeContext.match(/(?:(['"])([\w-]+)\1|([A-Za-z_$][\w$]*))\s*:\s*$/)
+  const rawName = keyMatch ? (keyMatch[2] ?? keyMatch[3]) : beforeContext.match(/(\w+)\s+=\s*$/)?.[1]
+  if (rawName && !attrCtxMatch) {
+    const propName = rawName.toLowerCase().replace(/-/g, '') // 'Content-Type' → contenttype
     if (TRANSLATABLE_PROPERTIES.has(propName)) {
       confidence += 0.25
+    } else if (TECHNICAL_PROPERTIES.has(propName) || /[a-z0-9](Id|ID|Key|Url|URL|Path|Class|ClassName|Classes|Icon|Type)$/.test(rawName)) {
+      confidence -= 0.3
     }
   }
 

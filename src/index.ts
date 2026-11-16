@@ -18,6 +18,9 @@ export type {
   InstrumentationResults,
   ComponentBoundary,
   FileScanResult,
+  ImportDeclarationSpan,
+  MemoHookSpan,
+  PluralHelperImport,
   CustomCandidateScorer,
   InstrumentPluginContext
 } from './types.js'

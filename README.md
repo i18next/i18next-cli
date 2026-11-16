@@ -446,7 +446,7 @@ npx i18next-cli instrument
 ```
 
 **Options:**
-- `--dry-run`: Preview changes without writing files to disk
+- `--dry-run`: Preview changes without writing files to disk: each text with the key it would get, by file
 - `--interactive`: Prompt for approval of each candidate string
 - `--namespace <ns>`: Target a specific namespace for extracted keys
 - `-q, --quiet`: Suppress spinner and output
@@ -491,6 +491,35 @@ The `instrument` command detects four types of transformations:
    // After
    <p><Trans i18nKey="clickHereLabel">Click <a href="/docs">here</a> to continue</Trans></p>
    ```
+   A link or text component whose only children are text (`<Link to="/docs">here</Link>`, `<Text.Strong>`) and
+   `{' '}` stay in the sentence too; a button or an icon does not. The key is made from the words, and the
+   `i18nKey` takes the quotes the file's JSX attributes use.
+
+5. **Plurals → one `t()` with `count`:** a `count === 1 ? … : …` ternary, or a call of a plural helper named
+   `plural`, `pluralize` or `pluralise` that takes `(count, one, other)`, also inside a template literal. `#` in
+   a form stands for the number, as in ICU:
+   ```javascript
+   // Before
+   `${n} ${plural(n, 'key', 'keys')} unused`
+   plural(files.length, '# file', '# files')
+
+   // After
+   t('countKeysUnused', { defaultValue_one: '{{count}} key unused', defaultValue_other: '{{count}} keys unused', count: n })
+   t('countFiles', { defaultValue_one: '{{count}} file', defaultValue_other: '{{count}} files', count: files.length })
+   ```
+   Once every call of an imported helper is rewritten, its import goes.
+
+A sentence stays whole around a value: a variable, a property, a string or number formatted from one
+(`{items.join(', ')}`, `{n.toLocaleString()}`, `{format.date(d)}`), a choice between such values. A placeholder is
+named after what it shows: `` `Last login ${format.date(user.lastLogin)}` `` becomes `'Last login {{lastLogin}}'`;
+the same expression twice is one placeholder. A key keeps the first words of a long text (at most 40 characters,
+no `_`, which i18next reads as a plural or context suffix), and a key the code uses already is never reused for
+another text nor made the parent of nested ones: `Tenants` next to an existing `t('tenants.title')` gets `tenants2`.
+
+What JSX shows is text, a single word too: JSX text (as it renders: lines joined, `&apos;` decoded), a
+translatable attribute (`title`, `aria-label`, `data-tip`, …), and a string an element renders from an
+expression (`{busy ? 'saving' : 'saved'}`, `{name || 'unnamed'}`). When one branch of a ternary is text, the
+other string branch is too.
 
 **Namespace targeting:**
 
@@ -530,16 +559,38 @@ export default defineConfig({
 **What it skips (by design):**
 
 The instrumenter uses confidence heuristics to avoid transforming:
-- Test files (`*.test.*`, `*.spec.*`)
+- Test files (`*.test.*`, `*.spec.*`), stories (`*.stories.*`, `*.story.*`, `*.storybook.*`) and the folders
+  `__tests__`, `__mocks__`, `__fixtures__`; other fixture folders go into `extract.ignore`
 - Empty strings and single characters
 - Pure numbers and numeric IDs
 - URL strings and file paths
 - CSS class names and technical identifiers
 - Developer-facing error codes (all-caps patterns like `ERROR_NOT_FOUND`)
-- `console.log/warn/error` arguments
-- HTML attribute values that appear technical (which attributes hold text can be set per element, see [Translatable attributes per element](#translatable-attributes-per-element))
-- Template literals with only expressions (no static text)
-- Strings already inside `t()` calls or `<Trans>` components
+- `console.*` calls, everything in them, and variables used only there (a log line built beforehand)
+- Object keys and computed keys, compared strings and `case` values; and a string the file also uses as data
+  (compared, an `id`/`key`/`value`/`type`/`code`, an entry of an `order`/`ids`/`values` list), everywhere in that
+  file unless an element renders it or it is an attribute's value: a facet's `of()` returning `'no 2FA'` keeps
+  matching `order: ['2FA', 'no 2FA']`
+- Prompts for a language model: the functions, variables and properties named like `getSystemPrompt`,
+  `userPrompt` or `aiAssistantPrompt` (a translated prompt changes what the model does)
+- Analytics event names (`track`, `trackEvent`, `logEvent`, `capture`, `identify`, `gtag`), event names (`emit`,
+  `on`), log and error-report calls (`logger.*`, `Sentry.*`), `new Error()` and `RegExp` arguments (errors are for
+  developers; show users a text of your own), format patterns (`dayjs(d).format('DD MMM YYYY')`)
+- Icon ligatures: the content of an element named `…Icon` or with a `material-icons`/`material-symbols` class
+- CSS values (`var(--brand)`, `inset 0 0 5px 1px var(--shadow)`), and strings in a `classes`/`style` variable
+- Strings a text is compared with or searched for (`msg.includes('not found')`, `split`, `replace`, …),
+  selectors (`querySelector`, `closest`), attribute and storage names (`getAttribute`, `setItem`, …)
+- camelCase identifiers (`aiReview`), rules and key paths (`required|min:2`), strings without a letter (` / `),
+  code snippets shown as text (several lines of code or shell commands)
+- The content of `<code>`, `<script>` and `<style>` (and of `extract.ignoredTags`); inside a sentence they stay
+  part of its `<Trans>`
+- HTML attribute values that appear technical (which attributes hold text can be set per element, see [Translatable attributes per element](#translatable-attributes-per-element)); the JSX and functions inside such an attribute (`action={<Button>Change</Button>}`, `onClick={() => notify('Copied')}`) are checked as anywhere else
+- Template literals with no word besides their expressions: ids, paths, keys, language codes and class names
+  built in code (`` `${projectId}-${version}` ``, `` `weight_${code}` ``, `` `${baseUrl}/api/${id}` ``,
+  `` `zh-${country}` ``); and values of technical properties (`` { 'Authorization': `Bearer ${token}` } ``,
+  `url`, `id`, `type`, `code`, `className`, …)
+- Strings already inside `t()` calls or `<Trans>` components, including the project's own `extract.functions`
+  and `extract.transComponents`
 - **Module-scope strings** — anything outside a function body, e.g. a top-level config/registry array:
   ```ts
   export const SETTINGS_SECTIONS = [
@@ -560,10 +611,12 @@ The instrumenter uses confidence heuristics to avoid transforming:
 
 When transformations are applied, the command automatically:
 - Injects `import { useTranslation } from 'react-i18next'` in React files (or `import i18next from 'i18next'` for non-React files)
-- Injects `const { t } = useTranslation()` into each React function component that contains transformed strings
-- Detects the project's framework from `package.json` dependencies (React, Next.js, Vue, etc.)
+- Injects `const { t } = useTranslation()` into each React function component that contains transformed strings (an arrow component with an expression body, `() => <p>…</p>`, gets a block for it), unless it has a `t` already (a prop, or a hook from a module that re-exports it), and adds `t` to the dependencies of a `useMemo` or `useCallback` whose callback now calls it
+- Places the imports after the file's import declarations (never inside a string that shows code), and imports no name the file has already, from whatever module
+- Detects the project's framework from `package.json` dependencies, dev and peer dependencies included; in a workspace package (npm/yarn `workspaces`, `pnpm-workspace.yaml`) also from the workspace root's
 - Uses `useTranslation()` hook style `t()` inside React components, or `i18next.t()` for utility / non-component code
-- Generates an `i18n.ts` (or `i18n.js` for JS-only projects) initialization file if none exists, pre-configured with [`i18next-resources-to-backend`](https://github.com/i18next/i18next-resources-to-backend) to lazy-load your translation files via dynamic imports
+- Generates an `i18n.ts` (or `i18n.js` for JS-only projects) initialization file if none exists and the code imports neither `i18next` nor `react-i18next` yet (an app that does is set up somewhere, perhaps in a shared package), pre-configured with [`i18next-resources-to-backend`](https://github.com/i18next/i18next-resources-to-backend) to lazy-load your translation files via dynamic imports
+- Adds `i18n.changeLanguage()` next to a call that sets the user's language: `setLanguage(code)`, or a settings, profile or user call with a `language`/`locale` property (`updateSettings({ language: code })`). Only where that call is a statement of its own in a block or an arrow function's body, with a plain variable or property as the language (the injected call repeats it), and not for a `language` property passed as data (`fetchTranslations({ lng })`). `--dry-run` lists every such site; in an app where a language is data (a translation tool's view filter), review them
 
 **Recommended workflow:**
 

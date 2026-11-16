@@ -5,6 +5,7 @@ import { detectConfig } from './heuristic-config.js'
 import { openBrowser, promptLocizeCredentials } from './utils/locize-onboarding.js'
 import { scaffoldInlangProject } from './utils/inlang-scaffold.js'
 import { buildAgentNote, writeAgentNote } from './utils/agent-note.js'
+import { readProjectDeps } from './utils/file-utils.js'
 
 const LOCIZE_SIGNUP_URL = 'https://www.locize.app/register?from=i18next_cli__init-wizard'
 
@@ -40,18 +41,10 @@ async function isEsmProject (): Promise<boolean> {
  * When running via `npx` without a local install, `defineConfig` would not be available
  * at runtime, so the generated config should fall back to a plain object export.
  *
- * @returns Promise resolving to true if i18next-cli is in dependencies or devDependencies
+ * @returns Promise resolving to true if i18next-cli is a declared dependency (see readProjectDeps)
  */
 async function isCliLocallyInstalled (): Promise<boolean> {
-  try {
-    const packageJsonPath = resolve(process.cwd(), 'package.json')
-    const content = await readFile(packageJsonPath, 'utf-8')
-    const packageJson = JSON.parse(content)
-    const deps = { ...packageJson.dependencies, ...packageJson.devDependencies }
-    return !!deps['i18next-cli']
-  } catch {
-    return false
-  }
+  return !!(await readProjectDeps())['i18next-cli']
 }
 
 /**

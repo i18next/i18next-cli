@@ -1248,6 +1248,9 @@ export interface CandidateString {
     /** Text for the plural ("other") case; uses `{{count}}` for the variable */
     other: string
   }
+
+  /** The imported plural helper this candidate's call replaces (`plural(n, '# key', '# keys')` → `plural`) */
+  pluralHelper?: string
 }
 
 /**
@@ -1305,6 +1308,8 @@ export interface FileInstrumentationResult {
   file: string
   candidates: CandidateString[]
   result: TransformResult
+  /** Where `changeLanguage()` goes next to a call that sets the user's language */
+  languageChangeSites?: LanguageChangeSite[]
 }
 
 /**
@@ -1330,8 +1335,12 @@ export interface ComponentBoundary {
   bodyStart: number
   /** Byte offset of the closing } of the function body */
   bodyEnd: number
-  /** Whether the component already calls useTranslation() */
+  /** Whether the component has a `t` already (a parameter, or `const { t } = useTranslation()` in its body) */
   hasUseTranslation: boolean
+  /** The body is an expression (`() => <p>…</p>`): bodyStart/bodyEnd span it, and it becomes a block for the hook */
+  expressionBody?: boolean
+  /** Its `t` is something other than a translation function (`const [t, setT] = useState(0)`) */
+  ownT?: boolean
 }
 
 /**
@@ -1380,6 +1389,48 @@ export interface FileScanResult {
   languageChangeSites: LanguageChangeSite[]
   /** Number of candidates dropped because they live at module scope */
   moduleScopeSkipped: number
+  /** Number of candidates dropped because their component declares a `t` of its own */
+  ownTSkipped?: number
+  /** The file's import declarations, from its AST */
+  imports?: ImportDeclarationSpan[]
+  /** The file's `useMemo`/`useCallback` calls with a dependency array */
+  memoHooks?: MemoHookSpan[]
+  /** The imported plural helpers the candidates call: their import goes once no call is left */
+  pluralHelperImports?: PluralHelperImport[]
+}
+
+/** An imported plural helper: how often the file names it, and the text that imports it. */
+export interface PluralHelperImport {
+  name: string
+  /** Identifiers with its name besides the import itself (calls, and any other mention) */
+  references: number
+  /** The range to remove: its specifier with one comma, or the whole declaration line when it is the only one */
+  removeStart: number
+  removeEnd: number
+}
+
+/**
+ * A `useMemo(() => …, [deps])` or `useCallback(…, [deps])` call: where its callback stands, and where `t`
+ * goes into its dependencies when the callback gets a `t()` call.
+ */
+export interface MemoHookSpan {
+  callbackStart: number
+  callbackEnd: number
+  /** Where `t` is inserted: after the last dependency, or inside the empty `[]` */
+  insertAt: number
+  /** The array has dependencies already (`, t`) or is empty (`t`) */
+  hasDeps: boolean
+  /** `t` is a dependency already */
+  hasT: boolean
+}
+
+/** An import declaration of a source file: the module it imports and where it stands. */
+export interface ImportDeclarationSpan {
+  source: string
+  start: number
+  end: number
+  /** The names it binds (`import i18n, { useTranslation as useT } from …` → `i18n`, `useT`) */
+  locals?: string[]
 }
 
 /**

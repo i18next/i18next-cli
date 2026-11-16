@@ -73,6 +73,43 @@ describe('detectStack', () => {
     expect(stack.hasI18next).toBe(false)
   })
 
+  it('detects React from peerDependencies and from the workspace root of a monorepo package', async () => {
+    vol.fromJSON({
+      '/repo/package.json': JSON.stringify({ workspaces: ['packages/*'], dependencies: { 'react-i18next': '^17.0.0' } }),
+      '/repo/packages/app/package.json': JSON.stringify({ name: 'app', peerDependencies: { react: '^19.0.0' } }),
+      '/repo/packages/lib/package.json': JSON.stringify({ name: 'lib' }),
+    })
+    vi.spyOn(process, 'cwd').mockReturnValue('/repo/packages/app')
+    expect((await detectStack(noInitFile)).framework).toBe('react')
+    vi.spyOn(process, 'cwd').mockReturnValue('/repo/packages/lib')
+    const stack = await detectStack(noInitFile)
+    expect(stack.framework).toBe('react')
+    expect(stack.hasI18next).toBe(true)
+  })
+
+  it('takes nothing from a workspace root for a folder its globs do not list, and reads pnpm-workspace.yaml', async () => {
+    vol.fromJSON({
+      '/repo/package.json': JSON.stringify({ workspaces: ['packages/*'], dependencies: { react: '^19.0.0' } }),
+      '/repo/tools/script/package.json': packageJson({}),
+      '/mono/pnpm-workspace.yaml': 'packages:\n  - ./apps/*\n',
+      '/mono/package.json': packageJson({ react: '^19.0.0' }),
+      '/mono/apps/web/package.json': packageJson({}),
+    })
+    vi.spyOn(process, 'cwd').mockReturnValue('/repo/tools/script')
+    expect((await detectStack(noInitFile)).framework).toBe('unknown')
+    vi.spyOn(process, 'cwd').mockReturnValue('/mono/apps/web')
+    expect((await detectStack(noInitFile)).framework).toBe('react')
+  })
+
+  it('ignores an unrelated package.json above a standalone project', async () => {
+    vol.fromJSON({
+      '/home/package.json': packageJson({ react: '^19.0.0' }),
+      '/home/app/package.json': packageJson({}),
+    })
+    vi.spyOn(process, 'cwd').mockReturnValue('/home/app')
+    expect((await detectStack(noInitFile)).framework).toBe('unknown')
+  })
+
   it('passes through the injected init-file locator result', async () => {
     vol.fromJSON({ '/package.json': packageJson({ react: '^19.0.0' }) })
     const stack = await detectStack(async () => 'src/i18n.ts')

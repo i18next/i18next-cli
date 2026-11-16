@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises'
-import { basename, dirname, extname, resolve, normalize } from 'node:path'
+import { basename, dirname, extname, relative, resolve, normalize, sep } from 'node:path'
+import { minimatch } from 'minimatch'
 import { createJiti } from 'jiti'
 import type { I18nextToolkitConfig } from '../types.js'
 import { getTsConfigAliases } from '../config.js'
@@ -52,6 +53,51 @@ export async function ensureDirectoryExists (filePath: string): Promise<void> {
  */
 export async function readFileAsync (filePath: string): Promise<string> {
   return await readFile(filePath, 'utf-8')
+}
+
+async function readPackageJson (dir: string): Promise<Record<string, any> | null> {
+  try {
+    return JSON.parse(await readFile(resolve(dir, 'package.json'), 'utf-8'))
+  } catch {
+    return null
+  }
+}
+
+const depsOf = (pkg: Record<string, any> | null): Record<string, string> =>
+  ({ ...pkg?.peerDependencies, ...pkg?.devDependencies, ...pkg?.dependencies })
+
+/** A workspace root's package globs: npm/yarn `workspaces` (array or `{ packages }`), or `pnpm-workspace.yaml`. */
+async function workspaceGlobs (dir: string, pkg: Record<string, any> | null): Promise<string[] | null> {
+  const workspaces = pkg?.workspaces
+  if (Array.isArray(workspaces)) return workspaces
+  if (Array.isArray(workspaces?.packages)) return workspaces.packages
+  try {
+    const packages = yaml.parse(await readFile(resolve(dir, 'pnpm-workspace.yaml'), 'utf-8'))?.packages
+    return Array.isArray(packages) ? packages : []
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The project's declared packages: `dependencies`, `devDependencies` and `peerDependencies` of the
+ * `package.json` in `cwd`, plus, for a package of a workspace (npm/yarn `workspaces` or
+ * `pnpm-workspace.yaml`), the ones of the workspace root, where shared packages such as `react` are often
+ * declared only once. The nearer package wins; a folder the root's globs do not list gets nothing from it.
+ */
+export async function readProjectDeps (cwd: string = process.cwd()): Promise<Record<string, string>> {
+  const own = await readPackageJson(cwd)
+  const deps = depsOf(own)
+  if (own?.workspaces) return deps
+  for (let dir = dirname(resolve(cwd)); dir !== dirname(dir); dir = dirname(dir)) {
+    const pkg = await readPackageJson(dir)
+    const globs = await workspaceGlobs(dir, pkg)
+    if (!globs) continue
+    const member = relative(dir, resolve(cwd)).split(sep).join('/')
+    const isMember = globs.some(g => !g.startsWith('!') && minimatch(member, g.replace(/^\.\//, '').replace(/\/$/, '')))
+    return isMember ? { ...depsOf(pkg), ...deps } : deps
+  }
+  return deps
 }
 
 /**

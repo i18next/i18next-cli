@@ -31,7 +31,9 @@ export const translatableAttributes: readonly string[] = [
   'aria-roledescription', 'aria-valuetext',
   'content', 'description',
   'label', 'placeholder',
-  'summary', 'caption', 'title'
+  'summary', 'caption', 'title',
+  // tooltip libraries (react-tooltip and the like)
+  'data-tip', 'data-tooltip', 'data-tooltip-content'
 ]
 
 /**

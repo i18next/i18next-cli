@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.89.0
+
+Found by running `instrument`, `extract`, `lint` and `status` on a React monorepo whose texts are hardcoded (four
+packages, about 900 files) and reading every rewrite.
+
+Code it broke:
+
+- fix(instrument): `useTranslation` imported or `const { t }` declared twice: a component with a `t` of its own
+  (a prop, or a hook from a module that re-exports it) gets no second one, and no name the file imports already
+  is imported again. "Has useTranslation" was a text search of the component body.
+- fix(instrument): object keys and computed keys were rewritten (`'a b': 1` became `t(…): 1`, a syntax error).
+- fix(instrument): imports were placed by text, so a string showing code with `import … from` lines got them.
+- fix(instrument): the language-change injection broke code. It went before any call with a `language`, `lang`,
+  `locale` or `lng` property (`return fetchDownloads({ lng })` became `return i18next.changeLanguage(…);
+  fetchDownloads(…)`, a `const` or an `if` body lost its call) and repeated computed expressions. It now goes
+  only before a call that is a statement of its own in a block or an arrow body, with a plain variable or
+  property as the language, for a setter or a settings, profile or user call; `--dry-run` lists the sites.
+- fix(instrument): a template literal inside another one's `${}` failed the whole file.
+- fix(instrument): a `count === 1 ? … : …` ternary over CSS values or class names became a plural `t()`.
+- fix(instrument): JSX text kept its line breaks and `&apos;`-style entities in the default value, and a space
+  at the edge of a sentence (`provider:{' '}<strong>`) was dropped.
+- fix(instrument): strings the code compares or matches were translated: `includes()`/`indexOf()` arguments,
+  `===` operands, `case` values, and a string the file uses as data elsewhere (`order: ['2FA', 'no 2FA']`).
+- fix(instrument): React declared only in `peerDependencies` or in the workspace root was not found, so every
+  text got `i18next.t()`. `localize` and `init` read the same declared packages.
+- fix(instrument): an i18n init file is generated unless the code imports `i18next` or `react-i18next` already.
+  Any `.init(` in the sources (`Sentry.init()`) prevented it before.
+- fix(instrument): a plural helper import left unused goes, except in a declaration with a default import.
+- fix(instrument): a component whose `t` is something else (`const [t, setT] = useState(0)`) keeps its texts,
+  reported in a warning; one with a `t` prop that needs `i18n` for a language switch gets its own hook.
+
+Texts it found wrongly or missed:
+
+- feat(instrument): technical strings are left alone: ids, paths, keys, language codes and class names built in
+  template literals, technical property values (`Authorization`, `id`, `type`, `code`, …), camelCase
+  identifiers, validation rules, strings without letters, code snippets, CSS values, `console.*` calls and
+  variables only logged, logger and error-report calls, `new Error()` and `RegExp` arguments, format patterns
+  (`.format('DD MMM YYYY')`), event names (`emit`, `on`), selectors, analytics event names, icon ligatures,
+  prompts for a language model
+  (`getSystemPrompt`, `aiAssistantPrompt`), the content of `<code>`, `<script>`, `<style>`, and stories, mocks
+  and fixtures by default.
+- feat(instrument): more texts are found: a single word in JSX text, in a translatable attribute (now also
+  `data-tip` and `data-tooltip-content`) and in what an element renders from an expression; both branches of a
+  text ternary; strings passed last to a call (`toast('Saved.')`), taken as instrumented before; text in JSX and
+  handlers passed to attributes that are not text (`action={<Button>…</Button>}`, `onClick`). The project's own
+  `extract.functions` and `transComponents` count as instrumented.
+- feat(instrument): plurals from plural helpers: `plural(n, '# file', '# files')` and `pluralize`/`pluralise`
+  calls, also inside template literals and JSX sentences, become one `t()` with `count`.
+- feat(instrument): sentences stay whole: around a link or text component (`<Trans>`), `{' '}`, a value
+  formatted by a string method or a formatter, a choice between values; a button stays out.
+- feat(instrument): keys and placeholders read better: keys keep the first words (40 characters) and have no
+  `_`, `<Trans>` keys come from the words, placeholders are named after what they show
+  (`format.date(user.lastLogin)` → `{{lastLogin}}`), the same expression twice is one placeholder, and keys the
+  code uses already are not reused for another text nor made the parent of nested ones.
+- feat(instrument): an expression-bodied arrow component (`() => <p>…</p>`) gets the hook instead of
+  `i18next.t()`; `t` joins the dependencies of a `useMemo`/`useCallback` whose callback calls it; `<Trans>`
+  takes the quotes of the file's JSX attributes.
+- feat(instrument): `--dry-run` lists each text with its key and each language-change site; a warning for many
+  files is printed once with the files below it; a candidate that cannot be rewritten is reported.
+- feat(lint): `data-tip`, `data-tooltip` and `data-tooltip-content` (tooltip libraries) are in the recommended
+  translatable attributes, so `lint` reports a hardcoded tooltip too.
+- fix(extract): a nesting conflict is reported once instead of once per language, and a key that is also the
+  parent of nested keys is named as such.
+
 ## 1.88.1
 
 - fix(extract): object types built with `Omit`, `Pick`, `Partial`, `Required`, `Readonly` or `NonNullable`

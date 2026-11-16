@@ -183,6 +183,16 @@ describe('extractor: keySeparator issue #200', () => {
       )
     })
 
+    it('reports a conflict once, not once per language, and names a key that is also a parent as such', async () => {
+      vol.fromJSON({ '/src/App.tsx': 't("a.b", "Value AB"); t("a", "Value A");' })
+
+      await extract(mockConfig)
+
+      const conflicts = consoleErrorSpy.mock.calls.map(c => String(c[0])).filter(m => m.includes('Nesting conflict'))
+      expect(conflicts).toHaveLength(1)
+      expect(conflicts[0]).toContain('key "a" is also the parent of nested keys ("a.…")')
+    })
+
     it('should detect conflict when deeper key is extracted first', async () => {
       // Reverse order: deeper key first, then shallower
       const sampleCode = `

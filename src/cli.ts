@@ -339,6 +339,21 @@ program
 
       // Display results
       if (!options.quiet) {
+        // The preview: each text with the key it would get, by file
+        if (options.dryRun) {
+          for (const { file, candidates, languageChangeSites } of results.files) {
+            if (!candidates.length && !languageChangeSites?.length) continue
+            console.log(styleText('bold', `\n${file}`))
+            for (const c of candidates) {
+              const text = c.content.replace(/\s+/g, ' ')
+              console.log(`  ${c.line}: "${text.length > 80 ? text.slice(0, 79) + '…' : text}" → ${c.key}`)
+            }
+            for (const site of languageChangeSites ?? []) {
+              console.log(`  ${site.line}: changeLanguage(${site.languageExpression}) before the call that sets the language`)
+            }
+          }
+        }
+
         console.log(styleText('bold', '\nInstrumentation Summary:'))
         console.log(`  Total candidates: ${results.totalCandidates}`)
         console.log(`  Approved: ${results.totalTransformed}`)
@@ -353,7 +368,7 @@ program
         }
 
         if (results.files.length > 0) {
-          console.log(styleText('green', `\n✅ ${results.files.length} file(s) ready for instrumentation`))
+          console.log(styleText('green', `\n✅ ${results.files.length} file(s) ${options.dryRun ? 'ready for instrumentation' : 'instrumented'}`))
         } else {
           console.log(styleText('yellow', '\n⚠️  No files required instrumentation'))
         }

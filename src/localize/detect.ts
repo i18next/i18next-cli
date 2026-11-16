@@ -1,6 +1,7 @@
-import { readFile, access } from 'node:fs/promises'
+import { access } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { I18nextToolkitConfig } from '../types.js'
+import { readProjectDeps } from '../utils/file-utils.js'
 
 /** Frontend framework classification used by the `localize` orchestrator. */
 export type DetectedFramework = 'react' | 'next' | 'vue' | 'svelte' | 'angular' | 'unknown'
@@ -29,16 +30,6 @@ async function pathExists (path: string): Promise<boolean> {
   }
 }
 
-async function readPackageDeps (): Promise<Record<string, string>> {
-  try {
-    const content = await readFile(join(process.cwd(), 'package.json'), 'utf-8')
-    const packageJson = JSON.parse(content)
-    return { ...packageJson.dependencies, ...packageJson.devDependencies }
-  } catch {
-    return {}
-  }
-}
-
 /**
  * Detects the project stack relevant to the `localize` orchestrator:
  * frontend framework, i18next presence, an existing i18n init file,
@@ -53,7 +44,7 @@ async function readPackageDeps (): Promise<Record<string, string>> {
 export async function detectStack (
   findInitFile: () => Promise<string | null>
 ): Promise<DetectedStack> {
-  const deps = await readPackageDeps()
+  const deps = await readProjectDeps()
   const has = (name: string) => !!deps[name]
 
   let framework: DetectedFramework = 'unknown'
