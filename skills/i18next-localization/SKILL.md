@@ -129,6 +129,6 @@ conventions live in [locize/locize-agents](https://github.com/locize/locize-agen
 claude mcp add --transport http locize https://mcp.locize.app
 ```
 
-Then drop that repo's `CLAUDE.md` / `AGENTS.md` / `.cursorrules` into the
+Then drop that repo's `CLAUDE.md` or `AGENTS.md` into the
 project. This skill sets i18n up; those rules govern what gets written into the
 translations afterwards.
