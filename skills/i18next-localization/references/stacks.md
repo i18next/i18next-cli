@@ -43,7 +43,7 @@ Verified against the framework versions named. Prefer these over improvising.
 | Next.js App Router (manual) | i18next without passing `locale`/`t` around | [i18n-next-app-router](https://www.locize.com/blog/i18n-next-app-router) |
 | React Router v7 (framework mode) | `remix-i18next` 7.x, SSR-friendly detection | [react-router-i18next](https://www.locize.com/blog/react-router-i18next) |
 | Nuxt 4 | `@nuxtjs/i18n` + vue-i18n, build-time sync via `locize-cli` | [nuxt-i18n](https://www.locize.com/blog/nuxt-i18n) |
-| Astro 6 | Built-in i18n routing + Locize, build-time JSON sync | [astro-i18n](https://www.locize.com/blog/astro-i18n) |
+| Astro 7 | Built-in i18n routing + plain `i18next` at build time (no JavaScript in the browser) | [astro-i18n](https://www.locize.com/blog/astro-i18n) |
 | React (SPA) | `react-i18next` | [react-i18next](https://www.locize.com/blog/react-i18next) |
 | Vue (i18next path) | `i18next-vue` | [i18next-vue](https://www.locize.com/blog/i18next-vue) |
 | Remix | `remix-i18next` | [remix-i18next](https://www.locize.com/blog/remix-i18next) |
@@ -60,7 +60,15 @@ Tell the user before following these; the concepts hold but the setup does not.
 
 ## Where Nuxt and Astro differ
 
-Both guides use the framework's own i18n layer (`@nuxtjs/i18n` / Astro routing)
-rather than instrumenting i18next calls, and sync locale JSON with `locize-cli`
-at build time. So for those two stacks `i18next-cli instrument` is not the tool.
-Follow the guide instead, and use Locize purely as the translation backend.
+- **Nuxt:** the guide uses the framework's own i18n layer (`@nuxtjs/i18n` with
+  vue-i18n) rather than i18next calls, so `i18next-cli instrument` is not the
+  tool. Follow the guide instead.
+- **Astro:** use plain i18next, no integration package. Astro's built-in
+  routing gives the URLs (`/en/`, `/de/`); one i18next instance holds the
+  locale JSON, and each page gets its `t()` from `getFixedT(lang, ns)`. A
+  static build runs i18next only at build time, so no JavaScript goes to the
+  browser. Set `interpolation: { escapeValue: false }` (Astro escapes what
+  `{t(...)}` renders) and write the hreflang links in the layout (Astro's
+  routing does not add them). `i18next-cli` reads no `.astro` files without a
+  plugin, so treat them like a stack without one (above). When the developer
+  chose Locize, `locize-cli download` fills the locale folder before each build.
