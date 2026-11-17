@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.91.0
+
+- feat(lint): `<Trans>` tags of a translation that miss the component's children are reported, with file, line
+  and `ns:key`. `<Trans>` numbers its children, text included, so the `{' '}` a formatter inserts at a line break
+  shifts every later index: in `Each reminder needs{' '}<Bold>a contact</Bold>`, `<Bold>` is `<2>`, and a
+  translation with `<1>a contact</1>` renders `Each reminder needs  ` without an error anywhere. The tags of the
+  primary language (context and plural forms included) are resolved like react-i18next does at runtime, and a tag
+  on a text child, past the last child, empty on an element with text, or with content on a `<br/>` is reported.
+  A `<Trans>` with `components` is skipped. Configure with `lint.checkTransIndices` (`'warn'` by default).
+  Fixes [#331](https://github.com/i18next/i18next-cli/issues/331).
+- fix(extract): an `&nbsp;` at the end of a line inside `<Trans>` is a child of its own, as Babel and SWC compile
+  it, and takes an index in the default value. It was dropped like formatting whitespace, so every later index
+  was one too low: `Price&nbsp;⏎<b>x</b>&nbsp;⏎<em>y</em>` extracted `<2>y</2>`, which renders the space instead
+  of `y`.
+
 ## 1.90.0
 
 Found by running `init`, `instrument`, `extract`, `lint` and `status` on the next-i18next examples, on copies of
