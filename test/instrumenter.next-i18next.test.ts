@@ -192,7 +192,8 @@ export const LangSelect = ({ lng }) => {
     expect(out['components/Nav.js']).toContain('const { t } = useTranslation()')
     // a text in getStaticProps is data of the page, outside any component
     expect(out['pages/about.js']).toContain("motto: 'Ship it'")
-    const warning = warnings.find(w => w.includes('serverSideTranslations'))
+    // the files as the glob gives them: with `\` on Windows
+    const warning = normalizePath(warnings.find(w => w.includes('serverSideTranslations')))
     expect(warning).toContain('pages/index.js')
     // its helper calls serverSideTranslations()
     expect(warning).not.toContain('pages/about.js')
