@@ -7,14 +7,18 @@ import { styleText } from 'node:util'
 import { ConsoleLogger } from './utils/logger.js'
 import { createSpinnerLike } from './utils/wrap-ora.js'
 import { translatableAttributes, ignoredAttributeLowerSet, ignoredTags as sharedIgnoredTags, acceptedTags as sharedAcceptedTags, importAliases, jsxElementName, resolveElementAttributes } from './utils/jsx-attributes.js'
-import { normalizeSpansToCharIndices, collectIgnoredLineRanges, lineColumnFromOffset } from './extractor/parsers/ast-utils.js'
+import { normalizeSpansToCharIndices, collectIgnoredLineRanges, lineColumnFromOffset, isSimpleTemplateLiteral } from './extractor/parsers/ast-utils.js'
+import { trimTextNode } from './extractor/parsers/jsx-parser.js'
 import { matchesFunctionPattern } from './extractor/utils/function-matcher.js'
 import { ASTVisitors } from './extractor/core/ast-visitors.js'
 import { getNestedKeys, getNestedValue } from './utils/nested-object.js'
+import { getOutputPath, loadTranslationFile } from './utils/file-utils.js'
+import { parse as parseHtml, type ASTNode } from 'html-parse-stringify'
+import type { JSXElementChild } from '@swc/core'
 import { loadMessageAnalyzer, lintMessageFormatResources, lintI18nextResources, interpolationNames, type MessageAnalyzer } from './utils/message-format.js'
 import { applyLintBaseline, lintBaselinePath, readLintBaseline, writeLintBaseline } from './utils/lint-baseline.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
-import type { I18nextToolkitConfig, Logger, LintIssue, Plugin, LintPluginContext } from './types.js'
+import type { I18nextToolkitConfig, Logger, LintIssue, Plugin, LintPluginContext, ExtractedKey } from './types.js'
 
 const LOCIZE_SIGNUP_URL = 'https://www.locize.app/register?from=i18next_cli__lint'
 
@@ -190,27 +194,12 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
   }
   const callSites: CallSite[] = []
 
-  // The keys the extractor resolves for each call (selector path, keyPrefix and namespace scope
-  // included), walked once and only for a file with a selector call: `t($ => $.a.b)` → ['a.b']
-  let keysByCall: Map<any, string[]> | undefined
+  // The keys the extractor resolves for each call, walked once and only for a file with a selector
+  // call: `t($ => $.a.b)` → ['a.b']
+  let keysByCall: Map<any, ExtractedKey[]> | undefined
   const keysOfCall = (call: any): string[] => {
-    if (!keysByCall) {
-      const found = new Map<any, string[]>()
-      let current: any
-      const silent: Logger = { info () {}, warn () {}, error () {} }
-      const context = {
-        addKey: ({ key }: { key: string }) => { found.set(current, [...(found.get(current) ?? []), key]) },
-        config,
-        logger: silent,
-        getVarFromScope: () => undefined,
-        setVarInScope: () => {},
-      }
-      const visitors = new ASTVisitors(config, context, silent, { onBeforeVisitNode: (node: any) => { current = node } })
-      visitors.setCurrentFile('', code)
-      visitors.visit(ast)
-      keysByCall = found
-    }
-    return keysByCall.get(call) ?? []
+    keysByCall ??= extractedKeysByNode(ast, code, config)
+    return (keysByCall.get(call) ?? []).map(({ key }) => key)
   }
 
   // Traverse AST for CallExpressions matching t() or i18n.t()
@@ -538,6 +527,164 @@ function lintConcatenation (ast: any, code: string, config: I18nextToolkitConfig
   return issues
 }
 
+// The keys the extractor resolves per node (a t() call, a <Trans> element): selector path, keyPrefix,
+// namespace scope, context and plural forms included
+function extractedKeysByNode (ast: any, code: string, config: I18nextToolkitConfig): Map<any, ExtractedKey[]> {
+  const found = new Map<any, ExtractedKey[]>()
+  let current: any
+  const silent: Logger = { info () {}, warn () {}, error () {} }
+  const context = {
+    addKey: (key: ExtractedKey) => { found.set(current, [...(found.get(current) ?? []), key]) },
+    config,
+    logger: silent,
+    getVarFromScope: () => undefined,
+    setVarInScope: () => {},
+  }
+  const visitors = new ASTVisitors(config, context, silent, { onBeforeVisitNode: (node: any) => { current = node } })
+  visitors.setCurrentFile('', code)
+  visitors.visit(ast)
+  return found
+}
+
+// A child of <Trans> as react-i18next numbers it: text, an element with its own children, or anything
+// else (an interpolation object, an expression that may render an element), which the check leaves alone
+type TransChild =
+  | { kind: 'text', text: string }
+  | { kind: 'element', name?: string, children: TransChild[], dynamicList: boolean }
+  | { kind: 'other' }
+
+// The children as the extractor counts them for the default value (swcChildrenToReactNodes in jsx-parser.ts):
+// whitespace with a line break and {/* comments */} are no children, a {' '} is one
+function transChildren (children: JSXElementChild[]): TransChild[] {
+  const result: TransChild[] = []
+  for (const child of children) {
+    if (child.type === 'JSXText') {
+      const text = trimTextNode(child.value)
+      if (text !== null) result.push({ kind: 'text', text })
+    } else if (child.type === 'JSXElement' || child.type === 'JSXFragment') {
+      const opening = child.type === 'JSXElement' ? child.opening : undefined
+      result.push({
+        kind: 'element',
+        // only an HTML element (<p>) matches a kept HTML tag of the translation
+        name: opening?.name.type === 'Identifier' && /^[a-z]/.test(opening.name.value) ? opening.name.value : undefined,
+        children: transChildren(child.children),
+        dynamicList: !!opening?.attributes.some(a => a.type === 'JSXAttribute' && a.name.type === 'Identifier' && a.name.value === 'i18nIsDynamicList'),
+      })
+    } else if (child.type === 'JSXExpressionContainer') {
+      let expr: any = child.expression
+      while (expr.type === 'TsAsExpression' || expr.type === 'ParenthesisExpression') expr = expr.expression
+      if (expr.type === 'JSXEmptyExpression') continue
+      if (expr.type === 'StringLiteral') result.push({ kind: 'text', text: expr.value })
+      else if (expr.type === 'TemplateLiteral' && isSimpleTemplateLiteral(expr)) result.push({ kind: 'text', text: expr.quasis[0].raw })
+      else result.push({ kind: 'other' })
+    } else {
+      result.push({ kind: 'other' })
+    }
+  }
+  return result
+}
+
+// The HTML elements React allows no children for
+const voidElements = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'])
+
+/**
+ * Resolves the tags of a translation against the <Trans> children like react-i18next's renderNodes and returns
+ * those that do not render what they wrap: a tag with content on a text child renders that text instead, a tag
+ * past the last child loses its markup, an empty tag drops the text of its element, and content on a `<br/>`
+ * makes React throw.
+ */
+function transTagProblems (children: TransChild[], value: string, keep: string[]): string[] {
+  const problems: string[] = []
+  const walk = (scope: TransChild[], nodes: ASTNode[], path: string) => {
+    // an expression as the only child ({items}) may be an array, which react-i18next indexes into
+    if (scope.length === 1 && scope[0].kind === 'other') return
+    const keptSeen: Record<string, number> = {}
+    for (const node of nodes) {
+      if (node.type !== 'tag') continue
+      const hasContent = node.children.length > 0
+      const tag = `${path}<${node.name}${hasContent ? '' : '/'}>`
+      if (/^\d+$/.test(node.name)) {
+        const child = scope[Number(node.name)]
+        if (!child) {
+          problems.push(`${tag} points past the last child (${scope.length} ${scope.length === 1 ? 'child' : 'children'}), so it renders without its markup`)
+        } else if (child.kind === 'text') {
+          if (hasContent) problems.push(`${tag} points to the text ${JSON.stringify(child.text)}, which replaces its content`)
+        } else if (child.kind === 'element' && !child.dynamicList) {
+          if (hasContent && child.name && voidElements.has(child.name)) problems.push(`${tag} points to <${child.name}/>, which cannot have content (React throws)`)
+          else if (!hasContent && child.children.some(c => c.kind === 'text')) problems.push(`${tag} is empty, so the element it points to renders without its text`)
+          else walk(child.children, node.children, `${tag} > `)
+        }
+      } else if (!node.voidElement) {
+        // a kept HTML tag (<p>, the only other tag parsed) opens the children of the n-th element of that
+        // name at its level (react-i18next#1919), or keeps the scope when there is none
+        const n = keptSeen[node.name] = (keptSeen[node.name] ?? -1) + 1
+        const matched = scope.filter(c => c.kind === 'element' && c.name === node.name)[n]
+        walk(matched?.kind === 'element' ? matched.children : scope, node.children, `${tag} > `)
+      }
+    }
+  }
+  // parsed like react-i18next does: wrapped in <0>, only numbered and kept HTML tags are markup
+  const [root] = parseHtml(`<0>${value}</0>`, { allowedTags: (name: string) => /^\d+$/.test(name) || keep.includes(name) })
+  if (root?.type === 'tag') walk(children, root.children, '')
+  return problems
+}
+
+// The primary language's value of a key, from the file `extract` writes it to: one per namespace, or a merged one
+function primaryValueLookup (config: I18nextToolkitConfig): (namespace: string | undefined, key: string) => Promise<unknown> {
+  const { output, mergeNamespaces } = config.extract
+  const primary = config.extract.primaryLanguage || config.locales[0] || 'en'
+  const keySeparator = config.extract.keySeparator ?? '.'
+  const merged = mergeNamespaces || (typeof output === 'string' && !output.includes('{{namespace}}'))
+  const files = new Map<string, Promise<Record<string, any> | null>>()
+  return async (namespace, key) => {
+    const file = getOutputPath(output, primary, merged ? undefined : namespace)
+    // a file that does not parse makes `extract`, `sync` and `status` fail loudly, so `lint` skips it
+    if (!files.has(file)) files.set(file, loadTranslationFile(file).catch(() => null))
+    let resources = await files.get(file)
+    // a merged file holds one object per namespace, unless it is flat (the rule of translation-manager.ts)
+    const namespaced = config.extract.defaultNS !== false && config.extract.nsSeparator !== false &&
+      Object.values(resources ?? {}).some(v => typeof v === 'object' && v !== null && !Array.isArray(v))
+    if (merged && namespace && namespaced) resources = resources?.[namespace]
+    return resources ? getNestedValue(resources, key, keySeparator) : undefined
+  }
+}
+
+/**
+ * `lint.checkTransIndices`: the tags of the primary language's translations of every <Trans> with children,
+ * context and plural forms included, against those children. A <Trans> with `components` is skipped.
+ * ponytail: keys resolve per file like keysOfCall, without extract's cross-file pre-scan, so a namespace or
+ * keyPrefix from an imported constant reads the defaultNS file; one findKeys pass per run if that matters.
+ */
+async function lintTransIndices (ast: any, code: string, config: I18nextToolkitConfig, primaryValue: ReturnType<typeof primaryValueLookup>, severity: 'error' | 'warning'): Promise<LintIssue[]> {
+  const transComponents = config.extract.transComponents || ['Trans']
+  // ponytail: a file using react-i18next/icu.macro is skipped as a whole, its <Trans> compiles to `components`
+  if (!transComponents.some(name => code.includes(`<${name}`)) || code.includes('icu.macro')) return []
+  const keep = config.extract.transKeepBasicHtmlNodesFor ?? ['br', 'strong', 'i', 'p']
+  const aliases = importAliases(ast)
+  const issues: LintIssue[] = []
+  for (const [node, keys] of extractedKeysByNode(ast, code, config)) {
+    if (node?.type !== 'JSXElement' || !transComponents.includes(jsxElementName(node.opening.name, aliases) ?? '')) continue
+    if (node.opening.attributes.some((a: any) => a.type === 'JSXAttribute' && a.name?.value === 'components')) continue
+    const children = transChildren(node.children)
+    if (!children.length) continue
+    const line = lineColumnFromOffset(code, node.span.start)?.line ?? 0
+    const checked = new Set<string>()
+    for (const { key, ns } of keys) {
+      // `defaultNS: false` writes the keys without a namespace
+      const namespace = ns === false ? undefined : ns || 'translation'
+      const label = namespace ? `${namespace}:${key}` : key
+      if (checked.has(label)) continue
+      checked.add(label)
+      const value = await primaryValue(namespace, key)
+      if (typeof value !== 'string') continue
+      for (const problem of transTagProblems(children, value, keep)) {
+        issues.push({ text: `${label}: ${problem}`, line, type: 'transIndex', severity })
+      }
+    }
+  }
+  return issues
+}
+
 type LinterEventMap = {
   progress: [{
     message: string;
@@ -607,6 +754,8 @@ export class Linter extends EventEmitter<LinterEventMap> {
       const translationValues = await loadPrimaryTranslationValues(config)
       const { messageFormat } = config.extract
       const analyze = messageFormat === 'icu' || messageFormat === 'mf2' ? await loadMessageAnalyzer(messageFormat) : undefined
+      const transSetting = config.lint?.checkTransIndices
+      const primaryValue = transSetting === false || transSetting === 'off' ? undefined : primaryValueLookup(config)
       const plugins = config.plugins || []
       const lintPluginContext = this.createLintPluginContext(config)
       await this.initializeLintPlugins(plugins, lintPluginContext)
@@ -673,9 +822,10 @@ export class Linter extends EventEmitter<LinterEventMap> {
         }
 
         // Normalise AST spans to file-relative character indices so the ignore
-        // directive can resolve the line range of the JSX element it precedes.
+        // directive can resolve the line range of the JSX element it precedes,
+        // and lintTransIndices reports the line of a <Trans>.
         // (findHardcodedStrings/lintInterpolationParams locate issues via text
-        // search and don't read spans, so this only affects ignore handling.)
+        // search and don't read spans.)
         try {
           normalizeSpansToCharIndices(ast, code)
         } catch {
@@ -689,7 +839,9 @@ export class Linter extends EventEmitter<LinterEventMap> {
         const interpolationIssues = lintInterpolationParams(ast, code, config, translationValues, analyze)
         // Collect string-concatenation issues
         const concatenationIssues = lintConcatenation(ast, code, config)
-        let allIssues: LintIssue[] = [...hardcodedStrings, ...interpolationIssues, ...concatenationIssues]
+        // Collect <Trans> tags of the primary translation that miss their children
+        const transIndexIssues = primaryValue ? await lintTransIndices(ast, code, config, primaryValue, transSetting === 'error' ? 'error' : 'warning') : []
+        let allIssues: LintIssue[] = [...hardcodedStrings, ...interpolationIssues, ...concatenationIssues, ...transIndexIssues]
 
         // Filter issues suppressed by ignore-directive comments.
         //   i18next-instrument-ignore-next-line → suppresses the single next line
@@ -890,7 +1042,9 @@ export async function runLinterCli (
               ? `${config.extract.messageFormat === 'mf2' ? 'MF2' : 'ICU'} message`
               : type === 'placeholder'
                 ? 'Placeholder mismatch'
-                : 'Found hardcoded string'
+                : type === 'transIndex'
+                  ? '<Trans> tag'
+                  : 'Found hardcoded string'
         const tag = severity === 'warning' ? styleText('yellow', 'Warning:') : styleText('red', 'Error:')
         // line 0: a translation file whose format has no line lookup (YAML, JS)
         const detail = `  ${line ? `${styleText('gray', `${line}:`)} ` : ''}${tag} ${label}: "${text}"`

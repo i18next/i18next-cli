@@ -702,6 +702,23 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  it('should keep an &nbsp; at the end of a line as a child, as Babel and SWC compile it', async () => {
+    const sampleCode = `
+      <Trans i18nKey="price">
+        Price&nbsp;
+        <b>x</b>&nbsp;
+        <em>y</em>
+      </Trans>
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const results = await extract(mockConfig)
+    const translationFile = results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))
+
+    // children: "Price\u00a0", <b>, "\u00a0", <em>
+    expect(translationFile!.newTranslations).toEqual({ price: 'Price\u00a0<1>x</1>\u00a0<3>y</3>' })
+  })
+
   it('should handle word split across component with newline formatting', async () => {
     const sampleCode = `
       import { useTranslation } from 'react-i18next';

@@ -388,6 +388,20 @@ export interface I18nextToolkitConfig {
      */
     checkTranslationPlaceholders?: boolean | 'off' | 'warn' | 'error';
 
+    /** Check the numbered tags of `<Trans>` translations against the component's children (default: `'warn'`).
+     *
+     * `<Trans>` numbers its children, text included: in `Hello{' '}<b>world</b>` the `{' '}` a formatter
+     * inserts is child 1 and `<b>` child 2. The tags of the primary language's translation (context and plural
+     * forms included) are resolved like react-i18next does at runtime, and a tag that does not render what it
+     * wraps is reported: on a text child (`Hello <1>world</1>` renders `Hello  `), past the last child (the
+     * markup is lost), empty on an element with text (`<2/>`), or with content on a `<br/>` (React throws).
+     * A `<Trans>` with `components` is skipped. Only the primary language is checked;
+     * {@link checkTranslationPlaceholders} compares the tags of the other languages with it.
+     *
+     * Accepts the same values as {@link checkConcatenation}.
+     */
+    checkTransIndices?: boolean | 'off' | 'warn' | 'error';
+
     /** Path of the baseline file `lint --update-baseline` writes (default: `'i18next-lint-baseline.json'`).
      *
      * When the file exists, `lint` reports and fails only on issues it does not hold, so existing
@@ -545,8 +559,8 @@ export interface LintIssue {
   text: string;
   /** Line number where the issue was found (0 when unknown, e.g. a key in a YAML translation file) */
   line: number;
-  /** Issue category. `messageFormat` (`extract.messageFormat` `'icu'` or `'mf2'`) and `placeholder` (i18next format) issues are reported for translation files. */
-  type?: 'hardcoded' | 'interpolation' | 'concatenation' | 'messageFormat' | 'placeholder';
+  /** Issue category. `messageFormat` (`extract.messageFormat` `'icu'` or `'mf2'`) and `placeholder` (i18next format) issues are reported for translation files, `transIndex` for the `<Trans>` whose translation it checks. */
+  type?: 'hardcoded' | 'interpolation' | 'concatenation' | 'messageFormat' | 'placeholder' | 'transIndex';
   /** Severity of the issue. Defaults to 'error' (fails the lint run / CI); 'warning' is
    * reported but does not fail the run. Concatenation issues are reported as warnings. */
   severity?: 'error' | 'warning';

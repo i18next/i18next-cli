@@ -594,11 +594,12 @@ function getElementName (element: JSXElementName): string | JSXElementConstructo
   }
 }
 
-function trimTextNode (text: string): string | null {
+export function trimTextNode (text: string): string | null {
   text = text.replace(/\r\n/g, '\n') // Normalize line endings
 
-  // If text is ONLY whitespace AND contains a newline, remove it entirely
-  if (/^\s+$/.test(text) && /\n/.test(text)) {
+  // If text is ONLY whitespace AND contains a newline, remove it entirely. Only spaces and tabs, like
+  // Babel and SWC: an `&nbsp;` at the end of a line (U+00A0, which `\s` matches) stays a child
+  if (/^[ \t\n]+$/.test(text) && /\n/.test(text)) {
     return null
   }
 

@@ -82,6 +82,7 @@
     "chokidar": "^5.0.0",
     "commander": "^15.0.0",
     "glob": "^14.0.3",
+    "html-parse-stringify": "^4.0.1",
     "i18next": "^27.0.0",
     "i18next-resources-for-ts": "^2.1.2",
     "jiti": "^2.7.0",

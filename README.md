@@ -405,6 +405,13 @@ npx i18next-cli lint
   - tags, in any order: the numbered ones of `<Trans>` (`<0>…</0>`, `<1/>`) and named ones like `<bold>` from its `components`, which react-i18next shows as text when a translation renames them. The basic HTML react-i18next keeps as is (`extract.transKeepBasicHtmlNodesFor`, default `br`, `strong`, `i`, `p`) is not compared, a language may add or drop it
 
   Plural forms are compared as a group (the union over `_zero`, `_one`, `_other`, ...), since `{{count}}` may be left out of `_one` or `_zero` and a language has forms the primary language lacks (`ru` `_few`). A partly translated plural is checked for unexpected placeholders only. Keys only one side has and empty values are skipped (`status` reports them). Configure with `lint.checkTranslationPlaceholders`: `'warn'` / `true` (default), `'error'` (fails the run), `'off'` / `false`. With `extract.messageFormat: 'icu'` or `'mf2'` the ICU / MF2 check above runs instead.
+- **`<Trans>` tags against the children** *(warning by default)*: `<Trans>` numbers its children, text included, so the `{' '}` a formatter inserts at a line break shifts every later index. In `Hello{' '}<Bold>world</Bold>` the `{' '}` is `<1>` and `<Bold>` is `<2>`, and a translation `Hello <1>world</1>` renders `Hello  `. The tags of the primary language's translation of every `<Trans>` with children (context and plural forms included) are resolved like react-i18next does at runtime, and a tag that does not render what it wraps is reported, e.g. `reminder:disclosure: <1> points to the text " ", which replaces its content`:
+  - a tag with content on a text child, which renders that text instead
+  - a tag past the last child, which loses its markup
+  - an empty tag (`<2/>`) on an element with text, which renders the element without its text
+  - a tag with content on a `<br/>` (or another void element), which makes React throw
+
+  A tag on an interpolation object (`<1>{{count}}</1>`) is fine, react-i18next renders its content. A tag on an expression (`{link}`) is not checked, its value is known only at runtime. A `<Trans>` with `components` is skipped. Only the primary language is checked; in the i18next format the placeholder check above compares the tags of the other languages with it. Configure with `lint.checkTransIndices`: `'warn'` / `true` (default), `'error'` (fails the run), `'off'` / `false`.
 - **String concatenation** *(warning by default)* — translated strings glued together with `+`, or a sentence split across multiple adjacent translations (`<Trans>` components and/or `{t()}` expressions rendered as siblings). This breaks in languages that reorder or inflect the pieces; use a single key with placeholders instead. Configure with `lint.checkConcatenation`: `'warn'` / `true` (default) reports it without failing the run, `'error'` makes it fail (exit non-zero, useful for CI), and `'off'` / `false` disables it.
 
   ```jsx
@@ -1240,6 +1247,10 @@ export default defineConfig({
     /** Compare the placeholders ({{name}}, $t(key), <0>) of every locale with the primary
      * language (default: 'warn'). Accepts the same values as checkConcatenation. */
     checkTranslationPlaceholders: 'warn',
+
+    /** Report <Trans> tags of the primary translation that miss the component's children, e.g. a <1>
+     * on the {' '} a formatter inserted (default: 'warn'). Accepts the same values as checkConcatenation. */
+    checkTransIndices: 'warn',
 
     /** Baseline file written by `lint --update-baseline` (default: 'i18next-lint-baseline.json') */
     baseline: 'i18next-lint-baseline.json',
