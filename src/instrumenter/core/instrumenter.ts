@@ -17,6 +17,7 @@ import { normalizeSpansToCharIndices, collectIgnoredLineRanges } from '../../ext
 import { getOutputPath, readProjectDeps } from '../../utils/file-utils.js'
 import { findKeys } from '../../extractor/core/key-finder.js'
 import { matchesFunctionPattern } from '../../extractor/utils/function-matcher.js'
+import { classifyNextFiles, projectPath, type NextFileKind } from './next-files.js'
 import { usesMessageFormat, toMessageFormatPlaceholders } from '../../utils/message-format.js'
 
 /**
@@ -76,6 +77,20 @@ export async function runInstrumenter (
     const hasReact = await isProjectUsingReact()
     const hasTypeScript = await isProjectUsingTypeScript()
 
+    // A Next.js app gets next-i18next's calls: getT() in Server Components, useT() in Client Components,
+    // useTranslation() from next-i18next/pages in the Pages Router. Also one with i18next not set up at all,
+    // whose Server Components no plain react-i18next hook would work in; one with an i18next setup of its own
+    // keeps it.
+    const contents = new Map<string, string>()
+    for (const file of sourceFiles) contents.set(file, await readFile(file, 'utf-8'))
+    const deps = await readProjectDeps()
+    const code = [...contents.values()]
+    const nextI18next = !!deps['next-i18next'] || code.some(c => NEXT_I18NEXT_IMPORT_RE.test(c)) ||
+      (!!deps.next && !deps.i18next && !deps['react-i18next'] && !code.some(c => I18NEXT_IMPORT_RE.test(c)))
+    const nextFiles = nextI18next ? await classifyNextFiles(contents) : undefined
+    const nextKinds = nextFiles?.kinds
+    const serverModule = nextI18next ? findServerModule(contents) : undefined
+
     // Initialize plugins
     const plugins = config.plugins || []
     await initializeInstrumentPlugins(plugins, { config, logger })
@@ -99,15 +114,16 @@ export async function runInstrumenter (
 
     for (const file of sourceFiles) {
       try {
-        let content = await readFile(file, 'utf-8')
+        let content = contents.get(file)!
 
         // Run instrumentOnLoad plugin pipeline
         const loadResult = await runInstrumentOnLoadPipeline(content, file, plugins, logger)
         if (loadResult === null) continue // plugin says skip this file
         content = loadResult
-        i18nextInUse ||= I18NEXT_IMPORT_RE.test(content)
+        i18nextInUse ||= I18NEXT_IMPORT_RE.test(content) || NEXT_I18NEXT_IMPORT_RE.test(content)
 
-        const scanResult = await scanFileForCandidates(content, file, config)
+        const nextKind = nextKinds?.get(file)
+        const scanResult = await scanFileForCandidates(content, file, config, nextKind)
         let { candidates } = scanResult
         const { components, languageChangeSites, imports, memoHooks, pluralHelperImports } = scanResult
 
@@ -118,6 +134,12 @@ export async function runInstrumenter (
           totalCandidates += scanResult.ownTSkipped
           totalSkipped += scanResult.ownTSkipped
           warnFor(`${file} (${scanResult.ownTSkipped})`, 'Skipped the texts of components that declare a `t` of their own (not a translation function): rename it, then run instrument again.')
+        }
+
+        for (const { message, count, lines } of scanResult.dropped ?? []) {
+          totalCandidates += count
+          totalSkipped += count
+          warnFor(lines ? lines.map(line => `${file}:${line}`).join(', ') : `${file} (${count})`, message)
         }
 
         if (scanResult.moduleScopeSkipped > 0) {
@@ -217,7 +239,8 @@ export async function runInstrumenter (
               languageChangeSites,
               imports,
               memoHooks,
-              pluralHelperImports
+              pluralHelperImports,
+              next: nextKind && { kind: nextKind, serverModule: serverModuleFor(serverModule, file) }
             }
           )
 
@@ -265,11 +288,30 @@ export async function runInstrumenter (
       logger.warn(`${head}\n${where.map(w => `  ${w}`).join('\n')}`)
     }
 
+    if (nextI18next && totalTransformed > 0) {
+      // next-i18next sets i18next up itself (its config, the proxy, the root layout or appWithTranslation)
+      // a page loads its namespaces itself, with serverSideTranslations() (or a helper it imports that calls it)
+      const loads = (file: string) => [file, ...nextFiles!.imports.get(file) ?? []].some(f => contents.get(f)!.includes('serverSideTranslations'))
+      const pagesWithoutProps = results.filter(r => nextKinds?.get(r.file) === 'pages' && isPagesRoute(r.file) && !loads(r.file)).map(r => r.file)
+      if (pagesWithoutProps.length) {
+        logger.warn(`These pages need serverSideTranslations() in getStaticProps or getServerSideProps, or their texts render untranslated (https://github.com/i18next/next-i18next#pages-router-setup):\n${pagesWithoutProps.map(f => `  ${f}`).join('\n')}`)
+      }
+      if (!i18nextInUse && !await nextI18nextConfigured()) {
+        const kinds = new Set(results.map(r => nextKinds?.get(r.file)))
+        logger.info([
+          'The code now uses next-i18next. Set it up:',
+          `  npm install next-i18next i18next react-i18next${config.extract.messageFormat === 'icu' ? ' i18next-icu intl-messageformat' : config.extract.messageFormat === 'mf2' ? ' i18next-mf2' : ''}`,
+          ...(kinds.has('server') || kinds.has('client') ? ['  App Router: i18n.config, proxy and root layout, https://github.com/i18next/next-i18next#app-router-setup (no [lng] folder: localeInPath: false)'] : []),
+          ...(kinds.has('pages') ? ['  Pages Router: next-i18next.config.js, appWithTranslation and serverSideTranslations, https://github.com/i18next/next-i18next#pages-router-setup'] : [])
+        ].join('\n'))
+      }
+    }
+
     // Generate i18n init file if needed and any transformations were made
-    if ((totalTransformed > 0 || totalLanguageChanges > 0) && !options.isDryRun && i18nextInUse) {
+    if ((totalTransformed > 0 || totalLanguageChanges > 0) && !options.isDryRun && !nextI18next && i18nextInUse) {
       logger.info('Your code imports i18next already, so it is set up somewhere: no i18n init file generated.')
     }
-    if ((totalTransformed > 0 || totalLanguageChanges > 0) && !options.isDryRun && !i18nextInUse) {
+    if ((totalTransformed > 0 || totalLanguageChanges > 0) && !options.isDryRun && !nextI18next && !i18nextInUse) {
       const initFilePath = await ensureI18nInitFile(hasReact, hasTypeScript, config, logger, usesI18nextT)
       if (initFilePath) {
         await injectI18nImportIntoEntryFile(initFilePath, logger)
@@ -296,6 +338,46 @@ function keySourceOf (candidate: CandidateString): string {
   return candidate.transValue?.replace(/<\/?\d+>/g, '') ?? candidate.content
 }
 
+/** An import of next-i18next, which sets i18next up itself. */
+const NEXT_I18NEXT_IMPORT_RE = /\bfrom\s*['"]next-i18next(?:\/[\w/]+)?['"]|\brequire\(\s*['"]next-i18next(?:\/[\w/]+)?['"]\s*\)/
+
+/**
+ * The module the app imports `getT` from when it is not `next-i18next/server` (`createServerI18next` in its
+ * own `i18n.server.ts`, so no init order matters): an alias as written, a relative one as an absolute path.
+ */
+function findServerModule (contents: Map<string, string>): string | undefined {
+  for (const [file, code] of contents) {
+    for (const [, names, source] of code.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g)) {
+      if (!/\bgetT\b/.test(names) || source === 'next-i18next/server') continue
+      return source.startsWith('.') ? resolve(dirname(file), source) : source
+    }
+  }
+  return undefined
+}
+
+/** The specifier a file imports `getT` with: `next-i18next/server`, the app's alias, or a path relative to it. */
+function serverModuleFor (serverModule: string | undefined, file: string): string {
+  if (!serverModule) return 'next-i18next/server'
+  if (!isAbsolute(serverModule)) return serverModule
+  const rel = relative(dirname(resolve(file)), serverModule).replace(/\\/g, '/').replace(/\.(?:tsx?|jsx?|mjs)$/, '')
+  return rel.startsWith('.') ? rel : `./${rel}`
+}
+
+/** A page of the Pages Router (not `_app`, `_document`, `_error` or an API route), which loads its own translations. */
+function isPagesRoute (file: string): boolean {
+  const rel = projectPath(file)
+  return rel.startsWith('pages/') && !/^pages\/(?:_app|_document|_error|api\/)/.test(rel)
+}
+
+/** next-i18next has a config of its own already: `i18n.config.*` (App Router) or `next-i18next.config.*` (Pages Router). */
+async function nextI18nextConfigured (): Promise<boolean> {
+  const names = ['i18n.config', 'next-i18next.config'].flatMap(name => ['ts', 'js', 'mjs', 'cjs'].map(ext => `${name}.${ext}`))
+  for (const name of names) {
+    if (await fileExists(join(process.cwd(), name)) || await fileExists(join(process.cwd(), 'src', name))) return true
+  }
+  return false
+}
+
 /** An import of i18next or react-i18next (`.init()` alone is any library's: `Sentry.init()`). */
 const I18NEXT_IMPORT_RE = /\bfrom\s*['"](?:i18next|react-i18next)['"]|\brequire\(\s*['"](?:i18next|react-i18next)['"]\s*\)/
 
@@ -310,7 +392,8 @@ const MODULE_SCOPE_WARNING =
 async function scanFileForCandidates (
   content: string,
   file: string,
-  config: I18nextToolkitConfig
+  config: I18nextToolkitConfig,
+  nextKind?: NextFileKind
 ): Promise<FileScanResult> {
   const candidates: CandidateString[] = []
   const components: ComponentBoundary[] = []
@@ -320,6 +403,7 @@ async function scanFileForCandidates (
   let imports: ImportDeclarationSpan[] | undefined
   const memoHooks: MemoHookSpan[] = []
   let pluralHelperImports: PluralHelperImport[] | undefined
+  const dropped: NonNullable<FileScanResult['dropped']> = []
   const fileExt = extname(file).toLowerCase()
   const isTypeScriptFile = ['.ts', '.tsx', '.mts', '.cts'].includes(fileExt)
   const isTSX = fileExt === '.tsx'
@@ -378,11 +462,19 @@ async function scanFileForCandidates (
     collectMemoHooks(ast, memoHooks)
 
     // Detect React function component boundaries
-    detectComponentBoundaries(ast, content, components)
+    detectComponentBoundaries(ast, content, components, nextKind === 'server')
 
     // Collect function spans so module-scope strings can be excluded below
     const functionSpans: Array<{ start: number, end: number }> = []
     collectFunctionSpans(ast, functionSpans)
+    // Next.js reads the texts of `export const metadata` once; generateMetadata() can get them with getT()
+    if (nextKind === 'server' && !/\bgenerateMetadata\b/.test(content)) {
+      const metadata = metadataExport(ast, content)
+      if (metadata) {
+        components.push(metadata)
+        functionSpans.push({ start: metadata.bodyStart, end: metadata.bodyEnd })
+      }
+    }
 
     // Visit AST to find string literals; the object form of extract.acceptedAttributes
     // sets which attributes hold text per JSX element
@@ -441,6 +533,15 @@ async function scanFileForCandidates (
       candidates.push(...keep)
     }
 
+    if (nextKind) {
+      dropped.push(...dropForNextI18next(candidates, components, nextKind, isApiRoute(file), serverDirectiveSpans(ast)))
+      // next-i18next switches the language through the route or useChangeLanguage(): `i18n.changeLanguage()`
+      // would change the client instance alone. A call of that switch is no site at all.
+      const sites = languageChangeSites.filter(site => !/^(?:\w+\.)?changeLanguage\(/.test(content.slice(site.callStart, site.callEnd)))
+      if (sites.length) dropped.push({ message: NEXT_LANGUAGE_CHANGE, count: sites.length, lines: sites.map(site => site.line) })
+      languageChangeSites.length = 0
+    }
+
     // Annotate language change sites with their enclosing component (if any)
     for (const site of languageChangeSites) {
       for (const comp of components) {
@@ -491,7 +592,112 @@ async function scanFileForCandidates (
     // Silently skip files that can't be parsed
   }
 
-  return { candidates, components, languageChangeSites, moduleScopeSkipped, ownTSkipped, imports, memoHooks, pluralHelperImports }
+  return { candidates, components, languageChangeSites, moduleScopeSkipped, ownTSkipped, imports, memoHooks, pluralHelperImports, dropped }
+}
+
+/** `export const metadata = { title: '…' }` (with or without a type) as the scope of a generateMetadata() to be. */
+function metadataExport (ast: any, content: string): ComponentBoundary | null {
+  for (const item of ast.body ?? []) {
+    const decl = item.type === 'ExportDeclaration' ? item.declaration : null
+    const [declarator] = decl?.type === 'VariableDeclaration' && decl.declarations?.length === 1 ? decl.declarations : []
+    if (declarator?.id?.value !== 'metadata' || declarator.init?.type !== 'ObjectExpression') continue
+    const annotation = declarator.id.typeAnnotation?.typeAnnotation
+    return {
+      name: `metadata@${declarator.init.span.start}`,
+      bodyStart: declarator.init.span.start,
+      bodyEnd: declarator.init.span.end,
+      hasUseTranslation: false,
+      expressionBody: true,
+      isAsync: true,
+      metadataHead: {
+        start: decl.span.start,
+        end: declarator.init.span.start,
+        type: annotation?.span ? content.slice(annotation.span.start, annotation.span.end) : undefined
+      }
+    }
+  }
+  return null
+}
+
+/** A route handler (`route.ts` under `app/`, a file under `pages/api/`): its texts are responses of an API, not of a page. */
+function isApiRoute (file: string): boolean {
+  const rel = projectPath(file)
+  return /^app\/(?:.*\/)?route\.[cm]?[jt]sx?$/.test(rel) || rel.startsWith('pages/api/')
+}
+
+/**
+ * The functions that run as Server Actions or cached (`'use server'`, `'use cache'` as their first statement), all
+ * of the file for such a directive at its top: they have no root params, so getT() there needs `{ lng }` passed in.
+ */
+function serverDirectiveSpans (ast: any): Array<{ start: number, end: number }> {
+  const directive = (stmts: any[]) => stmts.some((st: any) => st.type === 'ExpressionStatement' &&
+    st.expression?.type === 'StringLiteral' && /^use (?:server|cache)\b/.test(st.expression.value))
+  // the directive prologue: the string statements a body or module starts with
+  const leading = (stmts: any[] = []) => {
+    const end = stmts.findIndex((st: any) => st.type !== 'ExpressionStatement' || st.expression?.type !== 'StringLiteral')
+    return end < 0 ? stmts : stmts.slice(0, end)
+  }
+  if (directive(leading(ast.body))) return [{ start: 0, end: Infinity }]
+  const spans: Array<{ start: number, end: number }> = []
+  const walk = (node: any): void => {
+    if (!node || typeof node !== 'object') return
+    if (FUNCTION_LIKE.has(node.type) && isBlockBody(node.body) && directive(leading(node.body.stmts))) {
+      spans.push({ start: node.body.span.start, end: node.body.span.end })
+      return
+    }
+    for (const key in node) {
+      const value = node[key]
+      if (Array.isArray(value)) value.forEach(walk)
+      else if (value && typeof value === 'object' && key !== 'span') walk(value)
+    }
+  }
+  walk(ast)
+  return spans
+}
+
+const NEXT_API = 'Left API routes as they are: their texts are responses, not pages (getT() there needs { lng } from the request).'
+const NEXT_DIRECTIVE = "Left Server Actions and cached functions ('use server', 'use cache') as they are: getT() there needs { lng } passed in."
+const NEXT_UNKNOWN = "Skipped the texts of files that no page or layout imports (as far as the imports resolve), so it is not known whether Server or Client Components render them: add 'use client' to a Client Component, then run instrument again."
+const NEXT_OUTSIDE = 'Skipped texts outside components: next-i18next has no global t(). Move them into a component (or, in a Server Component file, an async function), then run instrument again.'
+const NEXT_SHARED = 'Skipped the texts of components that Server and Client Components both render, where neither getT() nor a hook works: give them a `t` prop (from getT() or useT() in the callers), then run instrument again.'
+const NEXT_WRAPPED = 'Skipped the texts of Server Components wrapped in a call (memo, forwardRef), which cannot become async for getT().'
+const NEXT_LANGUAGE_CHANGE = 'Language switches left as they are: next-i18next changes the language through the route (/de/…) or useChangeLanguage() from next-i18next/client. Wire these by hand.'
+
+/**
+ * Takes out the candidates next-i18next cannot translate where they are: outside a component (no global `t`), in
+ * a component rendered on both sides without a `t` prop, a <Trans> there, in a Server Component that cannot
+ * become async. Returns what it dropped, by reason.
+ */
+function dropForNextI18next (
+  candidates: CandidateString[],
+  components: ComponentBoundary[],
+  kind: NextFileKind,
+  apiRoute: boolean,
+  directiveSpans: Array<{ start: number, end: number }>
+): NonNullable<FileScanResult['dropped']> {
+  const componentOf = (c: CandidateString) => components.find(comp => comp.name === c.insideComponent)
+  const reasonOf = (c: CandidateString): string | null => {
+    if (apiRoute) return NEXT_API
+    if (directiveSpans.some(span => c.offset >= span.start && c.endOffset <= span.end)) return NEXT_DIRECTIVE
+    const comp = componentOf(c)
+    // a <Trans> takes its `t` from the React context, in any render code of a Client Component
+    if (!comp) return c.type === 'jsx-mixed' && (kind === 'client' || kind === 'pages') ? null : NEXT_OUTSIDE
+    // with `t` and `i18n` props, a <Trans> takes them both and works on either side
+    if ((kind === 'shared' || kind === 'unknown') && (!comp.hasUseTranslation || (c.type === 'jsx-mixed' && !comp.i18nParam))) {
+      return kind === 'shared' ? NEXT_SHARED : NEXT_UNKNOWN
+    }
+    if (kind === 'server' && comp.wrapped && !comp.hasUseTranslation) return NEXT_WRAPPED
+    return null
+  }
+  const counts = new Map<string, number>()
+  const keep = candidates.filter(c => {
+    const reason = reasonOf(c)
+    if (reason) counts.set(reason, (counts.get(reason) ?? 0) + 1)
+    return !reason
+  })
+  candidates.length = 0
+  candidates.push(...keep)
+  return [...counts].map(([message, count]) => ({ message, count }))
 }
 
 /**
@@ -561,7 +767,8 @@ function lineOfOffset (content: string, offset: number): number {
 function detectComponentBoundaries (
   node: any,
   content: string,
-  components: ComponentBoundary[]
+  components: ComponentBoundary[],
+  serverFile = false
 ): void {
   if (!node) return
 
@@ -573,7 +780,8 @@ function detectComponentBoundaries (
         name: node.identifier.value,
         bodyStart: body.span.start,
         bodyEnd: body.span.end,
-        ...tBinding(node, body)
+        ...tBinding(node, body),
+        ...functionFacts(node)
       })
     }
   }
@@ -594,7 +802,8 @@ function detectComponentBoundaries (
           name: node.identifier.value,
           bodyStart: body.span.start,
           bodyEnd: body.span.end,
-          ...tBinding(node, body)
+          ...tBinding(node, body),
+          ...functionFacts(node)
         })
       }
     }
@@ -622,10 +831,21 @@ function detectComponentBoundaries (
         if (isWrapper && init.arguments?.length > 0) {
           const arg = init.arguments[0]?.expression || init.arguments[0]
           if (arg && (arg.type === 'ArrowFunctionExpression' || arg.type === 'FunctionExpression')) {
-            addComponentFromFunctionNode(node.id.value, arg, content, components)
+            addComponentFromFunctionNode(node.id.value, arg, content, components, true)
           }
         }
       }
+    }
+  }
+
+  // Not a component, but a function with a `t` of its own (`const { t } = await getT()` in `generateMetadata`,
+  // a custom hook), or in a Server Component file one that can await getT(): an async one, or the metadata
+  // functions Next.js awaits
+  if (FUNCTION_LIKE.has(node.type) && node.body?.span && !components.some(c => c.bodyStart === node.body.span.start)) {
+    const name: string | undefined = node.identifier?.value
+    const ownHook = isBlockBody(node.body) && bindsT({}, node.body) === 'translation'
+    if (ownHook || (serverFile && (node.async || /^generate(?:Metadata|Viewport)$/.test(name ?? '')))) {
+      addComponentFromFunctionNode(`${name ?? 'function'}@${node.body.span.start}`, node, content, components, false, true)
     }
   }
 
@@ -634,12 +854,34 @@ function detectComponentBoundaries (
     const value = node[key]
     if (value && typeof value === 'object') {
       if (Array.isArray(value)) {
-        value.forEach(item => detectComponentBoundaries(item, content, components))
+        value.forEach(item => detectComponentBoundaries(item, content, components, serverFile))
       } else {
-        detectComponentBoundaries(value, content, components)
+        detectComponentBoundaries(value, content, components, serverFile)
       }
     }
   }
+}
+
+const FUNCTION_LIKE = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'])
+
+/** Where a function starts, whether it is async, and the translation hook it calls without taking `t`. */
+function functionFacts (fnNode: any, wrapped = false): Pick<ComponentBoundary, 'start' | 'isAsync' | 'wrapped' | 'hookPattern' | 'i18nParam' | 'returnType'> {
+  const facts: Pick<ComponentBoundary, 'start' | 'isAsync' | 'wrapped' | 'hookPattern' | 'i18nParam' | 'returnType'> = { start: fnNode.span?.start, isAsync: !!fnNode.async }
+  if (wrapped) facts.wrapped = true
+  if ((fnNode.params ?? []).some((p: any) => patternBinds(p, 'i18n'))) facts.i18nParam = true
+  const returnType = fnNode.returnType?.typeAnnotation?.span
+  if (returnType) facts.returnType = { start: returnType.start, end: returnType.end }
+  for (const stmt of isBlockBody(fnNode.body) ? fnNode.body.stmts ?? [] : []) {
+    for (const d of stmt.type === 'VariableDeclaration' ? stmt.declarations ?? [] : []) {
+      const call = d.init?.type === 'AwaitExpression' ? d.init.argument : d.init
+      const hook = call?.type === 'CallExpression' ? dottedName(call.callee)?.split('.').pop() : null
+      const props = d.id?.type === 'ObjectPattern' ? d.id.properties ?? [] : []
+      if (!hook || !HOOK_CALL_RE.test(hook) || !props.length || props.some((p: any) => p.type === 'RestElement')) continue
+      facts.hookPattern = { statement: stmt.span.start, first: props[0].span.start, last: props[props.length - 1].span.end, names: props.map((p: any) => p.key?.value).filter(Boolean) }
+      return facts
+    }
+  }
+  return facts
 }
 
 /**
@@ -657,7 +899,9 @@ function addComponentFromFunctionNode (
   name: string,
   fnNode: any,
   content: string,
-  components: ComponentBoundary[]
+  components: ComponentBoundary[],
+  wrapped = false,
+  anyExpressionBody = false
 ): void {
   const body = fnNode.body
   if (isBlockBody(body) && body.span) {
@@ -665,15 +909,18 @@ function addComponentFromFunctionNode (
       name,
       bodyStart: body.span.start,
       bodyEnd: body.span.end,
-      ...tBinding(fnNode, body)
+      ...tBinding(fnNode, body),
+      ...functionFacts(fnNode, wrapped)
     })
-  } else if (isJSXExpression(body) && body.span) {
+  } else if ((isJSXExpression(body) || anyExpressionBody) && body?.span) {
     // `const Hint = () => <p>…</p>`: a component too; its body becomes a block when it needs the hook
+    // (as does `async () => ({ title: … })`, a server function)
     components.push({
       name,
       bodyStart: body.span.start,
       bodyEnd: body.span.end,
       ...tBinding(fnNode, {}),
+      ...functionFacts(fnNode, wrapped),
       expressionBody: true
     })
   }
@@ -700,11 +947,16 @@ function bindsT (fnNode: any, body: any): 'translation' | 'other' | null {
       if (!patternBinds(d.id, 't')) continue
       const call = d.init?.type === 'AwaitExpression' ? d.init.argument : d.init
       const hook = call?.type === 'CallExpression' ? dottedName(call.callee)?.split('.').pop() : null
+      // `const t = i18n.getFixedT(lng, 'footer')` is one too
+      if (d.id.type === 'Identifier' && hook === 'getFixedT') return 'translation'
       return d.id.type === 'ObjectPattern' && hook && TRANSLATION_HOOK_RE.test(hook) ? 'translation' : 'other'
     }
   }
   return null
 }
+
+/** The translation hooks a call to which can take `t` as well; an app's own `useRoleTranslations()` returns data. */
+const HOOK_CALL_RE = /^(?:useTranslation|useT|getT)$/
 
 /** Names of the hooks and functions that give a translation `t`. */
 const TRANSLATION_HOOK_RE = /^(?:use|get)\w*(?:Translation|T|I18n|Intl)\w*$/
@@ -1308,7 +1560,8 @@ function hasWordsBesidePlaceholders (text: string): boolean {
   const bare = text.replace(HTML_ENTITY_RE, ' ').replace(/\{\{[^}]*\}\}/g, '\uE000')
   if (/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(bare.replace(/\uE000/g, ' ').trim())) return false
   return bare.split(/\s+/).some(token => {
-    const word = /^[^\p{L}\p{N}\uE000_.-]*(\p{L}{2,}(?:['’-]\p{L}+)*)[^\p{L}\p{N}_]*$/u.exec(token)?.[1]
+    // (a name with digits in a later part counts: `next-i18next v{{version}}`)
+    const word = /^[^\p{L}\p{N}\uE000_.-]*(\p{L}{2,}(?:['’-]\p{N}*\p{L}[\p{L}\p{N}]*)*)[^\p{L}\p{N}_]*$/u.exec(token)?.[1]
     // `zh-{{country}}`, `{{a}}/{{b}}`: a placeholder joined to the word by a separator makes an id, not a phrase
     if (/[-_./:#@=&?|\\]\uE000/.test(token)) return false
     // one Han, Kana or Hangul character is a word of its own (`共 {{n}} 条`)
@@ -1763,10 +2016,11 @@ function detectJSXInterpolation (
   forEachChild(node, parts, child => detectJSXInterpolation(child, content, file, config, candidates))
 }
 
-/** A run without the whitespace-only text and `{' '}` pieces at its two ends. */
+/** A run without the whitespace-only text, `{' '}` pieces and empty elements (`<hr />`, `<br />`) at its two ends. */
 function trimRun (run: any[]): any[] {
   const blank = (c: any) => (c.type === 'JSXText' && !c.value?.trim()) ||
-    (c.type === 'JSXExpressionContainer' && c.expression?.type === 'StringLiteral' && !c.expression.value.trim())
+    (c.type === 'JSXExpressionContainer' && c.expression?.type === 'StringLiteral' && !c.expression.value.trim()) ||
+    (c.type === 'JSXElement' && !c.children?.length)
   let start = 0
   let end = run.length
   while (start < end && blank(run[start])) start++
@@ -1886,13 +2140,16 @@ function isTransComponent (node: any, transComponents: readonly string[] = []): 
   const opening = node.opening
   if (!opening) return false
   const name = opening.name
-  if (name?.type === 'Identifier') return name.value === 'Trans' || transComponents.includes(name.value)
+  // react-i18next's own: Trans, IcuTrans and their WithoutContext variants for Server Components
+  if (name?.type === 'Identifier') return TRANS_RE.test(name.value) || transComponents.includes(name.value)
   if (name?.type === 'JSXMemberExpression' && name.property?.type === 'Identifier') {
     const object = name.object?.type === 'Identifier' ? name.object.value : ''
-    return name.property.value === 'Trans' || transComponents.includes(`${object}.${name.property.value}`)
+    return TRANS_RE.test(name.property.value) || transComponents.includes(`${object}.${name.property.value}`)
   }
   return false
 }
+
+const TRANS_RE = /^(?:Icu)?Trans(?:WithoutContext)?$/
 
 /**
  * An icon: an element whose name ends in `Icon`, or one with a Material icon class. Its text is a ligature

@@ -1341,6 +1341,27 @@ export interface ComponentBoundary {
   expressionBody?: boolean
   /** Its `t` is something other than a translation function (`const [t, setT] = useState(0)`) */
   ownT?: boolean
+  /** Where the function starts (`function`, the arrow's parameters): a Server Component gets `async ` there */
+  start?: number
+  /** The function is `async` already */
+  isAsync?: boolean
+  /** The function is the argument of a call (`memo(…)`, `forwardRef(…)`), which cannot take an async one */
+  wrapped?: boolean
+  /** It takes an `i18n` parameter (a prop), which a <Trans> without React context can be given */
+  i18nParam?: boolean
+  /**
+   * The translation hook it calls (`const { i18n } = useTranslation('ns')`): where that statement starts, the names
+   * it takes, and where more go (`t` before the first property, others after the last), so `t` and `i18n` come from
+   * that call
+   */
+  hookPattern?: { statement: number, first: number, last: number, names: string[] }
+  /** The span of its return type (`: JSX.Element`), which becomes `Promise<…>` when it becomes async */
+  returnType?: { start: number, end: number }
+  /**
+   * `export const metadata = {…}` of a Server Component file, which becomes `generateMetadata()`: the span of
+   * `const metadata: Metadata = ` (from `const` to the object) and its type
+   */
+  metadataHead?: { start: number, end: number, type?: string }
 }
 
 /**
@@ -1397,6 +1418,8 @@ export interface FileScanResult {
   memoHooks?: MemoHookSpan[]
   /** The imported plural helpers the candidates call: their import goes once no call is left */
   pluralHelperImports?: PluralHelperImport[]
+  /** Candidates dropped for a reason the summary names (`message`), with how many */
+  dropped?: Array<{ message: string, count: number, lines?: number[] }>
 }
 
 /** An imported plural helper: how often the file names it, and the text that imports it. */

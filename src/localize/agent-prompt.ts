@@ -50,8 +50,11 @@ all commands.
    for future agent sessions.
 3. Instrument: run \`npx i18next-cli instrument --dry-run\` and review the
    planned changes; then \`npx i18next-cli instrument\` to apply. Inspect the
-   git diff carefully: fix any t() wrapping inside Next.js *server components*
-   (add 'use client' or refactor to a server-side t() pattern). Commit.
+   git diff carefully and the warnings it prints. In a Next.js app it writes
+   next-i18next's calls (await getT() in Server Components, useT() in Client
+   Components); texts it left (components that Server and Client Components
+   both render, texts outside components) are listed: move them or give the
+   component a t prop. If it printed next-i18next setup steps, do them. Commit.
 4. Extract: run \`npx i18next-cli extract\`. Verify the locale JSON files were
    written (check the extract.output path in the config). If the developer
    chose repository files only: translate the extracted keys yourself or

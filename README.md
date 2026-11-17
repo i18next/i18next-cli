@@ -168,6 +168,13 @@ write a note for AI coding agents:
   mode); add it later via a `LOCIZE_API_KEY` environment variable.
 - **Other / skip** — same as "Local files only" for the wizard's purposes.
 
+The defaults come from the project: the locales and output path from the translation files it finds, the
+source glob from the directories that exist of `src`, `app`, `pages` and `components` (`{app,components}/**/*.{js,jsx,mjs,ts,tsx}` in a Next.js app
+without `src/`), and what the app's own setup decides is written into `extract` as well: next-i18next's
+`defaultNS` (from `i18n.config` or `next-i18next.config`, `common` when it sets none), `messageFormat` for
+i18next-icu or i18next-mf2, and `keySeparator: false` for translation files whose flat keys contain dots
+(`"blog.title": "…"`), so `extract` keeps them as they are.
+
 **Note for AI coding agents** (off by default): the last question offers to
 append a short `## Internationalization` section to `AGENTS.md` and, if it
 exists, `CLAUDE.md` (when neither exists, `AGENTS.md` is created, plus a
@@ -589,8 +596,8 @@ The instrumenter uses confidence heuristics to avoid transforming:
   built in code (`` `${projectId}-${version}` ``, `` `weight_${code}` ``, `` `${baseUrl}/api/${id}` ``,
   `` `zh-${country}` ``); and values of technical properties (`` { 'Authorization': `Bearer ${token}` } ``,
   `url`, `id`, `type`, `code`, `className`, …)
-- Strings already inside `t()` calls or `<Trans>` components, including the project's own `extract.functions`
-  and `extract.transComponents`
+- Strings already inside `t()` calls or `<Trans>`, `<IcuTrans>` and their `…WithoutContext` components (their
+  `values` too), including the project's own `extract.functions` and `extract.transComponents`
 - **Module-scope strings** — anything outside a function body, e.g. a top-level config/registry array:
   ```ts
   export const SETTINGS_SECTIONS = [
@@ -612,11 +619,40 @@ The instrumenter uses confidence heuristics to avoid transforming:
 When transformations are applied, the command automatically:
 - Injects `import { useTranslation } from 'react-i18next'` in React files (or `import i18next from 'i18next'` for non-React files)
 - Injects `const { t } = useTranslation()` into each React function component that contains transformed strings (an arrow component with an expression body, `() => <p>…</p>`, gets a block for it), unless it has a `t` already (a prop, or a hook from a module that re-exports it), and adds `t` to the dependencies of a `useMemo` or `useCallback` whose callback now calls it
-- Places the imports after the file's import declarations (never inside a string that shows code), and imports no name the file has already, from whatever module
+- Places the imports after the file's import declarations and directives (`'use client'` stays first; never inside a string that shows code), and imports no name the file has already, from whatever module
+- Takes `t` from a hook call the component makes already, unless a text comes before it: `const { i18n } = useTranslation('settings')` becomes `const { t, i18n } = useTranslation('settings')`, so the new keys go to that namespace; a function that is no component but binds `t` from a translation hook (a custom hook, `generateMetadata` with `getT()`) uses that `t`, not `i18next.t()`
 - Detects the project's framework from `package.json` dependencies, dev and peer dependencies included; in a workspace package (npm/yarn `workspaces`, `pnpm-workspace.yaml`) also from the workspace root's
 - Uses `useTranslation()` hook style `t()` inside React components, or `i18next.t()` for utility / non-component code
-- Generates an `i18n.ts` (or `i18n.js` for JS-only projects) initialization file if none exists and the code imports neither `i18next` nor `react-i18next` yet (an app that does is set up somewhere, perhaps in a shared package), pre-configured with [`i18next-resources-to-backend`](https://github.com/i18next/i18next-resources-to-backend) to lazy-load your translation files via dynamic imports
+- Generates an `i18n.ts` (or `i18n.js` for JS-only projects) initialization file if none exists and the code imports neither `i18next` nor `react-i18next` yet (an app that does is set up somewhere, perhaps in a shared package), pre-configured with [`i18next-resources-to-backend`](https://github.com/i18next/i18next-resources-to-backend) to lazy-load your translation files via dynamic imports; not in a Next.js app, see below
 - Adds `i18n.changeLanguage()` next to a call that sets the user's language: `setLanguage(code)`, or a settings, profile or user call with a `language`/`locale` property (`updateSettings({ language: code })`). Only where that call is a statement of its own in a block or an arrow function's body, with a plain variable or property as the language (the injected call repeats it), and not for a `language` property passed as data (`fetchTranslations({ lng })`). `--dry-run` lists every such site; in an app where a language is data (a translation tool's view filter), review them
+
+**Next.js apps ([next-i18next](https://github.com/i18next/next-i18next)):**
+
+An app with next-i18next (a dependency, or imported), and a Next.js app with no i18next set up at all, gets
+next-i18next's calls, by where each file renders. The import graph decides: a file under `app/` is a Server
+Component unless it says `'use client'`, a `'use client'` file and all it imports are Client Components, a file
+under `pages/` and all it imports render with the Pages Router (imports resolve relative, through the `paths` of
+`tsconfig.json` or `jsconfig.json` and from the project root). A Next.js app with i18next or react-i18next and no
+next-i18next keeps `react-i18next`.
+
+- **Server Components:** `const { t } = await getT()` from `next-i18next/server` (or from the module the app
+  imports `getT` from, such as its own `createServerI18next` file), and the component becomes `async`. A
+  `<Trans>` gets `t={t} i18n={i18n}` and comes from `react-i18next/TransWithoutContext`. `generateMetadata()`
+  and other async functions get `getT()` as well, and `export const metadata = { title: '…' }` becomes
+  `export async function generateMetadata () { const { t } = await getT(); return { title: t(…) } }`.
+- **Client Components:** `const { t } = useT()` and `Trans` from `next-i18next/client`.
+- **Pages Router:** `useTranslation` and `Trans` from `next-i18next/pages`. A page that loads no translations
+  (no `serverSideTranslations()` in it or in a helper it imports) is named in a warning.
+- **A component that Server and Client Components both render** works with neither: its texts stay, named in a
+  warning, unless it gets `t` as a prop (and `i18n` too for a `<Trans>`), which it then uses.
+- Left as they are, each named in a warning: texts outside components (next-i18next has no global `t`), files
+  no page or layout imports (which side renders them is not known), API routes (`route.ts` under `app/`,
+  `pages/api/`), Server Actions and cached functions (`'use server'`, `'use cache'`: `getT()` there needs
+  `{ lng }`), a Server Component wrapped in `memo()` or `forwardRef()`, and language switches: next-i18next
+  changes the language through the route or `useChangeLanguage()`.
+- No init file: next-i18next sets i18next up itself. When it is not set up yet, the steps are printed (install,
+  then `i18n.config`, proxy and root layout for the App Router, `appWithTranslation` and `serverSideTranslations`
+  for the Pages Router).
 
 **Recommended workflow:**
 
@@ -727,7 +763,7 @@ The command walks through six steps:
 
 **Safe to re-run:** the command is idempotent. Already-wrapped strings are not re-instrumented, extraction is deterministic, and syncing never overwrites translations edited remotely (no `--update-values` unless you pass it; locize-cli's `--reference-language-only` default keeps target languages safe).
 
-> **Next.js App Router:** instrument injects `useTranslation()`, which is client-only. Review the diff for server components — add `'use client'` or switch those to a server-side `t()` pattern.
+> **Next.js:** instrument writes next-i18next's calls, `await getT()` in Server Components and `useT()` in Client Components (see [instrument](#instrument)). Review the warnings: texts in components that both render stay as they are.
 
 **Non-React stacks (Vue, Svelte, …):** the instrument step transforms React/JSX out of the box. For other stacks, add a plugin that covers your file type (community: [i18next-cli-vue](https://github.com/PBK-B/i18next-cli-vue), [i18next-cli-plugin-svelte](https://github.com/dreamscached/i18next-cli-plugin-svelte) — or write your own via the [Plugin System](#plugin-system) `instrumentOnLoad`/`onLoad` hooks). With a matching plugin configured, `localize` runs the full flow; without one, the instrument step is skipped with guidance and the remaining steps (extract → Locize → auto-translate) still run.
 
@@ -780,8 +816,11 @@ all commands.
    for future agent sessions.
 3. Instrument: run `npx i18next-cli instrument --dry-run` and review the
    planned changes; then `npx i18next-cli instrument` to apply. Inspect the
-   git diff carefully: fix any t() wrapping inside Next.js *server components*
-   (add 'use client' or refactor to a server-side t() pattern). Commit.
+   git diff carefully and the warnings it prints. In a Next.js app it writes
+   next-i18next's calls (await getT() in Server Components, useT() in Client
+   Components); texts it left (components that Server and Client Components
+   both render, texts outside components) are listed: move them or give the
+   component a t prop. If it printed next-i18next setup steps, do them. Commit.
 4. Extract: run `npx i18next-cli extract`. Verify the locale JSON files were
    written (check the extract.output path in the config). If the developer
    chose repository files only: translate the extracted keys yourself or

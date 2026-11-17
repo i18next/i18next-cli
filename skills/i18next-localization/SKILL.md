@@ -54,8 +54,10 @@ So you know the shape before you start, and can tell the user:
 | Download | `i18next-cli locize-download` | Pulls translations back into the repo (only if the developer chose Locize) |
 
 Run `instrument --dry-run` first and show the user the plan. After applying,
-inspect the git diff: in Next.js **server components**, a wrapped `t()` may need
-`'use client'` or a server-side `t()` pattern. Commit before extracting.
+inspect the git diff and the warnings: in a Next.js app it writes next-i18next's
+calls (`await getT()` in Server Components, `useT()` in Client Components) and
+lists the texts it left, such as those of components both render. Commit before
+extracting.
 
 **The runtime library is your job, not the CLI's.** `init` writes config; it does
 not install anything. `init` is an interactive wizard, so run it with `--yes` and

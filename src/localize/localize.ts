@@ -156,12 +156,33 @@ function printCompleteness (completeness: LocaleCompleteness[]): void {
   }
 }
 
-function printEpilogue (config: I18nextToolkitConfig): void {
+function printEpilogue (config: I18nextToolkitConfig, nextApp = false): void {
   const projectId = config.locize?.projectId || '<your-project-id>'
   console.log(styleText('green', '\n✅ Done. Your app is localized.'))
   console.log(styleText('cyan', '\nYour AI translations come with confidence scores; low-confidence ones are flagged for review in Locize.'))
   console.log('\nOptional — switch to CDN delivery so translation fixes go live without redeploying your app:')
   console.log(styleText('cyan', '  npm install i18next-locize-backend'))
+  if (nextApp) {
+    // next-i18next takes the backend in its config (and, for the browser, in I18nProvider's `use`: see the docs)
+    console.log(styleText('gray', `
+  // in your next-i18next config (i18n.config):
+  import LocizeBackend from 'i18next-locize-backend'
+
+  export default defineConfig({
+    // ...
+    use: [LocizeBackend],
+    i18nextOptions: {
+      backend: {
+        projectId: '${projectId}',
+        version: 'latest', // no apiKey in production!
+      },
+    },
+  })
+`))
+    console.log('Docs: https://github.com/i18next/next-i18next#i18next-locize-backend')
+    console.log('Your current setup (local translation files) keeps working either way; run `i18next-cli locize-download` in CI to refresh the files.')
+    return
+  }
   console.log(styleText('gray', `
   // in your i18n init file:
   import LocizeBackend from 'i18next-locize-backend'
@@ -292,8 +313,8 @@ export async function runLocalize (options: LocalizeOptions = {}, configPath?: s
       if (!proceed) skipInstrument = true
     }
 
-    if (stack.hasAppRouter) {
-      warn("Next.js App Router detected: instrument injects useTranslation(), which is client-only. Review the diff for server components — add 'use client' or switch those to a server-side t() pattern.")
+    if (stack.usesNextI18next) {
+      warn('Next.js: instrument writes next-i18next calls, await getT() in Server Components and useT() in Client Components. Review the diff and the texts it lists as left.')
     }
 
     if (!skipInstrument) {
@@ -497,5 +518,5 @@ export async function runLocalize (options: LocalizeOptions = {}, configPath?: s
     ok('All languages translated and downloaded.')
   }
 
-  printEpilogue(config)
+  printEpilogue(config, stack.usesNextI18next)
 }

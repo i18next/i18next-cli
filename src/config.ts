@@ -168,19 +168,20 @@ export async function ensureConfig (configPath?: string, logger: Logger = new Co
 async function findTsConfigFile (): Promise<string | null> {
   let currentDir = process.cwd()
   while (true) {
-    const tsConfigPath = join(currentDir, 'tsconfig.json')
-    try {
-      await access(tsConfigPath)
-      return tsConfigPath
-    } catch {
-      // File not found, move to parent directory
-      const parentDir = dirname(currentDir)
-      if (parentDir === currentDir) {
-        // Reached the root of the file system
-        return null
-      }
-      currentDir = parentDir
+    // a JavaScript project keeps its `paths` in jsconfig.json (`@/*` in a Next.js app)
+    for (const name of ['tsconfig.json', 'jsconfig.json']) {
+      try {
+        await access(join(currentDir, name))
+        return join(currentDir, name)
+      } catch {}
     }
+    // File not found, move to parent directory
+    const parentDir = dirname(currentDir)
+    if (parentDir === currentDir) {
+      // Reached the root of the file system
+      return null
+    }
+    currentDir = parentDir
   }
 }
 

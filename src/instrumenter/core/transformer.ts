@@ -1,6 +1,7 @@
 import MagicString from 'magic-string'
 import type { I18nextToolkitConfig, CandidateString, TransformResult, ComponentBoundary, ImportDeclarationSpan, LanguageChangeSite, MemoHookSpan, PluralHelperImport } from '../../types.js'
 import { generateKeyFromContent } from './key-generator.js'
+import type { NextFileKind } from './next-files.js'
 
 interface TransformerOptions {
   isDryRun?: boolean
@@ -22,6 +23,21 @@ interface TransformerOptions {
   memoHooks?: MemoHookSpan[]
   /** The imported plural helpers the candidates call: an import whose every use was rewritten goes */
   pluralHelperImports?: PluralHelperImport[]
+  /** A file of a next-i18next app: where it renders, and the module its Server Components import `getT` from */
+  next?: { kind: NextFileKind, serverModule: string }
+}
+
+/** The hook a component gets `t` from, and where `useTranslation`/`useT`/`getT` and `Trans` are imported from. */
+function bindingsFor (next: TransformerOptions['next']): { hook: string, hookModule: string, transModule: string, call: (args: string) => string } {
+  switch (next?.kind) {
+    case 'server': return { hook: 'getT', hookModule: next.serverModule, transModule: 'react-i18next/TransWithoutContext', call: args => `await getT(${args})` }
+    // its `t` is a prop: no hook; a <Trans> without context works on both sides
+    case 'shared':
+    case 'unknown': return { hook: 'useT', hookModule: 'next-i18next/client', transModule: 'react-i18next/TransWithoutContext', call: args => `useT(${args})` }
+    case 'client': return { hook: 'useT', hookModule: 'next-i18next/client', transModule: 'next-i18next/client', call: args => `useT(${args})` }
+    case 'pages': return { hook: 'useTranslation', hookModule: 'next-i18next/pages', transModule: 'next-i18next/pages', call: args => `useTranslation(${args})` }
+    default: return { hook: 'useTranslation', hookModule: 'react-i18next', transModule: 'react-i18next', call: args => `useTranslation(${args})` }
+  }
 }
 
 /**
@@ -49,6 +65,11 @@ export function transformFile (
     importAdded: false,
     hookInjected: false
   }
+
+  const bindings = bindingsFor(options.next)
+  // A <Trans> in a Server Component has no React context: it takes `t` and `i18n` from getT()
+  // (and in a component that Server and Client Components both render, from its props)
+  const transProps = ['server', 'shared', 'unknown'].includes(options.next?.kind ?? '') ? ' t={t} i18n={i18n}' : ''
 
   // <Trans> attributes in the quotes the file's JSX attributes use (`title='…'` or `title="…"`)
   // (a file without quoted attributes: the quotes of its imports)
@@ -119,7 +140,7 @@ export function transformFile (
       const nsForReplacement = (options.namespace && options.namespace !== defaultNS) ? options.namespace : undefined
       // <Trans> works in any render code, a helper outside a component too; without React the text stays
       if (candidate.type === 'jsx-mixed' && !options.hasReact) continue
-      const replacement = buildReplacement(candidate, key, useHookStyle, nsForReplacement, jsxQuote)
+      const replacement = buildReplacement(candidate, key, useHookStyle, nsForReplacement, jsxQuote, transProps)
 
       if (replacement) {
         s.overwrite(candidate.offset, candidate.endOffset, replacement)
@@ -130,8 +151,9 @@ export function transformFile (
           hasTransCandidates = true
         }
 
-        // jsx-mixed candidates use <Trans>, not t(), so they need neither useTranslation nor i18next
-        if (candidate.type !== 'jsx-mixed') {
+        // jsx-mixed candidates use <Trans>, not t(), so they need neither useTranslation nor i18next (but in a
+        // Server Component its `t` and `i18n`)
+        if (candidate.type !== 'jsx-mixed' || (transProps && candidate.insideComponent)) {
           if (candidate.insideComponent) {
             transformedComponents.add(candidate.insideComponent)
           } else {
@@ -163,11 +185,6 @@ export function transformFile (
 
     // Inject useTranslation() hooks into affected React components
     if (options.hasReact && transformedComponents.size > 0) {
-      // Process components in reverse order of bodyStart to avoid offset shifts
-      const affectedComponents = components
-        .filter(c => transformedComponents.has(c.name) && !c.hasUseTranslation)
-        .sort((a, b) => b.bodyStart - a.bodyStart)
-
       const addHookLine = (comp: ComponentBoundary, line: string) => {
         const indent = comp.expressionBody ? lineIndent(content, comp.bodyStart) + '  ' : detectIndent(content, comp.bodyStart)
         if (comp.expressionBody) {
@@ -177,60 +194,55 @@ export function transformFile (
         } else {
           s.appendRight(comp.bodyStart + 1, `\n${indent}${line}`)
         }
+        // getT() is awaited: a Server Component becomes async, and `export const metadata = {…}` the function
+        // Next.js calls instead, `export async function generateMetadata () { …; return {…} }`
+        if (comp.metadataHead) {
+          const { start, end, type } = comp.metadataHead
+          // contentOnly: the block that wraps the object starts at `end`, and stays
+          s.overwrite(start, end, `async function generateMetadata ()${type ? `: Promise<${type}>` : ''} `, { contentOnly: true })
+        } else if (options.next?.kind === 'server' && !comp.isAsync && comp.start !== undefined) {
+          s.appendLeft(comp.start, 'async ')
+          // an async function returns a promise: `(): JSX.Element` becomes `(): Promise<JSX.Element>`
+          const type = comp.returnType
+          if (type && !/^Promise\s*</.test(content.slice(type.start, type.end))) {
+            s.appendLeft(type.start, 'Promise<')
+            s.appendRight(type.end, '>')
+          }
+        }
         injections.hookInjected = true
       }
 
-      for (const comp of affectedComponents) {
+      // Components in reverse order of bodyStart to avoid offset shifts
+      for (const comp of components.filter(c => transformedComponents.has(c.name)).sort((a, b) => b.bodyStart - a.bodyStart)) {
         const defaultNS = options.config.extract?.defaultNS ?? 'translation'
         const nsArg = (options.namespace && options.namespace !== defaultNS) ? `'${options.namespace}'` : ''
-        // Build destructuring: include `t` if the component has string candidates
-        // (but not jsx-mixed which use <Trans>),
-        // include `i18n` if the component has language-change sites.
-        const needsT = highConfidenceCandidates.some(c => c.insideComponent === comp.name && c.type !== 'jsx-mixed')
-        const needsI18n = componentsNeedingI18n.has(comp.name)
-        const parts: string[] = []
-        if (needsT) parts.push('t')
-        if (needsI18n) parts.push('i18n')
-        // Skip if component needs neither t nor i18n
-        // (e.g. component only has jsx-mixed / <Trans> candidates)
-        if (!needsT && !needsI18n) continue
-        addHookLine(comp, `const { ${parts.join(', ')} } = useTranslation(${nsArg})`)
-      }
-
-      // For components that already have useTranslation but need i18n added,
-      // try to upgrade `const { t } = useTranslation(...)` → `const { t, i18n } = useTranslation(...)`
-      if (componentsNeedingI18n.size > 0) {
-        const compsWithExistingHook = components.filter(c =>
-          componentsNeedingI18n.has(c.name) && c.hasUseTranslation
-        )
-        for (const comp of compsWithExistingHook) {
-          // Search for the destructuring pattern within the component body
-          const bodyText = content.slice(comp.bodyStart, comp.bodyEnd)
-          // Skip if i18n is already destructured
-          if (/const\s*\{[^}]*\bi18n\b[^}]*\}\s*=\s*useTranslation/.test(bodyText)) continue
-          // Match `{ t }` or `{ t, ... }` in `const { t } = useTranslation`
-          const hookRe = /const\s*\{\s*t\s*\}\s*=\s*useTranslation/
-          const hookMatch = hookRe.exec(bodyText)
-          if (hookMatch) {
-            const absStart = comp.bodyStart + hookMatch.index
-            const absEnd = absStart + hookMatch[0].length
-            const upgraded = hookMatch[0].replace(/\{\s*t\s*\}/, '{ t, i18n }')
-            s.overwrite(absStart, absEnd, upgraded)
-          } else {
-            // its `t` is a prop or comes from another hook: `i18n` needs a hook of its own
-            addHookLine(comp, 'const { i18n } = useTranslation()')
-          }
+        // `t` for its t() calls (and a <Trans> in a Server Component), `i18n` for a language change (and that <Trans>)
+        const own = highConfidenceCandidates.filter(c => c.insideComponent === comp.name)
+        const needsT = !comp.hasUseTranslation && own.some(c => c.type !== 'jsx-mixed' || transProps)
+        const needsI18n = componentsNeedingI18n.has(comp.name) || (!!transProps && !comp.i18nParam && own.some(c => c.type === 'jsx-mixed'))
+        const missing = [needsT && 't', needsI18n && !comp.hookPattern?.names.includes('i18n') && 'i18n'].filter(Boolean)
+        if (!missing.length) continue
+        // that call gives `t` only to the code after it: a text before it would read `t` before its declaration
+        const before = (offset: number) => offset < comp.hookPattern!.statement
+        const usedBefore = comp.hookPattern && (own.some(c => before(c.offset)) ||
+          languageChangeSites.some(site => site.insideComponent === comp.name && before(site.callStart)))
+        if (comp.hookPattern && !usedBefore && (comp.hasUseTranslation || !comp.hookPattern.names.includes('t'))) {
+          // it calls a translation hook already (`const { i18n } = useT('ns')`): that call gives them, from its
+          // namespace (`{ t, i18n }`)
+          if (missing.includes('t')) s.appendLeft(comp.hookPattern.first, 't, ')
+          if (missing.includes('i18n')) s.appendRight(comp.hookPattern.last, ', i18n')
+        } else {
+          addHookLine(comp, `const { ${missing.join(', ')} } = ${bindings.call(missing.includes('t') ? nsArg : '')}`)
         }
       }
     }
 
     // Add import statements
-    addImportStatements(s, content, {
+    addImportStatements(s, content, [
       // only for a hook injected here: a component with a `t` of its own (a prop) needs none
-      needsUseTranslation: injections.hookInjected,
-      needsI18next: hasNonComponentCandidates || !options.hasReact,
-      needsTrans: hasTransCandidates && options.hasReact
-    }, options.imports)
+      ...(injections.hookInjected ? [{ name: bindings.hook, module: bindings.hookModule }] : []),
+      ...(hasTransCandidates && options.hasReact ? [{ name: 'Trans', module: bindings.transModule }] : [])
+    ], hasNonComponentCandidates || !options.hasReact, options.imports)
     injections.importAdded = true
   }
 
@@ -273,7 +285,8 @@ function buildReplacement (
   key: string,
   useHookStyle: boolean,
   namespace?: string,
-  jsxQuote = '"'
+  jsxQuote = '"',
+  transProps = ''
 ): string {
   const tFunc = useHookStyle ? 't' : 'i18next.t'
   const escapedContent = escapeString(candidate.content)
@@ -335,7 +348,7 @@ function buildReplacement (
 
     case 'jsx-mixed': {
       const nsAttr = namespace ? ` ns=${jsxQuote}${namespace}${jsxQuote}` : ''
-      return `<Trans i18nKey=${jsxQuote}${key}${jsxQuote}${nsAttr}>${candidate.content}</Trans>`
+      return `<Trans i18nKey=${jsxQuote}${key}${jsxQuote}${nsAttr}${transProps}>${candidate.content}</Trans>`
     }
 
     case 'template-literal':
@@ -400,12 +413,14 @@ function detectIndent (content: string, braceOffset: number): string {
 }
 
 /**
- * Adds necessary import statements (useTranslation, Trans, and/or i18next).
+ * Adds the import statements the rewrite needs: the named imports `needed` (a hook, `Trans`), each from its module
+ * (added to an import of that module the file has), and `i18next` for `i18next.t()`.
  */
 function addImportStatements (
   s: MagicString,
   content: string,
-  needs: { needsUseTranslation: boolean; needsI18next: boolean; needsTrans: boolean },
+  needed: Array<{ name: string, module: string }>,
+  needsI18next: boolean,
   imports?: ImportDeclarationSpan[]
 ): void {
   let importStatement = ''
@@ -415,23 +430,22 @@ function addImportStatements (
   // A name the file imports already, from any module (`useTranslation` re-exported by a shared package)
   const bound = (name: string) => !!imports?.some(i => i.locals?.includes(name))
 
-  // Build a combined react-i18next import
-  const reactI18nextImports: string[] = []
-  if (needs.needsUseTranslation && !bound('useTranslation')) reactI18nextImports.push('useTranslation')
-  if (needs.needsTrans && !bound('Trans')) reactI18nextImports.push('Trans')
-
-  if (reactI18nextImports.length > 0) {
-    if (!imported('react-i18next')) {
-      importStatement += `import { ${reactI18nextImports.join(', ')} } from 'react-i18next'\n`
+  const byModule = new Map<string, string[]>()
+  for (const { name, module } of needed) {
+    if (!bound(name)) byModule.set(module, [...(byModule.get(module) ?? []), name])
+  }
+  for (const [module, names] of byModule) {
+    if (!imported(module)) {
+      importStatement += `import { ${names.join(', ')} } from '${module}'\n`
     } else {
-      // react-i18next is already imported — augment with any missing named exports
-      const existing = imports?.find(i => i.source === 'react-i18next')
-      augmentReactI18nextImport(s, content, reactI18nextImports, existing?.start ?? 0)
+      // the module is imported already: augment it with the missing named exports
+      const existing = imports?.find(i => i.source === module)
+      augmentNamedImport(s, content, module, names, existing?.start ?? 0)
     }
   }
 
   // `i18next.t()` needs that name: with the AST, an import of i18next under another name does not count
-  if (needs.needsI18next && (imports ? !bound('i18next') : !imported('i18next'))) {
+  if (needsI18next && (imports ? !bound('i18next') : !imported('i18next'))) {
     importStatement += "import i18next from 'i18next'\n"
   }
 
@@ -443,6 +457,12 @@ function addImportStatements (
   // Skip shebang if present
   if (content.startsWith('#!')) {
     insertPos = content.indexOf('\n') + 1
+  }
+  // and the directives (`'use client'`), which must stay the first statements
+  const directives = DIRECTIVES_RE.exec(content.slice(insertPos))
+  if (directives) {
+    insertPos += directives[0].length
+    if (content[insertPos - 1] !== '\n') importStatement = `\n${importStatement}`
   }
 
   if (imports) {
@@ -474,6 +494,9 @@ function addImportStatements (
 
   s.appendRight(insertPos, importStatement)
 }
+
+/** The directive prologue: `'use client'`, `'use strict'` and the like, with the comments around them, to the line end. */
+const DIRECTIVES_RE = /^(?:(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*(['"])use [\w ]+\1;?[^\S\n]*(?:\/\/[^\n]*)?(?:\n|$))+/
 
 /**
  * Returns the offset just past the end of the import statement that begins at
@@ -510,26 +533,32 @@ function findImportStatementEnd (content: string, start: number): number {
 }
 
 /**
- * Augments an existing `import { ... } from 'react-i18next'` with any missing
+ * Augments an existing `import { ... } from '<module>'` with any missing
  * named exports (e.g. adds `Trans` when only `useTranslation` is imported).
+ * A module imported without braces (`import i18n from …`) gets its own import.
  */
-function augmentReactI18nextImport (
+function augmentNamedImport (
   s: MagicString,
   content: string,
+  module: string,
   needed: string[],
   from = 0
 ): void {
-  const importRegex = /import\s*\{([^}]*)\}\s*from\s*['"]react-i18next['"]/g
+  const quoted = module.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+  const importRegex = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*['"]${quoted}['"]`, 'g')
   importRegex.lastIndex = from
   const importMatch = importRegex.exec(content)
-  if (!importMatch) return
+  if (!importMatch) {
+    s.prependLeft(from, `import { ${needed.join(', ')} } from '${module}'\n`)
+    return
+  }
 
   const existingImports = importMatch[1].split(',').map(x => x.trim()).filter(Boolean)
   const toAdd = needed.filter(n => !existingImports.includes(n))
   if (toAdd.length === 0) return
 
   const newImports = [...existingImports, ...toAdd].join(', ')
-  const newImportStatement = `import { ${newImports} } from 'react-i18next'`
+  const newImportStatement = `import { ${newImports} } from '${module}'`
   const matchStart = importMatch.index
   const matchEnd = matchStart + importMatch[0].length
   s.overwrite(matchStart, matchEnd, newImportStatement)

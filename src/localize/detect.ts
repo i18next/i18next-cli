@@ -17,6 +17,8 @@ export interface DetectedStack {
   initFile: string | null
   /** Next.js App Router detected (`app/` or `src/app/` directory) */
   hasAppRouter: boolean
+  /** A Next.js app that instrument writes next-i18next calls for: next-i18next installed, or no i18next at all */
+  usesNextI18next: boolean
   /** The app uses inlang Paraglide (`@inlang/paraglide-js` or a `project.inlang/` dir) */
   hasParaglide: boolean
 }
@@ -67,6 +69,7 @@ export async function detectStack (
     initFile: await findInitFile(),
     hasAppRouter,
     hasParaglide,
+    usesNextI18next: framework === 'next' && (has('next-i18next') || !(has('i18next') || has('react-i18next'))),
   }
 }
 

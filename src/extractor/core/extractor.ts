@@ -299,7 +299,7 @@ export async function processFile (
         comments: true,
       })
     } catch (err) {
-      // Fallback for .ts files with JSX (already present)
+      // Fallback for .ts files with JSX (already present); JSX in a .js file is common enough to need no note
       if (effectiveExt === '.ts' && !isTSX) {
         try {
           ast = await parse(code, {
@@ -309,7 +309,6 @@ export async function processFile (
             dynamicImport: true,
             comments: true,
           })
-          logger.info?.(`Parsed ${file} using TSX fallback`)
         } catch (err2) {
           throw new ExtractorError('Failed to process file', file, err2 as Error)
         }
@@ -323,7 +322,6 @@ export async function processFile (
             dynamicImport: true,
             comments: true,
           })
-          logger.info?.(`Parsed ${file} using JSX fallback`)
         } catch (err2) {
           throw new ExtractorError('Failed to process file', file, err2 as Error)
         }

@@ -2,6 +2,7 @@ import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { detectConfig } from '../src/heuristic-config'
 import { normalizePath } from './utils/path'
+import { resolve } from 'node:path'
 
 // Mocks
 vi.mock('fs/promises', async () => {
@@ -41,12 +42,51 @@ describe('heuristic-config', () => {
       throw new Error('unexpected extract.output shape')
     }
     expect(config?.extract?.primaryLanguage).toBe('en')
-    expect(config?.extract?.input).toEqual([
-      'src/**/*.{js,jsx,mjs,ts,tsx}',
-      'app/**/*.{js,jsx,mjs,ts,tsx}',
-      'pages/**/*.{js,jsx,mjs,ts,tsx}',
-      'components/**/*.{js,jsx,mjs,ts,tsx}'
-    ])
+    // no source directory exists: the usual one
+    expect(config?.extract?.input).toEqual(['src/**/*.{js,jsx,mjs,ts,tsx}'])
+  })
+
+  it('covers the source directories that exist, and takes what next-i18next and i18next-icu set', async () => {
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async (pattern: any) => {
+      if (String(pattern).startsWith('{i18n.config')) return ['i18n.config.ts']
+      return String(pattern) === 'public/locales/en/*.json' ? ['public/locales/en/home.json', 'public/locales/en/footer.json'] : []
+    })
+
+    vol.fromJSON({
+      // readProjectDeps reads it by its absolute path
+      [resolve('package.json')]: JSON.stringify({ dependencies: { next: '16.0.0', 'next-i18next': '16.4.0', 'i18next-icu': '2.6.0' } }),
+      'i18n.config.ts': "export default { supportedLngs: ['en', 'de'], fallbackLng: 'en', defaultNS: 'home' }",
+      'app/page.tsx': '',
+      'components/Header.tsx': '',
+      'public/locales/en/home.json': '{ "blog.title": "Blog" }',
+      'public/locales/en/footer.json': '{ "description": "Footer" }',
+      'public/locales/de/home.json': '{}',
+    })
+
+    const config = await detectConfig()
+
+    expect(config?.extract?.input).toEqual(['{app,components}/**/*.{js,jsx,mjs,ts,tsx}'])
+    expect(config?.extract?.defaultNS).toBe('home')
+    expect(config?.extract?.messageFormat).toBe('icu')
+    // flat keys with a dot in them stay flat
+    expect(config?.extract?.keySeparator).toBe(false)
+  })
+
+  it("takes next-i18next's default namespace, common, when its config sets none", async () => {
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async (pattern: any) => String(pattern) === 'public/locales/en/*.json' ? ['public/locales/en/common.json'] : [])
+
+    vol.fromJSON({
+      [resolve('package.json')]: JSON.stringify({ dependencies: { next: '16.0.0', 'next-i18next': '16.4.0' } }),
+      'public/locales/en/common.json': '{ "nested": { "title": "Title" } }',
+      'public/locales/de/common.json': '{}',
+    })
+
+    const config = await detectConfig()
+
+    expect(config?.extract?.defaultNS).toBe('common')
+    expect(config?.extract?.keySeparator).toBeUndefined()
   })
 
   it('should return null if no recognizable structure is found', async () => {

@@ -159,7 +159,8 @@ describe('language change detection and transformation', () => {
         name: 'Settings',
         bodyStart: 28,
         bodyEnd: content.length - 1,
-        hasUseTranslation: true
+        hasUseTranslation: true,
+        hookPattern: { first: content.indexOf('t }'), last: content.indexOf('t }') + 1, names: ['t'] }
       }]
 
       const sites: LanguageChangeSite[] = [{

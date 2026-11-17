@@ -39,6 +39,15 @@ describe('detectStack', () => {
     const stack = await detectStack(noInitFile)
     expect(stack.framework).toBe('next')
     expect(stack.hasAppRouter).toBe(true)
+    // no i18next at all: instrument writes next-i18next calls
+    expect(stack.usesNextI18next).toBe(true)
+  })
+
+  it('keeps a Next.js app with react-i18next and no next-i18next on react-i18next', async () => {
+    vol.fromJSON({ '/package.json': packageJson({ next: '^15.0.0', react: '^19.0.0', 'react-i18next': '^17.0.0' }) })
+    expect((await detectStack(noInitFile)).usesNextI18next).toBe(false)
+    vol.fromJSON({ '/package.json': packageJson({ next: '^15.0.0', 'react-i18next': '^17.0.0', 'next-i18next': '^16.0.0' }) })
+    expect((await detectStack(noInitFile)).usesNextI18next).toBe(true)
   })
 
   it('does not flag the App Router for a pages-router Next app', async () => {

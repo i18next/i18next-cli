@@ -72,6 +72,7 @@ const reactStack: DetectedStack = {
   initFile: null,
   hasAppRouter: false,
   hasParaglide: false,
+  usesNextI18next: false,
 }
 
 const makeConfig = (locize?: I18nextToolkitConfig['locize']): I18nextToolkitConfig => ({

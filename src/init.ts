@@ -239,11 +239,16 @@ export async function runInit (options: InitOptions = {}) {
   const isEsm = await isEsmProject()
   const fileName = isTypeScript ? 'i18next.config.ts' : 'i18next.config.js'
 
+  // what the app's own setup decides (next-i18next's defaultNS, ICU, flat keys), as detected
+  const { defaultNS, messageFormat, keySeparator } = detectedConfig?.extract ?? {}
   const configObject: Record<string, any> = {
     locales: answers.locales,
     extract: {
       input: answers.input,
       output: answers.output,
+      ...(defaultNS !== undefined && { defaultNS }),
+      ...(messageFormat && { messageFormat }),
+      ...(keySeparator !== undefined && { keySeparator }),
     },
   }
   if (locizeConfig) configObject.locize = locizeConfig

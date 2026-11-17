@@ -15,6 +15,7 @@ export function generateKeyFromContent (content: string): string {
     // A placeholder's name gives words of its own: `{{unreadNews}}` → unread News
     .replace(/\{\{\s*([^}]*?)\s*\}\}/g, (_, name: string) => ` ${name.replace(/([a-z0-9])([A-Z])/g, '$1 $2')} `)
     .replace(/_/g, ' ') // `_` separates plural and context suffixes in i18next keys: none in a generated one
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // `Français` → Francais, not Franais
     .replace(/[^\w\s\d]/g, '') // Remove punctuation
     .trim()
 

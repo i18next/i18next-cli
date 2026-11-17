@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.90.0
+
+Found by running `init`, `instrument`, `extract`, `lint` and `status` on the next-i18next examples, on copies of
+them with their texts hardcoded again (to compare the rewrite with the hand-written original) and on hardcoded
+Next.js apps, and reading every rewrite.
+
+next-i18next:
+
+- feat(instrument): a Next.js app with next-i18next (a dependency, or imported), or with no i18next at all, gets
+  next-i18next's calls by where each file renders, from the import graph (`'use client'`, `app/`, `pages/`,
+  imports relative, through the tsconfig or jsconfig `paths` and from the project root): `const { t } = await
+  getT()` in Server Components, which become `async` (a return type becomes `Promise<…>`), `useT()` from
+  `next-i18next/client` in Client Components, `useTranslation` from `next-i18next/pages` in the Pages Router.
+  Server Components got `useTranslation()` before, a client hook that fails there. A Next.js app with i18next or
+  react-i18next and no next-i18next keeps `react-i18next`.
+- feat(instrument): a `<Trans>` in a Server Component gets `t={t} i18n={i18n}` and comes from
+  `react-i18next/TransWithoutContext`; `getT` comes from the module the app imports it from (its own
+  `createServerI18next` file) when that is not `next-i18next/server`.
+- feat(instrument): `generateMetadata()` and other async functions of a Server Component file get `getT()`, and
+  `export const metadata = { title: '…' }` becomes `export async function generateMetadata ()` returning it.
+  They got `i18next.t()` before, which next-i18next does not initialize.
+- feat(instrument): left as they are, each named in a warning: components that Server and Client Components both
+  render (no `t` works in both) unless they get `t` (and `i18n` for a `<Trans>`) as props, files no route
+  imports, texts outside components, API routes, Server Actions and cached functions (`'use server'`,
+  `'use cache'`), Server Components wrapped in `memo()`/`forwardRef()`, and language switches, which
+  next-i18next makes through the route or `useChangeLanguage()` (a call of that switch got
+  `i18n.changeLanguage()` added before).
+- fix(instrument): no `i18n.ts` init file and no import of it in `_app` or the root layout for next-i18next, which
+  sets i18next up itself; the setup steps are printed when it is not set up yet, and the pages that load no
+  translations (no `serverSideTranslations()` in them or in a helper they import) are named.
+- feat(init): the defaults the app's setup decides: the source glob covers the directories that exist
+  (`{app,components}/**/*` rather than `src/**/*`, where a Next.js app without `src/` has no file),
+  next-i18next's `defaultNS` (`common` unless its config says otherwise, so `extract` writes the keys of `useT()`
+  to the namespace next-i18next loads), `messageFormat` for i18next-icu or i18next-mf2, and `keySeparator: false`
+  for flat keys with dots, which `extract` nested before. `lint` and `status` without a config detect the same.
+
+Any React app:
+
+- fix(instrument): an import went before a `'use client'` directive in a file without imports, which ends the
+  directive.
+- fix(instrument): a component that calls a translation hook without taking `t` (`const { i18n } = useT('ns')`)
+  got a second hook call; `t` now comes from that call and its namespace (`const { t, i18n } = useT('ns')`),
+  unless a text comes before the call.
+- fix(instrument): a function that is no component but binds `t` from a translation hook (a custom hook,
+  `generateMetadata` with `getT()`) got `i18next.t()`; a `t` from `getFixedT()` counted as a `t` of another kind.
+- fix(instrument): the texts and `values` of `IcuTrans`, `IcuTransWithoutContext` and `TransWithoutContext` were
+  translated (`values={{ name: t('ada', 'Ada') }}`).
+- fix(instrument): an empty element at the edge of a sentence (`<hr />`, `<br />`) went into its `<Trans>`.
+- fix(instrument): `next-i18next v{pkg.version}` was split into a `t()` of its first part: a word with digits
+  in a later part (`i18next`) now counts as a word beside a placeholder.
+- fix(instrument): a key of a text with accents dropped those letters (`Français` gave `franais`).
+- fix(extract): no line per JavaScript file with JSX, nor per TypeScript `.ts` file with it ("Parsed … using JSX
+  fallback"), which is common enough to need no note.
+- fix(extract): `--watch` on a glob that starts with a brace group (`{app,components}/**`) watched the whole
+  project, `.next` and `.git` included.
+
 ## 1.89.0
 
 Found by running `instrument`, `extract`, `lint` and `status` on a React monorepo whose texts are hardcoded (four

@@ -1,7 +1,49 @@
 import { glob } from 'glob'
-import { readdir } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { dirname, join, extname } from 'node:path'
 import type { I18nextToolkitConfig } from './types.js'
+import { readProjectDeps } from './utils/file-utils.js'
+
+/** The directories source files usually live in, one glob for those that exist (`{app,components}/**`). */
+async function sourceInput (): Promise<string[]> {
+  const dirs = []
+  // not `lib`, often the build output of a package
+  for (const dir of ['src', 'app', 'pages', 'components']) {
+    if (await stat(dir).then(found => found.isDirectory(), () => false)) dirs.push(dir)
+  }
+  const exts = '**/*.{js,jsx,mjs,ts,tsx}'
+  return [dirs.length > 1 ? `{${dirs.join(',')}}/${exts}` : `${dirs[0] ?? 'src'}/${exts}`]
+}
+
+/**
+ * The extract options the app's own setup decides: next-i18next's `defaultNS` (from its config, `common` when it
+ * sets none), the message format of i18next-icu or i18next-mf2, and `keySeparator: false` for translation files
+ * with flat keys that contain dots (`"blog.title": "…"`).
+ */
+async function setupOptions (translationFiles: string[]): Promise<Partial<I18nextToolkitConfig['extract']>> {
+  const deps = await readProjectDeps()
+  const options: Partial<I18nextToolkitConfig['extract']> = {}
+  if (deps['next-i18next']) {
+    const configs = await glob('{i18n.config,next-i18next.config,i18n.shared}.{ts,js,mjs,cjs}', { ignore: 'node_modules/**' })
+    for (const file of configs) {
+      const ns = /\bdefaultNS\s*:\s*['"]([^'"]+)['"]/.exec(await readFile(file, 'utf-8'))?.[1]
+      if (ns) { options.defaultNS = ns; break }
+    }
+    options.defaultNS ??= 'common'
+  }
+  if (deps['i18next-icu']) options.messageFormat = 'icu'
+  else if (deps['i18next-mf2']) options.messageFormat = 'mf2'
+  const flat: boolean[] = []
+  for (const file of translationFiles.filter(f => extname(f) === '.json')) {
+    try {
+      const json = JSON.parse(await readFile(file, 'utf-8'))
+      if (Object.values(json).some(v => typeof v === 'object')) return options
+      flat.push(Object.keys(json).some(key => key.includes('.')))
+    } catch {}
+  }
+  if (flat.includes(true)) options.keySeparator = false
+  return options
+}
 
 // A list of common glob patterns for the primary language ('en') or ('dev') translation files.
 const HEURISTIC_PATTERNS = [
@@ -97,15 +139,11 @@ export async function detectConfig (): Promise<Partial<I18nextToolkitConfig> | n
           return {
             locales,
             extract: {
-              input: [
-                'src/**/*.{js,jsx,mjs,ts,tsx}',
-                'app/**/*.{js,jsx,mjs,ts,tsx}',
-                'pages/**/*.{js,jsx,mjs,ts,tsx}',
-                'components/**/*.{js,jsx,mjs,ts,tsx}'
-              ],
+              input: await sourceInput(),
               output: join(basePath, '{{language}}', `{{namespace}}${extension}`),
               outputFormat,
               primaryLanguage: locales.includes('en') ? 'en' : locales[0],
+              ...await setupOptions(files),
             },
           }
         }

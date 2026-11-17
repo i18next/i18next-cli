@@ -101,7 +101,7 @@ program
             !ignoreGlobs.some(g => minimatch(f, g, { dot: true }))
         }
 
-        const watcher = chokidar.watch(Array.from(new Set(inputGlobs.map(globBase))), {
+        const watcher = chokidar.watch(Array.from(new Set(inputGlobs.flatMap(globBases))), {
           ignored: (path, stats) => /node_modules/.test(path) || (!!stats?.isFile() && !isInput(path)),
           ignoreInitial: true,
           persistent: true,
@@ -485,13 +485,16 @@ const deriveOutputIgnore = (output?: string | ((language: string, namespace?: st
   return [output.replace(/\{\{[^}]+\}\}/g, '*')]
 }
 // static leading folder of a glob: 'src/**/*.ts' -> 'src'
-const globBase = (pattern: string) => {
+// the directories a glob starts in: `{app,components}/**` starts in two, not in the project root
+const globBases = (pattern: string): string[] => {
+  const brace = /^((?:[^*?[\]{}()!/]+\/)*)\{([^{}]+)\}(\/.*)?$/.exec(pattern)
+  if (brace) return brace[2].split(',').flatMap(alt => globBases(`${brace[1]}${alt}${brace[3] ?? ''}`))
   const parts: string[] = []
   for (const segment of pattern.split('/')) {
     if (/[*?[\]{}()!]/.test(segment)) break
     parts.push(segment)
   }
-  return parts.join('/') || '.'
+  return [parts.join('/') || '.']
 }
 // helper to expand one or many glob patterns
 const expandGlobs = async (patterns: string | string[] = []) => {
