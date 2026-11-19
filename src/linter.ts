@@ -1,7 +1,7 @@
 import { glob } from 'glob'
 import { readFile } from 'node:fs/promises'
 import { parse } from '@swc/core'
-import { extname, relative, resolve } from 'node:path'
+import { extname, relative } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { styleText } from 'node:util'
 import { ConsoleLogger } from './utils/logger.js'
@@ -11,7 +11,7 @@ import { normalizeSpansToCharIndices, collectIgnoredLineRanges, lineColumnFromOf
 import { trimTextNode } from './extractor/parsers/jsx-parser.js'
 import { matchesFunctionPattern } from './extractor/utils/function-matcher.js'
 import { ASTVisitors } from './extractor/core/ast-visitors.js'
-import { getNestedKeys, getNestedValue } from './utils/nested-object.js'
+import { getNestedValue } from './utils/nested-object.js'
 import { getOutputPath, loadTranslationFile } from './utils/file-utils.js'
 import { parse as parseHtml, type ASTNode } from 'html-parse-stringify'
 import type { JSXElementChild } from '@swc/core'
@@ -21,71 +21,6 @@ import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.
 import type { I18nextToolkitConfig, Logger, LintIssue, Plugin, LintPluginContext, ExtractedKey } from './types.js'
 
 const LOCIZE_SIGNUP_URL = 'https://www.locize.app/register?from=i18next_cli__lint'
-
-/**
- * Loads all translation values from the primary locale's JSON files and returns
- * a flat Map of key -> translated string. Used by the interpolation linter so it
- * can resolve a lookup key (e.g. "ABC") to its actual value ("hello {{name}}")
- * and check interpolation parameters against the real string, not the key.
- */
-async function loadPrimaryTranslationValues (config: I18nextToolkitConfig): Promise<Map<string, string>> {
-  const result = new Map<string, string>()
-  const output = config.extract?.output
-  if (!output || typeof output !== 'string') return result
-
-  const primaryLang = config.extract?.primaryLanguage ?? config.locales?.[0] ?? 'en'
-
-  // Candidate paths: substitute language + try common namespace names (including no namespace).
-  // This covers patterns like:
-  //   locales/{{language}}.json              -> no namespace token
-  //   locales/{{language}}/{{namespace}}.json -> substitute 'translation' (i18next default)
-  // Deliberately uses readFile directly (not glob) so it works correctly in test
-  // environments that mock fs/promises via memfs.
-  const candidatePaths: string[] = []
-  if (!output.includes('{{namespace}}')) {
-    candidatePaths.push(output.replace(/\{\{language\}\}/g, primaryLang))
-  } else {
-    for (const ns of ['translation', 'common', 'default']) {
-      candidatePaths.push(
-        output
-          .replace(/\{\{language\}\}/g, primaryLang)
-          .replace(/\{\{namespace\}\}/g, ns)
-      )
-    }
-  }
-
-  // For each candidate, try: (1) the path as-is resolved from cwd, and
-  // (2) an absolute path with a leading '/' — the latter ensures we hit
-  // memfs in test environments where vol.fromJSON uses absolute paths like
-  // '/locales/en.json' but the output template is relative ('locales/...').
-  const seen = new Set<string>()
-  const resolvedPaths: string[] = []
-  for (const p of candidatePaths) {
-    const abs = resolve(p)
-    const leadingSlash = '/' + p.replace(/^\//, '')
-    for (const candidate of [abs, leadingSlash]) {
-      if (!seen.has(candidate)) { seen.add(candidate); resolvedPaths.push(candidate) }
-    }
-  }
-
-  for (const filePath of resolvedPaths) {
-    try {
-      const raw = await readFile(filePath, 'utf-8')
-      const json = JSON.parse(raw)
-      // Nested resources too: `{ "a": { "b": "…" } }` → "a.b"
-      const keySeparator = config.extract?.keySeparator ?? '.'
-      for (const k of getNestedKeys(json, keySeparator)) {
-        const v = getNestedValue(json, k, keySeparator)
-        if (typeof v === 'string') result.set(k, v)
-      }
-      break // stop after first successful read
-    } catch {
-      // file doesn't exist or is malformed — try next candidate
-    }
-  }
-
-  return result
-}
 
 // Known i18next t() option keys that are NOT interpolation parameters.
 // These should not be flagged as "unused" in the translation string.
@@ -170,9 +105,11 @@ function messageArgs (analyze: MessageAnalyzer, str: string): string[] {
 }
 
 // Helper to lint interpolation parameter errors in t() calls.
+// The strings are the primary language's values of the keys the extractor resolves for the call (namespace,
+// keyPrefix, plural and context forms included); the variables of all of them count, since i18next may render any.
 // With `analyze` (extract.messageFormat 'icu' or 'mf2') the arguments come from the message parser
 // instead of the {{…}} pattern, so ICU/MF2 braces are not read as i18next interpolation.
-function lintInterpolationParams (ast: any, code: string, config: I18nextToolkitConfig, translationValues?: Map<string, string>, analyze?: MessageAnalyzer): LintIssue[] {
+async function lintInterpolationParams (ast: any, code: string, config: I18nextToolkitConfig, primaryValue: ReturnType<typeof primaryValueLookup>, analyze?: MessageAnalyzer): Promise<LintIssue[]> {
   const issues: LintIssue[] = []
   // Only run if enabled (default true)
   const enabled = config.lint?.checkInterpolationParams !== false
@@ -188,18 +125,27 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
   // Collect call sites first so we can advance the search position sequentially,
   // fixing where duplicate keys all resolved to the first occurrence's line.
   interface CallSite {
-    translationStr: string
+    node: any
+    /** The default string of `t('key', 'Default {{foo}}', { foo })`, checked instead of the translation */
+    defaultString?: string
+    /** A string key, checked itself when it has no translation (a natural-language key) */
+    key?: string
     searchText: string
     paramKeys: string[]
   }
   const callSites: CallSite[] = []
 
-  // The keys the extractor resolves for each call, walked once and only for a file with a selector
-  // call: `t($ => $.a.b)` → ['a.b']
+  // The keys the extractor resolves for each call, walked once and only for a file with a call to check:
+  // `useTranslation('home', { keyPrefix: 'a' })` + `t('b', { count })` → home:a.b_one, home:a.b_other
   let keysByCall: Map<any, ExtractedKey[]> | undefined
-  const keysOfCall = (call: any): string[] => {
+  const valuesOfCall = async (call: any): Promise<string[]> => {
     keysByCall ??= extractedKeysByNode(ast, code, config)
-    return (keysByCall.get(call) ?? []).map(({ key }) => key)
+    const values: string[] = []
+    for (const { key, ns } of keysByCall.get(call) ?? []) {
+      const value = await primaryValue(fileNamespace(ns), key)
+      if (typeof value === 'string') values.push(value)
+    }
+    return values
   }
 
   // Traverse AST for CallExpressions matching t() or i18n.t()
@@ -275,25 +221,15 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
         }
         if (!Array.isArray(paramKeys)) paramKeys = []
 
-        // Resolve the actual translation string:
-        // - For 3-arg form: the default string is always arg1 (use it directly)
-        // - For 2-arg / 1-arg form: if arg0 is a lookup key (no interpolation markers),
-        //   try to resolve it from the loaded translation map.
-        let resolvedStr: string
-        if (isThreeArgForm) {
-          resolvedStr = (translationArg as any).value
-        } else if (isSelector) {
-          // The first key with a value, like i18next's fallback (a ternary or plural yields several)
-          const value = keysOfCall(node).map(k => translationValues?.get(k)).find(v => v !== undefined)
-          if (value === undefined) return
-          resolvedStr = value
-        } else {
-          resolvedStr = translationValues?.get(keyOrStr) ?? keyOrStr
-        }
-
         // spans are file-relative character indices here (normalizeSpansToCharIndices)
         const searchText = isSelector ? code.slice(arg0.span.start, arg0.span.end) : (arg0.raw ?? `"${arg0.value}"`)
-        callSites.push({ translationStr: resolvedStr, searchText, paramKeys })
+        callSites.push({
+          node,
+          defaultString: isThreeArgForm ? (translationArg as any).value : undefined,
+          key: isSelector ? undefined : keyOrStr,
+          searchText,
+          paramKeys
+        })
       }
     }
   }
@@ -303,13 +239,15 @@ function lintInterpolationParams (ast: any, code: string, config: I18nextToolkit
   // 187 fix — process call sites in source order, advancing lastSearchIndex so that
   // each occurrence of the same string literal finds its own line, not always the first.
   let lastSearchIndex = 0
-  for (const { translationStr, searchText, paramKeys } of callSites) {
+  for (const { node, defaultString, key, searchText, paramKeys } of callSites) {
     const position = code.indexOf(searchText, lastSearchIndex)
     if (position === -1) continue
     lastSearchIndex = position + searchText.length
 
     const issueLineNumber = getLineNumber(position)
-    const keys = analyze ? messageArgs(analyze, translationStr) : interpolationNames(translationStr, config.extract)
+    let strings = defaultString !== undefined ? [defaultString] : await valuesOfCall(node)
+    if (!strings.length && key !== undefined) strings = [key]
+    const keys = [...new Set(strings.flatMap(str => analyze ? messageArgs(analyze, str) : interpolationNames(str, config.extract)))]
 
     // Only check for unused parameters if there is at least one interpolation key in the string
     if (keys.length > 0) {
@@ -629,6 +567,9 @@ function transTagProblems (children: TransChild[], value: string, keep: string[]
   return problems
 }
 
+// The namespace of the file an extracted key lives in: `defaultNS: false` writes the keys without one
+const fileNamespace = (ns: string | false | undefined): string | undefined => ns === false ? undefined : ns || 'translation'
+
 // The primary language's value of a key, from the file `extract` writes it to: one per namespace, or a merged one
 function primaryValueLookup (config: I18nextToolkitConfig): (namespace: string | undefined, key: string) => Promise<unknown> {
   const { output, mergeNamespaces } = config.extract
@@ -641,10 +582,9 @@ function primaryValueLookup (config: I18nextToolkitConfig): (namespace: string |
     // a file that does not parse makes `extract`, `sync` and `status` fail loudly, so `lint` skips it
     if (!files.has(file)) files.set(file, loadTranslationFile(file).catch(() => null))
     let resources = await files.get(file)
-    // a merged file holds one object per namespace, unless it is flat (the rule of translation-manager.ts)
-    const namespaced = config.extract.defaultNS !== false && config.extract.nsSeparator !== false &&
-      Object.values(resources ?? {}).some(v => typeof v === 'object' && v !== null && !Array.isArray(v))
-    if (merged && namespace && namespaced) resources = resources?.[namespace]
+    // a merged file holds one object per namespace, unless it is flat (one file per language, nested keys and all)
+    const nsResources = merged && namespace && config.extract.defaultNS !== false && config.extract.nsSeparator !== false ? resources?.[namespace] : undefined
+    if (typeof nsResources === 'object' && nsResources !== null && !Array.isArray(nsResources)) resources = nsResources
     return resources ? getNestedValue(resources, key, keySeparator) : undefined
   }
 }
@@ -652,8 +592,8 @@ function primaryValueLookup (config: I18nextToolkitConfig): (namespace: string |
 /**
  * `lint.checkTransIndices`: the tags of the primary language's translations of every <Trans> with children,
  * context and plural forms included, against those children. A <Trans> with `components` is skipped.
- * ponytail: keys resolve per file like keysOfCall, without extract's cross-file pre-scan, so a namespace or
- * keyPrefix from an imported constant reads the defaultNS file; one findKeys pass per run if that matters.
+ * ponytail: keys resolve per file like those of the interpolation check, without extract's cross-file pre-scan, so a
+ * namespace or keyPrefix from an imported constant reads the defaultNS file; one findKeys pass per run if that matters.
  */
 async function lintTransIndices (ast: any, code: string, config: I18nextToolkitConfig, primaryValue: ReturnType<typeof primaryValueLookup>, severity: 'error' | 'warning'): Promise<LintIssue[]> {
   const transComponents = config.extract.transComponents || ['Trans']
@@ -670,8 +610,7 @@ async function lintTransIndices (ast: any, code: string, config: I18nextToolkitC
     const line = lineColumnFromOffset(code, node.span.start)?.line ?? 0
     const checked = new Set<string>()
     for (const { key, ns } of keys) {
-      // `defaultNS: false` writes the keys without a namespace
-      const namespace = ns === false ? undefined : ns || 'translation'
+      const namespace = fileNamespace(ns)
       const label = namespace ? `${namespace}:${key}` : key
       if (checked.has(label)) continue
       checked.add(label)
@@ -749,13 +688,13 @@ export class Linter extends EventEmitter<LinterEventMap> {
         nodir: true
       })
       this.emit('progress', { message: `Analyzing ${sourceFiles.length} source files...` })
-      // Load translation values once so the interpolation linter can resolve lookup keys
-      // to their translated strings (fixes: key != value interpolation not detected)
-      const translationValues = await loadPrimaryTranslationValues(config)
+      // The primary language's translations, read once per file, so the interpolation and <Trans> checks
+      // look at the translated string of a key, not at the key
+      const primaryValue = primaryValueLookup(config)
       const { messageFormat } = config.extract
       const analyze = messageFormat === 'icu' || messageFormat === 'mf2' ? await loadMessageAnalyzer(messageFormat) : undefined
       const transSetting = config.lint?.checkTransIndices
-      const primaryValue = transSetting === false || transSetting === 'off' ? undefined : primaryValueLookup(config)
+      const checkTransIndices = transSetting !== false && transSetting !== 'off'
       const plugins = config.plugins || []
       const lintPluginContext = this.createLintPluginContext(config)
       await this.initializeLintPlugins(plugins, lintPluginContext)
@@ -836,11 +775,11 @@ export class Linter extends EventEmitter<LinterEventMap> {
         // Collect hardcoded string issues
         const hardcodedStrings = findHardcodedStrings(ast, code, config)
         // Collect interpolation parameter issues
-        const interpolationIssues = lintInterpolationParams(ast, code, config, translationValues, analyze)
+        const interpolationIssues = await lintInterpolationParams(ast, code, config, primaryValue, analyze)
         // Collect string-concatenation issues
         const concatenationIssues = lintConcatenation(ast, code, config)
         // Collect <Trans> tags of the primary translation that miss their children
-        const transIndexIssues = primaryValue ? await lintTransIndices(ast, code, config, primaryValue, transSetting === 'error' ? 'error' : 'warning') : []
+        const transIndexIssues = checkTransIndices ? await lintTransIndices(ast, code, config, primaryValue, transSetting === 'error' ? 'error' : 'warning') : []
         let allIssues: LintIssue[] = [...hardcodedStrings, ...interpolationIssues, ...concatenationIssues, ...transIndexIssues]
 
         // Filter issues suppressed by ignore-directive comments.

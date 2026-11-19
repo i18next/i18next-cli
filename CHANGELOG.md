@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(lint): the interpolation parameter check reads a key's translation from the file of its namespace, so a missing
+  or unused parameter is now reported outside the default namespace too: `useTranslation('home')`,
+  `t('home:greeting')`, `t('greeting', { ns: 'home' })` and selector calls, with a `keyPrefix`, in a merged
+  single-file output and with `defaultNS: false`. Before, only the default namespace's file was read, so these calls
+  went unchecked. The default namespace is `extract.defaultNS` (`translation` when unset) like in `extract`; `lint` no
+  longer falls back to a `common.json` or `default.json`. The variables of every plural form of a key count.
+
 ## 1.91.2
 
 - feat(extract): the warning for an `.astro` file in `extract.input` that no plugin handles names the fix: the new

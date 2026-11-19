@@ -1,4 +1,5 @@
 import { vol } from 'memfs'
+import { resolve } from 'node:path'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { runLinter } from '../src/linter'
 import type { I18nextToolkitConfig } from '../src/index'
@@ -21,7 +22,7 @@ const config: I18nextToolkitConfig = {
 async function lint (lines: string[], resources: Record<string, any>) {
   vol.fromJSON({
     '/src/App.tsx': lines.join('\n'),
-    '/locales/en.json': JSON.stringify(resources),
+    [resolve(process.cwd(), 'locales/en.json')]: JSON.stringify(resources),
   })
   const result = await runLinter(config)
   return (result.files['/src/App.tsx'] ?? []).map(({ text, line }) => ({ text, line }))

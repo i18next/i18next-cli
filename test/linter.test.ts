@@ -1,4 +1,5 @@
 import { vol } from 'memfs'
+import { resolve } from 'node:path'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { Linter, runLinter, runLinterCli } from '../src/linter'
 import type { I18nextToolkitConfig } from '../src/index'
@@ -1397,7 +1398,7 @@ describe('Linter (core logic)', () => {
         '  t("ABC")',                 // line 5: missing {{name}}
         '}',
       ].join('\n'),
-      '/locales/en.json': JSON.stringify({ ABC: 'hello {{name}}' }),
+      [resolve(process.cwd(), 'locales/en.json')]: JSON.stringify({ ABC: 'hello {{name}}' }),
     })
 
     const result = await runLinter(config)
