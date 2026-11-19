@@ -62,4 +62,23 @@ describe('extractor: nested translations ($t(...) inside string)', () => {
     expect(deJson.item_count_one).toBe('')
     expect(deJson.item_count_other).toBe('')
   })
+  it('does not generate plural or context keys for options that merely contain count or context', async () => {
+    const sampleCode = `
+      import i18next from 'i18next'
+
+      i18next.t('Total $t(price, {"discount": {{d}} }) for $t(customer, {"subcontext": "vip"})', { d: 5 })
+    `
+    vol.fromJSON({
+      'src/App.tsx': sampleCode,
+    })
+
+    const results = await extract(mockConfig)
+    const enJson = results[0].newTranslations
+
+    expect(enJson).toHaveProperty('price')
+    expect(enJson).toHaveProperty('customer')
+    expect(enJson).not.toHaveProperty('price_one')
+    expect(enJson).not.toHaveProperty('price_other')
+    expect(enJson).not.toHaveProperty('customer_vip')
+  })
 })
