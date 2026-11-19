@@ -236,6 +236,23 @@ describe('plugin onLoad: non-JS/TS file handling (issue #217)', () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('plugin'))
   })
 
+  it('names i18next-cli-plugin-astro when no plugin handles an .astro file', async () => {
+    const { glob } = await import('glob')
+    ;(glob as any).mockResolvedValue(['/src/pages/index.astro'])
+
+    vol.fromJSON({ '/src/pages/index.astro': "---\nconst t = (k: string) => k\n---\n<h1>{t('title')}</h1>" })
+
+    const warnSpy = vi.fn()
+    const config: I18nextToolkitConfig = {
+      ...mockConfigBase,
+      extract: { ...mockConfigBase.extract, input: ['src/**/*.{ts,astro}'] },
+    }
+
+    await findKeys(config, { warn: warnSpy, info: vi.fn(), error: vi.fn() })
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('npm install -D i18next-cli-plugin-astro'))
+  })
+
   it('does NOT warn for a non-native file when the input pattern is a catch-all', async () => {
     const { glob } = await import('glob')
     ;(glob as any).mockResolvedValue(['/src/App.svelte'])

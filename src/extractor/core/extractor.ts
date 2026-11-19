@@ -270,7 +270,8 @@ export async function processFile (
         logger.warn(
           `No plugin handled "${file}" (${fileExt}). ` +
           `If you intended to extract translations from ${fileExt} files, ` +
-          'make sure the appropriate plugin is installed and added to your config.'
+          'make sure the appropriate plugin is installed and added to your config.' +
+          (fileExt === '.astro' ? ' For .astro files: npm install -D i18next-cli-plugin-astro' : '')
         )
       }
       return
