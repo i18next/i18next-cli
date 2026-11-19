@@ -246,4 +246,40 @@ describe('extractor: nested $t() references inside translation values', () => {
     expect(result.newTranslations.inner_one).toBe('{{count}} thing')
     expect(result.newTranslations.inner_other).toBe('{{count}} things')
   })
+  it('does not treat option names that merely contain count or context as count / context', async () => {
+    const sampleCode = `
+      function MyComponent() {
+        const { t } = useTranslation();
+        return <div>{t('total')}{t('greeting')}</div>;
+      }
+    `
+
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const existingTranslations = {
+      total: 'Total: $t(price, {"discount": {{discount}} })',
+      greeting: 'Hello $t(name, {"subcontext": "formal"})',
+      price: '{{discount}} off',
+      name: 'friend'
+    }
+
+    await vol.promises.mkdir(resolve(process.cwd(), 'locales/en'), { recursive: true })
+    await vol.promises.writeFile(
+      resolve(process.cwd(), 'locales/en/translation.json'),
+      JSON.stringify(existingTranslations, null, 2)
+    )
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: ['src/**/*.tsx'],
+        output: 'locales/{{language}}/{{namespace}}.json',
+        removeUnusedKeys: true
+      }
+    }
+
+    const [result] = await extract(config)
+
+    expect(result.newTranslations).toEqual(existingTranslations)
+  })
 })

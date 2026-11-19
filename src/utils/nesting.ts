@@ -111,12 +111,14 @@ export function parseNestedReferences (text: string, config: NestingConfig): Nes
     let context: string | undefined
 
     if (optionsString) {
-      if (/['"]?count['"]?\s*:/.test(optionsString)) {
+      // Match whole property names only, so `discount` or `subcontext` are
+      // not mistaken for `count` / `context`.
+      if (/(?:^|[{,\s])(['"]?)count\1\s*:/.test(optionsString)) {
         hasCount = true
       }
-      const contextMatch = /['"]?context['"]?\s*:\s*(['"])(.*?)\1/.exec(optionsString)
+      const contextMatch = /(?:^|[{,\s])(['"]?)context\1\s*:\s*(['"])(.*?)\2/.exec(optionsString)
       if (contextMatch) {
-        context = contextMatch[2]
+        context = contextMatch[3]
       }
     }
 
