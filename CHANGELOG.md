@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 1.91.3
 
 - fix(lint): the interpolation parameter check reads a key's translation from the file of its namespace, so a missing
   or unused parameter is now reported outside the default namespace too: `useTranslation('home')`,
