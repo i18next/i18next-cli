@@ -71,4 +71,35 @@ describe('extractor: comment-parser', () => {
     expect(allKeys.has('translation:rename-activity-title')).toBe(false)
     expect(allKeys.has('translation:outside.fence')).toBe(true)
   })
+
+  it('reads count, context and ns options by their whole name only', async () => {
+    const sampleCode = `
+      // t('price', { discount: 5 })
+      // t('name', { subcontext: 'vip' })
+      // t('host', { dns: 'other' })
+      // t('item', { "count": 2 })
+      // t('friend', {context:'male'})
+    `
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const config: I18nextToolkitConfig = {
+      locales: ['en'],
+      extract: {
+        input: ['src/App.tsx'],
+        output: 'locales/{{language}}/{{namespace}}.json'
+      },
+    }
+
+    const { allKeys } = await findKeys(config)
+
+    expect([...allKeys.keys()].sort()).toEqual([
+      'translation:friend',
+      'translation:friend_male',
+      'translation:host',
+      'translation:item_one',
+      'translation:item_other',
+      'translation:name',
+      'translation:price',
+    ])
+  })
 })

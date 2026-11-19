@@ -326,6 +326,17 @@ function generateContextPluralKeys (
   }
 }
 
+// An option of the object after the key, matched by its whole name, quoted or not, so `discount` is not
+// `count` and `subcontext` is not `context`. Group 1 is the quote around the name, the value's groups follow.
+const optionRegex = (name: string, value: string): RegExp =>
+  new RegExp(`^\\s*,\\s*\\{(?:[^}]*[,\\s])?(['"]?)${name}\\1\\s*:\\s*${value}`)
+const stringValue = '([\'"])(.*?)\\2'
+const defaultValueOption = optionRegex('defaultValue', stringValue)
+const nsOption = optionRegex('ns', stringValue)
+const contextOption = optionRegex('context', stringValue)
+const countOption = optionRegex('count', '(\\d+)')
+const ordinalOption = optionRegex('ordinal', '(true|false)')
+
 /**
  * Parses default value from the remainder of a comment after a translation function call.
  * Supports both string literals and object syntax with defaultValue property.
@@ -341,8 +352,8 @@ function parseDefaultValueFromComment (remainder: string): string | undefined {
   if (dvString) return dvString[2]
 
   // Object with defaultValue: , { defaultValue: 'VALUE', ... }
-  const dvObj = /^\s*,\s*\{[^}]*defaultValue\s*:\s*(['"])(.*?)\1/.exec(remainder)
-  if (dvObj) return dvObj[2]
+  const dvObj = defaultValueOption.exec(remainder)
+  if (dvObj) return dvObj[3]
 
   return undefined
 }
@@ -358,8 +369,8 @@ function parseDefaultValueFromComment (remainder: string): string | undefined {
  */
 function parseNsFromComment (remainder: string): string | undefined {
   // Look for ns in an options object, e.g., { ns: 'common' }
-  const nsObj = /^\s*,\s*\{[^}]*ns\s*:\s*(['"])(.*?)\1/.exec(remainder)
-  if (nsObj) return nsObj[2]
+  const nsObj = nsOption.exec(remainder)
+  if (nsObj) return nsObj[3]
 
   return undefined
 }
@@ -404,8 +415,8 @@ function collectCommentTexts (src: string): string[] {
  */
 function parseContextFromComment (remainder: string): string | undefined {
   // Look for context in an options object, e.g., { context: 'male' }
-  const contextObj = /^\s*,\s*\{[^}]*context\s*:\s*(['"])(.*?)\1/.exec(remainder)
-  if (contextObj) return contextObj[2]
+  const contextObj = contextOption.exec(remainder)
+  if (contextObj) return contextObj[3]
 
   return undefined
 }
@@ -421,8 +432,8 @@ function parseContextFromComment (remainder: string): string | undefined {
  */
 function parseCountFromComment (remainder: string): number | undefined {
   // Look for count in an options object, e.g., { count: 1 }
-  const countObj = /^\s*,\s*\{[^}]*count\s*:\s*(\d+)/.exec(remainder)
-  if (countObj) return parseInt(countObj[1], 10)
+  const countObj = countOption.exec(remainder)
+  if (countObj) return parseInt(countObj[2], 10)
 
   return undefined
 }
@@ -438,8 +449,8 @@ function parseCountFromComment (remainder: string): number | undefined {
  */
 function parseOrdinalFromComment (remainder: string): boolean | undefined {
   // Look for ordinal in an options object, e.g., { ordinal: true }
-  const ordinalObj = /^\s*,\s*\{[^}]*ordinal\s*:\s*(true|false)/.exec(remainder)
-  if (ordinalObj) return ordinalObj[1] === 'true'
+  const ordinalObj = ordinalOption.exec(remainder)
+  if (ordinalObj) return ordinalObj[2] === 'true'
 
   return undefined
 }
