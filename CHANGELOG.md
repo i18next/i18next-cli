@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.91.1
+
+- fix(extract): a nested `$t()` option whose name only contains `count` or `context` (`{"discount": 5}`,
+  `{"subcontext": "vip"}`) is no longer read as a plural or context reference, so `extract` keeps `price` instead of
+  writing empty `price_one` / `price_other`, and `removeUnusedKeys` no longer drops the existing translation
+  ([#332](https://github.com/i18next/i18next-cli/pull/332), thanks [@zzoraemon043](https://github.com/zzoraemon043)).
+- fix(extract): the options of a `t()` call in a comment are read by their whole name too: `// t('price', { discount: 5 })`
+  no longer extracts `price_one` / `price_other`, `{ subcontext: 'vip' }` no context key and `{ dns: 'other' }` no
+  `other` namespace. A quoted name (`{ "count": 2 }`) now counts like an unquoted one.
+- chore(deps): i18next 27.2.2, react-i18next 18.0.3, nano-spawn 3 and other dependency updates.
+
 ## 1.91.0
 
 - feat(lint): `<Trans>` tags of a translation that miss the component's children are reported, with file, line
