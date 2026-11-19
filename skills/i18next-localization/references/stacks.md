@@ -11,10 +11,11 @@ array of `i18next.config.ts`. Specifying extra extensions in `extract.input` is
 |---|---|---|
 | Vue | [`i18next-cli-vue`](https://github.com/PBK-B/i18next-cli-vue) | Parses `.vue` SFCs. **Community-maintained** |
 | Svelte | [`i18next-cli-plugin-svelte`](https://github.com/dreamscached/i18next-cli-plugin-svelte) | Parses `.svelte`. **Community-maintained** |
+| Astro | [`i18next-cli-plugin-astro`](https://github.com/i18next/i18next-cli-plugin-astro) | Reads `.astro` for `extract` and `status`; does not instrument. **Official** |
 | Anything else | write one | Plugin hooks: `instrumentOnLoad` / `onLoad` |
 
-Both plugins are maintained outside the i18next org, so check they still support
-the user's framework version before relying on them.
+The Vue and Svelte plugins are maintained outside the i18next org, so check they
+still support the user's framework version before relying on them.
 
 Add to `i18next.config.ts`:
 
@@ -69,6 +70,11 @@ Tell the user before following these; the concepts hold but the setup does not.
   static build runs i18next only at build time, so no JavaScript goes to the
   browser. Set `interpolation: { escapeValue: false }` (Astro escapes what
   `{t(...)}` renders) and write the hreflang links in the layout (Astro's
-  routing does not add them). `i18next-cli` reads no `.astro` files without a
-  plugin, so treat them like a stack without one (above). When the developer
+  routing does not add them). `i18next-cli` reads no `.astro` files on its own:
+  install `i18next-cli-plugin-astro` (dev dependency), add `astro()` to
+  `plugins` and `astro` to `extract.input` (`src/**/*.{astro,ts}`). Without it,
+  `status` sees no keys in the pages and reports 100%. With it, make the build
+  script `i18next-cli status && astro build`, so a missing translation fails
+  the build. The plugin does not instrument, so `localize` skips that step for
+  `.astro` files (see "Without a matching plugin" above). When the developer
   chose Locize, `locize-cli download` fills the locale folder before each build.

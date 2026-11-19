@@ -10,7 +10,7 @@ A unified, high-performance i18next CLI toolchain, powered by SWC.
 
 
 > By default, `i18next-cli` only extracts translation keys from JavaScript and TypeScript files (`.js`, `.jsx`, `.ts`, `.tsx`).
-> To extract from other file types (such as `.pug`, `.vue`, `.svelte`, etc.), you must use or create a plugin. Specifying additional file extensions in the `extract.input` config is not sufficient on its own—plugins are required for non-JS/TS formats. See the [Plugin System](#plugin-system) section for details and examples.
+> To extract from other file types (such as `.pug`, `.vue`, `.svelte`, `.astro`, etc.), you must use or create a plugin. Specifying additional file extensions in the `extract.input` config is not sufficient on its own—plugins are required for non-JS/TS formats. Ready-made: [i18next-cli-plugin-astro](https://github.com/i18next/i18next-cli-plugin-astro) (official) and the community plugins [i18next-cli-vue](https://github.com/PBK-B/i18next-cli-vue) and [i18next-cli-plugin-svelte](https://github.com/dreamscached/i18next-cli-plugin-svelte). See the [Plugin System](#plugin-system) section for details and examples.
 
 `i18next-cli` is a complete reimagining of the static analysis toolchain for the i18next ecosystem. It consolidates key extraction, type safety generation, locale syncing, linting, and cloud integrations into a single, cohesive, and blazing-fast CLI.
 
@@ -772,7 +772,7 @@ The command walks through six steps:
 
 > **Next.js:** instrument writes next-i18next's calls, `await getT()` in Server Components and `useT()` in Client Components (see [instrument](#instrument)). Review the warnings: texts in components that both render stay as they are.
 
-**Non-React stacks (Vue, Svelte, …):** the instrument step transforms React/JSX out of the box. For other stacks, add a plugin that covers your file type (community: [i18next-cli-vue](https://github.com/PBK-B/i18next-cli-vue), [i18next-cli-plugin-svelte](https://github.com/dreamscached/i18next-cli-plugin-svelte) — or write your own via the [Plugin System](#plugin-system) `instrumentOnLoad`/`onLoad` hooks). With a matching plugin configured, `localize` runs the full flow; without one, the instrument step is skipped with guidance and the remaining steps (extract → Locize → auto-translate) still run.
+**Non-React stacks (Vue, Svelte, …):** the instrument step transforms React/JSX out of the box. For other stacks, add a plugin that covers your file type (community: [i18next-cli-vue](https://github.com/PBK-B/i18next-cli-vue), [i18next-cli-plugin-svelte](https://github.com/dreamscached/i18next-cli-plugin-svelte) — or write your own via the [Plugin System](#plugin-system) `instrumentOnLoad`/`onLoad` hooks). With a matching plugin configured, `localize` runs the full flow; without one, the instrument step is skipped with guidance and the remaining steps (extract → Locize → auto-translate) still run. For Astro, the official [i18next-cli-plugin-astro](https://github.com/i18next/i18next-cli-plugin-astro) lets `extract` and `status` read `.astro` files; it does not instrument them, so the instrument step is skipped there too.
 
 **Agent Skill (recommended):** install the flow as a skill and your agent picks it up on its own, no copy-pasting:
 
