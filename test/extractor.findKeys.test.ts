@@ -364,4 +364,21 @@ describe('extractor.findKeys', () => {
 
     expect(foundKeys).toHaveLength(0)
   })
+
+  it('passes the plugin context to the setup hook', async () => {
+    vol.fromJSON({ '/src/App.tsx': "t('key')" })
+    mockGlob.mockResolvedValue(['/src/App.tsx'])
+
+    let received: PluginContext | undefined
+    const plugin: Plugin = {
+      name: 'setup-context',
+      setup: (context) => { received = context },
+    }
+
+    await findKeys({ ...mockConfig, plugins: [plugin] })
+
+    expect(received?.config.locales).toEqual(['en', 'de'])
+    expect(received?.config.extract.defaultNS).toBe('translation')
+    expect(typeof received?.logger.info).toBe('function')
+  })
 })

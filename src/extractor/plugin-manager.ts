@@ -16,17 +16,18 @@ export class ConflictError extends Error {
  * This function should be called before starting the extraction process.
  *
  * @param plugins - Array of plugin objects to initialize
+ * @param context - The plugin context (`config`, `logger`, ...) passed to each setup hook
  *
  * @example
  * ```typescript
  * const plugins = [customPlugin(), anotherPlugin()]
- * await initializePlugins(plugins)
+ * await initializePlugins(plugins, pluginContext)
  * // All plugin setup hooks have been called
  * ```
  */
-export async function initializePlugins (plugins: any[]): Promise<void> {
+export async function initializePlugins (plugins: Plugin[], context: PluginContext): Promise<void> {
   for (const plugin of plugins) {
-    await plugin.setup?.()
+    await plugin.setup?.(context)
   }
 }
 

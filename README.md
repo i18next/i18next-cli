@@ -1352,7 +1352,7 @@ Create custom plugins to extend the capabilities of `i18next-cli`. The plugin sy
 
 **Available Hooks:**
 
-- `setup`: Runs once when the CLI is initialized. Use it for any setup tasks.
+- `setup`: Runs once at the start of each extraction (`extract`, every `--watch` re-run, `status`). Receives the plugin context (`config`, `logger`), so a plugin can read the i18next-cli config. Use it for any setup tasks.
 - `onLoad`: Runs for each file *before* it is parsed. You can use this to transform code (e.g., transpile a custom language to JavaScript).
 - `onVisitNode`: Runs for every node in the Abstract Syntax Tree (AST) of a parsed JavaScript/TypeScript file. This provides access to the full parsing context, including variable scope and TypeScript-specific syntax like `satisfies` and `as` operators.
 - `onKeySubmitted`: Hook called synchronously for every translation key submitted to the extractor, including duplicates, before the deduplication decision is made.

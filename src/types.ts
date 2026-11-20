@@ -738,10 +738,11 @@ export interface Plugin extends LinterPlugin, InstrumenterPlugin {
   extractContextFromExpression?: (expression: Expression, config: Omit<I18nextToolkitConfig, 'plugins'>, logger: Logger) => string[];
 
   /**
-   * Hook called once at the beginning of the extraction process.
+   * Hook called once at the beginning of each extraction run (`extract`, every `--watch` re-run, `status`).
+   * Receives the plugin context, so a plugin can read the i18next-cli config instead of taking the same options again.
    * Use for initialization tasks like setting up resources or validating configuration.
    */
-  setup?: () => MaybePromise<void>;
+  setup?: (context: PluginContext) => MaybePromise<void>;
 
   /**
    * Hook called for each source file before it's parsed.

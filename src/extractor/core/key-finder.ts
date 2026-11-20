@@ -96,7 +96,7 @@ export async function findKeys (
   pluginContext.getVarFromScope = astVisitors.getVarFromScope.bind(astVisitors)
 
   // 5. Initialize plugins
-  await initializePlugins(plugins)
+  await initializePlugins(plugins, pluginContext)
 
   // 6. Pre-scan all files to populate cross-file shared constant tables BEFORE any
   //    key extraction begins. This ensures that identifier-based namespace references
