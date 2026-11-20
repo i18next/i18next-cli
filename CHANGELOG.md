@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [i18next-cli-plugin-astro](https://github.com/i18next/i18next-cli-plugin-astro), `lint` now checks `.astro` files.
 - feat: `Linter` is exported from the package root, as the README's Advanced Usage section shows. It is an
   `EventEmitter`, so the example now listens with `linter.on('progress', …)`.
+- feat(instrument): the i18n init file it creates for a browser app picks the browser's language: `lng` from
+  `navigator.language`, matched against `supportedLngs` (the config's `locales`), so `de-DE` shows German. Before, `lng`
+  was a comment and the app showed `fallbackLng` only.
 
 ## 1.91.3
 

@@ -3083,7 +3083,13 @@ function buildInitFileContent (opts: {
     initOpts.push('    initAsync: false,')
   }
   initOpts.push('    returnEmptyString: false, // an empty translation falls back (the default since i18next 27)')
-  initOpts.push(`    // lng: '${config.locales.at(-1)}', // or add a language detector to detect the preferred language of your user`)
+  if (strategy === 'fs-backend') {
+    initOpts.push(`    // lng: '${config.locales.at(-1)}', // or add a language detector to detect the preferred language of your user`)
+  } else {
+    // Without a language the app shows fallbackLng only; through supportedLngs `de-DE` resolves to `de`
+    initOpts.push(`    supportedLngs: [${config.locales.map(l => `'${l}'`).join(', ')}],`)
+    initOpts.push("    lng: typeof navigator !== 'undefined' ? navigator.language : undefined, // the browser's language; i18next-browser-languagedetector also remembers a choice")
+  }
   initOpts.push(`    fallbackLng: '${primaryLang}',`)
   if (defaultNS) {
     initOpts.push(`    defaultNS: '${ns}',`)

@@ -366,6 +366,8 @@ export function Notices () {
     expect(initContent).toContain('initReactI18next')
     expect(initContent).toContain('.init(')
     expect(initContent).toContain("fallbackLng: 'en'")
+    expect(initContent).toContain("supportedLngs: ['en', 'de'],")
+    expect(initContent).toContain("lng: typeof navigator !== 'undefined' ? navigator.language : undefined,")
     expect(initContent).toContain("defaultNS: 'translation'")
     expect(initContent).toContain('locize.com')
 
@@ -434,6 +436,8 @@ export function Notices () {
     // Server-side → fs-backend
     expect(initContent).toContain("import i18next from 'i18next'")
     expect(initContent).toContain("import Backend from 'i18next-fs-backend'")
+    // A server picks the language per request, not from a browser
+    expect(initContent).not.toContain('navigator')
     expect(initContent).toContain('.use(Backend)')
     expect(initContent).toContain('initAsync: false,')
     expect(initContent).toContain("preload: ['en', 'de']")
