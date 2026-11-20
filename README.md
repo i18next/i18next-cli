@@ -2283,7 +2283,7 @@ const config: I18nextToolkitConfig = {
 
 const linter = new Linter(config);
 
-linter.addEventListener('progress', ({ message }) => console.log(message));
+linter.on('progress', ({ message }) => console.log(message));
 
 await linter.run();
 ```

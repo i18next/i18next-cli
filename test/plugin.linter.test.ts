@@ -239,6 +239,19 @@ describe('plugin system: linter', () => {
     expect(result.files['/src/App.tsx'][0].text).toBe('Still lint this text')
   })
 
+  it('exports Linter from the package root, reporting progress through .on as the README shows', async () => {
+    const { Linter: ExportedLinter } = await import('../src/index')
+    vol.fromJSON({ '/src/App.tsx': '<p>Text</p>' })
+    const messages: string[] = []
+
+    const linter = new ExportedLinter(mockConfig)
+    linter.on('progress', ({ message }) => messages.push(message))
+    await linter.run()
+
+    expect(ExportedLinter).toBe(Linter)
+    expect(messages).toContain('Analyzing 1 source files...')
+  })
+
   it('parses what lintOnLoad made of a non-native file as TSX, as extract does', async () => {
     const { glob } = await import('glob')
     vi.mocked(glob).mockResolvedValue(['/src/page.astro'])

@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as plain JavaScript. A file no plugin returns code for is skipped, with the same warning `extract` gives when its
   extension is in `extract.input`, instead of failing with a syntax error. With
   [i18next-cli-plugin-astro](https://github.com/i18next/i18next-cli-plugin-astro), `lint` now checks `.astro` files.
+- feat: `Linter` is exported from the package root, as the README's Advanced Usage section shows. It is an
+  `EventEmitter`, so the example now listens with `linter.on('progress', …)`.
 
 ## 1.91.3
 
