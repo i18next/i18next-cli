@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.93.0
+
+- feat(extract): the `setup` plugin hook receives the plugin context (`config`, `logger`), as `lintSetup` and
+  `instrumentSetup` do, so a plugin can read the i18next-cli config (`locales`, `extract` options) instead of taking
+  the same options again. Plugins whose `setup` takes no argument keep working. Fixes
+  [#333](https://github.com/i18next/i18next-cli/issues/333).
+
 ## 1.92.0
 
 - fix(lint): a non-JS/TS file (`.astro`, `.vue`, `.svelte`, …) is linted the way `extract` reads it. What a plugin's
