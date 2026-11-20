@@ -25,11 +25,17 @@ export function generateKeyFromContent (content: string): string {
 
   // Split on whitespace and camelCase; whole words up to MAX_KEY_LENGTH, the first word always
   const words = normalized.split(/\s+/)
+  // A number names no text and starts no identifier: `© 2026 Ledgerly` → ledgerly…, unless there is nothing else
+  const first = Math.max(words.findIndex(word => !/^\d+$/.test(word)), 0)
   let camelCased = ''
-  for (const [index, word] of words.entries()) {
-    const part = index === 0 ? word.toLowerCase() : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-    if (index > 0 && camelCased.length + part.length > MAX_KEY_LENGTH) break
+  let previous = ''
+  for (const word of words.slice(first)) {
+    // A placeholder named like the word next to it says it once: `You have {{unpaid}} unpaid invoices` → youHaveUnpaidInvoices
+    if (word.toLowerCase() === previous) continue
+    const part = camelCased ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : word.toLowerCase()
+    if (camelCased && camelCased.length + part.length > MAX_KEY_LENGTH) break
     camelCased += part
+    previous = word.toLowerCase()
   }
 
   // If result is empty, use fallback

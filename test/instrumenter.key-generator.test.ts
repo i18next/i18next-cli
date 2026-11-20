@@ -26,6 +26,16 @@ describe('key-generator', () => {
     it('handles empty string', () => {
       expect(generateKeyFromContent('')).toBe('key')
     })
+
+    it('starts a key with the first word, not a number', () => {
+      expect(generateKeyFromContent('© 2026 Ledgerly. All rights reserved.')).toBe('ledgerlyAllRightsReserved')
+      expect(generateKeyFromContent('404')).toBe('404')
+    })
+
+    it('says a word once when a placeholder is named like the word next to it', () => {
+      expect(generateKeyFromContent('You have {{unpaid}} unpaid invoices.')).toBe('youHaveUnpaidInvoices')
+      expect(generateKeyFromContent('Version {{version}} is published')).toBe('versionIsPublished')
+    })
   })
 
   describe('createKeyRegistry', () => {

@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - feat(instrument): the i18n init file it creates for a browser app picks the browser's language: `lng` from
   `navigator.language`, matched against `supportedLngs` (the config's `locales`), so `de-DE` shows German. Before, `lng`
   was a comment and the app showed `fallbackLng` only.
+- fix(instrument): a generated key no longer starts with a number (`© 2026 Ledgerly. All rights reserved.` becomes
+  `ledgerlyAllRightsReserved`) and says a word once when a placeholder is named like the word next to it (`You have
+  {unpaid} unpaid invoices.` becomes `youHaveUnpaidInvoices`).
 
 ## 1.91.3
 

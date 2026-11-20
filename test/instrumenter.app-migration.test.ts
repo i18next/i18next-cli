@@ -128,7 +128,7 @@ ${body}
       'A.jsx': component('  return <p>{`Version ${project.version}${n ? `, cached for ${n} seconds` : \'\'} is published`}</p>')
     })
     expect(results.totalTransformed).toBe(1)
-    expect(code).toContain("t('versionVersionValIsPublished', 'Version {{version}}{{val}} is published'")
+    expect(code).toContain("t('versionValIsPublished', 'Version {{version}}{{val}} is published'")
   })
 
   it('names a placeholder after what a call formats, once for an expression used twice', async () => {
