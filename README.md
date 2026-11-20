@@ -9,7 +9,7 @@ A unified, high-performance i18next CLI toolchain, powered by SWC.
 ---
 
 
-> By default, `i18next-cli` only extracts translation keys from JavaScript and TypeScript files (`.js`, `.jsx`, `.ts`, `.tsx`).
+> By default, `i18next-cli` only extracts translation keys from JavaScript and TypeScript files (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`).
 > To extract from other file types (such as `.pug`, `.vue`, `.svelte`, `.astro`, etc.), you must use or create a plugin. Specifying additional file extensions in the `extract.input` config is not sufficient on its own—plugins are required for non-JS/TS formats. Ready-made: [i18next-cli-plugin-astro](https://github.com/i18next/i18next-cli-plugin-astro) (official) and the community plugins [i18next-cli-vue](https://github.com/PBK-B/i18next-cli-vue) and [i18next-cli-plugin-svelte](https://github.com/dreamscached/i18next-cli-plugin-svelte). See the [Plugin System](#plugin-system) section for details and examples.
 
 `i18next-cli` is a complete reimagining of the static analysis toolchain for the i18next ecosystem. It consolidates key extraction, type safety generation, locale syncing, linting, and cloud integrations into a single, cohesive, and blazing-fast CLI.
@@ -1000,7 +1000,7 @@ export default defineConfig({
 ```
 
 > **❗ Important:**
-> Only `.js`, `.jsx`, `.ts`, and `.tsx` files are extracted by default. If you want to extract from other file types (e.g., `.pug`, `.vue`), you must use or create a plugin. See the [Plugin System](#plugin-system) section for more information.
+> Only `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts` and `.cts` files are extracted by default. If you want to extract from other file types (e.g., `.pug`, `.vue`, `.astro`), you must use or create a plugin. See the [Plugin System](#plugin-system) section for more information.
 
 **Alternative without local installation:**
 
@@ -2201,7 +2201,7 @@ const config: I18nextToolkitConfig = {
 const { anyFileUpdated, hasErrors } = await runExtractor(config);
 console.log('Files updated:', anyFileUpdated);
 
-// Check translation status programmatically
+// Print the translation status report; exits the process with code 1 when translations are missing
 await runStatus(config);
 
 // Run linting and get results
@@ -2259,7 +2259,7 @@ class I18nextExtractionPlugin {
 - `runExtractor(config, options?)` - Complete extraction with file writing
 - `runLinter(config)` - Run linting analysis and return results
 - `runSyncer(config)` - Sync translation files
-- `runStatus(config, options?)` - Get translation status
+- `runStatus(config, options?)` - Print the translation status report. Returns nothing; calls `process.exit(1)` when translations are missing
 - `runTypesGenerator(config)` - Generate types
 - `runLocalize(options?, configPath?)` - The full [`localize`](#localize) flow (detect → instrument → extract → Locize sync with auto-translate → download)
 
@@ -2295,6 +2295,7 @@ This programmatic API gives you the same power as the CLI but with full control 
 - [i18next-cli-plugin-svelte](https://github.com/dreamscached/i18next-cli-plugin-svelte) &mdash; a simple plugin to extract translation keys from Svelte components
 - [rsbuild-plugin-i18next-extractor](https://github.com/rspack-contrib/rsbuild-plugin-i18next-extractor) &mdash; A Rsbuild plugin that leverages the Rspack module graph to extract only the i18n translations that are actually imported and used in your code, preventing unused translations from being bundled.
 - [i18next-cli-vue](https://github.com/PBK-B/i18next-cli-vue) &mdash; i18next-cli plugin for extracting i18n keys from Vue SFC files, applicable to vue2 and vue3 
+- [i18next-cli-plugin-astro](https://github.com/i18next/i18next-cli-plugin-astro) &mdash; the official plugin that lets `extract`, `status` and `lint` read `.astro` files
 
 ---
 
