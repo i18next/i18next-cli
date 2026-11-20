@@ -162,6 +162,26 @@ function isExtExplicitlyInInputPatterns (ext: string, input: string | string[]):
   })
 }
 
+/** Extensions SWC parses as they are; any other file needs a plugin (`onLoad` for extract, `lintOnLoad` for lint). @internal */
+export const nativeExtensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts']
+
+/**
+ * Called for a non-native file no plugin handled, which extract and lint skip. Warns when the
+ * extension is listed in the input patterns: the developer likely forgot to install or register
+ * the plugin (e.g. for Svelte or Vue).
+ *
+ * @internal
+ */
+export function warnUnhandledFile (file: string, fileExt: string, input: string | string[], logger: Logger): void {
+  if (!isExtExplicitlyInInputPatterns(fileExt, input)) return
+  logger.warn(
+    `No plugin handled "${file}" (${fileExt}). ` +
+    `If ${fileExt} files hold translations, ` +
+    'make sure the appropriate plugin is installed and added to your config.' +
+    (fileExt === '.astro' ? ' For .astro files: npm install -D i18next-cli-plugin-astro' : '')
+  )
+}
+
 const extractionSiteRegexes = new WeakMap<object, RegExp>()
 
 /**
@@ -259,21 +279,10 @@ export async function processFile (
     //   - If no plugin handled the file, skip it gracefully — there is nothing
     //     SWC can do with raw .svelte/.vue markup.
     const fileExt = extname(file).toLowerCase()
-    const isNativeExt = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'].includes(fileExt)
+    const isNativeExt = nativeExtensions.includes(fileExt)
 
     if (!isNativeExt && !wasTransformedByPlugin) {
-      // Non-JS/TS file with no plugin handler — skip, but warn when the
-      // extension was explicitly listed in the input glob patterns.  That
-      // strongly suggests the developer intended to handle it (e.g. via a
-      // Svelte/Vue plugin) but forgot to install or register the plugin.
-      if (isExtExplicitlyInInputPatterns(fileExt, config.extract.input)) {
-        logger.warn(
-          `No plugin handled "${file}" (${fileExt}). ` +
-          `If you intended to extract translations from ${fileExt} files, ` +
-          'make sure the appropriate plugin is installed and added to your config.' +
-          (fileExt === '.astro' ? ' For .astro files: npm install -D i18next-cli-plugin-astro' : '')
-        )
-      }
+      warnUnhandledFile(file, fileExt, config.extract.input, logger)
       return
     }
 
@@ -428,8 +437,7 @@ export async function preScanFile (
     // Non-native files (e.g. .svelte, .vue) cannot be parsed by SWC in the
     // pre-scan pass — plugins have not run yet so no onLoad transformation is
     // available.  Skip them silently; processFile will handle them correctly.
-    const isNativeExt = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'].includes(fileExt)
-    if (!isNativeExt) return
+    if (!nativeExtensions.includes(fileExt)) return
 
     const isTypeScriptFile = fileExt === '.ts' || fileExt === '.tsx' || fileExt === '.mts' || fileExt === '.cts'
     const isTSX = fileExt === '.tsx'

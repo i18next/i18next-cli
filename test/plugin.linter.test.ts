@@ -238,4 +238,38 @@ describe('plugin system: linter', () => {
     expect(result.files['/src/App.tsx']).toHaveLength(1)
     expect(result.files['/src/App.tsx'][0].text).toBe('Still lint this text')
   })
+
+  it('parses what lintOnLoad made of a non-native file as TSX, as extract does', async () => {
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['/src/page.astro'])
+    vol.fromJSON({ '/src/page.astro': '---\nconst title: string = "x"\n---\n<h1>Hardcoded title</h1>' })
+    const plugin: Plugin = {
+      name: 'astro-like',
+      lintOnLoad: async () => 'const title: string = "x"\n;<><h1>Hardcoded title</h1></>'
+    }
+
+    const linter = new Linter({ ...mockConfig, plugins: [plugin] })
+    const errorSpy = vi.fn()
+    linter.on('error', errorSpy)
+    const result = await linter.run()
+
+    expect(errorSpy).not.toHaveBeenCalled()
+    expect(result.files['/src/page.astro'].map(issue => issue.text)).toEqual(['Hardcoded title'])
+  })
+
+  it('skips a non-native file no plugin handles, as extract does, instead of failing to parse it', async () => {
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['/src/page.astro'])
+    vol.fromJSON({ '/src/page.astro': '---\nconst title = "x"\n---\n<h1>Hardcoded title</h1>' })
+    const warn = vi.fn()
+
+    const linter = new Linter({ ...mockConfig, extract: { ...mockConfig.extract, input: ['src/**/*.{tsx,astro}'] } }, { warn, info: vi.fn(), error: vi.fn() })
+    const errorSpy = vi.fn()
+    linter.on('error', errorSpy)
+    const result = await linter.run()
+
+    expect(errorSpy).not.toHaveBeenCalled()
+    expect(result.success).toBe(true)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('npm install -D i18next-cli-plugin-astro'))
+  })
 })

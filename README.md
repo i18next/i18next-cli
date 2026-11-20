@@ -772,7 +772,7 @@ The command walks through six steps:
 
 > **Next.js:** instrument writes next-i18next's calls, `await getT()` in Server Components and `useT()` in Client Components (see [instrument](#instrument)). Review the warnings: texts in components that both render stay as they are.
 
-**Non-React stacks (Vue, Svelte, …):** the instrument step transforms React/JSX out of the box. For other stacks, add a plugin that covers your file type (community: [i18next-cli-vue](https://github.com/PBK-B/i18next-cli-vue), [i18next-cli-plugin-svelte](https://github.com/dreamscached/i18next-cli-plugin-svelte) — or write your own via the [Plugin System](#plugin-system) `instrumentOnLoad`/`onLoad` hooks). With a matching plugin configured, `localize` runs the full flow; without one, the instrument step is skipped with guidance and the remaining steps (extract → Locize → auto-translate) still run. For Astro, the official [i18next-cli-plugin-astro](https://github.com/i18next/i18next-cli-plugin-astro) lets `extract` and `status` read `.astro` files; it does not instrument them, so the instrument step is skipped there too.
+**Non-React stacks (Vue, Svelte, …):** the instrument step transforms React/JSX out of the box. For other stacks, add a plugin that covers your file type (community: [i18next-cli-vue](https://github.com/PBK-B/i18next-cli-vue), [i18next-cli-plugin-svelte](https://github.com/dreamscached/i18next-cli-plugin-svelte) — or write your own via the [Plugin System](#plugin-system) `instrumentOnLoad`/`onLoad` hooks). With a matching plugin configured, `localize` runs the full flow; without one, the instrument step is skipped with guidance and the remaining steps (extract → Locize → auto-translate) still run. For Astro, the official [i18next-cli-plugin-astro](https://github.com/i18next/i18next-cli-plugin-astro) lets `extract`, `status` and `lint` read `.astro` files; it does not instrument them, so the instrument step is skipped there too.
 
 **Agent Skill (recommended):** install the flow as a skill and your agent picks it up on its own, no copy-pasting:
 
@@ -1375,8 +1375,8 @@ translations may be overwritten: a count-interpolated shorthand default can have
 - `lintSetup(context)`: Runs once before linting starts. Receives `LintPluginContext` with `config` and `logger`.
 - `lintExtensions`: Optional extension hint (for example `['.vue']`). Used as a skip hint/optimization.
 - `lintOnLoad(code, filePath)`: Runs before lint parsing for each file.
-  - Return `string` to replace source code for linting.
-  - Return `undefined` to pass through unchanged.
+  - Return `string` to replace source code for linting. For a non-JS/TS file (such as `.astro`, `.vue`, `.svelte`) it is parsed as TSX, as `extract` parses `onLoad` output.
+  - Return `undefined` to pass through unchanged. A non-JS/TS file no plugin returns code for is skipped.
   - Return `null` to skip linting the file entirely.
 - `lintOnResult(filePath, issues)`: Runs after each file is linted. Return a new issues array to filter/augment results, or `undefined` to keep as-is.
 

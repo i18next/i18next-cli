@@ -11,6 +11,7 @@ import { normalizeSpansToCharIndices, collectIgnoredLineRanges, lineColumnFromOf
 import { trimTextNode } from './extractor/parsers/jsx-parser.js'
 import { matchesFunctionPattern } from './extractor/utils/function-matcher.js'
 import { ASTVisitors } from './extractor/core/ast-visitors.js'
+import { nativeExtensions, warnUnhandledFile } from './extractor/core/extractor.js'
 import { getNestedValue } from './utils/nested-object.js'
 import { getOutputPath, loadTranslationFile } from './utils/file-utils.js'
 import { parse as parseHtml, type ASTNode } from 'html-parse-stringify'
@@ -710,11 +711,20 @@ export class Linter extends EventEmitter<LinterEventMap> {
         }
         const code = lintPrepared
 
-        // Determine parser options from file extension so .ts is not parsed as TSX
+        // A non-native file (.astro, .vue, .svelte) that no lintOnLoad plugin turned into code is skipped,
+        // as extract skips it; what a plugin made of it is parsed as TSX, as extract parses it
         const fileExt = extname(file).toLowerCase()
-        const isTypeScriptFile = fileExt === '.ts' || fileExt === '.tsx' || fileExt === '.mts' || fileExt === '.cts'
-        const isTSX = fileExt === '.tsx'
-        const isJSX = fileExt === '.jsx'
+        const isNativeExt = nativeExtensions.includes(fileExt)
+        if (!isNativeExt && code === sourceCode) {
+          warnUnhandledFile(file, fileExt, config.extract.input, this.logger)
+          continue
+        }
+
+        // Determine parser options from file extension so .ts is not parsed as TSX
+        const effectiveExt = isNativeExt ? fileExt : '.tsx'
+        const isTypeScriptFile = effectiveExt === '.ts' || effectiveExt === '.tsx' || effectiveExt === '.mts' || effectiveExt === '.cts'
+        const isTSX = effectiveExt === '.tsx'
+        const isJSX = effectiveExt === '.jsx'
 
         let ast: any
         try {
@@ -748,6 +758,18 @@ export class Linter extends EventEmitter<LinterEventMap> {
                 decorators: true
               })
               this.emit('progress', { message: `Parsed ${file} using JSX fallback` })
+            } catch (err2) {
+              const wrapped = this.wrapError(err2)
+              this.emit('error', wrapped)
+              continue
+            }
+          // Plugin output that is TypeScript but not TSX, e.g. a generic arrow function `<T>(x: T) => x`
+          } else if (!isNativeExt) {
+            try {
+              ast = await parse(code, {
+                syntax: 'typescript',
+                decorators: true
+              })
             } catch (err2) {
               const wrapped = this.wrapError(err2)
               this.emit('error', wrapped)

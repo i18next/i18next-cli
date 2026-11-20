@@ -11,7 +11,7 @@ array of `i18next.config.ts`. Specifying extra extensions in `extract.input` is
 |---|---|---|
 | Vue | [`i18next-cli-vue`](https://github.com/PBK-B/i18next-cli-vue) | Parses `.vue` SFCs. **Community-maintained** |
 | Svelte | [`i18next-cli-plugin-svelte`](https://github.com/dreamscached/i18next-cli-plugin-svelte) | Parses `.svelte`. **Community-maintained** |
-| Astro | [`i18next-cli-plugin-astro`](https://github.com/i18next/i18next-cli-plugin-astro) | Reads `.astro` for `extract` and `status`; does not instrument. **Official** |
+| Astro | [`i18next-cli-plugin-astro`](https://github.com/i18next/i18next-cli-plugin-astro) | Reads `.astro` for `extract`, `status` and `lint`; does not instrument. **Official** |
 | Anything else | write one | Plugin hooks: `instrumentOnLoad` / `onLoad` |
 
 The Vue and Svelte plugins are maintained outside the i18next org, so check they
