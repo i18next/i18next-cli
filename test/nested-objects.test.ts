@@ -51,6 +51,25 @@ describe('setNestedValue', () => {
       'user.name': 'John Doe', // The new key is added as a flat key
     })
   })
+
+  it('should nest under keys that share a name with Object.prototype members', () => {
+    const obj = {}
+    setNestedValue(obj, 'page.constructor.title', 'Builder', '.')
+    setNestedValue(obj, 'toString.label', 'Text', '.')
+    expect(obj).toEqual({
+      page: { constructor: { title: 'Builder' } },
+      toString: { label: 'Text' },
+    })
+  })
+
+  it('should store __proto__ as a key without touching Object.prototype', () => {
+    const obj: Record<string, any> = {}
+    setNestedValue(obj, '__proto__.polluted', 'yes', '.')
+    expect(({} as any).polluted).toBeUndefined()
+    expect(Object.getPrototypeOf(obj)).toBe(Object.prototype)
+    expect(Object.prototype.hasOwnProperty.call(obj, '__proto__')).toBe(true)
+    expect(getNestedValue(obj, '__proto__.polluted', '.')).toBe('yes')
+  })
 })
 
 describe('getNestedValue', () => {
@@ -79,6 +98,13 @@ describe('getNestedValue', () => {
     expect(getNestedValue(obj, 'Hello. World', '.')).toBe('Hallo. Welt')
     expect(getNestedValue(obj, 'a.b', '.')).toBe('B')
     expect(getNestedValue({ a: { b: 'nested' }, 'a.b': 'flat' }, 'a.b', '.')).toBe('nested')
+  })
+
+  it('should not return members inherited from Object.prototype', () => {
+    expect(getNestedValue({}, 'constructor', '.')).toBeUndefined()
+    expect(getNestedValue({ page: {} }, 'page.toString', '.')).toBeUndefined()
+    expect(getNestedValue({}, 'valueOf', false)).toBeUndefined()
+    expect(getNestedValue({ constructor: 'Builder' }, 'constructor', '.')).toBe('Builder')
   })
 })
 
