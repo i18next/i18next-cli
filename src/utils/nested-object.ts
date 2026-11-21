@@ -1,11 +1,11 @@
-const hasOwn = (obj: unknown, key: string): boolean =>
+export const hasOwn = (obj: unknown, key: string): boolean =>
   obj != null && Object.prototype.hasOwnProperty.call(obj, key)
 
 /**
  * Reads an own property only, so keys such as `constructor` or `toString` are not
  * resolved to members inherited from `Object.prototype`.
  */
-const getOwn = (obj: any, key: string): any => (hasOwn(obj, key) ? obj[key] : undefined)
+export const getOwn = (obj: any, key: string): any => (hasOwn(obj, key) ? obj[key] : undefined)
 
 /**
  * Writes an own enumerable property. `__proto__` is defined explicitly so it becomes

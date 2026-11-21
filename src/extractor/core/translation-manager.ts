@@ -1,7 +1,7 @@
 import { TranslationResult, ExtractedKey, I18nextToolkitConfig, Logger } from '../../types.js'
 import { resolve } from 'node:path'
 import { glob } from 'glob'
-import { getNestedValue, setNestedValue, getNestedKeys, deleteNestedValue, naturalLanguageRegexFor, storedKeySeparator } from '../../utils/nested-object.js'
+import { getNestedValue, setNestedValue, getOwn, hasOwn, getNestedKeys, deleteNestedValue, naturalLanguageRegexFor, storedKeySeparator } from '../../utils/nested-object.js'
 import { getNamespaceFromOutputPath, getOutputPath, globToRegex, ignoredNamespaceMatcher, loadTranslationFile } from '../../utils/file-utils.js'
 import { resolveDefaultValue, omitsMissingKeysFor } from '../../utils/default-value.js'
 import { ConsoleLogger } from '../../utils/logger.js'
@@ -26,7 +26,7 @@ function findNestingConflict (obj: Record<string, any>, key: string, separator: 
 
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i]
-    const value = current[part]
+    const value = getOwn(current, part)
 
     if (value === undefined || value === null) {
       // Path does not exist yet — no conflict
@@ -46,7 +46,7 @@ function findNestingConflict (obj: Record<string, any>, key: string, separator: 
   // about to overwrite it with a string, that is also a conflict (the deeper keys
   // that populate this object came from other extracted keys and would be silently lost).
   const leafPart = parts[parts.length - 1]
-  const leafValue = current[leafPart]
+  const leafValue = getOwn(current, leafPart)
   if (typeof leafValue === 'object' && leafValue !== null && !Array.isArray(leafValue) && Object.keys(leafValue).length > 0) {
     // The conflicting path is the key itself (it already has nested children)
     return key
@@ -1036,7 +1036,7 @@ function buildNewTranslationsForNs (
       const ordered: Record<string, any> = {}
       // First: keys from refObj in original order
       for (const key of Object.keys(refObj)) {
-        if (key in newObj) {
+        if (hasOwn(newObj, key)) {
           ordered[key] = (typeof newObj[key] === 'object' && newObj[key] !== null && typeof refObj[key] === 'object' && refObj[key] !== null)
             ? reorderToMatch(newObj[key], refObj[key])
             : newObj[key]
@@ -1044,7 +1044,7 @@ function buildNewTranslationsForNs (
       }
       // Then: new keys not in refObj
       for (const key of Object.keys(newObj)) {
-        if (!(key in ordered)) {
+        if (!hasOwn(ordered, key)) {
           ordered[key] = newObj[key]
         }
       }
