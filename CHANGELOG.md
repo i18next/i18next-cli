@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.93.1
+
+- fix(extract): keys named like `Object.prototype` members (`constructor`, `toString`, `valueOf`,
+  `page.constructor.title`) are written like any other key instead of being dropped, written flat or reported as a
+  nesting conflict, and a `__proto__` key no longer writes to `Object.prototype`
+  ([#334](https://github.com/i18next/i18next-cli/pull/334), thanks [@zzoraemon043](https://github.com/zzoraemon043)).
+
 ## 1.93.0
 
 - feat(extract): the `setup` plugin hook receives the plugin context (`config`, `logger`), as `lintSetup` and
