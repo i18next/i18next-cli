@@ -1,3 +1,24 @@
+const hasOwn = (obj: unknown, key: string): boolean =>
+  obj != null && Object.prototype.hasOwnProperty.call(obj, key)
+
+/**
+ * Reads an own property only, so keys such as `constructor` or `toString` are not
+ * resolved to members inherited from `Object.prototype`.
+ */
+const getOwn = (obj: any, key: string): any => (hasOwn(obj, key) ? obj[key] : undefined)
+
+/**
+ * Writes an own enumerable property. `__proto__` is defined explicitly so it becomes
+ * a regular key instead of replacing the object's prototype.
+ */
+const setOwn = (obj: Record<string, any>, key: string, value: any): void => {
+  if (key === '__proto__') {
+    Object.defineProperty(obj, key, { value, enumerable: true, writable: true, configurable: true })
+  } else {
+    obj[key] = value
+  }
+}
+
 /**
  * Sets a nested value in an object using a key path and separator.
  * Creates intermediate objects as needed.
@@ -25,7 +46,7 @@ export function setNestedValue (
   keySeparator: string | false
 ): void {
   if (keySeparator === false) {
-    obj[path] = value
+    setOwn(obj, path, value)
     return
   }
 
@@ -38,26 +59,26 @@ export function setNestedValue (
 
     if (isLastKey) {
       // We've reached the end of the path, set the value.
-      current[key] = value
+      setOwn(current, key, value)
       return
     }
 
-    const nextLevel = current[key]
+    const nextLevel = getOwn(current, key)
 
     // Check for a conflict: the path requires an object, but a primitive exists.
     if (nextLevel !== undefined && (typeof nextLevel !== 'object' || nextLevel === null)) {
       // Conflict detected. The parent path is already a leaf node.
       // We must set the entire original path as a flat key on the root object.
-      obj[path] = value
+      setOwn(obj, path, value)
       return // Stop processing to prevent overwriting the parent.
     }
 
     // If the path doesn't exist, create an empty object to continue.
     if (nextLevel === undefined) {
-      current[key] = {}
+      setOwn(current, key, {})
     }
 
-    current = current[key]
+    current = getOwn(current, key)
   }
 }
 
@@ -101,7 +122,7 @@ export function deleteNestedValue (
 
   for (let i = 0; i < keys.length - 1; i++) {
     const key = keys[i]
-    const next = current[key]
+    const next = getOwn(current, key)
     if (typeof next !== 'object' || next === null || Array.isArray(next)) return false
     parents.push([current, key])
     current = next as Record<string, unknown>
@@ -150,9 +171,9 @@ export function getNestedValue (
   keySeparator: string | false
 ): any {
   if (keySeparator === false) {
-    return obj[path]
+    return getOwn(obj, path)
   }
-  const value = path.split(keySeparator).reduce((acc, key) => acc && acc[key], obj)
+  const value = path.split(keySeparator).reduce((acc, key) => getOwn(acc, key), obj)
   // The extractor writes a key that cannot be used as a path ("Loading...", or a
   // natural-language key such as "Hello world. Bye") as a single flat top-level key.
   if (value === undefined && obj != null && Object.prototype.hasOwnProperty.call(obj, path)) {
