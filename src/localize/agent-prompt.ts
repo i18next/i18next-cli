@@ -13,11 +13,13 @@
  * A short pointer prompt ("Localize this app with i18next. Run
  * `npx i18next-cli localize --print-agent-prompt` and follow the steps it
  * prints…") is published as a copy-paste block on: the Quick Start of this
- * README; i18next.com (Introduction, Getting started, how-to/ai-coding-agents);
- * react.i18next.com (Introduction, Getting started); locize.com (/i18next,
- * llms.txt, llms-full.txt, blog/next-intl-vs-next-i18next); the i18next,
- * react-i18next and next-i18next READMEs; next.i18next.com (next-i18next
- * examples/mixed-routers, en + de).
+ * README; www.i18next.com (/introduction, /overview/getting-started,
+ * /how-to/ai-coding-agents, /react, /react/getting-started, /next, /cli,
+ * /cli/commands/localize, /astro, /with-your-agent/add-a-second-language;
+ * source in i18next/www); locize.com (/i18next, llms.txt, llms-full.txt,
+ * blog/next-intl-vs-next-i18next); the i18next, react-i18next and
+ * next-i18next READMEs; next.i18next.com (next-i18next examples/mixed-routers,
+ * en + de).
  * It holds no steps, but renaming the `localize` command or the
  * `--print-agent-prompt` flag breaks all of them. The flag is also named in
  * the skill (skills/i18next-localization, test-guarded), locize.com blog posts

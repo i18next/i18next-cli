@@ -105,7 +105,7 @@ export interface I18nextToolkitConfig {
      *
      * An array is an accept-list of attribute names to exclusively lint (takes precedence over ignoredAttributes).
      * If not provided, the linter will fall back to a recommended built-in accepted-list of common translatable
-     * attributes (e.g. `alt`, `title`, `placeholder`, `aria-label`, ...). See README for the exact recommended list.
+     * attributes (e.g. `alt`, `title`, `placeholder`, `aria-label`, ...). The recommended list: https://www.i18next.com/cli/configuration#extending-the-recommended-lint-tags-and-attributes
      *
      * An object sets them per JSX element, for `lint` and `instrument`:
      * `{ '*': ['!label'], Button: ['label'], 'Select.Option': ['hint'] }`. A name adds an attribute to the
@@ -118,7 +118,7 @@ export interface I18nextToolkitConfig {
      *
      * If not provided (and no `extract.acceptedTags` is set), the linter will fall back to a recommended
      * built-in accepted-list of common content-bearing tags (e.g. `p`, `span`, `div`, `button`, `label`, ...).
-     * See README for the exact recommended list.
+     * The recommended list: https://www.i18next.com/cli/configuration#extending-the-recommended-lint-tags-and-attributes
      *
      * Pass `'all'` to lint every tag (including custom JSX components); `ignoredTags` still apply.
      */
@@ -321,7 +321,7 @@ export interface I18nextToolkitConfig {
      *
      * If not provided (and no `extract.acceptedAttributes` is set), the linter will fall back to a recommended
      * built-in accepted-list of common translatable attributes (e.g. `alt`, `title`, `placeholder`, `aria-label`, ...).
-     * See README for the exact recommended list.
+     * The recommended list: https://www.i18next.com/cli/configuration#extending-the-recommended-lint-tags-and-attributes
      *
      * Also takes the per-element object form described at `extract.acceptedAttributes` (here for `lint` only).
      */
@@ -331,7 +331,7 @@ export interface I18nextToolkitConfig {
      *
      * If not provided (and no `extract.acceptedTags` is set), the linter will fall back to a recommended
      * built-in accepted-list of common content-bearing tags (e.g. `p`, `span`, `div`, `button`, `label`, ...).
-     * See README for the exact recommended list.
+     * The recommended list: https://www.i18next.com/cli/configuration#extending-the-recommended-lint-tags-and-attributes
      *
      * Pass `'all'` to lint every tag (including custom JSX components); `ignoredTags` still apply.
      */

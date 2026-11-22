@@ -58,7 +58,7 @@ These three mistakes are the common ones:
 react-i18next also has `IcuTrans`: `defaultTranslation` holds the ICU message
 with numbered tags and `content` declares the elements, e.g.
 `<IcuTrans i18nKey="invite" defaultTranslation="We invited <0>{user}</0>." content={[{ type: 'strong' }]} values={{ user }} />`.
-See <https://react.i18next.com/latest/icu-trans-component>.
+See <https://www.i18next.com/react/latest/icu-trans-component>.
 
 ## TypeScript
 
