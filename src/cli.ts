@@ -250,7 +250,7 @@ program
   .option('--backend <local|locize|other>', 'Translation backend (skips the question). With locize, pass --project-id or set LOCIZE_PROJECTID.')
   .option('--project-id <id>', 'Locize project id (skips the signup page and the credential prompts; the API key stays in LOCIZE_API_KEY).')
   .option('--file-type <ts|js>', 'Config file type (skips the question).')
-  .option('--agent-note', 'Write a short note about this i18n setup for AI coding agents into AGENTS.md (and CLAUDE.md if present) without asking.')
+  .option('--agent-note', 'Write a short note about this i18n setup for AI coding agents into AGENTS.md (and CLAUDE.md if present) without asking. With an existing config, writes only the note, from that config, and asks nothing.')
   .option('--no-agent-note', 'Skip the agent-note question.')
   .action((options) => runInit({
     ci: !!options.ci,
@@ -263,6 +263,7 @@ program
     projectId: options.projectId,
     fileType: options.fileType,
     agentNote: options.agentNote,
+    configPath: program.opts().config,
   }))
 
 program

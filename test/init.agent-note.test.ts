@@ -3,6 +3,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { runInit } from '../src/init'
 import { buildAgentNote, writeAgentNote, AGENT_NOTE_HEADING } from '../src/utils/agent-note'
 import { prompt } from '../src/utils/prompt'
+import { loadConfig } from '../src/config'
 import { resolve } from 'path'
 
 vi.mock('fs/promises', async () => {
@@ -15,6 +16,10 @@ vi.mock('nano-spawn', () => ({
 }))
 vi.mock('../src/heuristic-config', () => ({
   detectConfig: vi.fn(),
+}))
+// the config files live in memfs, which jiti and import() cannot read; undefined means "no config"
+vi.mock('../src/config', () => ({
+  loadConfig: vi.fn(),
 }))
 
 const read = (file: string) => vol.promises.readFile(resolve('/', file), 'utf-8') as Promise<string>
@@ -54,6 +59,8 @@ describe('init: non-interactive mode and the agent note', () => {
     expect(content).toContain('input: "src/**/*.{js,jsx,mjs,ts,tsx}"')
     expect(content).not.toContain('locize')
     expect(await exists('AGENTS.md')).toBe(false)
+    // only --agent-note looks for an existing config; ensureConfig's runInit() relies on that
+    expect(loadConfig).not.toHaveBeenCalled()
   })
 
   it('--yes --backend locize reads the project id from the environment and never opens a browser', async () => {
@@ -156,6 +163,93 @@ describe('init: non-interactive mode and the agent note', () => {
     const other = buildAgentNote({ locales: ['en'], output: 'out/{{language}}.json', backend: 'other' })
     expect(other).toContain('This project uses i18next.')
     expect(other).not.toContain('Locize')
+  })
+
+  describe('with an existing config', () => {
+    const existing = "export default {\n  locales: ['de', 'en'],\n  extract: { input: 'src/**/*.ts', output: 'i18n/{{language}}.json' }\n}\n"
+    const config = { locales: ['de', 'en'], extract: { input: 'src/**/*.ts', output: 'i18n/{{language}}.json', primaryLanguage: 'de' } }
+
+    it('--agent-note asks nothing, writes the note from the config and leaves the config alone', async () => {
+      vol.fromJSON({ '/i18next.config.ts': existing })
+      vi.mocked(loadConfig).mockResolvedValueOnce(config as any)
+      await runInit({ agentNote: true })
+      expect(prompt).not.toHaveBeenCalled()
+      expect(await read('i18next.config.ts')).toBe(existing)
+      expect(await exists('i18next.config.js')).toBe(false)
+      const note = await read('AGENTS.md')
+      expect(note).toContain('Locale files live in `i18n/{{language}}.json`; the source language is `de`.')
+    })
+
+    it('--yes --agent-note writes no second config and does not overwrite the existing one', async () => {
+      vol.fromJSON({ '/i18next.config.ts': existing })
+      vi.mocked(loadConfig).mockResolvedValueOnce(config as any)
+      await runInit({ yes: true, agentNote: true })
+      expect(await read('i18next.config.ts')).toBe(existing)
+      expect(await exists('i18next.config.js')).toBe(false)
+
+      vol.reset()
+      vol.fromJSON({ '/i18next.config.js': existing })
+      vi.mocked(loadConfig).mockResolvedValueOnce(config as any)
+      await runInit({ yes: true, agentNote: true })
+      expect(await read('i18next.config.js')).toBe(existing)
+      expect(await read('AGENTS.md')).toContain('`i18n/{{language}}.json`')
+    })
+
+    it('documents the Locize sync when the config has a locize block, and --backend picks the note otherwise', async () => {
+      vi.mocked(loadConfig).mockResolvedValueOnce({ ...config, locize: { projectId: 'proj-9' } } as any)
+      await runInit({ agentNote: true })
+      expect(await read('AGENTS.md')).toContain('Translations are managed in Locize (project `proj-9`)')
+
+      vol.reset()
+      vi.mocked(loadConfig).mockResolvedValueOnce(config as any)
+      await runInit({ agentNote: true, backend: 'other' })
+      expect(await read('AGENTS.md')).not.toContain('Locize')
+    })
+
+    it('a locize block whose project id comes from an unset variable still gets the Locize note; --project-id and LOCIZE_PROJECTID fill the id', async () => {
+      // `projectId: process.env.LOCIZE_PROJECTID` with the variable unset
+      vi.mocked(loadConfig).mockResolvedValueOnce({ ...config, locize: { projectId: undefined } } as any)
+      await runInit({ agentNote: true })
+      const note = await read('AGENTS.md')
+      expect(note).toContain('Translations are managed in Locize:')
+      expect(note).not.toContain('no translation management service is set up')
+
+      vol.reset()
+      vi.stubEnv('LOCIZE_PROJECTID', 'env-1')
+      vi.mocked(loadConfig).mockResolvedValueOnce({ ...config, locize: {} } as any)
+      await runInit({ agentNote: true })
+      expect(await read('AGENTS.md')).toContain('(project `env-1`)')
+
+      vol.reset()
+      vi.mocked(loadConfig).mockResolvedValueOnce(config as any)
+      await runInit({ agentNote: true, backend: 'locize', projectId: 'flag-1' })
+      expect(await read('AGENTS.md')).toContain('(project `flag-1`)')
+    })
+
+    it('stops with a message when the config sets no extract.output', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit') }) as any)
+      vi.mocked(loadConfig).mockResolvedValueOnce({ locales: ['en'], extract: { primaryLanguage: 'en' } } as any)
+      await expect(runInit({ agentNote: true })).rejects.toThrow('exit')
+      expect(process.exit).toHaveBeenCalledWith(1)
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('extract.output'))
+      expect(await exists('AGENTS.md')).toBe(false)
+    })
+
+    it('reads the config from --config, and stops instead of running the wizard when that file is missing', async () => {
+      vi.mocked(loadConfig).mockResolvedValueOnce(config as any)
+      await runInit({ agentNote: true, configPath: 'config/i18next.config.ts' })
+      expect(loadConfig).toHaveBeenCalledWith('config/i18next.config.ts')
+      expect(await exists('i18next.config.ts')).toBe(false)
+
+      vol.reset()
+      vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit') }) as any)
+      vi.mocked(loadConfig).mockResolvedValueOnce(null)
+      await expect(runInit({ yes: true, agentNote: true, configPath: 'missing.ts' })).rejects.toThrow('exit')
+      expect(prompt).not.toHaveBeenCalled()
+      expect(await exists('i18next.config.js')).toBe(false)
+      expect(await exists('AGENTS.md')).toBe(false)
+    })
   })
 
   it('writeAgentNote leaves a file that already carries the heading untouched', async () => {

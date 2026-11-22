@@ -148,11 +148,19 @@ npx i18next-cli init
   With `--yes` and neither, no `locize` block is written and the signup URL
   is printed.
 - `--agent-note` / `--no-agent-note`: write the note for AI coding agents
-  described below without asking, or skip the question.
+  described below without asking, or skip the question. In a project that
+  already has a config (`i18next.config.{ts,js,mjs,cjs}`, or the file given
+  with `--config`), `--agent-note` writes only the note, from that config,
+  asks nothing and leaves the config as it is. The note documents Locize when
+  the config has a `locize` block and the local files otherwise; `--backend`
+  overrides that.
 
 ```bash
 # non-interactive, e.g. from an AI coding agent
 npx i18next-cli init --yes --locales en,de --backend local --agent-note
+
+# a project that already has a config: add only the note
+npx i18next-cli init --agent-note
 ```
 
 The wizard asks for the config file type, locales, source-file glob, output
@@ -180,8 +188,10 @@ append a short `## Internationalization` section to `AGENTS.md` and, if it
 exists, `CLAUDE.md` (when neither exists, `AGENTS.md` is created, plus a
 `CLAUDE.md` that imports it if the project has a `.claude/` folder, because
 Claude Code reads `CLAUDE.md` only). It is plain documentation for whoever,
-human or agent, works on the project next; edit or delete it at any time. The
-exact text, so there is nothing to guess:
+human or agent, works on the project next; edit or delete it at any time. A
+project that already has a config gets only the note with
+`npx i18next-cli init --agent-note`. The exact text, so there is nothing to
+guess:
 
 > ## Internationalization
 >

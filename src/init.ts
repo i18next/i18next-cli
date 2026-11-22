@@ -4,8 +4,9 @@ import { resolve } from 'node:path'
 import { detectConfig } from './heuristic-config.js'
 import { openBrowser, promptLocizeCredentials } from './utils/locize-onboarding.js'
 import { scaffoldInlangProject } from './utils/inlang-scaffold.js'
-import { buildAgentNote, writeAgentNote } from './utils/agent-note.js'
+import { buildAgentNote, writeAgentNote, type AgentNoteInput } from './utils/agent-note.js'
 import { readProjectDeps } from './utils/file-utils.js'
+import { loadConfig } from './config.js'
 
 const LOCIZE_SIGNUP_URL = 'https://www.locize.app/register?from=i18next_cli__init-wizard'
 
@@ -61,6 +62,15 @@ async function isTypeScriptProject (): Promise<boolean> {
   }
 }
 
+async function writeNote (input: AgentNoteInput) {
+  const written = await writeAgentNote(buildAgentNote(input))
+  if (written.length > 0) {
+    console.log(`📝 Agent note written to: ${written.join(', ')}`)
+  } else {
+    console.log('Agent note already present (heading "## Internationalization" found); nothing written.')
+  }
+}
+
 /**
  * Interactive setup wizard for creating a new i18next-cli configuration file.
  *
@@ -107,11 +117,34 @@ export interface InitOptions {
   projectId?: string
   /** Config file type. */
   fileType?: 'ts' | 'js'
-  /** `true` writes the agent note without asking, `false` skips the question, `undefined` asks. */
+  /** `true` writes the agent note without asking, `false` skips the question, `undefined` asks. With an existing config, `true` writes only the note. */
   agentNote?: boolean
+  /** Path to an existing config (the global `--config` option). */
+  configPath?: string
 }
 
 export async function runInit (options: InitOptions = {}) {
+  // An existing project that only wants the agent note: describe its config, ask nothing, write no config.
+  const existingConfig = options.agentNote ? await loadConfig(options.configPath) : null
+  if (options.agentNote && options.configPath && !existingConfig) process.exit(1) // loadConfig said the file is missing
+  if (existingConfig) {
+    console.log('Found an existing i18next-cli config; writing only the agent note from it. The config stays as it is and the other init options are not used.')
+    const { primaryLanguage } = existingConfig.extract
+    const output = typeof existingConfig.extract.output === 'function' ? existingConfig.extract.output('{{language}}', '{{namespace}}') : existingConfig.extract.output
+    if (!output) {
+      console.error('The config sets no extract.output, so the note cannot say where the locale files live. Add it, then run init --agent-note again.')
+      process.exit(1)
+    }
+    const { locize } = existingConfig
+    await writeNote({
+      locales: [primaryLanguage!],
+      output,
+      backend: options.backend ?? (locize ? 'locize' : 'local'),
+      locizeProjectId: options.projectId || locize?.projectId || process.env.LOCIZE_PROJECTID || process.env.LOCIZE_PID,
+    })
+    return
+  }
+
   console.log('Welcome to the i18next-cli setup wizard!')
   console.log('Scanning your project for a recommended configuration...')
 
@@ -333,13 +366,7 @@ module.exports = ${toJs(configObject)}`
   }
 
   if (answers.agentNote) {
-    const note = buildAgentNote({ locales: answers.locales, output: answers.output, backend: answers.backend, locizeProjectId: locizeConfig?.projectId })
-    const written = await writeAgentNote(note)
-    if (written.length > 0) {
-      console.log(`📝 Agent note written to: ${written.join(', ')}`)
-    } else {
-      console.log('Agent note already present (heading "## Internationalization" found); nothing written.')
-    }
+    await writeNote({ locales: answers.locales, output: answers.output, backend: answers.backend, locizeProjectId: locizeConfig?.projectId })
   }
 
   if (locizeConfig) {

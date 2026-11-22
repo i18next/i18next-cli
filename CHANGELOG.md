@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(init): in a project that already has a config, `init --agent-note` writes only the agent note, from that config
+  (locales, output path, `locize` block), asks nothing and leaves the config alone. Before, it ran the whole wizard,
+  and with `--yes` it overwrote an existing `i18next.config.js` with the defaults or wrote a second config beside
+  `i18next.config.ts`. Without a config, `init` works as before.
+
 ## 1.93.1
 
 - fix(extract): keys named like `Object.prototype` members (`constructor`, `toString`, `valueOf`,
