@@ -294,15 +294,15 @@ export async function runInstrumenter (
       const loads = (file: string) => [file, ...nextFiles!.imports.get(file) ?? []].some(f => contents.get(f)!.includes('serverSideTranslations'))
       const pagesWithoutProps = results.filter(r => nextKinds?.get(r.file) === 'pages' && isPagesRoute(r.file) && !loads(r.file)).map(r => r.file)
       if (pagesWithoutProps.length) {
-        logger.warn(`These pages need serverSideTranslations() in getStaticProps or getServerSideProps, or their texts render untranslated (https://github.com/i18next/next-i18next#pages-router-setup):\n${pagesWithoutProps.map(f => `  ${f}`).join('\n')}`)
+        logger.warn(`These pages need serverSideTranslations() in getStaticProps or getServerSideProps, or their texts render untranslated (https://www.i18next.com/next/pages-router/setup):\n${pagesWithoutProps.map(f => `  ${f}`).join('\n')}`)
       }
       if (!i18nextInUse && !await nextI18nextConfigured()) {
         const kinds = new Set(results.map(r => nextKinds?.get(r.file)))
         logger.info([
           'The code now uses next-i18next. Set it up:',
           `  npm install next-i18next i18next react-i18next${config.extract.messageFormat === 'icu' ? ' i18next-icu intl-messageformat' : config.extract.messageFormat === 'mf2' ? ' i18next-mf2' : ''}`,
-          ...(kinds.has('server') || kinds.has('client') ? ['  App Router: i18n.config, proxy and root layout, https://github.com/i18next/next-i18next#app-router-setup (no [lng] folder: localeInPath: false)'] : []),
-          ...(kinds.has('pages') ? ['  Pages Router: next-i18next.config.js, appWithTranslation and serverSideTranslations, https://github.com/i18next/next-i18next#pages-router-setup'] : [])
+          ...(kinds.has('server') || kinds.has('client') ? ['  App Router: i18n.config, proxy and root layout, https://www.i18next.com/next/app-router/setup (no [lng] folder: localeInPath: false)'] : []),
+          ...(kinds.has('pages') ? ['  Pages Router: next-i18next.config.js, appWithTranslation and serverSideTranslations, https://www.i18next.com/next/pages-router/setup'] : [])
         ].join('\n'))
       }
     }

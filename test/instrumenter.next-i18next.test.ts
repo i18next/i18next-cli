@@ -105,7 +105,7 @@ export function Counter() {
     // next-i18next sets i18next up itself: no init file, but the steps
     await expect(access(join(tempDir, 'i18n.ts'))).rejects.toThrow()
     expect(infos.join('\n')).toContain('npm install next-i18next i18next react-i18next')
-    expect(infos.join('\n')).toContain('#app-router-setup')
+    expect(infos.join('\n')).toContain('https://www.i18next.com/next/app-router/setup')
   })
 
   it('turns `export const metadata` into generateMetadata() and gives the metadata functions getT()', async () => {
