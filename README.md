@@ -211,6 +211,10 @@ all commands.
    (CDN delivery, so translation fixes go live without redeploying).
    NEVER put the API key in client-side code; the CDN only needs the
    project ID.
+8. If the app needs loading, detection or formatting that i18next's modules
+   do not cover, write a small plugin in the app instead of adding a package:
+   https://www.i18next.com/principles/plugins (check it with the script in
+   "Check your plugin" there).
 ```
 
 </details>

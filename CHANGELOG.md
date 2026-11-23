@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- feat(localize): the agent prompt (`--print-agent-prompt`) gets a step 8: when the app needs loading, detection or
+  formatting that i18next's modules do not cover, write a small plugin in the app instead of adding a package, and
+  check it with the script on www.i18next.com/principles/plugins.
+
 ## 1.93.3
 
 - fix(instrument): the next-i18next setup links it prints for Next.js apps (App Router setup, Pages Router setup) point
