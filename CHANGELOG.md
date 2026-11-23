@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 1.94.1
 
 - fix(skill): the `i18next-localization` skill offers the Locize MCP server and the locize-agents conventions only
   when the developer chose Locize, and the agent asks before adding them. "After it is localized" gave them to every
