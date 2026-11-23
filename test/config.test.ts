@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { loadConfig } from '../src/config'
+import { loadTranslationFile } from '../src/utils/file-utils'
 
 describe('config: loadConfig with real files', () => {
   let tempDirPath: string
@@ -66,6 +67,26 @@ describe('config: loadConfig with real files', () => {
     // 3. Assert the outcome
     expect(config).not.toBeNull()
     expect(config?.locales).toEqual(['en-US', 'de-DE'])
+  })
+
+  it('loads the config and .ts translation files with a root "/*" path in tsconfig.json', async () => {
+    await writeFile(
+      join(tempDirPath, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { paths: { '/*': ['./*'], '@/*': ['./src/*'] } } })
+    )
+    await mkdir(join(tempDirPath, 'src', 'i18n'), { recursive: true })
+    await writeFile(join(tempDirPath, 'src', 'i18n', 'settings.ts'), 'export const LOCALES = [\'en\', \'de\']')
+    await writeFile(
+      join(tempDirPath, 'i18next.config.ts'),
+      `import { LOCALES } from '@/i18n/settings'
+      export default { locales: LOCALES, extract: { input: 'src/**/*.ts', output: 'locales/{{language}}/{{namespace}}.ts' } }`
+    )
+    await mkdir(join(tempDirPath, 'locales', 'de'), { recursive: true })
+    await writeFile(join(tempDirPath, 'locales', 'de', 'translation.ts'), 'export default { hello: \'Hallo\' }')
+
+    const config = await loadConfig()
+    expect(config?.locales).toEqual(['en', 'de'])
+    expect(await loadTranslationFile(join(tempDirPath, 'locales', 'de', 'translation.ts'))).toEqual({ hello: 'Hallo' })
   })
 
   it('should load config when given an explicit path (relative)', async () => {

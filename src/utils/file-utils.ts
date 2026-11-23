@@ -3,7 +3,7 @@ import { basename, dirname, extname, relative, resolve, normalize, sep } from 'n
 import { minimatch } from 'minimatch'
 import { createJiti } from 'jiti'
 import type { I18nextToolkitConfig } from '../types.js'
-import { getTsConfigAliases } from '../config.js'
+import { getJitiAliases } from '../config.js'
 import { JsonParser, JsonObjectNode } from '@croct/json5-parser'
 import yaml from 'yaml'
 
@@ -248,7 +248,7 @@ export async function loadTranslationFile (filePath: string): Promise<Record<str
     // degrading to `null` here rather than aborting the whole command.
     try {
       // Load TypeScript path aliases for proper module resolution
-      const aliases = await getTsConfigAliases()
+      const aliases = await getJitiAliases()
 
       const jiti = createJiti(process.cwd(), {
         alias: aliases,

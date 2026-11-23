@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 import { writeFile, access } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { createJiti } from 'jiti'
-import { getTsConfigAliases } from './config.js'
+import { getJitiAliases } from './config.js'
 
 /**
  * Path where the new configuration file will be created
@@ -61,7 +61,7 @@ async function loadLegacyConfig (configPath: string): Promise<any> {
 
     // Use jiti for TypeScript files, native import for JavaScript
     if (configPath.endsWith('.ts')) {
-      const aliases = await getTsConfigAliases()
+      const aliases = await getJitiAliases()
       const jiti = createJiti(process.cwd(), {
         alias: aliases,
         interopDefault: false,

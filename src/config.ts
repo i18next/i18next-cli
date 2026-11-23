@@ -92,7 +92,7 @@ export async function loadConfig (configPath?: string, logger: Logger = new Cons
 
     // Use jiti for TypeScript files, native import for JavaScript
     if (configPathFound.endsWith('.ts')) {
-      const aliases = await getTsConfigAliases()
+      const aliases = await getJitiAliases()
       const jiti = createJiti(process.cwd(), {
         alias: aliases,
         interopDefault: false,
@@ -214,4 +214,14 @@ export async function getTsConfigAliases (): Promise<Record<string, string>> {
     // Return empty if tsconfig doesn't exist or fails to parse
     return {}
   }
+}
+
+/**
+ * The tsconfig aliases for jiti. jiti matches an alias as a plain prefix, so a root entry like
+ * `"/*": ["./*"]` (key `''`) would match every absolute path, the config's own path included,
+ * and put the project folder in front of it. Those keys are left out here.
+ */
+export async function getJitiAliases (): Promise<Record<string, string>> {
+  const aliases = await getTsConfigAliases()
+  return Object.fromEntries(Object.entries(aliases).filter(([key]) => key && !key.startsWith('/')))
 }

@@ -11,7 +11,7 @@ vi.mock('fs/promises', async () => {
 
 // Mock config module completely
 vi.mock('../src/config', () => ({
-  getTsConfigAliases: vi.fn().mockResolvedValue({}),
+  getJitiAliases: vi.fn().mockResolvedValue({}),
 }))
 
 // Mock jiti completely
