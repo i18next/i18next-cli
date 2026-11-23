@@ -122,15 +122,19 @@ only the project ID.
 
 ## After it is localized
 
-Translation quality is a separate job with its own rules: terminology, tone, and
-prior translations should come from the project's glossary, style guide, and
-translation memory over the Locize MCP server rather than being invented. Those
-conventions live in [locize/locize-agents](https://github.com/locize/locize-agents):
+Translation quality is a separate job with its own rules.
 
-```bash
-claude mcp add --transport http locize https://mcp.locize.app
-```
+- **If the developer chose Locize:** terminology, tone and prior translations
+  come from the project's glossary, style guide and translation memory over the
+  Locize MCP server rather than being invented. Those conventions live in
+  [locize/locize-agents](https://github.com/locize/locize-agents). Ask before
+  adding the server to their agent, and before copying that repo's `CLAUDE.md`
+  or `AGENTS.md` into the project:
 
-Then drop that repo's `CLAUDE.md` or `AGENTS.md` into the
-project. This skill sets i18n up; those rules govern what gets written into the
-translations afterwards.
+  ```bash
+  claude mcp add --transport http locize https://mcp.locize.app
+  ```
+
+- **If they keep the files in the repository only:** nothing to add; `npx
+  i18next-cli lint` and `status` keep checking placeholders and untranslated
+  values.

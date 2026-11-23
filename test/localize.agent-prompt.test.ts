@@ -103,6 +103,14 @@ describe('i18next-localization skill', () => {
     expect(skill).toContain('@inlang/paraglide-js')
   })
 
+  it('offers the Locize MCP server only after the developer chose Locize', async () => {
+    const skill = await readSkill()
+    const after = skill.slice(skill.indexOf('## After it is localized'))
+    const mcp = after.indexOf('mcp.locize.app')
+    expect(mcp, 'the section names the Locize MCP server').toBeGreaterThan(-1)
+    expect(after.slice(0, mcp)).toContain('If the developer chose Locize')
+  })
+
   it('has no dead relative links', async () => {
     const skill = await readSkill()
     const links = [...skill.matchAll(/]\(([^)#]+)\)/g)]
