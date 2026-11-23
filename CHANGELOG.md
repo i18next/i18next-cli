@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.94.2
+
+- fix: a `"/*"` entry in the `paths` of `tsconfig.json`/`jsconfig.json` no longer breaks loading `i18next.config.ts`
+  and `.ts`/`.js` translation files. jiti put the project folder in front of every absolute path, so the config failed
+  to load and `extract` rewrote `.ts` translation files without their existing values
+  ([#335](https://github.com/i18next/i18next-cli/issues/335))
+
 ## 1.94.1
 
 - fix(skill): the `i18next-localization` skill offers the Locize MCP server and the locize-agents conventions only
