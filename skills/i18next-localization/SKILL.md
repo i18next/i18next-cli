@@ -122,6 +122,11 @@ only the project ID.
 
 ## After it is localized
 
+Every text written or changed from now on follows the rules for user-facing
+texts (whole sentences, plurals by count, keys by meaning and the others) in the
+[i18n-best-practices](https://github.com/i18next/i18n-best-practices) skill.
+Suggest it to the developer: `npx skills add i18next/i18n-best-practices`.
+
 Translation quality is a separate job with its own rules.
 
 - **If the developer chose Locize:** terminology, tone and prior translations

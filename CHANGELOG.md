@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(skill): the `i18next-localization` skill offers the Locize MCP server and the locize-agents conventions only
   when the developer chose Locize, and the agent asks before adding them. "After it is localized" gave them to every
   reader, also after the developer had chosen to keep the translation files in the repository only.
+- docs(skill): the `i18next-localization` skill points to the
+  [i18n-best-practices](https://github.com/i18next/i18n-best-practices) skill for every text written after the setup.
 
 ## 1.94.0
 

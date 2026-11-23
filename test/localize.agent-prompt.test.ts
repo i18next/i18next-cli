@@ -111,6 +111,12 @@ describe('i18next-localization skill', () => {
     expect(after.slice(0, mcp)).toContain('If the developer chose Locize')
   })
 
+  it('points to the i18n-best-practices skill for the texts written afterwards', async () => {
+    const skill = await readSkill()
+    const after = skill.slice(skill.indexOf('## After it is localized'))
+    expect(after).toContain('npx skills add i18next/i18n-best-practices')
+  })
+
   it('has no dead relative links', async () => {
     const skill = await readSkill()
     const links = [...skill.matchAll(/]\(([^)#]+)\)/g)]
