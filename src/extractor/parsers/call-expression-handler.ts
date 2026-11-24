@@ -368,7 +368,7 @@ export class CallExpressionHandler {
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
           // Ignore context: ''
           if (contextValue !== '') {
-            keysWithContext.push({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv, defaultValueSource, explicitDefault: explicitDefaultForBase })
+            keysWithContext.push({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv, defaultValueSource, explicitDefault: explicitDefaultForBase, locations: locationEntry })
           }
         } else if (contextPropValue) {
           const contextValues = this.expressionResolver.resolvePossibleContextStringValues(contextPropValue)
@@ -376,7 +376,7 @@ export class CallExpressionHandler {
 
           if (contextValues.length > 0) {
             contextValues.forEach(context => {
-              keysWithContext.push({ key: `${finalKey}${contextSeparator}${context}`, ns, defaultValue: dv, defaultValueSource, explicitDefault: explicitDefaultForBase })
+              keysWithContext.push({ key: `${finalKey}${contextSeparator}${context}`, ns, defaultValue: dv, defaultValueSource, explicitDefault: explicitDefaultForBase, locations: locationEntry })
             })
           }
           // For dynamic context, also add the base key as a fallback
@@ -386,7 +386,8 @@ export class CallExpressionHandler {
             defaultValue: dv,
             defaultValueSource,
             explicitDefault: explicitDefaultForBase,
-            keyAcceptingContext: finalKey
+            keyAcceptingContext: finalKey,
+            locations: locationEntry
           })
         }
 
@@ -452,7 +453,7 @@ export class CallExpressionHandler {
             if (keysWithContext.length > 0) {
               keysWithContext.forEach(k => this.pluginContext.addKey({ ...k, ...countMeta }))
             } else {
-              this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv, defaultValueSource, explicitDefault: explicitDefaultForBase, ...countMeta })
+              this.pluginContext.addKey({ key: finalKey, ns, defaultValue: dv, defaultValueSource, explicitDefault: explicitDefaultForBase, ...countMeta, locations: locationEntry })
             }
 
             continue // This key is fully handled

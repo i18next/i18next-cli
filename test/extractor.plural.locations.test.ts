@@ -250,3 +250,67 @@ describe('extractor: plural key location tracking (#201)', () => {
     )
   })
 })
+
+describe('extractor: context key location tracking (#336)', () => {
+  beforeEach(async () => {
+    vol.reset()
+    vi.clearAllMocks()
+    const { glob } = await import('glob')
+    ;(glob as any).mockResolvedValue(['/src/App.tsx'])
+  })
+
+  /** key -> "line:column" of each location, '-' when the key has none */
+  async function locationsByKey (config: I18nextToolkitConfig) {
+    const { allKeys } = await findKeys(config)
+    return Object.fromEntries([...allKeys.values()].map(ek => [
+      ek.key,
+      ek.locations ? ek.locations.map(l => `${l.file}:${l.line}:${l.column}`).join(',') : '-'
+    ]))
+  }
+
+  it('attaches locations to keys from a t() call with context and no count', async () => {
+    vol.fromJSON({
+      '/src/App.tsx': [
+        't(\'stat\', { context: \'video\' })',
+        'const kind = flag ? \'audio\' : \'video\'',
+        't(\'dyn\', { context: kind })',
+        't(\'unknown\', { context: anything })',
+      ].join('\n')
+    })
+
+    expect(await locationsByKey(mockConfig)).toEqual({
+      stat_video: '/src/App.tsx:1:2',
+      dyn_audio: '/src/App.tsx:3:2',
+      dyn_video: '/src/App.tsx:3:2',
+      dyn: '/src/App.tsx:3:2',
+      unknown: '/src/App.tsx:4:2',
+    })
+  })
+
+  it('attaches locations to keys from a call with count under disablePlurals', async () => {
+    vol.fromJSON({
+      '/src/App.tsx': [
+        't(\'items\', { count: n })',
+        't(\'friends\', { count: n, context: \'male\' })',
+      ].join('\n')
+    })
+
+    expect(await locationsByKey({ ...mockConfig, extract: { ...mockConfig.extract, disablePlurals: true } })).toEqual({
+      items: '/src/App.tsx:1:2',
+      friends_male: '/src/App.tsx:2:2',
+    })
+  })
+
+  it('keeps one location per call when a context key is used twice', async () => {
+    vol.fromJSON({
+      '/src/App.tsx': [
+        't(\'title\', { context: \'video\' })',
+        't(\'title\', { context: \'video\' })',
+      ].join('\n')
+    })
+
+    expect(await locationsByKey(mockConfig)).toEqual({
+      title_video: '/src/App.tsx:1:2,/src/App.tsx:2:2',
+    })
+  })
+})
