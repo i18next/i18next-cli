@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(extract): a type read through a renaming import (`import { components as api }`, `import type`, `import * as`,
+  re-exports) resolves the names inside it (`Omit<components['schemas']['Foo'], 'type'>`) in the file that declares
+  it; they were looked up in the importing file, which took another file's `components` and extracted its keys
+  ([#330](https://github.com/i18next/i18next-cli/issues/330))
+
 ## 1.95.0
 
 From a second run of `instrument` on the dashboard of the first one, this time all seven of its packages (about
