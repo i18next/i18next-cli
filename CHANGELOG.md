@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+From a second run of `instrument` on the dashboard of the first one, this time all seven of its packages (about
+1,200 files), its texts in the code; every rewrite read:
+
+- fix(instrument): a variable that holds JSX (`const link = <Link …>`) and `children` are never interpolated into a
+  `t()` value, where they showed as `[object Object]`; the text stops at them.
+- fix(instrument): the init file is generated when `i18next` shows up only in a string (a setup guide's snippet), not
+  in an import or re-export statement; none is written at the root of a workspace without `src`, which no app imports
+  from (a `pnpm-workspace.yaml` with settings only is no workspace).
+- fix(instrument): a string in a TypeScript type is never wrapped (`useState<{ title: 'Hello there' }>()`), and no
+  placeholder is named after an option of `t()` (`count`, `context`, …).
+- fix(instrument): selectors of an optional call (`el?.querySelector('h1, h2')`) and everything under a `className`,
+  `classNames`, `classes` or `style` property (`classNames: { container: () => 'btn btn-secondary' }`) stay as they
+  are; so do strings pushed into an `ignore` list and a region code with acronyms (`EU VAT`, `CA GST/HST`).
+- feat(instrument): a component's prop is text when its name is or ends in `label`, `title` or `message`
+  (`saveLabel`), names a button's label (`labelConfirm`) or is the `text` of a component named for text
+  (`<FieldLabel text=…>`), or when its value reads as a sentence; an icon's `aria-label` and `data-tip` are text; so
+  are either branch of a choice in a text attribute (`data-tip={open ? 'Collapse' : 'Expand'}`), a single word under a
+  text property (`{ label: 'has' }`) and what a title setter gets (`useDocumentTitle('Projects')`).
+- feat(instrument): module-scope texts are translated when they are used instead of being skipped: JSX text there
+  becomes a `<Trans>` (it translates when it renders; not in a Suspense `fallback`), and an object property's plain
+  text value is read by a getter (`label: 'Projects'` becomes `get label () { return i18next.t('projects', 'Projects') }`).
+  Left, and named with their lines: constants, entries of an array of strings, values computed on every read,
+  properties of an object passed to a module-level call or kept to a type with `satisfies`, objects the file changes,
+  and what code running at import reads, in any instrumented file (also through a function or class called at module
+  scope). Review the getters (`--dry-run` marks them): a map of data that is sent or stored must stay as it was.
+- fix(instrument): a property named for a format, a style or an event (`format: 'MMM D, YYYY'`, `transition`, `event`,
+  `font`, `shortcut`) and a literal kept as its type (`'on' as const`) are no text; a one-line function component
+  (`function App () { return <h1>…</h1> }`) gets its `useTranslation()` on a line of its own instead of a syntax error.
+- fix(instrument): `writeExtractedKeys` also writes the keys of a split text and of the words in a placeholder's value.
+- fix(instrument): the callback of a `.map()` (or another array method) at module scope, and an IIFE, run at import:
+  their texts no longer get an `i18next.t()` that returned an empty string before i18next was initialized.
+- feat(instrument): the words in a placeholder's value are texts of their own (`name || t('items', 'items')`), and a
+  template literal with one optional part becomes two texts (`left ? t(…, 'uses AI tokens, {{left}} left') :
+  t(…, 'uses AI tokens')`) instead of English words in a placeholder.
+- feat(instrument): texts that only build data stay: a `mailto:` body or another URL part (`encodeURIComponent`), a
+  file's content (`new Blob()`, `new File()`, `saveAs()`, `fs.writeFile()`, a zip's `.file(name, data)`), also through
+  variables, as for `console` calls before.
+- feat(instrument): in an object of strings, the sibling phrases of a text are texts too (`{ ht: 'by human', tm: 'by
+  translation memory' }`).
+- feat(instrument): the run names what to look at by hand, with lines: the module-scope texts left, and the parts of
+  a sentence (`' (via CLI)'`, `', which needs {{name}}'`); `--dry-run` marks getters and two-text rewrites.
+- fix(instrument): a Next.js app gets next-i18next's calls even when a page shows an i18next setup snippet as text:
+  the import statements decide, not the file's text.
+- feat(instrument): a placeholder name taken already goes to what the value is of (`{{name}} … {{plan}}` for
+  `project.name` and `name(plan)`, not `{{name2}}`); a `<Trans>` around text over several lines gets lines of its own.
+- Behaviour change (instrument): a React state setter (`const [lng, setLng] = useState()`) is no longer a
+  language-change site: it holds a component's state, often a view's filter. A warning names each one, to add
+  `i18n.changeLanguage()` by hand where it sets the app's language.
+
 ## 1.94.3
 
 - fix(extract): keys from a `t()` call with `context` and no `count`, and from a call with `count` under

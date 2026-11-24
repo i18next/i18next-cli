@@ -6,15 +6,15 @@ import type { Module } from '@swc/types'
 import type { StringLiteral } from '@swc/core'
 import { prompt } from '../../utils/prompt.js'
 import { styleText } from 'node:util'
-import type { AttributeRules, ExtractedKey, Logger, I18nextToolkitConfig, InstrumenterOptions, CandidateString, FileInstrumentationResult, InstrumentationResults, ComponentBoundary, FileScanResult, ImportDeclarationSpan, LanguageChangeSite, MemoHookSpan, Plugin, PluralHelperImport } from '../../types.js'
-import { detectCandidate, HTML_ENTITY_RE } from './string-detector.js'
+import type { AttributeRules, GetterProperty, ExtractedKey, Logger, I18nextToolkitConfig, InstrumenterOptions, CandidateString, FileInstrumentationResult, InstrumentationResults, ComponentBoundary, FileScanResult, ImportDeclarationSpan, LanguageChangeSite, MemoHookSpan, Plugin, PluralHelperImport } from '../../types.js'
+import { detectCandidate, HTML_ENTITY_RE, isTechnicalPropertyName } from './string-detector.js'
 import { transformFile as performTransformation } from './transformer.js'
 import { generateKeyFromContent, createKeyRegistry } from './key-generator.js'
 import { createSpinnerLike } from '../../utils/wrap-ora.js'
 import { ConsoleLogger } from '../../utils/logger.js'
-import { ignoredAttributeSet, ignoredTags, importAliases, jsxElementName, resolveElementAttributes, translatablePropertySet } from '../../utils/jsx-attributes.js'
+import { ignoredAttributeSet, ignoredTags, importAliases, jsxElementName, resolveElementAttributes, translatableAttributeSet, translatablePropertySet } from '../../utils/jsx-attributes.js'
 import { normalizeSpansToCharIndices, collectIgnoredLineRanges } from '../../extractor/parsers/ast-utils.js'
-import { getOutputPath, readProjectDeps } from '../../utils/file-utils.js'
+import { getOutputPath, isWorkspaceRoot, readProjectDeps } from '../../utils/file-utils.js'
 import { findKeys } from '../../extractor/core/key-finder.js'
 import { matchesFunctionPattern } from '../../extractor/utils/function-matcher.js'
 import { classifyNextFiles, projectPath, type NextFileKind } from './next-files.js'
@@ -84,10 +84,16 @@ export async function runInstrumenter (
     const contents = new Map<string, string>()
     for (const file of sourceFiles) contents.set(file, await readFile(file, 'utf-8'))
     const deps = await readProjectDeps()
-    const code = [...contents.values()]
-    const nextI18next = !!deps['next-i18next'] || code.some(c => NEXT_I18NEXT_IMPORT_RE.test(c)) ||
-      (!!deps.next && !deps.i18next && !deps['react-i18next'] && !code.some(c => I18NEXT_IMPORT_RE.test(c)))
+    const anyImports = async (moduleRe: RegExp, textRe: RegExp) => {
+      for (const [file, code] of contents) if (await importsModule(file, code, moduleRe, textRe)) return true
+      return false
+    }
+    const nextI18next = !!deps['next-i18next'] || await anyImports(/^next-i18next(?:\/[\w/]+)?$/, NEXT_I18NEXT_IMPORT_RE) ||
+      (!!deps.next && !deps.i18next && !deps['react-i18next'] && !await anyImports(/^(?:i18next|react-i18next)$/, I18NEXT_IMPORT_RE))
     const nextFiles = nextI18next ? await classifyNextFiles(contents) : undefined
+    // The names other files import and read when they are imported themselves: no getter for them
+    const readElsewhere = new Set<string>()
+    for (const [file, code] of contents) for (const name of await importedNamesReadAtImport(file, code)) readElsewhere.add(name)
     const nextKinds = nextFiles?.kinds
     const serverModule = nextI18next ? findServerModule(contents) : undefined
 
@@ -120,12 +126,19 @@ export async function runInstrumenter (
         const loadResult = await runInstrumentOnLoadPipeline(content, file, plugins, logger)
         if (loadResult === null) continue // plugin says skip this file
         content = loadResult
-        i18nextInUse ||= I18NEXT_IMPORT_RE.test(content) || NEXT_I18NEXT_IMPORT_RE.test(content)
 
         const nextKind = nextKinds?.get(file)
-        const scanResult = await scanFileForCandidates(content, file, config, nextKind)
+        const scanResult = await scanFileForCandidates(content, file, config, nextKind, readElsewhere)
         let { candidates } = scanResult
         const { components, languageChangeSites, imports, memoHooks, pluralHelperImports } = scanResult
+        // An import or re-export statement, not the text of one: a setup guide shows `import i18next from 'i18next'`
+        // in a string
+        i18nextInUse ||= scanResult.importsI18next !== undefined
+          ? scanResult.importsI18next || I18NEXT_REQUIRE_RE.test(content)
+          : I18NEXT_IMPORT_RE.test(content) || NEXT_I18NEXT_IMPORT_RE.test(content)
+        if (scanResult.stateSetterLines?.length) {
+          warnFor(scanResult.stateSetterLines.map(line => `${file}:${line}`).join(', '), STATE_SETTER_NOTE)
+        }
 
         // Run instrumentOnResult plugin pipeline
         candidates = await runInstrumentOnResultPipeline(file, candidates, plugins, logger)
@@ -146,7 +159,7 @@ export async function runInstrumenter (
           totalCandidates += scanResult.moduleScopeSkipped
           totalSkipped += scanResult.moduleScopeSkipped
           moduleScopeTotal += scanResult.moduleScopeSkipped
-          warnFor(`${file} (${scanResult.moduleScopeSkipped})`, MODULE_SCOPE_WARNING)
+          warnFor(`${file} (${scanResult.moduleScopeSkipped}): ${linesLabel(scanResult.moduleScopeLines ?? [])}`, MODULE_SCOPE_WARNING)
         }
 
         if (candidates.length === 0 && languageChangeSites.length === 0) {
@@ -214,11 +227,20 @@ export async function runInstrumenter (
         const approvedCandidates = candidates.filter(c => !c.skipReason)
 
         if (approvedCandidates.length > 0 || languageChangeSites.length > 0) {
-          // Generate keys for approved candidates
+          // Generate keys for approved candidates, and for the texts in their placeholders' values
           for (const candidate of approvedCandidates) {
             if (!candidate.key) {
               candidate.key = keyRegistry.add(generateKeyFromContent(keySourceOf(candidate)), candidate.content)
             }
+            const alternative = candidate.alternative
+            if (alternative && !alternative.key) alternative.key = keyRegistry.add(generateKeyFromContent(alternative.content), alternative.content)
+            for (const interpolation of [...candidate.interpolations ?? [], ...alternative?.interpolations ?? []]) {
+              for (const text of interpolation.texts ?? []) text.key ??= keyRegistry.add(generateKeyFromContent(text.value), text.value)
+            }
+          }
+
+          for (const candidate of approvedCandidates) {
+            if (isSentencePart(candidate)) warnFor(`${file}:${candidate.line} '${candidate.content}'`, FRAGMENT_NOTE)
           }
 
           // After key generation, so ICU/MF2 syntax does not end up in generated keys
@@ -341,6 +363,39 @@ function keySourceOf (candidate: CandidateString): string {
 /** An import of next-i18next, which sets i18next up itself. */
 const NEXT_I18NEXT_IMPORT_RE = /\bfrom\s*['"]next-i18next(?:\/[\w/]+)?['"]|\brequire\(\s*['"]next-i18next(?:\/[\w/]+)?['"]\s*\)/
 
+/** A source file's AST: JSX read in `.js`, `.mjs` and `.ts` files too. */
+async function parseSource (content: string, file: string): Promise<Module> {
+  const fileExt = extname(file).toLowerCase()
+  const isTypeScriptFile = ['.ts', '.tsx', '.mts', '.cts'].includes(fileExt)
+  const options = { decorators: true, dynamicImport: true, comments: true }
+  try {
+    return isTypeScriptFile
+      ? await parse(content, { syntax: 'typescript', tsx: fileExt === '.tsx', ...options })
+      : await parse(content, { syntax: 'ecmascript', jsx: fileExt === '.jsx', ...options })
+  } catch (err) {
+    // Fallback parsing for .ts with JSX, and for .js and .mjs files with JSX
+    if (fileExt === '.ts') return await parse(content, { syntax: 'typescript', tsx: true, ...options })
+    if (fileExt === '.js' || fileExt === '.mjs') return await parse(content, { syntax: 'ecmascript', jsx: true, ...options })
+    throw err
+  }
+}
+
+/**
+ * Whether a file imports (or re-exports, or requires) a module `moduleRe` matches: by its statements, not by its
+ * text, which may show `import i18next from 'i18next'` in a setup guide's snippet. `textRe` finds the files to parse;
+ * one that does not parse goes by its text.
+ */
+async function importsModule (file: string, code: string, moduleRe: RegExp, textRe: RegExp): Promise<boolean> {
+  if (!textRe.test(code)) return false
+  try {
+    const ast = await parseSource(code, file)
+    return ast.body.some((item: any) => /^(?:ImportDeclaration|ExportAllDeclaration|ExportNamedDeclaration)$/.test(item.type) && moduleRe.test(item.source?.value ?? '')) ||
+      [...code.matchAll(/\brequire\(\s*['"]([^'"]+)['"]\s*\)/g)].some(m => moduleRe.test(m[1]))
+  } catch {
+    return true
+  }
+}
+
 /**
  * The module the app imports `getT` from when it is not `next-i18next/server` (`createServerI18next` in its
  * own `i18n.server.ts`, so no init order matters): an alias as written, a relative one as an absolute path.
@@ -381,10 +436,36 @@ async function nextI18nextConfigured (): Promise<boolean> {
 /** An import of i18next or react-i18next (`.init()` alone is any library's: `Sentry.init()`). */
 const I18NEXT_IMPORT_RE = /\bfrom\s*['"](?:i18next|react-i18next)['"]|\brequire\(\s*['"](?:i18next|react-i18next)['"]\s*\)/
 
+/** The modules whose import means i18next is set up: i18next, react-i18next, next-i18next and its entries. */
+const I18NEXT_MODULE_RE = /^(?:i18next|react-i18next|next-i18next(?:\/[\w/]+)?)$/
+
+const STATE_SETTER_NOTE = 'No i18n.changeLanguage() added next to these React state setters (`const [lng, setLng] = useState()`): a component\'s state, often a view\'s filter. Where one sets the app\'s language, add the call by hand.'
+
+const I18NEXT_REQUIRE_RE = /\brequire\(\s*['"](?:i18next|react-i18next|next-i18next(?:\/[\w/]+)?)['"]\s*\)/
+
 const MODULE_SCOPE_WARNING =
-  'A t() call there runs once at import time — before i18next may be initialized — and never updates on language change. ' +
-  'Move the text into a component/hook (e.g. a useSections() hook calling useTranslation()), or read the key at render time. ' +
+  'A t() call there runs once at import time (before i18next is initialized it returns an empty string) and never ' +
+  'updates on language change. Left: constants, array entries, values computed on every read, the arguments of a call ' +
+  'that may read them at once, objects the file changes, and what code running at import reads. Move the text into a component/hook (e.g. a useSections() hook calling ' +
+  'useTranslation()), or read the key at render time. ' +
   'See: https://www.locize.com/blog/how-to-use-i18next-t-outside-react-components/'
+
+const FRAGMENT_NOTE = 'Parts of a sentence (a translator sees each alone, and other languages order the words differently): write the sentence as one text where you can.'
+
+/** Line numbers for a warning: the first ten, then how many more. */
+function linesLabel (all: number[]): string {
+  const lines = [...new Set(all)]
+  return lines.length > 10 ? `lines ${lines.slice(0, 10).join(', ')} and ${lines.length - 10} more` : `line${lines.length > 1 ? 's' : ''} ${lines.join(', ')}`
+}
+
+/**
+ * A text that is a part of a sentence: it starts or ends with a space or starts with a separator (`' (via CLI)'`,
+ * `' or '`, `', which needs {{name}}'`, `'· set in {{lng}}'`).
+ */
+function isSentencePart (candidate: CandidateString): boolean {
+  if (candidate.type === 'jsx-text' || candidate.type === 'jsx-mixed') return false
+  return /^\s|\s$/.test(candidate.content) || /^[,;·–]/.test(candidate.content)
+}
 
 /**
  * Scans a source file for hardcoded string candidates and React component boundaries.
@@ -393,63 +474,31 @@ async function scanFileForCandidates (
   content: string,
   file: string,
   config: I18nextToolkitConfig,
-  nextKind?: NextFileKind
+  nextKind?: NextFileKind,
+  readElsewhere?: ReadonlySet<string>
 ): Promise<FileScanResult> {
   const candidates: CandidateString[] = []
   const components: ComponentBoundary[] = []
   const languageChangeSites: LanguageChangeSite[] = []
   let moduleScopeSkipped = 0
+  const moduleScopeLines: number[] = []
   let ownTSkipped = 0
   let imports: ImportDeclarationSpan[] | undefined
+  let importsI18next: boolean | undefined
+  const stateSetterLines: number[] = []
   const memoHooks: MemoHookSpan[] = []
   let pluralHelperImports: PluralHelperImport[] | undefined
   const dropped: NonNullable<FileScanResult['dropped']> = []
-  const fileExt = extname(file).toLowerCase()
-  const isTypeScriptFile = ['.ts', '.tsx', '.mts', '.cts'].includes(fileExt)
-  const isTSX = fileExt === '.tsx'
-  const isJSX = fileExt === '.jsx'
 
   try {
-    // Parse the file
-    let ast: Module
-    try {
-      ast = await parse(content, {
-        syntax: isTypeScriptFile ? 'typescript' : 'ecmascript',
-        tsx: isTSX,
-        jsx: isJSX,
-        decorators: true,
-        dynamicImport: true,
-        comments: true
-      })
-    } catch (err) {
-      // Fallback parsing for .ts with JSX
-      if (fileExt === '.ts' && !isTSX) {
-        ast = await parse(content, {
-          syntax: 'typescript',
-          tsx: true,
-          decorators: true,
-          dynamicImport: true,
-          comments: true
-        })
-      // Fallback for .js and .mjs files with JSX
-      } else if ((fileExt === '.js' || fileExt === '.mjs') && !isJSX) {
-        ast = await parse(content, {
-          syntax: 'ecmascript',
-          jsx: true,
-          decorators: true,
-          dynamicImport: true,
-          comments: true
-        })
-      } else {
-        throw err
-      }
-    }
+    const ast = await parseSource(content, file)
 
     // Normalize spans to file-relative char indices. SWC reports spans as UTF-8
     // byte offsets, but JavaScript strings and MagicString use UTF-16 code-unit
     // indices — without the conversion every emoji / accented char / CJK char
     // shifts all subsequent offsets.
     normalizeSpansToCharIndices(ast, content)
+    unwrapOptionalCallees(ast)
 
     imports = ast.body
       .filter((item: any) => item.type === 'ImportDeclaration')
@@ -459,14 +508,15 @@ async function scanFileForCandidates (
         end: item.span.end,
         locals: (item.specifiers ?? []).map((spec: any) => spec.local?.value).filter(Boolean)
       }))
+    importsI18next = ast.body.some((item: any) =>
+      /^(?:ImportDeclaration|ExportAllDeclaration|ExportNamedDeclaration)$/.test(item.type) && I18NEXT_MODULE_RE.test(item.source?.value ?? ''))
     collectMemoHooks(ast, memoHooks)
 
     // Detect React function component boundaries
     detectComponentBoundaries(ast, content, components, nextKind === 'server')
 
     // Collect function spans so module-scope strings can be excluded below
-    const functionSpans: Array<{ start: number, end: number }> = []
-    collectFunctionSpans(ast, functionSpans)
+    const { functionSpans, getters, noTrans } = analyzeModuleScope(ast, content, readElsewhere)
     // Next.js reads the texts of `export const metadata` once; generateMetadata() can get them with getT()
     if (nextKind === 'server' && !/\bgenerateMetadata\b/.test(content)) {
       const metadata = metadataExport(ast, content)
@@ -479,11 +529,10 @@ async function scanFileForCandidates (
     // Visit AST to find string literals; the object form of extract.acceptedAttributes
     // sets which attributes hold text per JSX element
     const attributeRules = config.extract.acceptedAttributes
-    const jsx = attributeRules && !Array.isArray(attributeRules)
-      ? { rules: attributeRules, aliases: importAliases(ast) }
-      : undefined
-    consoleOnlyNames.set(file, collectConsoleOnlyNames(ast))
+    const jsx = { rules: attributeRules && !Array.isArray(attributeRules) ? attributeRules : {}, aliases: importAliases(ast) }
+    dataOnlyNames.set(file, collectDataOnlyNames(ast))
     fileDataStrings.set(file, collectDataStrings(ast))
+    elementNames.set(file, collectScopedNames(ast, elementVariableOf))
     try {
       visitNodeForStrings(ast, content, file, config, candidates, jsx)
 
@@ -493,12 +542,19 @@ async function scanFileForCandidates (
       // Detect plural conditional patterns (ternary chains checking count === 0/1/other)
       detectPluralPatterns(ast, content, file, config, candidates)
     } finally {
-      consoleOnlyNames.delete(file)
+      dataOnlyNames.delete(file)
       fileDataStrings.delete(file)
+      elementNames.delete(file)
     }
 
-    // Detect language-change call sites (e.g. updateSettings({ language: code }))
+    // Detect language-change call sites (e.g. updateSettings({ language: code })); a React state setter
+    // (`const [lng, setLng] = useState()`) sets the component's state, often a view's filter, not the app's language
     detectLanguageChangeSites(ast, content, languageChangeSites)
+    const setters = collectScopedNames(ast, stateSetterOf)
+    const sites = languageChangeSites.filter(s => !declaredAt(setters, /^[\w$]+/.exec(content.slice(s.callStart, s.callEnd))?.[0] ?? '', s.callStart))
+    for (const s of languageChangeSites) if (!sites.includes(s)) stateSetterLines.push(lineOfOffset(content, s.callStart))
+    languageChangeSites.length = 0
+    languageChangeSites.push(...sites)
 
     // Annotate candidates with their enclosing component (if any)
     for (const candidate of candidates) {
@@ -520,14 +576,30 @@ async function scanFileForCandidates (
       candidates.push(...keep)
     }
 
-    // Drop module-scope candidates: wrapping them yields a t() call evaluated
-    // once at import time — possibly before i18next is initialized, and never
-    // re-evaluated on language change. See issue #278.
-    const moduleScoped = candidates.filter(
-      c => !functionSpans.some(span => c.offset >= span.start && c.endOffset <= span.end)
-    )
+    // Module-scope candidates: a t() call there is evaluated once at import time, before i18next may be initialized
+    // (it then returns ''), and never again on a language change (issue #278). What can wait for its use does:
+    // JSX text becomes a <Trans>, which translates when it renders; an object property's value becomes a getter's,
+    // read when it is used (`get label () { return i18next.t(…) }`). The rest is dropped and named in a warning.
+    const within = (c: CandidateString, r: { start: number, end: number }) => c.offset >= r.start && c.endOffset <= r.end
+    const lazy = (c: CandidateString): boolean => {
+      if (nextKind) return false
+      if (c.type === 'jsx-mixed') return true
+      if (c.type === 'jsx-text' && !c.interpolations?.length && !c.pluralForms && !noTrans.some(r => within(c, r))) {
+        c.type = 'jsx-mixed'
+        // the key and the JSON value from the text as it renders (`&amp;` decoded), the <Trans> keeps the source
+        c.transValue = c.content
+        c.content = content.slice(c.offset, c.endOffset)
+        return true
+      }
+      const property = getters.filter(g => within(c, { start: g.valueStart, end: g.valueEnd }))
+        .sort((a, b) => (a.valueEnd - a.valueStart) - (b.valueEnd - b.valueStart))[0]
+      if (property) c.getter = property
+      return !!property
+    }
+    const moduleScoped = candidates.filter(c => !functionSpans.some(span => within(c, span)) && !lazy(c))
     if (moduleScoped.length > 0) {
       moduleScopeSkipped = moduleScoped.length
+      moduleScopeLines.push(...moduleScoped.map(c => c.line))
       const keep = candidates.filter(c => !moduleScoped.includes(c))
       candidates.length = 0
       candidates.push(...keep)
@@ -592,7 +664,7 @@ async function scanFileForCandidates (
     // Silently skip files that can't be parsed
   }
 
-  return { candidates, components, languageChangeSites, moduleScopeSkipped, ownTSkipped, imports, memoHooks, pluralHelperImports, dropped }
+  return { candidates, components, languageChangeSites, moduleScopeSkipped, ownTSkipped, imports, memoHooks, pluralHelperImports, dropped, importsI18next, stateSetterLines, moduleScopeLines }
 }
 
 /** `export const metadata = { title: '…' }` (with or without a type) as the scope of a generateMetadata() to be. */
@@ -716,27 +788,211 @@ const FUNCTION_NODE_TYPES = new Set([
   'Constructor'
 ])
 
-/**
- * Recursively collects the spans of every function-like node in the AST.
- */
-function collectFunctionSpans (node: any, spans: Array<{ start: number, end: number }>): void {
-  if (!node || typeof node !== 'object') return
+/** Array methods that call their callback at once: at module scope it runs when the module is imported. */
+const RUN_AT_ONCE_METHODS = new Set(['map', 'flatMap', 'filter', 'forEach', 'reduce', 'reduceRight', 'some', 'every',
+  'find', 'findIndex', 'findLast', 'findLastIndex', 'sort'])
 
-  if (FUNCTION_NODE_TYPES.has(node.type) && node.span) {
-    spans.push({ start: node.span.start, end: node.span.end })
-    // No need to recurse: nested functions are inside this span already.
-    return
+/** Elements whose children must be plain text: a <Trans> there is no string. */
+const PLAIN_TEXT_ELEMENTS = new Set(['option', 'title', 'textarea'])
+
+/** A value read again on every use without a change: a name, a property, a literal, a comparison of them. */
+function isPlainReference (node: any): boolean {
+  switch (node?.type) {
+    case 'Identifier': case 'NumericLiteral': case 'StringLiteral': case 'BooleanLiteral': case 'NullLiteral': return true
+    case 'MemberExpression': return isPlainReference(node.object) && (node.property?.type !== 'Computed' || isPlainReference(node.property.expression))
+    case 'ParenthesisExpression': return isPlainReference(node.expression)
+    case 'UnaryExpression': return node.operator === '!' && isPlainReference(node.argument)
+    case 'BinaryExpression': return COMPARISON_OPERATORS.has(node.operator) || LOGICAL_OPERATORS.has(node.operator) || ['<', '>', '<=', '>='].includes(node.operator)
+      ? isPlainReference(node.left) && isPlainReference(node.right)
+      : false
+    default: return false
   }
+}
 
-  for (const key in node) {
-    const value = node[key]
-    if (value && typeof value === 'object') {
-      if (Array.isArray(value)) {
-        value.forEach(item => collectFunctionSpans(item, spans))
-      } else {
-        collectFunctionSpans(value, spans)
+/**
+ * A value a getter can compute on every read and get the same: a string, a template of plain references, a choice
+ * between them, an element. Not a call, an update, an array or an object (`register('…')`, `` `${n++}` ``, a new
+ * array on every read).
+ */
+function isPureTextValue (node: any): boolean {
+  switch (node?.type) {
+    case 'StringLiteral': return true
+    case 'TemplateLiteral': return (node.expressions ?? []).every(isPlainReference)
+    case 'JSXElement': case 'JSXFragment': return true
+    case 'ParenthesisExpression': return isPureTextValue(node.expression)
+    case 'ConditionalExpression': return isPlainReference(node.test) && isPureTextValue(node.consequent) && isPureTextValue(node.alternate)
+    case 'BinaryExpression': return LOGICAL_OPERATORS.has(node.operator) && (isPlainReference(node.left) || isPureTextValue(node.left)) && isPureTextValue(node.right)
+    default: return false
+  }
+}
+
+/** A callee as a function, through parentheses: `(() => …)()`. */
+const unparenthesized = (node: any): any => node?.type === 'ParenthesisExpression' ? unparenthesized(node.expression) : node
+
+/** The variable at the root of a member chain: `PAGE` of `PAGE.meta.title`. */
+const rootName = (node: any): string | null => node?.type === 'Identifier' ? node.value : node?.type === 'MemberExpression' ? rootName(node.object) : null
+
+/**
+ * The names a file changes the properties of (`PAGE.title = x`, `X.n++`, `delete X.a`, `Object.assign(X, …)`), in
+ * any function: a getter there has no setter.
+ */
+function mutatedNames (ast: any): Set<string> {
+  const names = new Set<string>()
+  const walk = (node: any): void => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) { node.forEach(walk); return }
+    const add = (target: any) => { if (target?.type === 'MemberExpression') { const name = rootName(target); if (name) names.add(name) } }
+    if (node.type === 'AssignmentExpression') add(node.left)
+    if (node.type === 'UpdateExpression') add(node.argument)
+    if (node.type === 'UnaryExpression' && node.operator === 'delete') add(node.argument)
+    if (node.type === 'CallExpression' && node.callee?.type === 'MemberExpression' && node.callee.object?.value === 'Object' &&
+      /^(?:assign|defineProperty|defineProperties)$/.test(node.callee.property?.value)) {
+      const name = rootName(node.arguments?.[0]?.expression)
+      if (name) names.add(name)
+    }
+    for (const key in node) if (key !== 'span') walk(node[key])
+  }
+  walk(ast)
+  return names
+}
+
+/**
+ * What runs when a module is imported and what waits for a call:
+ * - `functionSpans`: the functions called later; a function called at once (an IIFE, the callback of `.map()` at
+ *   module scope) runs at import, so its texts are module-scope texts;
+ * - `getters`: the module-scope object properties whose value a getter can read when it is used: a plain text value
+ *   (`isPureTextValue`), not in the arguments of a call that may read it at once (`defineConfig({ … })`;
+ *   `Object.freeze()` keeps it) nor under `satisfies` (its type takes literal values), not with a computed key, and
+ *   not in a variable that code running at import reads, here (also in a function or class called or created at
+ *   module scope) or in another file (`readElsewhere`), nor one the file changes (`PAGE.title = x`): i18next returns
+ *   '' before its init, and a getter has no setter;
+ * - `noTrans`: the children of elements that take plain text only (`<option>`), and a Suspense `fallback`, which
+ *   must not suspend itself while i18next loads its translations;
+ * - `readAtImport`: the names code running at import reads.
+ */
+function analyzeModuleScope (ast: any, content: string, readElsewhere: ReadonlySet<string> = new Set()): {
+  functionSpans: Array<{ start: number, end: number }>, getters: GetterProperty[], noTrans: Array<{ start: number, end: number }>, readAtImport: Set<string>
+} {
+  const functionSpans: Array<{ start: number, end: number }> = []
+  const found: Array<GetterProperty & { owner: string | null }> = []
+  const noTrans: Array<{ start: number, end: number }> = []
+  const readAtImport = new Set<string>()
+  const runAtOnce = new WeakSet<object>()
+  // module-level functions and classes by name, and the ones code running at import calls or creates
+  const declared = new Map<string, any>()
+  const called = new Set<string>()
+  for (const item of ast.body ?? []) {
+    const node = item.type === 'ExportDeclaration' ? item.declaration : item
+    if ((node?.type === 'FunctionDeclaration' || node?.type === 'ClassDeclaration') && node.identifier?.value) declared.set(node.identifier.value, node)
+    if (node?.type === 'VariableDeclaration') {
+      for (const d of node.declarations ?? []) if (d.id?.type === 'Identifier' && FUNCTION_NODE_TYPES.has(d.init?.type)) declared.set(d.id.value, d.init)
+    }
+  }
+  const walk = (node: any, inCallArgs: boolean, owner: string | null): void => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) { node.forEach(n => walk(n, inCallArgs, owner)); return }
+    const type = node.type
+    if (typeof type === 'string' && type.startsWith('Ts') && !['TsAsExpression', 'TsSatisfiesExpression', 'TsNonNullExpression', 'TsConstAssertion'].includes(type)) return
+    if (type === 'ImportDeclaration') return
+    if (FUNCTION_NODE_TYPES.has(type) && node.span) {
+      if (!runAtOnce.has(node)) { functionSpans.push({ start: node.span.start, end: node.span.end }); return }
+      for (const key of ['params', 'body']) walk(node[key], false, owner)
+      return
+    }
+    switch (type) {
+      case 'CallExpression':
+      case 'NewExpression': {
+        const callee = unparenthesized(node.callee)
+        if (FUNCTION_NODE_TYPES.has(callee?.type)) runAtOnce.add(callee)
+        if (callee?.type === 'Identifier') called.add(callee.value)
+        const first = node.arguments?.[0]?.expression
+        if (callee?.type === 'MemberExpression' && RUN_AT_ONCE_METHODS.has(callee.property?.value) && FUNCTION_NODE_TYPES.has(first?.type)) runAtOnce.add(first)
+        walk(node.callee, inCallArgs, owner)
+        const freeze = callee?.type === 'MemberExpression' && callee.object?.value === 'Object' && callee.property?.value === 'freeze'
+        for (const arg of node.arguments ?? []) walk(arg.expression, inCallArgs || !freeze, owner)
+        return
+      }
+      case 'TsSatisfiesExpression':
+        walk(node.expression, true, owner)
+        return
+      case 'VariableDeclarator':
+        walk(node.init, inCallArgs, owner ?? (node.id?.type === 'Identifier' ? node.id.value : null))
+        return
+      case 'MemberExpression':
+        walk(node.object, inCallArgs, owner)
+        if (node.property?.type === 'Computed') walk(node.property, inCallArgs, owner)
+        return
+      case 'KeyValueProperty': {
+        const key = node.key
+        if (!inCallArgs && key?.type !== 'Computed' && key?.span && node.value?.span && isPureTextValue(node.value)) {
+          const colon = content.indexOf(':', key.span.end)
+          if (colon > -1 && colon < node.value.span.start) {
+            found.push({ keyStart: key.span.start, colon, valueStart: node.value.span.start, valueEnd: node.value.span.end, key: content.slice(key.span.start, key.span.end), owner })
+          }
+        }
+        if (propertyName(key) === 'fallback' && node.value?.span) noTrans.push({ start: node.value.span.start, end: node.value.span.end })
+        if (key?.type === 'Computed') walk(key, inCallArgs, owner)
+        walk(node.value, inCallArgs, owner)
+        return
+      }
+      case 'ExportNamedDeclaration':
+        if (!node.declaration) return
+        break
+      case 'ExportDefaultExpression':
+        if (node.expression?.type === 'Identifier') return
+        break
+      case 'Identifier':
+        readAtImport.add(node.value)
+        return
+      case 'JSXAttribute':
+        if (node.name?.value === 'fallback' && node.value?.span) noTrans.push({ start: node.value.span.start, end: node.value.span.end })
+        break
+      case 'JSXElement': {
+        const tag = node.opening?.name?.type === 'Identifier' ? node.opening.name.value : ''
+        const children = node.children ?? []
+        if (PLAIN_TEXT_ELEMENTS.has(tag) && children.length) noTrans.push({ start: children[0].span.start, end: children[children.length - 1].span.end })
+        break
       }
     }
+    for (const key in node) if (key !== 'span') walk(node[key], inCallArgs, owner)
+  }
+  walk(ast.body, false, null)
+  // what a function or class called (or created) at import reads, and the ones it calls in turn
+  const done = new Set<string>()
+  for (let name = [...called].find(n => declared.has(n) && !done.has(n)); name; name = [...called].find(n => declared.has(n) && !done.has(n))) {
+    done.add(name)
+    const reads = (node: any): void => {
+      if (!node || typeof node !== 'object') return
+      if (Array.isArray(node)) { node.forEach(reads); return }
+      if (node.type === 'Identifier') readAtImport.add(node.value)
+      const callee = node.type === 'CallExpression' || node.type === 'NewExpression' ? unparenthesized(node.callee) : null
+      if (callee?.type === 'Identifier') called.add(callee.value)
+      for (const key in node) if (key !== 'span') reads(node[key])
+    }
+    reads(declared.get(name))
+  }
+  const mutated = mutatedNames(ast)
+  const getters = found
+    .filter(g => !g.owner || (!readAtImport.has(g.owner) && !readElsewhere.has(g.owner) && !mutated.has(g.owner)))
+    .map(({ owner, ...g }) => g)
+  return { functionSpans, getters, noTrans, readAtImport }
+}
+
+/**
+ * The names a file imports and reads when it is imported itself (`Object.fromEntries(ROLES.map(…))` at module
+ * scope): a getter on them would be read before i18next is initialized.
+ */
+async function importedNamesReadAtImport (file: string, content: string): Promise<string[]> {
+  if (!/\bimport\b/.test(content)) return []
+  try {
+    const ast = await parseSource(content, file)
+    normalizeSpansToCharIndices(ast, content)
+    const { readAtImport } = analyzeModuleScope(ast, content)
+    return ast.body.filter((item: any) => item.type === 'ImportDeclaration').flatMap((item: any) => (item.specifiers ?? [])
+      .filter((spec: any) => spec.type === 'ImportSpecifier' && readAtImport.has(spec.local?.value))
+      .map((spec: any) => spec.imported?.value ?? spec.local.value))
+  } catch {
+    return []
   }
 }
 
@@ -1028,7 +1284,7 @@ const NON_TEXT_METHODS = new Set([
  * Functions whose string arguments are never text: `gtag('event', 'Sign Up Completed')`, `require('x')`,
  * `RegExp('…')`, `format(date, 'yyyy-MM-dd')`.
  */
-const NON_TEXT_FUNCTIONS = new Set(['gtag', 'require', 'RegExp', 'format'])
+const NON_TEXT_FUNCTIONS = new Set(['gtag', 'require', 'RegExp', 'format', 'encodeURIComponent', 'encodeURI', 'btoa', 'saveAs'])
 
 /** Objects whose method calls are logs or error reports, for developers whatever they say. */
 const LOG_OBJECTS = /^(?:logger|log|Sentry|sentry|Bugsnag|bugsnag|Rollbar|rollbar|winston|pino)$/
@@ -1042,38 +1298,63 @@ function isNonTextMethodCall (node: any): boolean {
 }
 
 /**
- * The names of a file's variables whose every use is inside a `console.*` call: a variable declared twice
- * counts as one name, and any use elsewhere takes it out.
+ * A call that takes data, not text to show: a log line (`console.*`), a URL part (`encodeURIComponent`, a `mailto:`
+ * body), a file's content (`new Blob([…])`, `new File(…)`, `saveAs()`, `fs.writeFile()`, a zip's `.file(name, data)`).
  */
-function collectConsoleOnlyNames (ast: any): Set<string> {
+function isDataSink (node: any): boolean {
+  if (node.type === 'NewExpression') return node.callee?.type === 'Identifier' && /^(?:Blob|File)$/.test(node.callee.value)
+  if (node.type !== 'CallExpression') return false
+  if (isConsoleCall(node)) return true
+  const callee = node.callee
+  if (callee?.type === 'Identifier') return /^(?:encodeURIComponent|encodeURI|btoa|saveAs)$/.test(callee.value)
+  const method = callee?.type === 'MemberExpression' ? callee.property?.value : null
+  return /^(?:writeFile|writeFileSync|appendFile|appendFileSync)$/.test(method ?? '') || (method === 'file' && (node.arguments?.length ?? 0) > 1)
+}
+
+/**
+ * The names of a file's variables whose every use builds data, not a text to show: used in a log line, a URL part
+ * or a file's content (`isDataSink`), or in the value of another such variable (`const mailBody = intro + details`,
+ * `encodeURIComponent(mailBody)`). A variable declared twice counts as one name, and any other use takes it out.
+ */
+function collectDataOnlyNames (ast: any): Set<string> {
   const declared = new Set<string>()
-  const inConsole = new Set<string>()
-  const elsewhere = new Set<string>()
-  const walk = (node: any, inLog: boolean): void => {
+  // where each name is used: '' in a data sink, a name in the value of that variable, null anywhere else
+  const uses = new Map<string, Array<string | null>>()
+  const walk = (node: any, at: string | null): void => {
     if (!node || typeof node !== 'object') return
-    if (Array.isArray(node)) { node.forEach(n => walk(n, inLog)); return }
+    if (Array.isArray(node)) { node.forEach(n => walk(n, at)); return }
     if (node.type === 'VariableDeclarator') {
       if (node.id?.type === 'Identifier') declared.add(node.id.value)
-      else walk(node.id, inLog)
-      walk(node.init, inLog)
+      else walk(node.id, at)
+      walk(node.init, at === '' ? '' : node.id?.type === 'Identifier' ? node.id.value : at)
       return
     }
     if (node.type === 'MemberExpression') {
-      walk(node.object, inLog)
-      if (node.property?.type === 'Computed') walk(node.property, inLog)
+      walk(node.object, at)
+      if (node.property?.type === 'Computed') walk(node.property, at)
       return
     }
-    if (node.type === 'KeyValueProperty') { walk(node.value, inLog); return }
-    if (node.type === 'Identifier') (inLog ? inConsole : elsewhere).add(node.value)
-    const log = inLog || (node.type === 'CallExpression' && isConsoleCall(node))
-    for (const key in node) if (key !== 'span') walk(node[key], log)
+    if (node.type === 'KeyValueProperty') { walk(node.value, at); return }
+    if (node.type === 'Identifier') { uses.set(node.value, [...uses.get(node.value) ?? [], at]); return }
+    const inner = at === '' || isDataSink(node) ? '' : at
+    for (const key in node) if (key !== 'span') walk(node[key], key === 'callee' ? at : inner)
   }
-  walk(ast, false)
-  return new Set([...declared].filter(n => inConsole.has(n) && !elsewhere.has(n)))
+  walk(ast, null)
+  const only = new Set<string>()
+  for (let grew = true; grew;) {
+    grew = false
+    for (const name of declared) {
+      const at = uses.get(name)
+      if (only.has(name) || !at?.length || !at.every(u => u === '' || (u !== null && u !== name && only.has(u)))) continue
+      only.add(name)
+      grew = true
+    }
+  }
+  return only
 }
 
-/** Per file, the names `collectConsoleOnlyNames` found for its content (set by the scan, read by the visit). */
-const consoleOnlyNames = new Map<string, Set<string>>()
+/** Per file, the names `collectDataOnlyNames` found for its content (set by the scan, read by the visit). */
+const dataOnlyNames = new Map<string, Set<string>>()
 
 /** The property names whose value is text (`label`, `title`, …), lower-cased. */
 const translatablePropertyLowerSet = new Set([...translatablePropertySet].map(p => p.toLowerCase()))
@@ -1101,7 +1382,7 @@ const fileDataStrings = new Map<string, Set<string>>()
 const DATA_KEYS = new Set(['id', 'key', 'value', 'type', 'code', 'kind'])
 
 /** Names of lists whose strings are values to match (`order: ['2FA', 'no 2FA']`). */
-const DATA_LISTS = /^(?:order|ids|keys|values|types|kinds|codes)$/i
+const DATA_LISTS = /^(?:order|ids|keys|values|types|kinds|codes|ignore|ignored|ignoreErrors|ignoredErrors)$/i
 
 /**
  * The strings a file uses as data: compared (`=== 'no 2FA'`), a `case`, an object key, the value of an `id`,
@@ -1130,10 +1411,128 @@ function collectDataStrings (ast: any): Set<string> {
       for (const arg of node.arguments ?? []) add(arg.expression)
       if (node.callee?.type === 'MemberExpression') addList(node.callee.object)
     }
+    // what goes into such a list: `ignore.push('Failed to fetch')`, matched against an error's message later
+    const callee = node.type === 'CallExpression' ? node.callee : null
+    if (callee?.type === 'MemberExpression' && /^(?:push|unshift)$/.test(callee.property?.value) && DATA_LISTS.test(callee.object?.value ?? '')) {
+      for (const arg of node.arguments ?? []) add(arg.expression)
+    }
     for (const key in node) if (key !== 'span') walk(node[key])
   }
   walk(ast)
   return found
+}
+
+/** A property whose value is data, a style or an id, never a sibling text (`kind`, `className`, `dateFormat`). */
+function isTechnicalKey (name: string): boolean {
+  return STYLE_PROPERTY_RE.test(name) || DATA_KEYS.has(name) || isTechnicalPropertyName(name)
+}
+
+/**
+ * Words of a phrase, two or more, beside a text in a map of strings (`by human`, `JSON nested`); not a name in
+ * capitals (`Helvetica Neue`, `Sign Up Completed`, `Ctrl S`), a pattern (`MMM D, YYYY`), a CSS value or a media type.
+ */
+function isPhrase (value: string): boolean {
+  // a word (`i18n` too), a number (`over 14 days ago`) or a component's own placeholder (`Languages: {list}`)
+  const words = value.trim().split(/\s+/)
+  return words.length > 1 && words.every(w => /^["“‘(]?(?:\p{L}[\p{L}\d'’-]*|\d+|\{\w+\})[)"”’]?[.,!?…:]?$/u.test(w)) &&
+    words.some(w => /^["“‘(]?(?:\p{Ll}|\{)/u.test(w))
+}
+
+/** Object properties whose values are class names or styles, never text. */
+const STYLE_PROPERTY_RE = /^(?:class|className|classNames|classes|style|styles)$/
+
+/**
+ * The names of a component's props that hold text, a single word too: `label`, `title`, `message` and names ending in
+ * them (`saveLabel`, `pageTitle`), and a button's label named the other way round (`labelConfirm`). Names such as
+ * `tooltip`, `text` or `empty` hold a command, a mode or a value as often (`text='npm install i18next'`,
+ * `searchText`, `empty='hide'`): a sentence in them is text by `isProse`.
+ */
+const TEXT_PROP_RE = /^(?:label|title|message)$|[a-z0-9](?:Label|Title|Message)$|^(?:label|text|title)(?:Confirm|Cancel|Ok|Yes|No|Save|Submit|Close|Back|Next|Done|Apply|Delete|Remove|Add|Retry|Continue)$/
+
+/** A component that shows a text it is given: `FieldLabel`, `FitTitle`, `Tooltip.Text`. */
+const TEXT_COMPONENT_RE = /(?:Label|Title|Heading|Message|Text|Caption|Hint)$/
+
+/** A component prop named for text (`saveLabel`, `labelConfirm`), not a flag (`showTitle`) nor a lookup (`getTitle`). */
+function isTextPropName (name: string): boolean {
+  return TEXT_PROP_RE.test(name) && !/^(?:is|has|show|hide|can|should|use|with|get|set|select)[A-Z]/.test(name)
+}
+
+/**
+ * A value that reads as a sentence: two words or more of letters (and numbers), ending like a sentence, or starting
+ * with a capital and going on in lower case (`Copy snippet`, `No one matches these filters.`); not a CSS value
+ * (`all 0.3s ease`, `minmax(0, 1fr)`), a list of lower-case tokens (`flex-start center`), a name in capitals
+ * (`Helvetica Neue`, an event `Sign Up Clicked`) nor a pattern (`MMMM D, YYYY`).
+ */
+function isProse (value: string): boolean {
+  const text = value.trim()
+  const words = text.split(/\s+/)
+  // a word, or a component's own placeholder (`Delete tenant {name}?`)
+  if (words.length < 2 || !words.every(w => /^(?:["“‘(]?[\p{L}\d][\p{L}\d'’-]*|\{\w+\})[.,;:!?…)"”’]*$/u.test(w))) return false
+  return /[\p{Ll}}][.!?…]$/u.test(text) || (/^\p{Lu}/u.test(text) && words.slice(1).some(w => /^\p{Ll}/u.test(w)))
+}
+
+/** A name a function (or the module) declares, with the span it is seen in. */
+interface ScopedName { name: string, start: number, end: number }
+
+/** The names `nameOf` finds in a file, each seen in the function it is declared in (a module's in the whole file). */
+function collectScopedNames (ast: any, nameOf: (node: any) => string | null): ScopedName[] {
+  const found: ScopedName[] = []
+  const walk = (node: any, start: number, end: number): void => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) { node.forEach(n => walk(n, start, end)); return }
+    if (FUNCTION_NODE_TYPES.has(node.type) && node.span) { start = node.span.start; end = node.span.end }
+    const name = nameOf(node)
+    if (name) found.push({ name, start, end })
+    for (const key in node) if (key !== 'span') walk(node[key], start, end)
+  }
+  walk(ast, 0, Infinity)
+  return found
+}
+
+/** Whether `name` at `offset` is one of `names` (declared in a function around it, or at module scope). */
+function declaredAt (names: ScopedName[], name: string, offset: number): boolean {
+  return names.some(n => n.name === name && offset >= n.start && offset <= n.end)
+}
+
+/** Per file, the variables that hold JSX (`const paymentLink = <Link …>`), where they are seen. */
+const elementNames = new Map<string, ScopedName[]>()
+
+/** A JSX value: an element, a fragment, or a choice of them. */
+function isJsxValue (node: any): boolean {
+  if (!node) return false
+  if (node.type === 'JSXElement' || node.type === 'JSXFragment') return true
+  if (node.type === 'ParenthesisExpression') return isJsxValue(node.expression)
+  if (node.type === 'ConditionalExpression') return isJsxValue(node.consequent) || isJsxValue(node.alternate)
+  return node.type === 'BinaryExpression' && LOGICAL_OPERATORS.has(node.operator) && isJsxValue(node.right)
+}
+
+/** The variable a declaration or an assignment gives JSX to: its value is an element, never a placeholder. */
+function elementVariableOf (node: any): string | null {
+  if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier' && isJsxValue(node.init)) return node.id.value
+  if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && isJsxValue(node.right)) return node.left.value
+  return null
+}
+
+/** The setter `useState()` or `useReducer()` gives (`const [lng, setLng] = useState()`). */
+function stateSetterOf (node: any): string | null {
+  if (node.type !== 'VariableDeclarator' || node.id?.type !== 'ArrayPattern' || node.init?.type !== 'CallExpression') return null
+  const callee = node.init.callee
+  const hook = callee?.type === 'Identifier' ? callee.value : callee?.type === 'MemberExpression' ? callee.property?.value : null
+  const setter = node.id.elements?.[1]
+  return /^use(?:State|Reducer)$/.test(hook ?? '') && setter?.type === 'Identifier' ? setter.value : null
+}
+
+/**
+ * `a?.b('x')`: swc puts the member of an optional call in an `OptionalChainingExpression`; unwrapped, the call
+ * reads as `a.b('x')` to every check of what is called (`el?.querySelector('h1, h2')` is a selector too).
+ */
+function unwrapOptionalCallees (node: any): void {
+  if (!node || typeof node !== 'object') return
+  if (Array.isArray(node)) { node.forEach(unwrapOptionalCallees); return }
+  if (node.type === 'CallExpression' && node.callee?.type === 'OptionalChainingExpression' && node.callee.base?.type === 'MemberExpression') {
+    node.callee = node.callee.base
+  }
+  for (const key in node) if (key !== 'span') unwrapOptionalCallees(node[key])
 }
 
 /** `console.log(...)`, `console.warn(...)`: their arguments are for developers, however they are built. */
@@ -1162,10 +1561,29 @@ function visitNodeForStrings (
   if (!node) return
 
   if (node.type === 'JSXOpeningElement' && jsx) {
-    jsx = { ...jsx, element: resolveElementAttributes(jsx.rules, jsxElementName(node.name, jsx.aliases)) }
+    const name = jsxElementName(node.name, jsx.aliases)
+    const element = resolveElementAttributes(jsx.rules, name)
+    // A component's prop holds text when its name says so (`saveLabel`, `pageText`, `tip`, `empty`) or its value
+    // reads as a sentence (`noMatchFilters='No one matches these filters.'`); a DOM element's attributes are known
+    if (name && /^[A-Z]/.test(name)) {
+      for (const attr of node.attributes ?? []) {
+        const attrName = attr.type === 'JSXAttribute' && attr.name?.type === 'Identifier' ? attr.name.value : null
+        if (!attrName || ignoredAttributeSet.has(attrName) || element.removed.has(attrName.toLowerCase())) continue
+        // the `text` of a component named for text is its text (`<FieldLabel text='Scopes' />`, `<FitTitle text=…>`)
+        const textOfTextComponent = attrName === 'text' && TEXT_COMPONENT_RE.test(name)
+        if (textOfTextComponent || isTextPropName(attrName) || (attr.value?.type === 'StringLiteral' && isProse(attr.value.value))) {
+          element.accepted.add(attrName.toLowerCase())
+        }
+      }
+    }
+    jsx = { ...jsx, element }
   }
 
   const visit = (child: any) => visitNodeForStrings(child, content, file, config, candidates, jsx)
+
+  // A title set is text, a single word too: `useDocumentTitle('Projects')`, `setTitle(busy ? 'Saving' : 'Saved')`;
+  // `getPageTitle('dashboard')` looks one up
+  if (node.type === 'CallExpression' && /^(?:set|use|update)\w*Title$/.test(getCalleeName(node.callee) ?? '')) markRendered(node.arguments?.[0]?.expression)
 
   // Its string arguments are not text; what it is called on and the functions it gets may hold some
   // (`el.addEventListener('click', () => { status.textContent = 'Copied to clipboard' })`)
@@ -1207,12 +1625,34 @@ function visitNodeForStrings (
       visitTextHolders(node.value, content, file, config, candidates, jsx)
       return
     }
+    // A choice in a text attribute is text, a single word too: `data-tip={folded ? 'Expand' : 'Collapse'}`
+    // (`content` is a <meta>'s too: `content={x ? 'noindex' : 'index'}`)
+    const accepted = attrName != null && attrName !== 'content' && (jsx?.element?.accepted ?? translatableAttributeSet).has(attrName.toLowerCase())
+    if (accepted && node.value?.type === 'JSXExpressionContainer') markRendered(node.value.expression)
   }
 
   // What a JSX element renders from an expression is text, a single word too: `{used ? <>…</> : 'Never used'}`,
   // `{busy && 'saving'}`, `{name || 'the organization'}`
   if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
     for (const child of node.children ?? []) if (child.type === 'JSXExpressionContainer') markRendered(child.expression)
+  }
+
+  // A map of texts: when one value of an object of strings is text, its sibling phrases are too
+  // (`{ ht: 'by human', tm: 'by translation memory' }`); a single word beside them may be a code (`icon: 'check'`)
+  if (node.type === 'ObjectExpression') {
+    for (const p of node.properties ?? []) visit(p)
+    const values = (node.properties ?? []).map((p: any) => p.type === 'KeyValueProperty' ? p.value : null)
+    const found = (v: any) => candidates.some(c => c.offset === v.span?.start && c.endOffset === v.span?.end)
+    if (values.length > 1 && values.every((v: any) => v?.type === 'StringLiteral') && values.some(found)) {
+      for (const [i, value] of values.entries()) {
+        const property = node.properties[i]
+        if (found(value) || nonTextParts(property, file, config, true) === 'all' || isTechnicalKey(propertyName(property.key) ?? '')) continue
+        if (!isPhrase(value.value)) continue
+        const candidate = stringCandidate(value, content, file, config, jsx?.element?.accepted, true)
+        if (candidate) candidates.push(candidate)
+      }
+    }
+    return
   }
 
   // The two branches of a ternary are alternatives of one text: when one is text, a string on the other side
@@ -1284,6 +1724,7 @@ function visitNodeForStrings (
             candidate.content = trimmed
             candidate.type = 'template-literal'
             if (result.interpolations.length) candidate.interpolations = result.interpolations
+            if ('alternative' in result && result.alternative) candidate.alternative = result.alternative
             if (plural) {
               candidate.pluralForms = plural.pluralForms
               candidate.pluralHelper = plural.pluralHelper
@@ -1420,16 +1861,29 @@ function nonTextParts (node: any, file: string, config: I18nextToolkitConfig, wi
       return !withTextHolders && isNonTextMethodCall(node) ? ['arguments'] : null
     case 'NewExpression':
       // `new Error('…')` is for developers, `new RegExp('…')` a pattern
-      return node.callee?.type === 'Identifier' && /^RegExp$|Error$/.test(node.callee.value) ? 'all' : null
+      // `new Blob(['…'])` is a file's content
+      return node.callee?.type === 'Identifier' && /^RegExp$|Error$|^Blob$|^File$/.test(node.callee.value) ? 'all' : null
+    // a type is no value: `useState<{ label: 'asc' | 'desc' }>()`; nor is a literal kept as its type (`'on' as const`)
+    case 'TsConstAssertion':
+    case 'TsTypeAnnotation':
+    case 'TsTypeParameterInstantiation':
+    case 'TsTypeParameterDeclaration':
+    case 'TsTypeAliasDeclaration':
+    case 'TsInterfaceDeclaration':
+    case 'TsLiteralType':
+      return 'all'
     case 'JSXElement': {
-      if (isTransComponent(node, config.extract.transComponents) || isIconElement(node)) return 'all'
+      if (isTransComponent(node, config.extract.transComponents)) return 'all'
+      // an icon's ligature is no text; its `aria-label` and `data-tip` are
+      if (isIconElement(node)) return ['children']
       // what code, scripts and styles show (`ignoredTags`, as for lint); inside a sentence it stays in its <Trans>
       const tag = node.opening?.name?.type === 'Identifier' ? node.opening.name.value.toLowerCase() : null
       return tag && (ignoredTags.includes(tag) || config.extract.ignoredTags?.some(t => t.toLowerCase() === tag)) ? 'all' : null
     }
     case 'KeyValueProperty':
-      // a key names something and is never text; a call there is even a syntax error (`{ 'a b': 1 }`)
-      return isModelPromptName(propertyName(node.key)) ? 'all' : ['key']
+      // a key names something and is never text; a call there is even a syntax error (`{ 'a b': 1 }`); class
+      // names and styles are none either, however deep (`classNames: { container: () => 'btn btn-secondary' }`)
+      return isModelPromptName(propertyName(node.key)) || STYLE_PROPERTY_RE.test(propertyName(node.key) ?? '') ? 'all' : ['key']
     case 'MemberExpression':
       return ['property']
     case 'BinaryExpression':
@@ -1442,9 +1896,10 @@ function nonTextParts (node: any, file: string, config: I18nextToolkitConfig, wi
       // a prompt is the input of a language model: translating it changes what the model does
       return isModelPromptName(node.identifier?.value) ? 'all' : null
     case 'VariableDeclarator':
-      // a prompt, or a variable used only in console calls (a log line: `const took = …; console.log(took)`)
+      // a prompt, or a variable used only to build data: a log line (`const took = …; console.log(took)`), a
+      // `mailto:` body, a file's content
       return isModelPromptName(node.id?.value) ||
-        (node.id?.type === 'Identifier' && consoleOnlyNames.get(file)?.has(node.id.value))
+        (node.id?.type === 'Identifier' && dataOnlyNames.get(file)?.has(node.id.value))
         ? 'all'
         : null
     default:
@@ -1480,9 +1935,12 @@ function stringCandidate (
   const property = /([\w]+)\s*:\s*$/.exec(content.slice(Math.max(0, stringNode.span.start - 40), stringNode.span.start))?.[1]
   const textProperty = !!property && translatablePropertyLowerSet.has(property.toLowerCase())
   if (fileDataStrings.get(file)?.has(stringNode.value) && !renderedStrings.has(stringNode) && !attributeValue && !textProperty) return null
-  const candidate = detectCandidate(stringNode.value, stringNode.span.start, stringNode.span.end, file, content, config, accepted, textSlot)
+  // a text property's value is text, a single word too (`{ value: 'not', label: 'has not' }` beside `label: 'has'`);
+  // a `name` names something more often than not
+  const slot = textSlot || (textProperty && property!.toLowerCase() !== 'name')
+  const candidate = detectCandidate(stringNode.value, stringNode.span.start, stringNode.span.end, file, content, config, accepted, slot)
   // in a text slot the place says it is text, whatever the words score
-  if (candidate && textSlot) candidate.confidence = Math.max(candidate.confidence, 0.7)
+  if (candidate && slot) candidate.confidence = Math.max(candidate.confidence, 0.7)
   if (!candidate || candidate.confidence < 0.7) return null
   // Detect JSX attribute context: in JSX, attr="value" has = right before the opening quote
   if (stringNode.span.start > 0 && content[stringNode.span.start - 1] === '=') candidate.type = 'jsx-attribute'
@@ -1527,8 +1985,56 @@ function buildInterpolatedTemplate (
   quasis: any[],
   expressions: any[],
   content: string
-): { text: string, interpolations: Array<{ name: string, expression: string }> } | null {
-  const interpolations: Array<{ name: string, expression: string }> = []
+): { text: string, interpolations: NonNullable<CandidateString['interpolations']>, alternative?: CandidateString['alternative'] } | null {
+  // one optional part (`${left ? `, ${left} left` : ''}`): two texts, with it and without, not English in a value
+  const empty = (n: any) => (n?.type === 'StringLiteral' && n.value === '') || (n?.type === 'TemplateLiteral' && !n.expressions?.length && !(n.quasis?.[0]?.cooked ?? n.quasis?.[0]?.raw))
+  const optional = expressions.map(e => e?.type === 'ParenthesisExpression' ? e.expression : e)
+    .map((e, i) => ({ e, i }))
+    .filter(({ e }) => e?.type === 'ConditionalExpression' && empty(e.consequent) !== empty(e.alternate) &&
+      [e.consequent, e.alternate].some(b => (b?.type === 'StringLiteral' && /\p{L}/u.test(b.value)) || (b?.type === 'TemplateLiteral' && b.quasis?.some((q: any) => /\p{L}/u.test(q.cooked ?? q.raw ?? '')))))
+  if (optional.length === 1) {
+    const { e: choice, i: at } = optional[0]
+    const part = empty(choice.consequent) ? choice.alternate : choice.consequent
+    const build = (withPart: boolean) => {
+      const usedNames: UsedNames = new Map()
+      const interpolations: NonNullable<CandidateString['interpolations']> = []
+      let text = ''
+      const add = (expr: any): boolean => {
+        const info = resolveExpressionName(expr, content, usedNames)
+        if (!info) return false
+        text += `{{${info.name}}}`
+        if (!info.reused) interpolations.push(info)
+        return true
+      }
+      for (let i = 0; i < quasis.length; i++) {
+        text += quasis[i].cooked ?? quasis[i].raw ?? ''
+        if (i >= expressions.length) continue
+        if (i !== at) { if (!add(expressions[i])) return null; continue }
+        if (!withPart) continue
+        if (part.type === 'StringLiteral') { text += part.value; continue }
+        for (let j = 0; j < part.quasis.length; j++) {
+          text += part.quasis[j].cooked ?? part.quasis[j].raw ?? ''
+          if (j < part.expressions.length && !add(part.expressions[j])) return null
+        }
+      }
+      return { text, interpolations }
+    }
+    const withPart = build(true)
+    const without = build(false)
+    if (withPart && without && hasWordsBesidePlaceholders(withPart.text) && hasWordsBesidePlaceholders(without.text)) {
+      return {
+        ...withPart,
+        alternative: {
+          content: without.text.trim(),
+          interpolations: without.interpolations,
+          test: content.slice(choice.test.span.start, choice.test.span.end),
+          mainWhen: part === choice.consequent
+        }
+      }
+    }
+  }
+
+  const interpolations: NonNullable<CandidateString['interpolations']> = []
   const usedNames: UsedNames = new Map()
   let text = ''
 
@@ -1679,6 +2185,21 @@ function nameOfExpression (expr: any): string | null {
   }
 }
 
+/** Options of t(): a placeholder of that name would change the call (`count` makes it a plural). */
+const T_OPTIONS = new Set(['count', 'context', 'ns', 'lng', 'lngs', 'defaultValue', 'ordinal', 'replace', 'returnObjects', 'returnDetails', 'joinArrays', 'postProcess', 'interpolation', 'keyPrefix'])
+
+/** The name of what a value is taken from: a property's object (`project.name` → `project`), a call's argument. */
+function specificNameOfExpression (expr: any): string | null {
+  switch (expr?.type) {
+    case 'MemberExpression': return nameOfExpression(expr.object)
+    case 'CallExpression': return nameOfExpression(expr.arguments?.[0]?.expression)
+    case 'ParenthesisExpression':
+    case 'TsAsExpression':
+    case 'TsNonNullExpression': return specificNameOfExpression(expr.expression)
+    default: return null
+  }
+}
+
 /** Names of formatter functions: their call shows the value they get (`n(queue)`, `formatDate(createdAt)`). */
 const FORMATTER_RE = /^(?:format\w*|fmt|formatter|n|num|number|money|percent)$/i
 
@@ -1697,7 +2218,7 @@ function resolveExpressionName (
   expr: any,
   content: string,
   usedNames: UsedNames
-): { name: string, expression: string, reused?: boolean } | null {
+): { name: string, expression: string, reused?: boolean, texts?: Array<{ start: number, end: number, value: string }> } | null {
   if (!expr?.span) return null
 
   const expression = content.slice(expr.span.start, expr.span.end)
@@ -1706,14 +2227,40 @@ function resolveExpressionName (
   }
   const baseName = nameOfExpression(expr) ?? 'val'
 
-  let name = baseName
+  // a name taken already: what the value is of tells this one apart (`{{name}} … {{plan}}` for `project.name` and
+  // `name(plan)`, `{{missing}} … {{unexpected}}` for `listOrDash(d.missing)` and `listOrDash(d.unexpected)`)
+  const specific = usedNames.has(baseName) ? specificNameOfExpression(expr) : null
+  let name = specific && !usedNames.has(specific) && !T_OPTIONS.has(specific) ? specific : baseName
   let counter = 2
   while (usedNames.has(name)) {
     name = `${baseName}${counter++}`
   }
   usedNames.set(name, expression)
 
-  return { name, expression }
+  const texts = textsInValue(expr).map(t => ({ ...t, start: t.start - expr.span.start, end: t.end - expr.span.start }))
+  return texts.length ? { name, expression, texts } : { name, expression }
+}
+
+/**
+ * The strings that are a placeholder's value itself, a fallback or a branch of a choice: words of the text
+ * (`` `Search ${name || 'items'}…` ``), translated on their own. Not a key, path or class name (`a.b`, `is-active`).
+ */
+function textsInValue (expr: any, out: Array<{ start: number, end: number, value: string }> = []): Array<{ start: number, end: number, value: string }> {
+  if (!expr?.span) return out
+  if (expr.type === 'StringLiteral') {
+    const value = expr.value
+    if (/\p{L}/u.test(value) && !/\p{Ll}\p{Lu}/u.test(value) && !/^[\w-]*[_./][\w./-]*$/.test(value) && !/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(value)) {
+      out.push({ start: expr.span.start, end: expr.span.end, value })
+    }
+  } else if (expr.type === 'ConditionalExpression') {
+    textsInValue(expr.consequent, out)
+    textsInValue(expr.alternate, out)
+  } else if (expr.type === 'BinaryExpression' && LOGICAL_OPERATORS.has(expr.operator)) {
+    textsInValue(expr.right, out)
+  } else if (expr.type === 'ParenthesisExpression') {
+    textsInValue(expr.expression, out)
+  }
+  return out
 }
 
 // ─── JSX sibling interpolation merging ───────────────────────────────────────
@@ -1738,7 +2285,8 @@ function detectJSXInterpolation (
   const parts = nonTextParts(node, file, config, false)
   if (parts === 'all') return
 
-  const children = (node.type === 'JSXElement' || node.type === 'JSXFragment') ? node.children : null
+  // an icon's children are a ligature (its attributes are checked as anywhere else)
+  const children = (node.type === 'JSXElement' || node.type === 'JSXFragment') && !parts?.includes('children') ? node.children : null
 
   if (children?.length > 1) {
     // Build "runs" of consecutive JSXText + simple-expression containers
@@ -1748,7 +2296,7 @@ function detectJSXInterpolation (
     for (const child of children) {
       if (child.type === 'JSXText') {
         currentRun.push(child)
-      } else if (child.type === 'JSXExpressionContainer' && (isSimpleJSXExpression(child.expression) || child.expression?.type === 'StringLiteral')) {
+      } else if (child.type === 'JSXExpressionContainer' && (isSimpleJSXExpression(child.expression, (name, at) => declaredAt(elementNames.get(file) ?? [], name, at)) || child.expression?.type === 'StringLiteral')) {
         // a simple expression, or literal text such as {' '}
         currentRun.push(child)
       } else if (child.type === 'JSXExpressionContainer' && parsePluralExpression(child.expression, content)) {
@@ -2049,21 +2597,22 @@ function runSpan (run: any[], content: string): [number, number] {
  * Returns true when the expression is a simple Identifier or non-computed
  * MemberExpression (i.e. dot notation like `profile.name`).
  */
-function isSimpleJSXExpression (expr: any): boolean {
+function isSimpleJSXExpression (expr: any, isElement: (name: string, offset: number) => boolean = () => false): boolean {
   if (!expr) return false
-  if (expr.type === 'Identifier') return true
-  if (expr.type === 'MemberExpression' && !expr.computed && expr.property?.type === 'Identifier') return true
+  // a variable that holds JSX, or `children`, is an element: in a t() value it would show as [object Object]
+  if (expr.type === 'Identifier') return expr.value !== 'children' && !isElement(expr.value, expr.span?.start ?? 0)
+  if (expr.type === 'MemberExpression' && !expr.computed && expr.property?.type === 'Identifier') return expr.property.value !== 'children'
   // A string or number made from one, inside a sentence as a placeholder (`up to {n.toLocaleString()} segments`,
   // `{Math.round(score * 100)}%`, `+ {total - shown} more`); any other call may return elements
-  if (expr.type === 'ParenthesisExpression') return isSimpleJSXExpression(expr.expression)
+  if (expr.type === 'ParenthesisExpression') return isSimpleJSXExpression(expr.expression, isElement)
   if (expr.type === 'NumericLiteral') return true
   if (expr.type === 'BinaryExpression' && ARITHMETIC_OPERATORS.has(expr.operator)) {
-    return isSimpleJSXExpression(expr.left) && isSimpleJSXExpression(expr.right)
+    return isSimpleJSXExpression(expr.left, isElement) && isSimpleJSXExpression(expr.right, isElement)
   }
   // a choice between such values (`{young ? 3 : 2}`); a choice between strings is text of its own, which a
   // placeholder would leave untranslated
   if (expr.type === 'ConditionalExpression') {
-    return [expr.consequent, expr.alternate].every(b => b?.type !== 'StringLiteral' && b?.type !== 'TemplateLiteral' && isSimpleJSXExpression(b))
+    return [expr.consequent, expr.alternate].every(b => b?.type !== 'StringLiteral' && b?.type !== 'TemplateLiteral' && isSimpleJSXExpression(b, isElement))
   }
   // `format.date(x)`, `formatPrice(x)`: a formatter returns a string
   if (expr.type === 'CallExpression' && expr.callee?.type === 'Identifier') return /^format[A-Z]/.test(expr.callee.value)
@@ -2921,6 +3470,11 @@ async function ensureI18nInitFile (
 
   // Determine output location — prefer src/ if it exists
   const srcExists = await fileExists(join(cwd, 'src'))
+  // a file at a workspace's root is in no app: i18next is set up in the package the apps share, or in each app
+  if (!srcExists && await isWorkspaceRoot(cwd)) {
+    logger.info('This is the root of a workspace, which no app imports from: no i18n init file generated. Set i18next up in the package your apps share, or in each app, and import that file from each app\'s entry.')
+    return null
+  }
   const initDir = srcExists ? join(cwd, 'src') : cwd
   const initFileExt = hasTypeScript ? '.ts' : '.js'
   const initFilePath = join(initDir, 'i18n' + initFileExt)
@@ -3283,6 +3837,10 @@ function toMessageFormatCandidate (candidate: CandidateString, config: I18nextTo
   }
   // the content of a <Trans> candidate is JSX source; only its JSON value changes
   if (candidate.type !== 'jsx-mixed') candidate.content = convert(candidate.content)
+  if (candidate.alternative) candidate.alternative.content = convert(candidate.alternative.content)
+  for (const interpolation of [...candidate.interpolations ?? [], ...candidate.alternative?.interpolations ?? []]) {
+    for (const text of interpolation.texts ?? []) text.value = convert(text.value)
+  }
   if (candidate.transValue) candidate.transValue = convert(candidate.transValue)
 }
 
@@ -3317,6 +3875,12 @@ export async function writeExtractedKeys (
       } else {
         translations[candidate.key] = candidate.transValue ?? candidate.content
       }
+    }
+    // the text without its optional part, and the words in a placeholder's value
+    const alternative = candidate.alternative
+    if (alternative?.key) translations[alternative.key] = alternative.content
+    for (const interpolation of [...candidate.interpolations ?? [], ...alternative?.interpolations ?? []]) {
+      for (const text of interpolation.texts ?? []) if (text.key) translations[text.key] = text.value
     }
   }
 

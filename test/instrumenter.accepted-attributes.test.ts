@@ -148,13 +148,14 @@ describe('instrument with per-element acceptedAttributes', () => {
     expect(found).toContain('Opens the settings of your account')
   })
 
-  it('keeps the behaviour without rules and with the array form', async () => {
+  it('without rules and with the array form, takes the built-in attributes and the props a component\'s name or value marks as text', async () => {
     for (const option of [undefined, ['title']]) {
       const found = await candidates(option)
       expect(found).toContain('The monthly revenue overview')
       expect(found).toContain('Enter your full name here')
-      expect(found).not.toContain('Welcome to the dashboard')
-      expect(found).not.toContain('Pick the region you live in')
+      // a component's prop named for text (heading, hint) is text without a rule
+      expect(found).toContain('Welcome to the dashboard')
+      expect(found).toContain('Pick the region you live in')
       expect(found).toContain('This title is a lookup id here')
       expect(found).not.toContain('Your full shipping address')
     }

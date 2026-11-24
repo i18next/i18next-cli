@@ -128,6 +128,7 @@ export function transformFile (
   }
 
   const rewrittenHelperCalls = new Map<string, number>()
+  const wrappedGetters = new Set<number>()
 
   // Apply transformations in reverse order (to maintain correct offsets)
   for (let i = highConfidenceCandidates.length - 1; i >= 0; i--) {
@@ -140,10 +141,20 @@ export function transformFile (
       const nsForReplacement = (options.namespace && options.namespace !== defaultNS) ? options.namespace : undefined
       // <Trans> works in any render code, a helper outside a component too; without React the text stays
       if (candidate.type === 'jsx-mixed' && !options.hasReact) continue
-      const replacement = buildReplacement(candidate, key, useHookStyle, nsForReplacement, jsxQuote, transProps)
+      let replacement = buildReplacement(candidate, key, useHookStyle, nsForReplacement, jsxQuote, transProps)
+      if (candidate.type === 'jsx-mixed') replacement = layOutTrans(replacement, content, candidate)
 
       if (replacement) {
         s.overwrite(candidate.offset, candidate.endOffset, replacement)
+        // a module-scope property's text is read when it is used: `label: 'X'` → `get label () { return i18next.t(…) }`
+        const getter = candidate.getter
+        if (getter && !wrappedGetters.has(getter.keyStart)) {
+          wrappedGetters.add(getter.keyStart)
+          // (a comment between the colon and the value stays)
+          s.appendLeft(getter.keyStart, 'get ')
+          s.overwrite(getter.colon, getter.colon + 1, ' () { return')
+          s.appendLeft(getter.valueEnd, ' }')
+        }
         transformCount++
         if (candidate.pluralHelper) rewrittenHelperCalls.set(candidate.pluralHelper, (rewrittenHelperCalls.get(candidate.pluralHelper) ?? 0) + 1)
 
@@ -192,7 +203,9 @@ export function transformFile (
           s.prependLeft(comp.bodyStart, `{\n${indent}${line}\n${indent}return `)
           s.appendRight(comp.bodyEnd, `\n${indent.slice(2)}}`)
         } else {
-          s.appendRight(comp.bodyStart + 1, `\n${indent}${line}`)
+          // a body on one line (`function App () { return <h1>…</h1> }`): the statement after it gets a line of its own
+          const sameLine = !/^[ \t]*(?:\r?\n|$)/.test(content.slice(comp.bodyStart + 1))
+          s.appendRight(comp.bodyStart + 1, `\n${indent}${line}${sameLine ? `\n${indent}` : ''}`)
         }
         // getT() is awaited: a Server Component becomes async, and `export const metadata = {…}` the function
         // Next.js calls instead, `export async function generateMetadata () { …; return {…} }`
@@ -273,6 +286,22 @@ export function transformFile (
 }
 
 /**
+ * A <Trans> around text written over several lines gets lines of its own, its text one step in, as JSX is
+ * written; what it renders stays the same (JSX drops the line breaks and indents at the edges of a text).
+ * Left inline when the text shares its first line with other code or holds a string over several lines.
+ */
+function layOutTrans (replacement: string, code: string, candidate: CandidateString): string {
+  const text = candidate.content
+  const indent = code.slice(code.lastIndexOf('\n', candidate.offset - 1) + 1, candidate.offset)
+  // a string over several lines (a template literal, an attribute's value) would change with the indent
+  const multiLineString = [...text.matchAll(/`[^`]*`|="[^"]*"|='[^']*'/g)].some(m => m[0].includes('\n'))
+  if (!text.includes('\n') || /\S/.test(indent) || multiLineString || !replacement.endsWith(`${text}</Trans>`)) return replacement
+  const open = replacement.slice(0, replacement.length - text.length - '</Trans>'.length)
+  const [first, ...rest] = text.split('\n')
+  return `${open}\n${indent}  ${first}${rest.map(line => `\n  ${line}`).join('')}\n${indent}</Trans>`
+}
+
+/**
  * Builds the replacement code for a candidate string.
  *
  * @param candidate - The candidate to replace
@@ -289,7 +318,16 @@ function buildReplacement (
   transProps = ''
 ): string {
   const tFunc = useHookStyle ? 't' : 'i18next.t'
-  const escapedContent = escapeString(candidate.content)
+  const nsOption = !useHookStyle && namespace ? `, { ns: '${namespace}' }` : ''
+  // a placeholder's value with words of its own: each a t() call (`name: name || t('items', 'items')`)
+  type Interpolation = NonNullable<CandidateString['interpolations']>[number]
+  const valueOf = (interp: Interpolation) => (interp.texts ?? []).reduceRight((expr, text) =>
+    text.key ? `${expr.slice(0, text.start)}${tFunc}('${text.key}', '${escapeString(text.value)}'${nsOption})${expr.slice(text.end)}` : expr,
+  interp.expression)
+  const entry = (interp: Interpolation) => {
+    const value = valueOf(interp)
+    return interp.name === value ? interp.name : `${interp.name}: ${value}`
+  }
 
   // ── Plural form: t('key', { defaultValue_zero: '…', …, count: expr }) ──
   if (candidate.pluralForms) {
@@ -304,13 +342,7 @@ function buildReplacement (
     optionEntries.push(`defaultValue_other: '${escapeString(pf.other)}'`)
     optionEntries.push(`count: ${pf.countExpression}`)
     // Add extra interpolation variables (e.g. from JSX sibling merging with plurals)
-    if (candidate.interpolations?.length) {
-      for (const interp of candidate.interpolations) {
-        optionEntries.push(
-          interp.name === interp.expression ? interp.name : `${interp.name}: ${interp.expression}`
-        )
-      }
-    }
+    for (const interp of candidate.interpolations ?? []) optionEntries.push(entry(interp))
     if (!useHookStyle && namespace) {
       optionEntries.push(`ns: '${namespace}'`)
     }
@@ -325,21 +357,20 @@ function buildReplacement (
     }
   }
 
-  // Build the optional third argument: { interpolationVars..., ns? }
-  const optionEntries: string[] = []
-  if (candidate.interpolations?.length) {
-    for (const interp of candidate.interpolations) {
-      optionEntries.push(
-        interp.name === interp.expression ? interp.name : `${interp.name}: ${interp.expression}`
-      )
-    }
+  // The call, with the optional third argument: { interpolationVars..., ns? }
+  const call = (k: string, text: string, interpolations: CandidateString['interpolations']) => {
+    const optionEntries = (interpolations ?? []).map(entry)
+    if (!useHookStyle && namespace) optionEntries.push(`ns: '${namespace}'`)
+    const optionsArg = optionEntries.length > 0 ? `, { ${optionEntries.join(', ')} }` : ''
+    return `${tFunc}('${k}', '${escapeString(text)}'${optionsArg})`
   }
-  if (!useHookStyle && namespace) {
-    optionEntries.push(`ns: '${namespace}'`)
+  let tCall = call(key, candidate.content, candidate.interpolations)
+  // a text with an optional part: the two texts, chosen as the code chose the part
+  const alternative = candidate.alternative
+  if (alternative?.key) {
+    const other = call(alternative.key, alternative.content, alternative.interpolations)
+    tCall = alternative.mainWhen ? `(${alternative.test} ? ${tCall} : ${other})` : `(${alternative.test} ? ${other} : ${tCall})`
   }
-  const optionsArg = optionEntries.length > 0 ? `, { ${optionEntries.join(', ')} }` : ''
-
-  const tCall = `${tFunc}('${key}', '${escapedContent}'${optionsArg})`
 
   switch (candidate.type) {
     case 'jsx-text':

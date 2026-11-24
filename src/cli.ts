@@ -347,7 +347,13 @@ program
             console.log(styleText('bold', `\n${file}`))
             for (const c of candidates) {
               const text = c.content.replace(/\s+/g, ' ')
-              console.log(`  ${c.line}: "${text.length > 80 ? text.slice(0, 79) + '…' : text}" → ${c.key}`)
+              // how it is rewritten when that is not a plain t() call
+              const how = [
+                c.alternative && ` / ${c.alternative.key} (two texts, without its optional part)`,
+                c.getter && ' (a getter: read when used)',
+                ...[...c.interpolations ?? [], ...c.alternative?.interpolations ?? []].flatMap(i => (i.texts ?? []).map(t => ` + "${t.value}" → ${t.key}`))
+              ].filter(Boolean).join('')
+              console.log(`  ${c.line}: "${text.length > 80 ? text.slice(0, 79) + '…' : text}" → ${c.key}${how}`)
             }
             for (const site of languageChangeSites ?? []) {
               console.log(`  ${site.line}: changeLanguage(${site.languageExpression}) before the call that sets the language`)

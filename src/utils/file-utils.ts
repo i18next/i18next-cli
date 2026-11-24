@@ -80,6 +80,14 @@ async function workspaceGlobs (dir: string, pkg: Record<string, any> | null): Pr
 }
 
 /**
+ * A workspace's root (npm/yarn `workspaces`, `pnpm-workspace.yaml`) with packages: its own code is no app's. A
+ * `pnpm-workspace.yaml` that only holds settings (`onlyBuiltDependencies`) is a single app's.
+ */
+export async function isWorkspaceRoot (cwd: string = process.cwd()): Promise<boolean> {
+  return ((await workspaceGlobs(cwd, await readPackageJson(cwd)))?.length ?? 0) > 0
+}
+
+/**
  * The project's declared packages: `dependencies`, `devDependencies` and `peerDependencies` of the
  * `package.json` in `cwd`, plus, for a package of a workspace (npm/yarn `workspaces` or
  * `pnpm-workspace.yaml`), the ones of the workspace root, where shared packages such as `react` are often

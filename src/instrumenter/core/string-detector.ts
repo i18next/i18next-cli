@@ -120,8 +120,9 @@ function shouldSkip (
     return 'Whitespace only'
   }
 
-  // Skip separators, symbols and numbers with units: no letter outside HTML entities (` / `, `·`, `100%`)
-  if (!/\p{L}/u.test(content.replace(HTML_ENTITY_RE, ''))) {
+  // Skip separators, symbols and numbers with units: no letter outside HTML entities and a component's own
+  // `{name}` placeholders (` / `, `·`, `100%`, `"{name}",`)
+  if (!/\p{L}/u.test(content.replace(HTML_ENTITY_RE, '').replace(/(?<!\{)\{\s*[\w.]+\s*\}(?!\})/g, ''))) {
     return 'No letters'
   }
 
@@ -144,6 +145,13 @@ function shouldSkip (
 
   if (isCodeSnippet(content)) {
     return 'Code snippet'
+  }
+
+  // A region code and acronyms (`EU OSS VAT`, `CA GST/HST`, `CA PST (BC)`): names of tax ids and the like, the same
+  // in every language; a phrase in capitals (`SIGN IN`, `ADD TO CART`) and one word (`FAQ`) stay text
+  const tokens = content.trim().split(/\s+/)
+  if (tokens.length > 1 && /^[A-Z]{2}$/.test(tokens[0]) && tokens.every(t => t.replace(/[()]/g, '').split('/').every(p => /^[A-Z][A-Z0-9]{0,4}$/.test(p)))) {
+    return 'Acronyms'
   }
 
   // Skip developer-facing error codes (all-caps, underscore-delimited)
@@ -308,8 +316,20 @@ const TRANSLATABLE_PROPERTIES = new Set([...translatablePropertySet].map(p => p.
 const TECHNICAL_PROPERTIES = new Set([
   'authorization', 'url', 'uri', 'href', 'src', 'path', 'pathname', 'endpoint', 'route', 'id', 'key',
   'class', 'classname', 'classes', 'cls', 'style', 'styles', 'method', 'mimetype', 'contenttype', 'accept', 'encoding',
-  'icon', 'variant', 'color', 'type', 'code'
+  'icon', 'variant', 'color', 'type', 'code',
+  // formats, styles and events: `format: 'MMM D, YYYY'`, `transition: 'all 0.3s ease'`, `event: 'Sign Up Completed'`
+  'format', 'dateformat', 'font', 'fontfamily', 'transition', 'animation', 'event', 'eventname', 'mime', 'query',
+  'shortcut', 'hotkey', 'pattern', 'regex', 'locale', 'lng'
 ])
+
+/**
+ * A property name for an id, a path, a class, an icon, a type, a format or an event: its value is no text
+ * (`Authorization`, `iconName`, `dateFormat`). Case and dashes do not count (`Content-Type`).
+ */
+export function isTechnicalPropertyName (name: string): boolean {
+  return TECHNICAL_PROPERTIES.has(name.toLowerCase().replace(/-/g, '')) ||
+    /[a-z0-9](?:Id|ID|Key|Url|URL|Path|Class|ClassName|Classes|Icon|Type|Format|Event|Pattern)$/.test(name)
+}
 
 /** The lower-cased name of the JSX attribute whose value starts at `offset` (`title='…'`), or null. */
 function attributeNameBefore (code: string, offset: number): string | null {
@@ -419,7 +439,7 @@ function calculateConfidence (content: string, code: string, offset: number, tra
     const propName = rawName.toLowerCase().replace(/-/g, '') // 'Content-Type' → contenttype
     if (TRANSLATABLE_PROPERTIES.has(propName)) {
       confidence += 0.25
-    } else if (TECHNICAL_PROPERTIES.has(propName) || /[a-z0-9](Id|ID|Key|Url|URL|Path|Class|ClassName|Classes|Icon|Type)$/.test(rawName)) {
+    } else if (isTechnicalPropertyName(rawName)) {
       confidence -= 0.3
     }
   }

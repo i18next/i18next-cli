@@ -1153,9 +1153,9 @@ export function MixedChars () {
   // ───────────────────────────────────────────────────────────────────────────
   // Warning for i18next.t() in React files
   // ───────────────────────────────────────────────────────────────────────────
-  it('leaves module-scope strings untouched and warns about them', async () => {
-    // A module-level registry: a t() call here would run once at import time
-    // and never update on language change → must be skipped (issue #278)
+  it('reads the texts of a module-level registry when they are used, and warns about the rest of module scope', async () => {
+    // A module-level registry: a t() call here would run once at import time and never update on language
+    // change (issue #278); a getter calls it when the text is read. A constant string stays and is named.
     await fs.writeFile(
       join(tempDir, 'src', 'components', 'OutsideModule.tsx'),
       [
@@ -1165,10 +1165,11 @@ export function MixedChars () {
         "  { label: 'Dashboard Overview', path: '/dashboard' },",
         "  { label: 'Account Settings', path: '/settings' },",
         ']',
+        "const HEADING = 'Main navigation links'",
         '',
         'export function Nav () {',
         '  return (',
-        '    <ul>',
+        '    <ul aria-label={HEADING}>',
         '      {navItems.map(item => <li key={item.path}><a href={item.path}>{item.label}</a></li>)}',
         '    </ul>',
         '  )',
@@ -1183,10 +1184,9 @@ export function MixedChars () {
     const config = makeConfig()
     await runInstrumenter(config, { isDryRun: false, quiet: true }, capturingLogger)
 
-    // File must be left as-is — no i18next.t() at module scope
     const src = await readFile(join(tempDir, 'src', 'components', 'OutsideModule.tsx'), 'utf-8')
-    expect(src).toContain("label: 'Dashboard Overview'")
-    expect(src).not.toContain('i18next.t(')
+    expect(src).toContain("{ get label () { return i18next.t('dashboardOverview', 'Dashboard Overview') }, path: '/dashboard' }")
+    expect(src).toContain("const HEADING = 'Main navigation links'")
 
     const moduleScopeWarning = warnings.find(w => w.includes('module-scope string'))
     expect(moduleScopeWarning).toBeDefined()

@@ -1159,6 +1159,17 @@ export interface InstrumenterOptions {
   quiet?: boolean
 }
 
+/** A module-level object property whose value a getter reads when it is used: `label: 'Projects'`. */
+export interface GetterProperty {
+  /** Where its key starts, its colon stands, its value starts and ends */
+  keyStart: number
+  colon: number
+  valueStart: number
+  valueEnd: number
+  /** Its key as written (`label`, `'error.x'`, `100`) */
+  key: string
+}
+
 /**
  * Represents a candidate string found in source code for instrumentation
  */
@@ -1228,6 +1239,8 @@ export interface CandidateString {
    * and a useTranslation() hook will be injected into the component.
    */
   insideComponent?: string
+  /** Text at module scope that becomes a getter's value, read when it is used (`get label () { return … }`) */
+  getter?: GetterProperty
 
   /**
    * Interpolation variables for template literals with expressions or merged
@@ -1239,7 +1252,21 @@ export interface CandidateString {
     name: string
     /** Source-code expression (e.g. `count`, `profile.name`) */
     expression: string
+    /** Texts in the value itself, a fallback or a branch (`name || 'items'`): offsets in `expression`, and their keys */
+    texts?: Array<{ start: number, end: number, value: string, key?: string }>
   }>
+
+  /**
+   * A text with one optional part (`` `uses AI tokens${left ? `, ${left} left` : ''}` ``): `content` holds the part,
+   * this the text without it; `test` (source) picks one, `mainWhen` says for which result of it `content` applies.
+   */
+  alternative?: {
+    content: string
+    interpolations?: CandidateString['interpolations']
+    test: string
+    mainWhen: boolean
+    key?: string
+  }
 
   /**
    * For `jsx-mixed` candidates: the translation value with indexed tags
@@ -1435,6 +1462,12 @@ export interface FileScanResult {
   pluralHelperImports?: PluralHelperImport[]
   /** Candidates dropped for a reason the summary names (`message`), with how many */
   dropped?: Array<{ message: string, count: number, lines?: number[] }>
+  /** It imports or re-exports i18next, react-i18next or next-i18next (undefined when it did not parse) */
+  importsI18next?: boolean
+  /** Lines of calls of a React state setter that a language-change site would otherwise have been */
+  stateSetterLines?: number[]
+  /** Lines of the module-scope candidates it dropped */
+  moduleScopeLines?: number[]
 }
 
 /** An imported plural helper: how often the file names it, and the text that imports it. */

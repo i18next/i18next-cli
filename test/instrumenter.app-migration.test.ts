@@ -1,6 +1,6 @@
 /* eslint-disable no-template-curly-in-string -- the expectations quote template literals */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { runInstrumenter } from '../src/instrumenter'
+import { runInstrumenter, writeExtractedKeys } from '../src/instrumenter'
 import { generateKeyFromContent } from '../src/instrumenter/core/key-generator'
 import type { I18nextToolkitConfig, Logger } from '../src/types'
 import { join } from 'node:path'
@@ -123,12 +123,23 @@ ${body}
     expect(code).not.toMatch(/\bt\(/)
   })
 
-  it('rewrites the outer one of two nested template literals instead of failing on the file', async () => {
+  it('makes two texts of a template literal with one optional part, not English words in a placeholder', async () => {
     const { code, results } = await instrument({
-      'A.jsx': component('  return <p>{`Version ${project.version}${n ? `, cached for ${n} seconds` : \'\'} is published`}</p>')
+      'A.jsx': component(`  const label = \`uses AI tokens\${n !== undefined ? \`, \${n} left\` : ''}\`
+  return <p title={label}>{\`Version \${project.version}\${n ? \`, cached for \${n} seconds\` : ''} is published\`}</p>`)
     })
-    expect(results.totalTransformed).toBe(1)
-    expect(code).toContain("t('versionValIsPublished', 'Version {{version}}{{val}} is published'")
+    expect(results.totalTransformed).toBe(2)
+    expect(code).toContain("{(n ? t('versionCachedForNSecondsIsPublished', 'Version {{version}}, cached for {{n}} seconds is published', { version: project.version, n }) : t('versionIsPublished', 'Version {{version}} is published', { version: project.version }))}")
+    expect(code).toContain("(n !== undefined ? t('usesAiTokensNLeft', 'uses AI tokens, {{n}} left', { n }) : t('usesAiTokens', 'uses AI tokens'))")
+  })
+
+  it('translates the words of a placeholder\'s value: a fallback and the branches of a choice', async () => {
+    const { code } = await instrument({
+      'A.jsx': component("  return <input placeholder={`Search ${name || 'items'}…`} title={`Namespace: ${token || (open ? 'all namespaces' : 'none')}`} aria-label={`Row ${user.id || 'new-row'}`} />")
+    })
+    expect(code).toContain("t('searchName', 'Search {{name}}…', { name: name || t('items', 'items') })")
+    expect(code).toContain("{ token: token || (open ? t('allNamespaces', 'all namespaces') : t('none', 'none')) }")
+    expect(code).toContain("id: user.id || 'new-row'")
   })
 
   it('names a placeholder after what a call formats, once for an expression used twice', async () => {
@@ -192,7 +203,7 @@ ${body}
     expect(code).toContain("open(t('linkCopiedToClipboard', 'Link copied to clipboard'))")
   })
 
-  it('adds a language switch only where a call is a statement of its own, for a setter or settings, not for data', async () => {
+  it('adds a language switch only where a call is a statement of its own, for a setter or settings, not for data nor state', async () => {
     const { code, results } = await instrument({
       'A.jsx': component(`  const [lng, setLng] = useState()
   const pick = (l) => setLng(l)
@@ -201,9 +212,10 @@ ${body}
   const save = () => { return saveSettings({ language: lng }) }
   return <p onClick={() => updateSettings({ language: lng })}>{pick}{load}{save}</p>`)
     })
-    expect(results.totalLanguageChanges).toBe(2)
+    expect(results.totalLanguageChanges).toBe(1)
     expect(code).toContain('if (open) setLanguage(lng)')
-    expect(code).toContain('const pick = (l) => { i18n.changeLanguage(l); setLng(l); }')
+    // a useState setter sets the component's state (a view's language filter in a translation tool)
+    expect(code).toContain('const pick = (l) => setLng(l)')
     expect(code).toContain('() => fetchDownloads({ lng })')
     expect(code).toContain('return saveSettings({ language: lng })')
     expect(code).toContain('{ i18n.changeLanguage(lng); updateSettings({ language: lng }); }')
@@ -537,13 +549,363 @@ export function Page ({ n, name }) {
 
   it('reports the module-scope strings of all files in one warning', async () => {
     await instrument({
-      'A.jsx': "export const OPTIONS = [{ label: 'First option here' }]\n",
-      'B.jsx': "export const MORE = [{ label: 'Second option here' }]\n"
+      'A.jsx': "export const OPTIONS = ['First option here']\n",
+      'B.jsx': "export const MORE = ['Second option here']\n"
     }, true)
     const moduleScope = warnings.filter(w => w.includes('module-scope string'))
     expect(moduleScope).toHaveLength(1)
     expect(moduleScope[0]).toContain('Skipped 2 module-scope string(s)')
-    expect(moduleScope[0]).toMatch(/A\.jsx \(1\)[\s\S]*B\.jsx \(1\)|B\.jsx \(1\)[\s\S]*A\.jsx \(1\)/)
+    expect(moduleScope[0]).toMatch(/A\.jsx \(1\): line 1[\s\S]*B\.jsx \(1\): line 1|B\.jsx \(1\): line 1[\s\S]*A\.jsx \(1\): line 1/)
+  })
+
+  // Patterns found in a second round on the same app, its texts back in the code (i18next taken out)
+
+  it('never puts an element into a t() value: a variable that holds JSX, or children', async () => {
+    const { code } = await instrument({
+      'A.jsx': component(`  const link = <Link to='/billing'>Billing</Link>
+  return <><p>The payment method is changed under {link}.</p><Button>{project.children} in {n} s</Button><b>{children} in {n} s</b></>`)
+    })
+    expect(code).not.toContain('{{link}}')
+    expect(code).not.toContain('{{children}}')
+    expect(code).toContain('{link}.')
+    expect(code).toContain("{children} {t('inNS', 'in {{n}} s', { n })}")
+  })
+
+  it('takes neither a selector of an optional call nor class names in a classNames object for text', async () => {
+    const { code } = await instrument({
+      'A.jsx': component(`  const heading = open?.current?.querySelector('h1, h2, h3, h4')
+  const props = select({ classNames: { container: () => 'btn btn-secondary btn-dropdown', menu: () => 'select-menu' } })
+  return <Select {...props} heading={heading}>Choose a project</Select>`)
+    })
+    expect(code).toContain("querySelector('h1, h2, h3, h4')")
+    expect(code).toContain("container: () => 'btn btn-secondary btn-dropdown'")
+    expect(code).toContain("{t('chooseAProject', 'Choose a project')}")
+  })
+
+  it('translates the props of a component that its name or a sentence marks as text, and an icon\'s label', async () => {
+    const { code } = await instrument({
+      'A.jsx': component(`  return (
+    <>
+      <ModalActions saveLabel='set' cancelText='Not now' />
+      <ConfirmModal labelConfirm='detach' labelPosition='top' />
+      <Grid name='projects' empty='No projects yet.' noMatchFilters='No one matches these filters.' searchPlaceholder='Find a project…' />
+      <Loader message='Loading projects' tip='Copy snippet' />
+      <Box textAlign='center' titleIcon='lock' align='flex-start center' isEmpty='yes' columns='minmax(0, 1fr) 2fr' />
+      <Chart tooltip='off' legend='bottom' empty='hide' allowEmpty='false' filterText='all' fontFamily='Helvetica Neue' dateFormat='MMMM D, YYYY' eventName='Sign Up Clicked' />
+      <CopyToClipboard text='npm install i18next' />
+      <FitTitle text='Delete tenant {name}?' name={name} />
+      <FieldLabel text='Scopes' />
+      <Icon name='warning' aria-label='at the limit' data-tip={open ? 'Expand' : 'Collapse'}>warning</Icon>
+    </>
+  )`)
+    })
+    expect(code).toContain("labelPosition='top'")
+    expect(code).toContain("<Chart tooltip='off' legend='bottom' empty='hide' allowEmpty='false' filterText='all' fontFamily='Helvetica Neue' dateFormat='MMMM D, YYYY' eventName='Sign Up Clicked' />")
+    expect(code).toContain("<CopyToClipboard text='npm install i18next' />")
+    expect(code).toContain("text={t('deleteTenantName', 'Delete tenant {name}?')}")
+    expect(code).toContain("<FieldLabel text={t('scopes', 'Scopes')} />")
+    for (const text of ['set', 'Not now', 'detach', 'No projects yet.', 'No one matches these filters.', 'Find a project…', 'Loading projects', 'Copy snippet', 'at the limit', 'Expand', 'Collapse']) {
+      expect(code).toContain(`, '${text}')`)
+    }
+    expect(code).toContain("name='projects'")
+    expect(code).toContain("<Box textAlign='center' titleIcon='lock' align='flex-start center' isEmpty='yes' columns='minmax(0, 1fr) 2fr' />")
+    expect(code).toContain('>warning</Icon>')
+  })
+
+  it('translates a single word under a text property and in a title call, not a placeholder or a list of acronyms', async () => {
+    const { code } = await instrument({
+      'A.jsx': component(`  useDocumentTitle('Projects')
+  const page = getPageTitle('dashboard')
+  const meta = <meta name='robots' content={open ? 'noindex' : 'index'} />
+  const options = [{ value: '', label: 'has' }, { value: 'not', label: 'has not' }]
+  return (
+    <Pills options={options}>
+      <FitTitle text={n > 1 ? '"{name}",' : name} name={name} />
+      <select><option value='eu_vat'>EU VAT</option><option value='ca_pst_bc'>CA PST (BC)</option><option value='unknown'>Other</option></select>
+      <Button>SIGN IN</Button>
+    </Pills>
+  )`)
+    })
+    expect(code).toContain("useDocumentTitle(t('projects', 'Projects'))")
+    expect(code).toContain("{ value: '', label: t('has', 'has') }")
+    expect(code).toContain("'\"{name}\",'")
+    expect(code).toContain('>EU VAT</option>')
+    expect(code).toContain('>CA PST (BC)</option>')
+    expect(code).toContain("{t('other', 'Other')}")
+    expect(code).toContain("getPageTitle('dashboard')")
+    expect(code).toContain("content={open ? 'noindex' : 'index'}")
+    expect(code).toContain("{t('signIn', 'SIGN IN')}")
+  })
+
+  it('leaves a type alone: a string in a TypeScript type is no value', async () => {
+    const { code } = await instrument({
+      'A.tsx': `import { useState } from 'react'
+type Sort = { label: 'asc' | 'desc' }
+export function Page () {
+  const [sort] = useState<{ label: 'asc' | 'desc', title: 'Hello there' }>()
+  return <p title={sort ? 'Sorted' : 'Not sorted'}>Sorted by name</p>
+}
+`
+    }, false, { input: normalizePath(join(tempDir, 'src/**/*.tsx')) })
+    expect(code).toContain("type Sort = { label: 'asc' | 'desc' }")
+    expect(code).toContain("useState<{ label: 'asc' | 'desc', title: 'Hello there' }>()")
+    expect(code).toContain("{t('sortedByName', 'Sorted by name')}")
+  })
+
+  it('keeps a JSX variable of one component from splitting the texts of another', async () => {
+    const { code } = await instrument({
+      'A.jsx': `export function A () {
+  const label = <b>Hi</b>
+  return <p>{label}</p>
+}
+export function B ({ label, n }) {
+  return <p>Delete {label} and {n} more items now?</p>
+}
+`
+    })
+    expect(code).toContain("{t('deleteLabelAndNMoreItemsNow', 'Delete {{label}} and {{n}} more items now?', { label, n })}")
+  })
+
+  it('names the state setters it leaves without a language switch, and only those of the function that declares them', async () => {
+    const { code, results } = await instrument({
+      'A.jsx': `export function Filter ({ open }) {
+  const [lng, setLanguage] = useState()
+  return <p onClick={() => setLanguage(open)}>Filter by language</p>
+}
+export function Settings ({ code }) {
+  const { setLanguage } = useSettings()
+  return <p onClick={() => setLanguage(code)}>Use this language</p>
+}
+`
+    })
+    expect(results.totalLanguageChanges).toBe(1)
+    expect(code).toContain('() => setLanguage(open)')
+    expect(code).toContain('{ i18n.changeLanguage(code); setLanguage(code); }')
+    expect(warnings.some(w => w.includes('React state setters') && w.includes('A.jsx:3'))).toBe(true)
+  })
+
+  it('takes a re-export of i18next as its setup, and a pnpm-workspace.yaml with settings only as a single app', async () => {
+    await instrument({
+      'A.jsx': component('  return <h1>Welcome to the dashboard</h1>'),
+      'i18n-shared.js': "export { default } from 'i18next'\n"
+    })
+    await expect(access(join(tempDir, 'src', 'i18n.js'))).rejects.toThrow()
+
+    await rm(join(tempDir, 'src'), { recursive: true, force: true })
+    await mkdir(join(tempDir, 'app'), { recursive: true })
+    await writeFile(join(tempDir, 'pnpm-workspace.yaml'), 'onlyBuiltDependencies:\n  - esbuild\n')
+    await writeFile(join(tempDir, 'app', 'A.jsx'), component('  return <h1>Welcome to the dashboard</h1>'))
+    const cfg = config()
+    cfg.extract.input = normalizePath(join(tempDir, 'app/**/*.jsx'))
+    await runInstrumenter(cfg, { isDryRun: false, quiet: true }, logger)
+    await expect(access(join(tempDir, 'i18n.js'))).resolves.toBeUndefined()
+  })
+
+  it('translates module-scope texts when they are used: JSX text as <Trans>, a property\'s value through a getter', async () => {
+    const { code } = await instrument({
+      'A.jsx': `const NEWS = [{ title: 'Glossary suggestions', text: <p>Suggested terms from your translations.</p> }]
+const KINDS = [{ id: 'project', label: 'Projects' }]
+const MESSAGES = Object.freeze({ 'error.notFound': 'Nothing found here.', 100: 'Conflict with another value.' })
+const BLOCKS = [1, 2].map(level => ({ value: \`h\${level}\`, label: \`Heading \${level}\` }))
+const READ_NOW = [{ label: 'Read at import' }]
+const LABELS = READ_NOW.map(k => k.label)
+const page = register({ title: 'Registered at import' })
+const OPTION = <option value='x'>Plain text only</option>
+export function Page ({ code }) {
+  return <ul title={MESSAGES[code]}>{[...NEWS, ...KINDS, ...BLOCKS].map(k => <li key={k.label}>{k.label}{k.text}</li>)}{LABELS}{page}{OPTION}</ul>
+}
+`
+    })
+    expect(code).toContain("{ get title () { return i18next.t('glossarySuggestions', 'Glossary suggestions') }, text: <p><Trans i18nKey='suggestedTermsFromYourTranslations'>Suggested terms from your translations.</Trans></p> }")
+    expect(code).toContain("{ id: 'project', get label () { return i18next.t('projects', 'Projects') } }")
+    expect(code).toContain("get 'error.notFound' () { return i18next.t('nothingFoundHere', 'Nothing found here.') }")
+    expect(code).toContain("get 100 () { return i18next.t('conflictWithAnotherValue', 'Conflict with another value.') }")
+    // a callback of .map() at module scope runs at import: its object's text is read through a getter too
+    expect(code).toContain("get label () { return i18next.t('headingLevel', 'Heading {{level}}', { level }) }")
+    // read at import, or passed to a call that may read it at once, or plain text only: left, and named
+    expect(code).toContain("const READ_NOW = [{ label: 'Read at import' }]")
+    expect(code).toContain("register({ title: 'Registered at import' })")
+    expect(code).toContain('>Plain text only</option>')
+    expect(warnings.find(w => w.includes('module-scope string'))).toContain('Skipped 3 module-scope string(s)')
+    expect(code).toContain("import { Trans } from 'react-i18next'")
+    expect(code).toContain("import i18next from 'i18next'")
+    const { parse } = await import('@swc/core')
+    await expect(parse(code, { syntax: 'ecmascript', jsx: true })).resolves.toBeDefined()
+  })
+
+  it('leaves the texts that only build data: a mailto body, a file\'s content', async () => {
+    const { code } = await instrument({
+      'A.jsx': component(`  const intro = ['I hit an error in the app.', \`URL: \${user.url}\`].join('\\n')
+  const body = intro + items.join('\\n')
+  const mail = \`mailto:support@example.com?subject=\${encodeURIComponent('Error in the app')}&body=\${encodeURIComponent(body)}\`
+  const preamble = [\`project: \${project.name}\`, \`version: \${n}\`].join('\\n')
+  const save = () => zip.file('export.csv', \`\${preamble}\\n\${token}\`)
+  const blob = () => new Blob(['Exported by the app'], { type: 'text/plain' })
+  return <a href={mail} onClick={save} onDoubleClick={blob}>Send us the details</a>`)
+    })
+    expect(code).toContain("const intro = ['I hit an error in the app.', `URL: ${user.url}`]")
+    expect(code).toContain("encodeURIComponent('Error in the app')")
+    expect(code).toContain('const preamble = [`project: ${project.name}`, `version: ${n}`]')
+    expect(code).toContain("new Blob(['Exported by the app']")
+    expect(code).toContain("{t('sendUsTheDetails', 'Send us the details')}")
+  })
+
+  it('names the texts that are parts of a sentence, with their lines', async () => {
+    await instrument({
+      'A.jsx': component(`  const via = open ? ' (via the command line)' : ''
+  const needs = \`, which needs \${name}\`
+  return <p title={\`Plan for this project\${needs}\`}>{via}</p>`)
+    }, true)
+    const parts = warnings.find(w => w.includes('Parts of a sentence'))
+    expect(parts).toContain("A.jsx:2 ' (via the command line)'")
+    expect(parts).toContain("A.jsx:3 ', which needs {{name}}'")
+  })
+
+  it('gives a Next.js app next-i18next even when a page shows an i18next setup snippet as text', async () => {
+    await writeFile(join(tempDir, 'package.json'), JSON.stringify({ name: 'app', dependencies: { next: '^16.0.0', react: '^19.0.0' } }))
+    await mkdir(join(tempDir, 'src', 'app'), { recursive: true })
+    const { code } = await instrument({
+      'app/page.jsx': `export default function Page () {
+  const snippet = \`import i18next from 'i18next'\`
+  return <main><h1>Welcome to the docs</h1><pre>{snippet}</pre></main>
+}
+`
+    })
+    expect(code).toContain('await getT()')
+    expect(code).not.toContain('useTranslation')
+  })
+
+  it('translates the sibling phrases of a text in a map of strings, not a single word beside them', async () => {
+    const { code } = await instrument({
+      'A.jsx': component("  const labels = { ht: 'by human', tm: 'by translation memory', icon: 'check', className: 'btn primary', old: 'over 14 days ago', list: 'Languages: {list}' }\n  return <p>{labels[token]}</p>")
+    })
+    expect(code).toContain("{ ht: t('byHuman', 'by human'), tm: t('byTranslationMemory', 'by translation memory'), icon: 'check', className: 'btn primary', old: t('over14DaysAgo', 'over 14 days ago'), list: t('languagesList', 'Languages: {list}') }")
+  })
+
+  it('gives no getter to what is read at import, here or in another file, computed again on every read, or changed', async () => {
+    const { code } = await instrument({
+      'A.jsx': `export const ROLES = [{ value: 'admin', label: 'Administrator role' }]
+const LABELS = [{ label: 'First option here' }]
+function build () { return LABELS.map(l => l.label) }
+export const TITLES = build()
+const STORE = [{ title: 'Read by the store' }]
+class Store { constructor () { this.title = STORE[0].title } }
+export const store = new Store()
+export const PAGE = { title: 'Changed later on' }
+export function rename (x) { PAGE.title = x }
+let n = 0
+export const COUNTS = { label: \`Count is \${n++} now\`, title: register('Hello there world'), options: ['Yes please do', 'No thank you'] }
+export const VIA_IIFE = (() => [{ label: 'Built by an arrow' }])()
+export const FALLBACK = <Suspense fallback={<div>Loading the app now</div>}><App /></Suspense>
+export const NEWS = <p>Nothing to see &amp; do here</p>
+`,
+      'B.jsx': `import { ROLES } from './A'
+export const BY_VALUE = Object.fromEntries(ROLES.map(r => [r.value, r.label]))
+`
+    })
+    expect(code).toContain("{ value: 'admin', label: 'Administrator role' }")
+    expect(code).toContain("const LABELS = [{ label: 'First option here' }]")
+    expect(code).toContain("const STORE = [{ title: 'Read by the store' }]")
+    expect(code).toContain("const PAGE = { title: 'Changed later on' }")
+    expect(code).toContain("label: `Count is ${n++} now`, title: register('Hello there world'), options: ['Yes please do', 'No thank you']")
+    expect(code).toContain("(() => [{ get label () { return i18next.t('builtByAnArrow', 'Built by an arrow') } }])()")
+    expect(code).toContain('fallback={<div>Loading the app now</div>}')
+    expect(code).toContain('<Trans i18nKey="nothingToSeeDoHere">Nothing to see &amp; do here</Trans>')
+  })
+
+  it('leaves the data siblings of a text and TypeScript literals alone, and gives a one-line component its hook on a line of its own', async () => {
+    const { code } = await instrument({
+      'A.tsx': `export function App () { return <h1>Welcome home today</h1> }
+export function Row () {
+  const meta = { label: 'Created at', format: 'MMM D, YYYY', transition: 'all 0.3s ease', mime: 'text/plain; charset=utf-8', event: 'Sign Up Completed', font: 'Helvetica Neue', shortcut: 'Ctrl S', hint: 'by the owner' }
+  const state = { label: 'Active now' as const }
+  return <p title={meta.label}>{state.label}</p>
+}
+export const MODES = { label: 'Active now' } satisfies { label: 'Active now' | 'Paused now' }
+`
+    }, false, { input: normalizePath(join(tempDir, 'src/**/*.tsx')) })
+    expect(code).toContain("format: 'MMM D, YYYY', transition: 'all 0.3s ease', mime: 'text/plain; charset=utf-8', event: 'Sign Up Completed', font: 'Helvetica Neue', shortcut: 'Ctrl S', hint: t('byTheOwner', 'by the owner') }")
+    expect(code).toContain("{ label: 'Active now' as const }")
+    expect(code).toContain("export const MODES = { label: 'Active now' } satisfies")
+    expect(code).toContain('export function App () {\n  const { t } = useTranslation()\n')
+    const { parse } = await import('@swc/core')
+    await expect(parse(code, { syntax: 'typescript', tsx: true })).resolves.toBeDefined()
+  })
+
+  it('writes the keys of a split text and of the words in a placeholder\'s value', async () => {
+    const { results } = await instrument({
+      'A.jsx': component("  return <p title={`uses AI tokens${n ? `, ${n} left` : ''}`}>{`Search ${name || 'items'}…`}</p>")
+    }, true)
+    await writeExtractedKeys(results.files.flatMap(f => f.candidates), config(), undefined, logger)
+    const json = JSON.parse(await readFile(join(tempDir, 'locales', 'en', 'translation.json'), 'utf-8'))
+    expect(json).toMatchObject({ usesAiTokensNLeft: 'uses AI tokens, {{n}} left', usesAiTokens: 'uses AI tokens', searchName: 'Search {{name}}…', items: 'items' })
+  })
+
+  it('never names a placeholder after an option of t()', async () => {
+    const { code } = await instrument({
+      'A.jsx': component('  return <p title={`${shown.value} of ${count.value} values`}>{n}</p>')
+    })
+    expect(code).not.toContain('{{count}}')
+    expect(code).toContain("'{{value}} of {{value2}} values'")
+  })
+
+  it('leaves the strings that go into an ignore list alone', async () => {
+    const { code } = await instrument({
+      'a.js': `export function errorOf (err, ignore = []) {
+  ignore.push('Failed to fetch')
+  return ignore.some(i => err.message.includes(i)) ? null : 'Something went wrong. Please try again.'
+}
+`
+    })
+    expect(code).toContain("ignore.push('Failed to fetch')")
+    expect(code).toContain("i18next.t('somethingWentWrongPleaseTryAgain', 'Something went wrong. Please try again.')")
+  })
+
+  it('names a placeholder after what its value is of when the name is taken', async () => {
+    const { code } = await instrument({
+      'A.jsx': component(`  const label = \`Changes the plan of "\${project.name}" to \${name(open)}.\`
+  return <p title={label}>{\`showing \${shown.length} of \${items.length}\`}</p>`)
+    })
+    expect(code).toContain("'Changes the plan of \"{{name}}\" to {{open}}.', { name: project.name, open: name(open) }")
+    expect(code).toContain("'showing {{length}} of {{items}}', { length: shown.length, items: items.length }")
+  })
+
+  it('puts a <Trans> around text over several lines on lines of its own', async () => {
+    const { code } = await instrument({
+      'A.jsx': component(`  return (
+    <p>
+      Some of your projects enforce two-factor authentication. Set it up
+      <a href={\`/p/\${project.slug}/profile\`}>in your profile</a> before you open them,
+      or <a href={\`/p/\${project.slug}\`}>leave them</a>.
+    </p>
+  )`)
+    })
+    expect(code).toContain(`    <p>
+      <Trans i18nKey="someOfYourProjectsEnforceTwofactor">
+        Some of your projects enforce two-factor authentication. Set it up
+        <a href={\`/p/\${project.slug}/profile\`}>in your profile</a> before you open them,
+        or <a href={\`/p/\${project.slug}\`}>leave them</a>.
+      </Trans>
+    </p>`)
+  })
+
+  it('generates the init file when i18next shows only in a snippet, none at the root of a workspace', async () => {
+    await instrument({
+      'A.jsx': component(`  const snippet = \`import i18next from 'i18next'
+i18next.init({ fallbackLng: 'en' })\`
+  return <pre title='Your setup code'>{snippet}</pre>`)
+    })
+    await expect(access(join(tempDir, 'src', 'i18n.js'))).resolves.toBeUndefined()
+
+    await rm(join(tempDir, 'src'), { recursive: true, force: true })
+    await mkdir(join(tempDir, 'packages', 'app', 'src'), { recursive: true })
+    await writeFile(join(tempDir, 'package.json'), JSON.stringify({ workspaces: ['packages/*'], dependencies: { react: '^19.0.0' } }))
+    await writeFile(join(tempDir, 'packages', 'app', 'src', 'A.jsx'), component('  return <h1>Welcome to the dashboard</h1>'))
+    const cfg = config()
+    cfg.extract.input = normalizePath(join(tempDir, 'packages/*/src/**/*.jsx'))
+    await runInstrumenter(cfg, { isDryRun: false, quiet: true }, logger)
+    await expect(access(join(tempDir, 'i18n.js'))).rejects.toThrow()
+    expect(infos.some(i => i.includes('root of a workspace'))).toBe(true)
   })
 })
 
