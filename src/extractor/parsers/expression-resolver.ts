@@ -130,6 +130,12 @@ class ModuleTable<V> extends Map<string, V> {
     return undefined
   }
 
+  // The module whose declaration `get(name)` returns, if `name` resolves to one
+  declaringModule (name: string): string | undefined {
+    const key = this.scope.keysOf(name).find(key => key.includes('#') && super.has(key))
+    return key?.slice(0, key.lastIndexOf('#'))
+  }
+
   // [module, what it declares] for every module declaring `name`
   declarations (name: string): Array<[string, V]> {
     return [...this.declarers.get(name) ?? []].flatMap(module => {
@@ -197,10 +203,6 @@ export class ExpressionResolver {
   // Shared (cross-file) table for enums / exported object maps that should persist
   private sharedEnumTable: Map<string, Record<string, string>> = new ModuleTable(this, true)
 
-  // Per-file table for type aliases: Maps typeName -> string[]
-  // e.g. `type ChangeType = 'all' | 'next' | 'this'` -> { ChangeType: ['all', 'next', 'this'] }
-  private typeAliasTable: Map<string, string[]> = new Map()
-
   // Shared (cross-file) table for string-array constants (e.g. `as const` arrays).
   // Persists across resetFileSymbols() so exported arrays are visible to importers.
   private sharedVariableTable: Map<string, string[]> = new ModuleTable(this, true)
@@ -214,7 +216,7 @@ export class ExpressionResolver {
   // `Object.keys(MAP)` need all keys (#317).
   private sharedObjectKeysTable: Map<string, string[]> = new ModuleTable(this, true)
 
-  // Shared (cross-file) table for type aliases — populated alongside typeAliasTable.
+  // Shared (cross-file) table for type aliases.
   // Persists across resetFileSymbols() so exported type aliases are visible to importers.
   private sharedTypeAliasTable: Map<string, string[]> = new ModuleTable(this)
 
@@ -233,7 +235,7 @@ export class ExpressionResolver {
   // e.g. `interface IProps { size: ChangeType }` -> { IProps: { size: ['all','next'] } }
   private objectTypeTable: Map<string, Record<string, string[]>> = new ModuleTable(this)
   // Raw TS member nodes of local interfaces / object type aliases, keyed by type name.
-  private objectTypeMembersRaw: Map<string, any[]> = new ModuleTable(this)
+  private objectTypeMembersRaw: ModuleTable<any[]> = new ModuleTable(this)
 
   // Temporary per-scope bindings for identifiers holding an object-shaped type,
   // e.g. `function f(props: IProps)` -> { props: { size: ['all','next'] } }.
@@ -445,14 +447,18 @@ export class ExpressionResolver {
   // Replays run after every file was read: run each in the file it was recorded in
   private inCurrentFile (fn: () => void): () => void {
     const module = this.currentModule
-    return () => {
-      const saved = this.currentModule
-      this.currentModule = module
-      try {
-        fn()
-      } finally {
-        this.currentModule = saved
-      }
+    return () => this.inModule(module, fn)
+  }
+
+  // Run `fn` as if `module` were being read, so the names in its type nodes resolve to its own
+  // declarations and imports, not to those of the file that imported them (#330)
+  private inModule<T> (module: string | undefined, fn: () => T): T {
+    const saved = this.currentModule
+    this.currentModule = module ?? saved
+    try {
+      return fn()
+    } finally {
+      this.currentModule = saved
     }
   }
 
@@ -476,7 +482,6 @@ export class ExpressionResolver {
    */
   public resetFileSymbols (): void {
     this.variableTable.clear()
-    this.typeAliasTable.clear()
     this.temporaryVariables.clear()
     this.arrayElementMembers.clear()
     this.objectVariables.clear()
@@ -736,7 +741,6 @@ export class ExpressionResolver {
       }
       const vals = this.withTypeParams(params, undefined, () => this.resolvePossibleStringValuesFromType(tsType))
       if (vals.length > 0) {
-        if (!this.replaying) this.typeAliasTable.set(name, vals)
         // Also share so importing files can resolve this alias by name
         this.setShared(this.sharedTypeAliasTable, name, vals)
         return
@@ -962,7 +966,7 @@ export class ExpressionResolver {
       // `components['schemas']['Pet']` → Pet's members, else the members nested under `schemas.Pet`
       if (tsType.type === 'TsIndexedAccessType') {
         const target = this.indexedAccessTarget(tsType)
-        if (target) return this.resolveTypeMembers(target)
+        if (target) return this.inModule(target.module, () => this.resolveTypeMembers(target.node))
         const key = indexedKey(tsType)
         return key === undefined ? undefined : nestedMembers(this.resolveTypeMembers(tsType.objectType), key)
       }
@@ -986,7 +990,9 @@ export class ExpressionResolver {
         const args = tsType.typeParams?.params
         const params = this.objectTypeParams.get(name)
         if (args?.length && params) {
-          return this.withTypeParams(params, args, () => this.collectObjectTypeMembers(this.objectTypeMembersRaw.get(name) ?? []))
+          const raw = this.objectTypeMembersRaw.get(name) ?? []
+          const module = this.objectTypeMembersRaw.declaringModule(name)
+          return this.withTypeParams(params, args, () => this.inModule(module, () => this.collectObjectTypeMembers(raw)))
         }
         // `Omit<Foo, 'type'>`, `Pick<Foo, 'status'>`, `Partial<Foo>` → Foo's members, without or only the named ones
         if (args?.length && ['Omit', 'Pick', 'Partial', 'Required', 'Readonly', 'NonNullable'].includes(name)) {
@@ -1032,18 +1038,24 @@ export class ExpressionResolver {
    * there gives it the full depth instead of what is left below `operations`.
    * Generic types are left to the flattened tables, which bind their parameters.
    */
-  private indexedAccessTarget (type: any): any {
+  private indexedAccessTarget (type: any): { node: any, module?: string } | undefined {
     const key = indexedKey(type)
     if (key === undefined) return undefined
     let obj = type.objectType
+    let module = this.currentModule
     while (obj?.type === 'TsParenthesizedType') obj = obj.typeAnnotation
-    if (obj?.type === 'TsIndexedAccessType') obj = this.indexedAccessTarget(obj)
-    const name = obj?.type === 'TsTypeReference' && !obj.typeParams ? this.typeRefName(obj) : undefined
-    const members = obj?.type === 'TsTypeLiteral'
-      ? obj.members
-      : name && !this.objectTypeParams.has(name) ? this.objectTypeMembersRaw.get(name) : undefined
-    const member = Array.isArray(members) ? memberByKey(members, key) : undefined
-    return member?.typeAnnotation?.typeAnnotation ?? member?.typeAnnotation
+    if (obj?.type === 'TsIndexedAccessType') ({ node: obj, module } = this.indexedAccessTarget(obj) ?? {})
+    // The node and the module whose declarations its names refer to
+    return this.inModule(module, () => {
+      const name = obj?.type === 'TsTypeReference' && !obj.typeParams ? this.typeRefName(obj) : undefined
+      const members = obj?.type === 'TsTypeLiteral'
+        ? obj.members
+        : name && !this.objectTypeParams.has(name) ? this.objectTypeMembersRaw.get(name) : undefined
+      if (name) module = this.objectTypeMembersRaw.declaringModule(name) ?? module
+      const member = Array.isArray(members) ? memberByKey(members, key) : undefined
+      const node = member?.typeAnnotation?.typeAnnotation ?? member?.typeAnnotation
+      return node && { node, module }
+    })
   }
 
   // `['day', 'hour']` -> ['day', 'hour']
@@ -1698,7 +1710,7 @@ export class ExpressionResolver {
         if (bound) return bound
 
         // 1. Check type alias table first (exact match for string-literal unions)
-        const aliasVals = this.typeAliasTable.get(typeName) ?? this.sharedTypeAliasTable.get(typeName)
+        const aliasVals = this.sharedTypeAliasTable.get(typeName)
         if (aliasVals && aliasVals.length > 0) return aliasVals
 
         // 2. Fall back to enum: `declare const d: Direction` where Direction is a string enum.
@@ -1744,7 +1756,7 @@ export class ExpressionResolver {
         }
         // `DeepObject['Bar']['status']` → that member's values
         const target = this.indexedAccessTarget(type)
-        if (target) return this.resolvePossibleStringValuesFromType(target, returnEmptyStrings)
+        if (target) return this.inModule(target.module, () => this.resolvePossibleStringValuesFromType(target.node, returnEmptyStrings))
         const key = indexedKey(type)
         const vals = key === undefined ? undefined : this.resolveTypeMembers((type as any).objectType)?.[key]
         if (vals) return vals

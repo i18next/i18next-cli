@@ -112,6 +112,59 @@ describe('extractor: type-aware resolution across imports (issue #294)', () => {
     })
   })
 
+  describe('declarations read through an import (#330)', () => {
+    it('should resolve the names inside an imported declaration in the file that declares them', async () => {
+      const { glob } = await import('glob')
+      ;(glob as any).mockResolvedValue(['/src/api.ts', '/src/App.tsx', '/src/other-api.ts'])
+      vol.fromJSON({
+        '/src/api.ts': `
+          export interface components {
+            schemas: {
+              Foo: { type: string; status?: 'A' | 'B' };
+              Bar: Omit<components['schemas']['Foo'], 'type'> & { type: 'BAR' };
+            };
+          }
+        `,
+        // openapi-typescript names the root of every generated client \`components\`
+        '/src/other-api.ts': "export interface components { schemas: { Foo: { status: 'X' } } }",
+        '/src/App.tsx': `
+          import { components as api } from './api';
+          import * as ns from './api';
+          declare const bar: api['schemas']['Bar'];
+          declare const nsBar: ns.components['schemas']['Bar'];
+          t(\`status.\${bar.status}\`);
+          t(\`ns.\${nsBar.status}\`);
+        `,
+      })
+
+      const keys = await extractKeys()
+      expect(keys).toEqual({ status: { A: 'status.A', B: 'status.B' }, ns: { A: 'ns.A', B: 'ns.B' } })
+    })
+
+    it('should not resolve them to a same-named declaration of the importing file', async () => {
+      const { glob } = await import('glob')
+      ;(glob as any).mockResolvedValue(['/src/types.ts', '/src/App.tsx'])
+      vol.fromJSON({
+        '/src/types.ts': `
+          type Status = 'A' | 'B';
+          export interface Api { Bar: { status: Status } }
+          export type Base<T> = { type: T; status: Status };
+        `,
+        '/src/App.tsx': `
+          import { Api, Base } from './types';
+          type Status = 'X';
+          declare const bar: Api['Bar'];
+          declare const base: Base<'BASE'>;
+          t(\`indexed.\${bar.status}\`);
+          t(\`generic.\${base.status}\`);
+        `,
+      })
+
+      const keys = await extractKeys()
+      expect(keys).toEqual({ indexed: { A: 'indexed.A', B: 'indexed.B' }, generic: { A: 'generic.A', B: 'generic.B' } })
+    })
+  })
+
   describe('type declarations inside node_modules (issue #213)', () => {
     it('should scan node_modules when an input pattern explicitly targets it', async () => {
       const { glob } = await import('glob')
