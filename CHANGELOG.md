@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(extract): only real comments are read for `t()` calls. A `//` or `/*` in a string, template, regex literal or JSX
+  text (a URL in an `href`, `accept="image/*"`) no longer extracts the calls after it a second time (without
+  `keyPrefix`, in another namespace, or as a pattern that kept stale keys). Files that start with a BOM or a hashbang
+  get the right key locations, and `instrument` no longer rewrites them at wrong offsets
+  ([#337](https://github.com/i18next/i18next-cli/issues/337))
+
 ## 1.95.1
 
 - fix(extract): a type read through a renaming import (`import { components as api }`, `import type`, `import * as`,
