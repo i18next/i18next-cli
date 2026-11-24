@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 1.95.0
 
 From a second run of `instrument` on the dashboard of the first one, this time all seven of its packages (about
 1,200 files), its texts in the code; every rewrite read:
