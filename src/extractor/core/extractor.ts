@@ -10,7 +10,7 @@ import { getTranslations } from './translation-manager.js'
 import { validateExtractorConfig, ExtractorError } from '../../utils/validation.js'
 import { ConflictError } from '../plugin-manager.js'
 import { extractKeysFromComments } from '../parsers/comment-parser.js'
-import { normalizeSpansToCharIndices } from '../parsers/ast-utils.js'
+import { normalizeSpansToCharIndices, blankTextTokens } from '../parsers/ast-utils.js'
 import { ASTVisitors } from './ast-visitors.js'
 import { ConsoleLogger } from '../../utils/logger.js'
 import { serializeTranslationFile, loadRawJson5Content, inferFormatFromPath } from '../../utils/file-utils.js'
@@ -372,9 +372,10 @@ export async function processFile (
     // 3. FIRST: Visit the AST to build scope information
     astVisitors.visit(ast)
 
-    // 4. THEN: Extract keys from comments with scope resolution (now scope info is available)
+    // 4. THEN: Extract keys from comments with scope resolution (now scope info is available).
+    // Strings, templates, regex literals and JSX text are blanked first: a `//` or `/*` in them is no comment (#337)
     if (config.extract.extractFromComments !== false) {
-      extractKeysFromComments(code, pluginContext, config, astVisitors.getVarFromScope.bind(astVisitors), astVisitors.keepPatterns)
+      extractKeysFromComments(blankTextTokens(ast, code), pluginContext, config, astVisitors.getVarFromScope.bind(astVisitors), astVisitors.keepPatterns)
     }
   } catch (error) {
     // Re-throw ConflictError so warnOnConflicts: 'error' aborts extraction

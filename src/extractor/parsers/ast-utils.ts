@@ -2,25 +2,21 @@ import type { Expression, Identifier, ObjectExpression, TemplateLiteral } from '
 
 /**
  * Returns the 0-based index of the first real token in the source code,
- * skipping leading whitespace, single-line comments (`//`), multi-line
- * comments, and hashbang lines (`#!`).
+ * skipping leading whitespace (a BOM included), single-line comments (`//`)
+ * and multi-line comments.
  *
  * This is needed because SWC's `Module.span.start` points to the first
  * token, not to byte 0 of the source. Knowing the first token's index
  * lets us compute the true base offset for span normalisation:
- * `base = ast.span.start - findFirstTokenIndex(code)`.
+ * `base = ast.span.start - findFirstTokenIndex(code)`. A hashbang line is
+ * not skipped: with one, `Module.span.start` is the start of the file.
  */
 export function findFirstTokenIndex (code: string): number {
   let i = 0
   while (i < code.length) {
     const ch = code[i]
-    // Skip whitespace
-    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') { i++; continue }
-    // Skip hashbang (only at very start of file)
-    if (i === 0 && ch === '#' && code[1] === '!') {
-      while (i < code.length && code[i] !== '\n') i++
-      continue
-    }
+    // Skip whitespace: \s is JavaScript's whitespace, BOM and no-break space included
+    if (/\s/.test(ch)) { i++; continue }
     // Skip single-line comment
     if (ch === '/' && code[i + 1] === '/') {
       i += 2
@@ -185,6 +181,40 @@ export function normalizeSpansToCharIndices (ast: any, code: string): void {
   normalizeASTSpans(ast, ast.span.start - firstTokenByteIdx)
   const byteToChar = buildByteToCharMap(code)
   if (byteToChar) convertSpansToCharIndices(ast, byteToChar)
+}
+
+/** The tokens whose text can hold `//` or `/*` without starting a comment. */
+const TEXT_TOKENS = new Set(['StringLiteral', 'TemplateElement', 'RegExpLiteral', 'JSXText'])
+
+/**
+ * Returns `code` with the text of every string, template chunk, regex literal,
+ * JSX text and the hashbang line blanked out (line breaks kept, so offsets and
+ * lines stay the same). Every `//` and `/*` left in it starts a real comment.
+ *
+ * `ast` spans must already be normalised to character indices of `code`
+ * (see {@link normalizeSpansToCharIndices}).
+ */
+export function blankTextTokens (ast: any, code: string): string {
+  const ranges: Array<[number, number]> = []
+  if (ast.interpreter != null) ranges.push([0, code.search(/\n|$/)])
+  const visit = (node: any): void => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) return node.forEach(visit)
+    if (TEXT_TOKENS.has(node.type) && node.span) {
+      ranges.push([node.span.start, node.span.end])
+      return
+    }
+    for (const key in node) if (key !== 'span') visit(node[key])
+  }
+  visit(ast.body)
+  ranges.sort((a, b) => a[0] - b[0])
+  let out = ''
+  let pos = 0
+  for (const [start, end] of ranges) {
+    out += code.slice(pos, start) + code.slice(start, end).replace(/[^\r\n]/g, ' ')
+    pos = end
+  }
+  return out + code.slice(pos)
 }
 
 // ─── Ignore-comment helpers ──────────────────────────────────────────────────
