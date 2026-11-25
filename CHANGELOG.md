@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(extract): an object member read through destructuring resolves like the member itself: after
+  `const { bar } = props` (also renamed, nested `const { bar: { status } } = props` or `({ bar: { status } }: Props)`,
+  `items.map(({ bar }) => …)` and `for (const { bar } of items)`), `bar.status` gives its keys as `props.bar.status`
+  does. Follow-up to [#330](https://github.com/i18next/i18next-cli/issues/330)
+
 ## 1.95.2
 
 - fix(extract): only real comments are read for `t()` calls. A `//` or `/*` in a string, template, regex literal or JSX
