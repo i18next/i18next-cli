@@ -63,6 +63,23 @@ const memberByKey = (members: any[], key: string): any => {
   return index.get(key)
 }
 
+// The locals an object pattern binds, from the member map of the object it destructures: the
+// values of `{ status }` / `{ status: s = 'A' }`, the members nested under `{ bar }` / `{ bar: b }`,
+// and `{ bar: { status } }` the same way one level down (#330)
+const patternBindings = (pat: any, members: Record<string, string[]> | undefined): Array<{ name: string, values?: string[], members?: Record<string, string[]> }> =>
+  !members
+    ? []
+    : (pat?.properties ?? []).flatMap((prop: any) => {
+        const key = literalKey(prop?.key)
+        let local = prop?.type === 'KeyValuePatternProperty' ? prop.value : prop?.key
+        if (local?.type === 'AssignmentPattern') local = local.left
+        if (key === undefined) return []
+        const values = members[key]?.length ? members[key] : undefined
+        const nested = values ? undefined : nestedMembers(members, key)
+        if (local?.type === 'ObjectPattern') return patternBindings(local, nested)
+        return local?.type === 'Identifier' && (values || nested) ? [{ name: local.value, values, members: nested }] : []
+      })
+
 // The names a function parameter binds: `options`, `{ a, b: [c] } = {}`, `...rest`, `private d`
 const bindingNames = (pat: any): string[] => {
   switch (pat?.type) {
@@ -584,16 +601,15 @@ export class ExpressionResolver {
       // Bind each destructured local to the source object's property values.
       if (node.id.type === 'ObjectPattern' && node.init) {
         const map = node.init.type === 'Identifier' ? this.getObjectMap(node.init.value) : undefined
-        const objMembers = this.objectMembersOf(node.init)
-        if (!map && !objMembers) return
-        for (const prop of (node.id.properties ?? []) as any[]) {
-          const memberName = prop?.key?.value
-          let localNode = prop?.type === 'KeyValuePatternProperty' ? prop.value : prop?.key
-          if (localNode?.type === 'AssignmentPattern') localNode = localNode.left
-          const localName = localNode?.type === 'Identifier' ? localNode.value : undefined
-          if (!memberName || !localName) continue
-          const vals = objMembers?.[memberName] ?? (map?.[memberName] !== undefined ? [map[memberName]] : undefined)
-          if (vals?.length) this.variableTable.set(localName, vals)
+        // ponytail: the typed members or else the literal's, never a merged copy, so nestedMembers keeps its index on big OpenAPI types
+        const members = this.objectMembersOf(node.init) ?? (map && Object.fromEntries(Object.entries(map).map(([k, v]) => [k, [v]])))
+        // `const { bar } = props` -> `bar.status`, like `const bar = props.bar` (#330)
+        for (const { name, values, members: nested } of patternBindings(node.id, members)) {
+          if (values) this.variableTable.set(name, values)
+          if (nested) {
+            this.objectVariables.set(name, nested)
+            this.arrayElementMembers.set(name, nested)
+          }
         }
         return
       }
@@ -1140,6 +1156,28 @@ export class ExpressionResolver {
 
   public deleteTemporaryObjectVariable (name: string): void {
     this.temporaryObjectVariables.delete(name)
+  }
+
+  /**
+   * Bind the locals of a destructuring parameter or loop variable to the members of the object it
+   * destructures while its body is walked. Returns what unbinds them, or undefined if none is bound.
+   */
+  public bindPattern (pat: any, members: Record<string, string[]> | undefined): (() => void) | undefined {
+    const bound = patternBindings(pat, members)
+    for (const { name, values, members: nested } of bound) {
+      if (values) this.temporaryVariables.set(name, values)
+      if (nested) {
+        // `({ items }: Props)` -> `items.map(({ kind }) => …)` as well as `({ bar }: Props)` -> `bar.status`
+        this.temporaryObjectVariables.set(name, nested)
+        this.arrayElementMembers.set(name, nested)
+      }
+    }
+    if (bound.length === 0) return undefined
+    return () => bound.forEach(({ name, values }) => {
+      if (values) return this.temporaryVariables.delete(name)
+      this.temporaryObjectVariables.delete(name)
+      this.arrayElementMembers.delete(name)
+    })
   }
 
   /**

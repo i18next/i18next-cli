@@ -110,4 +110,23 @@ describe('extractor: object types built with utility types (#330)', () => {
       t(\`pickedKind.\${picked.kind}\`)
     `)).toEqual(['omitted.C', 'picked.D', 'pickedKind.x', 'pickedKind.y'])
   })
+
+  // Each form binds `bar` (or `status`) like `props.bar` (or `props.bar.status`)
+  it.each([
+    ['a declaration', 'props: Props', 'const { bar } = props; if (bar.status == null) return null; return t("k." + bar.status)'],
+    ['a renamed declaration', 'props: Props', 'const { bar: b } = props; return t("k." + b.status)'],
+    ['a nested declaration', 'props: Props', 'const { bar: { status } } = props; return t("k." + status)'],
+    ['an array member of a declaration', 'props: Props', 'const { items } = props; return items.map(({ status }) => t("k." + status))'],
+    ['a nested parameter', '{ bar: { status } }: Props', 'return t("k." + status)'],
+    ['a callback parameter', 'props: Props', 'return props.items.map(({ bar }) => t("k." + bar.status))'],
+    ['a nested callback parameter', 'props: Props', 'return props.items.map(({ bar: { status } }) => t("k." + status))'],
+    ['a for-of variable', 'props: Props', 'for (const { bar } of props.items) t("k." + bar.status)'],
+  ])('resolves an object member destructured in %s', async (_, params, body) => {
+    expect(await keysOf(`
+      type Foo = { type: string; status?: 'A' | 'B' }
+      type Bar = Omit<Foo, 'type'> & { type: 'BAR' }
+      type Props = { bar: Bar; items: Array<Bar & { bar: Bar }> }
+      export function f (${params}) { ${body} }
+    `)).toEqual(['k.A', 'k.B'])
+  })
 })

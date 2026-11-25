@@ -163,6 +163,34 @@ describe('extractor: type-aware resolution across imports (issue #294)', () => {
       const keys = await extractKeys()
       expect(keys).toEqual({ indexed: { A: 'indexed.A', B: 'indexed.B' }, generic: { A: 'generic.A', B: 'generic.B' } })
     })
+
+    it('should resolve a member of a namespace-imported type after destructuring', async () => {
+      const { glob } = await import('glob')
+      ;(glob as any).mockResolvedValue(['/src/bar-types.ts', '/src/bar.ts'])
+      vol.fromJSON({
+        '/src/bar-types.ts': `
+          export interface components {
+            schemas: {
+              Foo: { type: string; status?: 'A' | 'B' };
+              Bar: Omit<components['schemas']['Foo'], 'type'> & { type: 'BAR' };
+            };
+          }
+        `,
+        '/src/bar.ts': `
+          import { TFunction } from 'i18next';
+          import * as Bar from './bar-types';
+          type Props = { bar: Bar.components['schemas']['Bar'] };
+          export const translateBarStatus = (t: TFunction, props: Props) => {
+            const { bar } = props;
+            if (bar.status == null) return null;
+            return t(\`barStatus.\${bar.status}\`);
+          };
+        `,
+      })
+
+      const keys = await extractKeys()
+      expect(keys).toEqual({ barStatus: { A: 'barStatus.A', B: 'barStatus.B' } })
+    })
   })
 
   describe('type declarations inside node_modules (issue #213)', () => {

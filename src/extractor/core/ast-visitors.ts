@@ -1,7 +1,7 @@
 import type { Module, Node } from '@swc/core'
 import type { PluginContext, I18nextToolkitConfig, Logger, ASTVisitorHooks, ScopeInfo, ExtractedKey } from '../../types.js'
 import { ScopeManager } from '../parsers/scope-manager.js'
-import { ExpressionResolver, nestedMembers } from '../parsers/expression-resolver.js'
+import { ExpressionResolver } from '../parsers/expression-resolver.js'
 import { CallExpressionHandler } from '../parsers/call-expression-handler.js'
 import { JSXHandler } from '../parsers/jsx-handler.js'
 import { unwrapParens } from '../parsers/ast-utils.js'
@@ -267,6 +267,7 @@ export class ASTVisitors {
     let paramDefaults: string[] | undefined
     let paramObjectTemporaries: string[] | undefined
     let paramArrayTemporaries: string[] | undefined
+    let paramUnbinds: Array<() => void> | undefined
 
     // ENTER CLASS SCOPE for class declarations / expressions and pre-register
     // class field initializers so that later `this.<field>` references inside
@@ -358,22 +359,10 @@ export class ASTVisitors {
             }
             // `({ t }: { t: TFunction<'ns'> })` → bind `t` to that namespace
             this.bindTFunctionParam(localName, this.getMemberTypeNode(patType, memberName), typeParamConstraints)
-            if (members?.[memberName]) {
-              this.expressionResolver.setTemporaryVariable(localName, members[memberName])
-              if (!paramTemporaries) paramTemporaries = []
-              paramTemporaries.push(localName)
-              continue
-            }
-            // `({ Bar }: DeepObject)` → `Bar.status`; `({ items }: Props)` → `items.map(({ kind }) => …)`
-            const nested = nestedMembers(members, memberName)
-            if (!nested) continue
-            this.expressionResolver.setTemporaryObjectVariable(localName, nested)
-            this.expressionResolver.setArrayElementMembers(localName, nested)
-            if (!paramObjectTemporaries) paramObjectTemporaries = []
-            paramObjectTemporaries.push(localName)
-            if (!paramArrayTemporaries) paramArrayTemporaries = []
-            paramArrayTemporaries.push(localName)
           }
+          // `({ size }: IProps)`, `({ Bar }: DeepObject)` → `Bar.status`, `({ Bar: { status } }: DeepObject)`
+          const unbind = this.expressionResolver.bindPattern(pat, members)
+          if (unbind) (paramUnbinds ??= []).push(unbind)
           continue
         }
 
@@ -701,6 +690,7 @@ export class ASTVisitors {
           this.expressionResolver.deleteArrayElementMembers(name)
         }
       }
+      paramUnbinds?.forEach(unbind => unbind())
       this.scopeManager.exitScope()
     }
 
@@ -946,22 +936,7 @@ export class ASTVisitors {
       }
 
       // `for (const { unit } of [{ unit: 'day' }, …] as const)`
-      if (pat?.type === 'ObjectPattern') {
-        const members = this.expressionResolver.arrayMembersOf(source)
-        if (!members) return undefined
-        const bound: string[] = []
-        for (const prop of (pat.properties ?? [])) {
-          const memberName = prop?.key?.value
-          let localNode = prop?.type === 'KeyValuePatternProperty' ? prop.value : prop?.key
-          if (localNode?.type === 'AssignmentPattern') localNode = localNode.left
-          const localName = localNode?.type === 'Identifier' ? localNode.value : undefined
-          if (!memberName || !localName || !members[memberName]) continue
-          this.expressionResolver.setTemporaryVariable(localName, members[memberName])
-          bound.push(localName)
-        }
-        if (bound.length === 0) return undefined
-        return () => bound.forEach(name => this.expressionResolver.deleteTemporaryVariable(name))
-      }
+      if (pat?.type === 'ObjectPattern') return this.expressionResolver.bindPattern(pat, this.expressionResolver.arrayMembersOf(source))
 
       return undefined
     } catch {
@@ -998,20 +973,7 @@ export class ASTVisitors {
       const pat = firstParam.pat ?? firstParam.pattern ?? firstParam
 
       // Destructured element: `({ size }) => …` / `({ size: s }) => …`
-      if (pat.type === 'ObjectPattern') {
-        const bound: string[] = []
-        for (const patProp of (pat.properties ?? [])) {
-          const memberName = patProp?.key?.value
-          let localNode = patProp?.type === 'KeyValuePatternProperty' ? patProp.value : patProp?.key
-          if (localNode?.type === 'AssignmentPattern') localNode = localNode.left
-          const localName = localNode?.type === 'Identifier' ? localNode.value : undefined
-          if (!memberName || !localName || !members[memberName]) continue
-          this.expressionResolver.setTemporaryVariable(localName, members[memberName])
-          bound.push(localName)
-        }
-        if (bound.length === 0) return undefined
-        return () => bound.forEach(name => this.expressionResolver.deleteTemporaryVariable(name))
-      }
+      if (pat.type === 'ObjectPattern') return this.expressionResolver.bindPattern(pat, members)
 
       // Whole element: `item => …` so `item.size` resolves
       if (pat.type === 'Identifier') {
