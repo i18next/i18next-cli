@@ -379,4 +379,47 @@ describe('sync + extract --ci plural key ordering (issue #216)', () => {
     // so a subsequent dry-run detects zero diffs.
     expect(anyFileUpdated).toBe(false)
   })
+  it('keeps the empty locale-specific plural forms extract writes, so extract → sync → extract --ci stays clean (issue #356)', async () => {
+    const config: I18nextToolkitConfig = {
+      ...makeConfig(),
+      locales: ['en', 'fr', 'ru'],
+    }
+    config.extract.secondaryLanguages = ['fr', 'ru']
+
+    const { glob } = await import('glob')
+
+    // fr and ru are not translated yet
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/CommentsSection.tsx')]: COMPONENT_SRC,
+      [resolve(process.cwd(), 'locales/en/common.json')]: JSON.stringify(EN_COMMON, null, 2),
+      [resolve(process.cwd(), 'locales/fr/common.json')]: '{}',
+      [resolve(process.cwd(), 'locales/ru/common.json')]: '{}',
+    })
+
+    const srcGlob = async () =>
+      Object.keys(vol.toJSON()).filter((p: string) => p.includes('/src/'))
+    const enGlob = async () =>
+      Object.keys(vol.toJSON()).filter((p: string) => p.includes('/en/'))
+    const hybridGlob = async (pattern: any) => {
+      const p = String(pattern)
+      return (p.includes('{{language}}') || p.endsWith('/*'))
+        ? enGlob()
+        : srcGlob()
+    }
+
+    vi.mocked(glob).mockImplementation(hybridGlob)
+    await runExtractor(config, { isDryRun: false })
+
+    vi.mocked(glob).mockImplementation(enGlob)
+    await runSyncer(config, { quiet: true })
+
+    const fr = JSON.parse(findVolFile('locales/fr/common.json')!)
+    const ru = JSON.parse(findVolFile('locales/ru/common.json')!)
+    expect(fr.detail.comments).toEqual({ title_many: '', title_one: '', title_other: '' })
+    expect(ru.detail.comments).toEqual({ title_few: '', title_many: '', title_one: '', title_other: '' })
+
+    vi.mocked(glob).mockImplementation(hybridGlob)
+    const { anyFileUpdated } = await runExtractor(config, { isDryRun: true })
+    expect(anyFileUpdated).toBe(false)
+  })
 })

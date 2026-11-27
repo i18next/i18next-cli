@@ -188,7 +188,7 @@ export async function runSyncer (
         // Strategy:
         //  1. Walk every key in the *existing* secondary file in its current
         //     order.  Keep it if it belongs to the primary key set, or if it is
-        //     a valid locale-specific plural extension with a non-empty value.
+        //     a valid locale-specific plural extension (even when still empty).
         //     Obsolete keys (neither primary nor a locale extension) are dropped.
         //  2. Append any primary keys that are genuinely new (not present in the
         //     existing secondary file at all) so they get picked up on first sync.
@@ -217,10 +217,10 @@ export async function runSyncer (
             handledKeys.add(key)
           } else if (isLocaleSpecificPluralExtension(key)) {
             const existingValue = getNestedValue(existingSecondaryTranslations, key, keySeparator ?? '.')
-            // Only preserve non-empty values; an empty string was likely a
-            // placeholder left by a previous (buggy) sync run and should not
-            // be perpetuated. Under --changed-only nothing is ever dropped.
-            if ((existingValue !== '' && existingValue != null) || isChangedKey) {
+            // Keep empty values too: extract writes the forms of this locale
+            // as '' until they are translated, and dropping them here made
+            // extract and sync undo each other (issue #356).
+            if (existingValue != null || isChangedKey) {
               setNestedValue(newSecondaryTranslations, key, existingValue, keySeparatorFor(key))
               handledKeys.add(key)
             }
