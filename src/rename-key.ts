@@ -400,8 +400,8 @@ function replaceKeyWithRegex (
       if (s.startsWith(nestedPrefix)) return true
     }
 
-    // flat plural keys like "key_one", "key_other"
-    const flatPluralRegex = new RegExp(`^${escapeRegex(oldParts.key)}_(${pluralSuffixes.join('|')})$`)
+    // plural keys like "key_one", "key_other"
+    const flatPluralRegex = pluralFormRegex(oldParts.key, config)
     for (const s of set) {
       if (flatPluralRegex.test(s)) return true
     }

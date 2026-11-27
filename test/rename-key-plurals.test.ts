@@ -247,6 +247,33 @@ describe('runRenameKey (plurals', () => {
       expect(ns2.key_one).toBeUndefined()
       expect(ns2.key_other).toBeUndefined()
     })
+    it('should move a { ns } call with custom pluralSeparator forms to the default namespace', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          nsSeparator: ':',
+          defaultNS: 'ns1',
+          pluralSeparator: '-'
+        }
+      }
+      await writeFile(join(testDir, 'test.ts'), "t('key', { ns: 'ns2', count: 1 })")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/ns2.json'),
+        JSON.stringify({ 'key-one': 'item', 'key-other': 'items' })
+      )
+      await writeFile(join(testDir, 'locales/en/ns1.json'), JSON.stringify({}))
+
+      const result = await runRenameKey(config, 'ns2:key', 'key')
+
+      expect(result.success).toBe(true)
+      expect(await readFile(join(testDir, 'test.ts'), 'utf-8')).toBe("t('key', {count: 1})")
+      const ns1 = JSON.parse(await readFile(join(testDir, 'locales/en/ns1.json'), 'utf-8'))
+      expect(ns1).toEqual({ 'key-one': 'item', 'key-other': 'items' })
+    })
+
     it('should rename plural forms nested under the key path', async () => {
       const config = {
         locales: ['en', 'de'],
