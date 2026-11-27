@@ -2134,5 +2134,20 @@ describe('Linter (core logic)', () => {
       expect(exitSpy).not.toHaveBeenCalled()
       exitSpy.mockRestore()
     })
+
+    it('prints the summary after the report, so a long report does not hide it', async () => {
+      const logs: string[] = []
+      const logger = { info: (m: string) => { logs.push(m) }, warn: (m: string) => { logs.push(m) }, error: (m: string) => { logs.push(m) } }
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((() => undefined) as any))
+      vol.fromJSON({ '/src/App.tsx': "const s = t('a') + t('b')" })
+
+      await runLinterCli(concatConfig, { logger: logger as any })
+
+      const summary = logs.findIndex(l => l.includes('Linter found 1 potential issues.'))
+      const detail = logs.findIndex(l => l.includes('String concatenation'))
+      expect(detail).toBeGreaterThan(-1)
+      expect(summary).toBeGreaterThan(detail)
+      exitSpy.mockRestore()
+    })
   })
 })

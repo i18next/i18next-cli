@@ -985,11 +985,6 @@ export async function runLinterCli (
     const hasErrors = allIssues.some(i => i.severity !== 'warning')
     const hasWarnings = allIssues.some(i => i.severity === 'warning')
 
-    // Summary line: fail on errors, warn when only warnings, succeed when clean.
-    if (hasErrors) spinner.fail(styleText(['red', 'bold'], message))
-    else if (hasWarnings) spinner.warn(styleText(['yellow', 'bold'], message))
-    else spinner.succeed(styleText(['green', 'bold'], message))
-
     // Detailed report — colour each line by severity (red Error / yellow Warning).
     for (const [file, issues] of fileEntries) {
       if (internalLogger.info) internalLogger.info(styleText('yellow', `\n${file}`))
@@ -1013,6 +1008,13 @@ export async function runLinterCli (
         else console.log(detail)
       })
     }
+
+    // Summary line after the report, so a long report does not scroll it out of view:
+    // fail on errors, warn when only warnings, succeed when clean.
+    if (fileEntries.length && !options.quiet) log('')
+    if (hasErrors) spinner.fail(styleText(['red', 'bold'], message))
+    else if (hasWarnings) spinner.warn(styleText(['yellow', 'bold'], message))
+    else spinner.succeed(styleText(['green', 'bold'], message))
 
     if (staleBaselineEntries > 0) {
       log(styleText('gray', `\n${staleBaselineEntries} baseline entr${staleBaselineEntries === 1 ? 'y no longer occurs' : 'ies no longer occur'}. Run "npx i18next-cli lint --update-baseline" to drop ${staleBaselineEntries === 1 ? 'it' : 'them'}.`))
