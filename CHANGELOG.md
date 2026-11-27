@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `nsSeparator: '::'` did not compile, and a flat key with a `.` (`keySeparator: false`) or a `{name}` placeholder lost
   its value type and variable checks. An existing `i18next.d.ts` is not rewritten. Thanks @mokshupadhyay
   ([#357](https://github.com/i18next/i18next-cli/issues/357), [#358](https://github.com/i18next/i18next-cli/pull/358))
+- fix(lint): `checkInterpolationParams` reads params like i18next: the keys of a literal `replace` are the variables
+  (keys next to it are unused), and a spread, a computed key or a non-literal `replace` no longer reports a variable as
+  not provided. Thanks @mokshupadhyay ([#360](https://github.com/i18next/i18next-cli/issues/360),
+  [#362](https://github.com/i18next/i18next-cli/pull/362))
+- fix(lint): interpolation issues are reported on the line of their own `t()` call, so an earlier call, string or
+  comment with the same key no longer takes the line, and `i18next-instrument-ignore-next-line` applies to the right
+  call. Thanks @mokshupadhyay ([#361](https://github.com/i18next/i18next-cli/issues/361),
+  [#362](https://github.com/i18next/i18next-cli/pull/362))
 
 ## 1.95.7
 
