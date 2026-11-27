@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(sync): empty plural forms a language needs beyond the primary's (`_many` in French, `_few`/`_many` in Russian)
+  are kept instead of removed, so `extract` and `sync` no longer undo each other and `extract --ci` passes after
+  `sync`. Thanks @mokshupadhyay ([#356](https://github.com/i18next/i18next-cli/issues/356),
+  [#359](https://github.com/i18next/i18next-cli/pull/359))
+- fix(types): a newly generated `i18next.d.ts` sets `keySeparator`, `nsSeparator`, `pluralSeparator`,
+  `contextSeparator`, `interpolationPrefix` and `interpolationSuffix` in `CustomTypeOptions` when `extract` sets them to
+  something other than i18next's defaults (`false` for a disabled separator). Before, `t('common::title')` with
+  `nsSeparator: '::'` did not compile, and a flat key with a `.` (`keySeparator: false`) or a `{name}` placeholder lost
+  its value type and variable checks. An existing `i18next.d.ts` is not rewritten. Thanks @mokshupadhyay
+  ([#357](https://github.com/i18next/i18next-cli/issues/357), [#358](https://github.com/i18next/i18next-cli/pull/358))
+
 ## 1.95.7
 
 - fix(rename-key): the context forms are also found when `extract.input` has backslashes (as `path.join` writes it on
