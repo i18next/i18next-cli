@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix(lint): the summary line ("Linter found N potential issues.") comes after the report instead of before it, so a
   long report no longer scrolls it out of view in a terminal ([#338](https://github.com/i18next/i18next-cli/issues/338))
+- fix(extract, instrument): with `messageFormat: 'icu'`, literal braces next to each other or to an apostrophe are
+  quoted as one ICU quoted text. `{}` in `<Trans>` children was written as `'{''}'`, which ICU reads as `{'}`, and an
+  apostrophe right after a brace left the quote open over a following `{name}`. Thanks @zzoraemon043
+  ([#340](https://github.com/i18next/i18next-cli/pull/340))
 
 ## 1.95.3
 
