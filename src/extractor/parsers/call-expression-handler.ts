@@ -530,7 +530,7 @@ export class CallExpressionHandler {
           // Pass explicitDefaultForBase so that when a call-site provided an explicit
           // base default (e.g. t('key', 'Default', { count })), plural variant keys
           // are treated as explicit and may be synced to that default.
-          this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey, finalDefaultValue, explicitPluralForVariants, locationEntry)
+          this.handlePluralKeys(finalKey, ns, options, isOrdinalByOption || isOrdinalByKey, finalDefaultValue, explicitPluralForVariants, locationEntry, key)
 
           continue // This key is fully handled
         }
@@ -880,7 +880,8 @@ export class CallExpressionHandler {
    * @param options - object expression options
    * @param isOrdinal - isOrdinal flag
    */
-  private handlePluralKeys (key: string, ns: string | false | undefined, options: ObjectExpression, isOrdinal: boolean, defaultValueFromCall?: string, explicitDefaultFromSource?: boolean, locations?: Array<{ file: string; line: number; column: number }>): void {
+  private handlePluralKeys (key: string, ns: string | false | undefined, options: ObjectExpression, isOrdinal: boolean, defaultValueFromCall?: string, explicitDefaultFromSource?: boolean, locations?: Array<{ file: string; line: number; column: number }>, fallbackKey: string = key): void {
+    // The default without an explicit one: the key as written in the call, without a keyPrefix, as for other keys
     try {
       const type = isOrdinal ? 'ordinal' : 'cardinal'
 
@@ -989,7 +990,7 @@ export class CallExpressionHandler {
           } else if (typeof defaultValueFromCall === 'string') {
             finalDefaultValue = defaultValueFromCall
           } else {
-            finalDefaultValue = context ? `${baseKey}_${context}` : baseKey
+            finalDefaultValue = context ? `${fallbackKey}_${context}` : fallbackKey
           }
 
           const ctxSep = this.config.extract.contextSeparator ?? '_'
@@ -1040,8 +1041,8 @@ export class CallExpressionHandler {
             // defaultValueFromCall as fallback
             finalDefaultValue = defaultValueFromCall
           } else {
-            // Final fallback to the base key itself
-            finalDefaultValue = baseKey
+            // Final fallback to the key as written in the call
+            finalDefaultValue = fallbackKey
           }
 
           // 3. Construct the final plural key
@@ -1079,7 +1080,7 @@ export class CallExpressionHandler {
       this.logger.warn(`Could not determine plural rules for language "${this.config.extract?.primaryLanguage}". Falling back to simple key extraction.`)
       // Fallback to a simple key if Intl API fails
       const defaultValue = defaultValueFromCall || this.getDefaultValueProp(options, 'defaultValue')
-      this.pluginContext.addKey({ key, ns, defaultValue: typeof defaultValue === 'string' ? defaultValue : key, defaultValueSource: typeof defaultValue === 'string' ? 'explicit' : 'fallback', locations })
+      this.pluginContext.addKey({ key, ns, defaultValue: typeof defaultValue === 'string' ? defaultValue : fallbackKey, defaultValueSource: typeof defaultValue === 'string' ? 'explicit' : 'fallback', locations })
     }
   }
 

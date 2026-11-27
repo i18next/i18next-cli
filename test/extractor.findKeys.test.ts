@@ -36,6 +36,24 @@ describe('extractor.findKeys', () => {
     mockGlob = vi.mocked(glob)
   })
 
+  it('uses the key without its keyPrefix as the default of plural forms, like for other keys (#350)', async () => {
+    mockGlob.mockResolvedValue(['/src/App.tsx'])
+    vol.fromJSON({
+      '/src/App.tsx': `
+        const { t } = useTranslation('translation', { keyPrefix: 'cart' })
+        t('foo')
+        t('items', { count: 2 })
+      `,
+    })
+
+    const { allKeys } = await findKeys(mockConfig)
+    const defaults = Object.fromEntries(Array.from(allKeys.values()).map(k => [k.key, k.defaultValue]))
+
+    expect(defaults['cart.foo']).toBe('foo')
+    expect(defaults['cart.items_one']).toBe('items')
+    expect(defaults['cart.items_other']).toBe('items')
+  })
+
   it('extracts keys from t() and Trans with default values preserved', async () => {
     const sampleCode = `
       import { Trans, useTranslation } from 'react-i18next';
