@@ -116,6 +116,15 @@ describe('extract with messageFormat icu / mf2', () => {
     expect(toMessageFormatPlaceholders("File '{{name}}' {x} \\", config('mf2'))).toBe("File '{$name}' \\{x\\} \\\\")
   })
 
+  it('quotes adjacent braces and the apostrophes next to them as one quoted text', () => {
+    // '{''}' would read as {'}: the '' between the two quoted braces is an apostrophe inside one quoted text
+    expect(toMessageFormatPlaceholders('Use {} for an empty object', config('icu'))).toBe("Use '{}' for an empty object")
+    expect(toMessageFormatPlaceholders('a}{b', config('icu'))).toBe("a'}{'b")
+    expect(toMessageFormatPlaceholders("{'}", config('icu'))).toBe("'{''}'")
+    // the quote has to end before the placeholder, or {name} is text
+    expect(toMessageFormatPlaceholders("{'x {{name}}", config('icu'))).toBe("'{'''x {name}")
+  })
+
   it('extracts IcuTrans: i18nKey, or else defaultTranslation as the key', async () => {
     const { en } = await run(`
       import { IcuTrans } from 'react-i18next'

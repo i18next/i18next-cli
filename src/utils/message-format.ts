@@ -58,10 +58,13 @@ export function toMessageFormatPlaceholders (value: string, config: Pick<I18next
   if (format !== 'icu' && format !== 'mf2') return value
   const text = (segment: string, beforePlaceholder: boolean) => format === 'mf2'
     ? segment.replace(/[\\{}]/g, '\\$&')
-    : segment
-      // an apostrophe before { } < > or ' starts quoted text in ICU, so a literal one is doubled
-      .replace(beforePlaceholder ? /'(?=[{}<>']|$)/g : /'(?=[{}<>'])/g, "''")
-      .replace(/[{}]/g, "'$&'")
+    : segment.replace(
+      // Literal braces are quoted together with the apostrophes next to them: quoting each brace on its own would
+      // turn `{}` into `'{''}'`, where the `''` between the quotes reads as an apostrophe inside one quoted text.
+      // Any other apostrophe before < > or ' (or a placeholder) would start quoted text in ICU, so it is doubled.
+      beforePlaceholder ? /'*[{}][{}']*|'(?=[<>']|$)/g : /'*[{}][{}']*|'(?=[<>'])/g,
+      match => match === "'" ? "''" : `'${match.replace(/'/g, "''")}'`
+    )
   let result = ''
   let last = 0
   for (const match of value.matchAll(/\{\{\s*([^{},\s]+)\s*(?:,\s*([^{}]*?)\s*)?\}\}/g)) {
