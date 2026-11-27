@@ -136,6 +136,22 @@ describe('heuristic-config', () => {
     expect(config?.extract?.primaryLanguage).toBe('de')
   })
 
+  it('should take the matched "en-*" locale as the primary language when there is no plain "en"', async () => {
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockResolvedValue(['public/locales/en-US/translation.json'])
+
+    vol.fromJSON({
+      'public/locales/de-DE/translation.json': '{}',
+      'public/locales/en-US/translation.json': '{}',
+      'public/locales/fr-FR/translation.json': '{}',
+    })
+
+    const config = await detectConfig()
+
+    expect(config?.locales).toEqual(['en-US', 'de-DE', 'fr-FR'])
+    expect(config?.extract?.primaryLanguage).toBe('en-US')
+  })
+
   it('should detect JSON5 project structure and infer outputFormat as json5', async () => {
     const { glob } = await import('glob')
     vi.mocked(glob).mockResolvedValue(['locales/en/translation.json5'])
