@@ -1,6 +1,6 @@
 import { glob } from 'glob'
 import { readdir, readFile, stat } from 'node:fs/promises'
-import { dirname, join, extname } from 'node:path'
+import { basename, dirname, join, extname } from 'node:path'
 import type { I18nextToolkitConfig } from './types.js'
 import { readProjectDeps } from './utils/file-utils.js'
 
@@ -131,6 +131,11 @@ export async function detectConfig (): Promise<Partial<I18nextToolkitConfig> | n
           locales.sort()
           if (locales.includes('dev')) {
             locales = ['dev', ...locales.filter(l => l !== 'dev')]
+          }
+          // Found via an `en-*` pattern (e.g. en-US): that locale is the primary one
+          const matchedLocale = basename(dirname(firstFile))
+          if (matchedLocale.startsWith('en-') && locales.includes(matchedLocale)) {
+            locales = [matchedLocale, ...locales.filter(l => l !== matchedLocale)]
           }
           if (locales.includes('en')) {
             locales = ['en', ...locales.filter(l => l !== 'en')]
