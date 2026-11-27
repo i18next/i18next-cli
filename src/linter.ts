@@ -132,7 +132,15 @@ async function lintInterpolationParams (ast: any, code: string, config: I18nextT
     /** A string key, checked itself when it has no translation (a natural-language key) */
     key?: string
     searchText: string
+    /** Start of the first argument, a file-relative character index once the spans are normalised */
+    start?: number
     paramKeys: string[]
+    /** Written keys i18next ignores, next to a `replace` that is not a string */
+    unusedKeys: string[]
+    /** paramKeys are the keys of a literal `replace` */
+    fromReplace: boolean
+    /** The params may hold variables that are not written out (a spread, a computed key, a `replace` variable) */
+    unknownParams: boolean
   }
   const callSites: CallSite[] = []
 
@@ -202,34 +210,66 @@ async function lintInterpolationParams (ast: any, code: string, config: I18nextT
           return
         }
 
-        let paramKeys: string[] = []
-        if (paramsArg?.type === 'ObjectExpression') {
-          paramKeys = paramsArg.properties
-            .map((p: any) => {
+        // The written keys of an object literal; `unknown` when a spread or a computed key can add any other
+        const writtenKeys = (object: any): { keys: string[], unknown: boolean } => {
+          const keys: string[] = []
+          let unknown = false
+          for (const p of object.properties) {
+            if (p.type === 'KeyValueProperty' && p.key) {
               // Standard key:value property like { name: "value" }
-              if (p.type === 'KeyValueProperty' && p.key) {
-                if (p.key.type === 'Identifier') return p.key.value
-                if (p.key.type === 'StringLiteral') return p.key.value
-                return undefined
-              }
+              if (p.key.type === 'Identifier' || p.key.type === 'StringLiteral') keys.push(p.key.value)
+              else unknown = true
+            } else if (p.type === 'ShorthandProperty' || p.type === 'Identifier') {
               // Shorthand property like { hours, minutes }
-              if (p.type === 'ShorthandProperty' || p.type === 'Identifier') {
-                return p.value ?? p.name
-              }
-              return undefined
-            })
-            .filter((k: any) => typeof k === 'string')
+              const k = p.value ?? p.name
+              if (typeof k === 'string') keys.push(k)
+            } else if (p.type === 'SpreadElement') {
+              unknown = true
+            }
+          }
+          return { keys, unknown }
         }
-        if (!Array.isArray(paramKeys)) paramKeys = []
+
+        // paramKeys are the variables i18next interpolates, unusedKeys the written keys it ignores.
+        // Like a params variable (#203), a spread, a computed key or a non-literal `replace` can
+        // provide any variable, so then the "not provided" check is skipped.
+        let paramKeys: string[] = []
+        let unusedKeys: string[] = []
+        let fromReplace = false
+        let unknownParams = false
+        if (paramsArg?.type === 'ObjectExpression') {
+          const params = writtenKeys(paramsArg)
+          paramKeys = params.keys
+          unknownParams = params.unknown
+          const replace = paramsArg.properties.find((p: any) => p.type === 'KeyValueProperty' && (p.key?.type === 'Identifier' || p.key?.type === 'StringLiteral') && p.key.value === 'replace')
+          const replaceValue = replace ? (replace.value?.expression ?? replace.value) : undefined
+          // i18next interpolates the variables of `replace` instead of the options when it is not a string
+          if (replaceValue && replaceValue.type !== 'StringLiteral') {
+            unusedKeys = params.keys.filter(k => !isI18nextOptionKey(k))
+            if (replaceValue.type === 'ObjectExpression') {
+              const replaceParams = writtenKeys(replaceValue)
+              paramKeys = replaceParams.keys
+              fromReplace = true
+              unknownParams ||= replaceParams.unknown
+            } else {
+              paramKeys = []
+              unknownParams = true
+            }
+          }
+        }
 
         // spans are file-relative character indices here (normalizeSpansToCharIndices)
         const searchText = isSelector ? code.slice(arg0.span.start, arg0.span.end) : (arg0.raw ?? `"${arg0.value}"`)
         callSites.push({
           node,
+          start: arg0.span?.start,
           defaultString: isThreeArgForm ? (translationArg as any).value : undefined,
           key: isSelector ? undefined : keyOrStr,
           searchText,
-          paramKeys
+          paramKeys,
+          unusedKeys,
+          fromReplace,
+          unknownParams
         })
       }
     }
@@ -237,15 +277,20 @@ async function lintInterpolationParams (ast: any, code: string, config: I18nextT
 
   walk(ast, [])
 
-  // 187 fix — process call sites in source order, advancing lastSearchIndex so that
-  // each occurrence of the same string literal finds its own line, not always the first.
+  // The line comes from the node's span, like for hardcoded strings (#283): a text search
+  // would stop at any earlier occurrence of the key (a string, a comment, a skipped call),
+  // and the ignore directives are matched by line. When a span is unavailable, fall back
+  // to a search in source order, advancing lastSearchIndex so that each occurrence of the
+  // same string literal finds its own line (#187).
   let lastSearchIndex = 0
-  for (const { node, defaultString, key, searchText, paramKeys } of callSites) {
-    const position = code.indexOf(searchText, lastSearchIndex)
-    if (position === -1) continue
-    lastSearchIndex = position + searchText.length
-
-    const issueLineNumber = getLineNumber(position)
+  for (const { node, start, defaultString, key, searchText, paramKeys, unusedKeys, fromReplace, unknownParams } of callSites) {
+    let issueLineNumber = typeof start === 'number' ? lineColumnFromOffset(code, start)?.line : undefined
+    if (issueLineNumber === undefined) {
+      const position = code.indexOf(searchText, lastSearchIndex)
+      if (position === -1) continue
+      lastSearchIndex = position + searchText.length
+      issueLineNumber = getLineNumber(position)
+    }
     let strings = defaultString !== undefined ? [defaultString] : await valuesOfCall(node)
     if (!strings.length && key !== undefined) strings = [key]
     const keys = [...new Set(strings.flatMap(str => analyze ? messageArgs(analyze, str) : interpolationNames(str, config.extract)))]
@@ -257,7 +302,7 @@ async function lintInterpolationParams (ast: any, code: string, config: I18nextT
       const provided = [...paramKeys, ...defaultVariables]
       for (const k of keys) {
         const root = k.split('.')[0]
-        if (!provided.includes(k) && !provided.includes(root)) {
+        if (!unknownParams && !provided.includes(k) && !provided.includes(root)) {
           issues.push({
             text: `Interpolation parameter "${k}" was not provided`,
             line: issueLineNumber,
@@ -266,9 +311,10 @@ async function lintInterpolationParams (ast: any, code: string, config: I18nextT
         }
       }
       // For each provided param, check if it is used either directly or as the root of a dotted key.
-      // Skip known i18next t() option keys that are not interpolation parameters.
+      // Skip known i18next t() option keys that are not interpolation parameters; inside `replace`
+      // every key is a variable. Keys next to a `replace` are not interpolated, so they are unused.
       for (const pk of paramKeys) {
-        if (isI18nextOptionKey(pk)) continue
+        if (!fromReplace && isI18nextOptionKey(pk)) continue
         const isUsed = keys.some(k => k === pk || k.split('.')[0] === pk)
         if (!isUsed) {
           issues.push({
@@ -277,6 +323,13 @@ async function lintInterpolationParams (ast: any, code: string, config: I18nextT
             type: 'interpolation',
           })
         }
+      }
+      for (const pk of unusedKeys) {
+        issues.push({
+          text: `Parameter "${pk}" is not used in translation string`,
+          line: issueLineNumber,
+          type: 'interpolation',
+        })
       }
     }
   }
@@ -784,9 +837,9 @@ export class Linter extends EventEmitter<LinterEventMap> {
 
         // Normalise AST spans to file-relative character indices so the ignore
         // directive can resolve the line range of the JSX element it precedes,
-        // and lintTransIndices reports the line of a <Trans>.
-        // (findHardcodedStrings/lintInterpolationParams locate issues via text
-        // search and don't read spans.)
+        // lintTransIndices reports the line of a <Trans>, and findHardcodedStrings
+        // and lintInterpolationParams report the line of each node (both fall
+        // back to a text search when a span is unavailable).
         try {
           normalizeSpansToCharIndices(ast, code)
         } catch {
