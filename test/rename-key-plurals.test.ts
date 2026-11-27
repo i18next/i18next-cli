@@ -382,4 +382,85 @@ describe('runRenameKey (plurals', () => {
       })
     })
   })
+
+  describe('context forms (#349)', () => {
+    const config = () => ({
+      locales: ['en'],
+      extract: {
+        input: [join(testDir, '*.ts')],
+        output: join(testDir, 'locales/{{language}}/{{namespace}}.json')
+      }
+    })
+    const translationsPath = () => join(testDir, 'locales/en/translation.json')
+    const setup = async (code: string, translations: Record<string, string>) => {
+      await writeFile(join(testDir, 'test.ts'), code)
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(translationsPath(), JSON.stringify(translations))
+    }
+    const readTranslations = async () => JSON.parse(await readFile(translationsPath(), 'utf-8'))
+
+    it('renames the context forms the code uses, but not a key that only starts like one', async () => {
+      await setup("t('friend', { context: 'male' })\nt('friend_list')\n", {
+        friend_male: 'a boyfriend',
+        friend_list: 'Friends'
+      })
+
+      expect((await runRenameKey(config(), 'friend', 'buddy')).success).toBe(true)
+
+      expect(await readTranslations()).toEqual({ buddy_male: 'a boyfriend', friend_list: 'Friends' })
+      const code = await readFile(join(testDir, 'test.ts'), 'utf-8')
+      expect(code).toContain("t('buddy', { context: 'male' })")
+      expect(code).toContain("t('friend_list')")
+    })
+
+    it('renames context forms with plurals', async () => {
+      await setup("t('friend', { context: 'male', count: 1 })\n", {
+        friend_male_one: 'a boyfriend',
+        friend_male_other: '{{count}} boyfriends'
+      })
+
+      expect((await runRenameKey(config(), 'friend', 'buddy')).success).toBe(true)
+
+      expect(await readTranslations()).toEqual({ buddy_male_one: 'a boyfriend', buddy_male_other: '{{count}} boyfriends' })
+    })
+
+    it('renames every context form a dynamic context can take', async () => {
+      await setup("t('friend', { context: isMale ? 'male' : 'female' })\nt('friend_list')\n", {
+        friend: 'a friend',
+        friend_male: 'a boyfriend',
+        friend_female: 'a girlfriend',
+        friend_list: 'Friends'
+      })
+
+      expect((await runRenameKey(config(), 'friend', 'buddy')).success).toBe(true)
+
+      expect(await readTranslations()).toEqual({
+        buddy: 'a friend',
+        buddy_male: 'a boyfriend',
+        buddy_female: 'a girlfriend',
+        friend_list: 'Friends'
+      })
+    })
+
+    it('renames the context forms of a <Trans> key', async () => {
+      await writeFile(join(testDir, 'test.tsx'), '<Trans i18nKey="friend" context="male">a boyfriend</Trans>\n')
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(translationsPath(), JSON.stringify({ friend_male: 'a boyfriend', friend_list: 'Friends' }))
+      const tsxConfig = { ...config(), extract: { ...config().extract, input: [join(testDir, '*.tsx')] } }
+
+      expect((await runRenameKey(tsxConfig, 'friend', 'buddy')).success).toBe(true)
+
+      expect(await readTranslations()).toEqual({ buddy_male: 'a boyfriend', friend_list: 'Friends' })
+      expect(await readFile(join(testDir, 'test.tsx'), 'utf-8')).toContain('i18nKey="buddy"')
+    })
+
+    it('reports a conflict with an existing context form of the new key', async () => {
+      await setup("t('friend', { context: 'male' })\n", { friend_male: 'a boyfriend', buddy_male: 'a pal' })
+
+      const result = await runRenameKey(config(), 'friend', 'buddy')
+
+      expect(result.success).toBe(false)
+      expect(result.conflicts).toContain('en:buddy_male')
+    })
+  })
 })

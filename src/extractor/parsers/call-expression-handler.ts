@@ -368,7 +368,7 @@ export class CallExpressionHandler {
           const contextSeparator = this.config.extract.contextSeparator ?? '_'
           // Ignore context: ''
           if (contextValue !== '') {
-            keysWithContext.push({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv, defaultValueSource, explicitDefault: explicitDefaultForBase, locations: locationEntry })
+            keysWithContext.push({ key: `${finalKey}${contextSeparator}${contextValue}`, ns, defaultValue: dv, defaultValueSource, explicitDefault: explicitDefaultForBase, contextBaseKey: finalKey, locations: locationEntry })
           }
         } else if (contextPropValue) {
           const contextValues = this.expressionResolver.resolvePossibleContextStringValues(contextPropValue)
@@ -376,7 +376,7 @@ export class CallExpressionHandler {
 
           if (contextValues.length > 0) {
             contextValues.forEach(context => {
-              keysWithContext.push({ key: `${finalKey}${contextSeparator}${context}`, ns, defaultValue: dv, defaultValueSource, explicitDefault: explicitDefaultForBase, locations: locationEntry })
+              keysWithContext.push({ key: `${finalKey}${contextSeparator}${context}`, ns, defaultValue: dv, defaultValueSource, explicitDefault: explicitDefaultForBase, contextBaseKey: finalKey, locations: locationEntry })
             })
           }
           // For dynamic context, also add the base key as a fallback
@@ -505,6 +505,7 @@ export class CallExpressionHandler {
                     defaultValueSource: k.defaultValueSource,
                     hasCount: true,
                     isOrdinal: isOrdinalByKey,
+                    contextBaseKey: k.contextBaseKey,
                     locations: locationEntry
                   })
                 }
@@ -655,7 +656,7 @@ export class CallExpressionHandler {
       if (isSingleOther) {
         for (const { key: baseKey, context } of keysToGenerate) {
           const finalKey = context ? `${baseKey}${contextSeparator}${context}` : baseKey
-          this.pluginContext.addKey({ key: finalKey, ns, hasCount: true })
+          this.pluginContext.addKey({ key: finalKey, ns, hasCount: true, contextBaseKey: context ? baseKey : undefined })
         }
         return
       }
@@ -668,7 +669,7 @@ export class CallExpressionHandler {
           } else {
             finalKey = `${baseKey}${pluralSeparator}${category}`
           }
-          this.pluginContext.addKey({ key: finalKey, ns, hasCount: true })
+          this.pluginContext.addKey({ key: finalKey, ns, hasCount: true, contextBaseKey: context ? baseKey : undefined })
         }
       }
     } catch (e) {
@@ -1004,6 +1005,7 @@ export class CallExpressionHandler {
             hasCount: true,
             isOrdinal,
             explicitDefault: Boolean(explicitDefaultFromSource || typeof specificOther === 'string'),
+            contextBaseKey: context ? baseKey : undefined,
             locations
           })
         }
@@ -1072,6 +1074,7 @@ export class CallExpressionHandler {
             explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string'),
             // If this is a context variant, track the base key (without context or plural suffixes)
             keyAcceptingContext: context !== undefined ? key : undefined,
+            contextBaseKey: context !== undefined ? key : undefined,
             locations
           })
         }

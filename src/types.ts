@@ -862,6 +862,8 @@ export interface ExtractedKey {
    * Empty/undefined if the key doesn't use context.
    */
   keyAcceptingContext?: string;
+  /** For a context variant (`friend_male`, `friend_male_one`): the key it was generated from (`friend`). */
+  contextBaseKey?: string;
 
   /**
    * Whether the namespace was derived from splitting the key by nsSeparator.

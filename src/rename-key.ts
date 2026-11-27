@@ -1,28 +1,37 @@
 import { glob } from 'glob'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import type { I18nextToolkitConfig, Logger, RenameKeyResult } from './types.js'
+import type { I18nextToolkitConfig, Logger, Plugin, RenameKeyResult } from './types.js'
 import { ConsoleLogger } from './utils/logger.js'
 import { loadTranslationFile, serializeTranslationFile, getOutputPath, getNamespaceFromOutputPath, inferFormatFromPath } from './utils/file-utils.js'
 import { getNestedKeys, getNestedValue, setNestedValue, naturalLanguageRegexFor, storedKeySeparator } from './utils/nested-object.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
+import { findKeys } from './extractor/core/key-finder.js'
 import { styleText } from 'node:util'
 
 const pluralSuffixes = ['zero', 'one', 'two', 'few', 'many', 'other']
 
-// The suffix it captures keeps the `ordinal` part of ordinal forms like "key_ordinal_one".
-const pluralFormRegex = (key: string, config: I18nextToolkitConfig): RegExp => {
+const pluralSuffixRegex = (config: I18nextToolkitConfig): string => {
   const separator = escapeRegex(config.extract.pluralSeparator ?? '_')
-  return new RegExp(`^${escapeRegex(key)}${separator}((?:ordinal${separator})?(?:${pluralSuffixes.join('|')}))$`)
+  return `${separator}(?:ordinal${separator})?(?:${pluralSuffixes.join('|')})`
+}
+
+// A stored form of `key`: a plural form (`key_one`, `key_ordinal_one`) or, for the context values the code uses with
+// it, a context form (`key_male`, `key_male_one`). The captured suffix starts with its separator.
+const formRegex = (key: string, config: I18nextToolkitConfig, contexts: string[] = []): RegExp => {
+  const context = contexts.length > 0
+    ? `(?:${escapeRegex(config.extract.contextSeparator ?? '_')}(?:${contexts.map(escapeRegex).join('|')}))?`
+    : ''
+  return new RegExp(`^${escapeRegex(key)}(?=.)(${context}(?:${pluralSuffixRegex(config)})?)$`)
 }
 
 /**
- * The stored plural forms of `key`, top-level (`key_one`) or nested next to it
+ * The stored plural and context forms of `key`, top-level (`key_one`) or nested next to it
  * (`{ cart: { item_one } }` for `cart.item`), as flattened keys.
  */
-function findPluralForms (translations: any, key: string, config: I18nextToolkitConfig): Array<{ flatKey: string; suffix: string }> {
+function findForms (translations: any, key: string, config: I18nextToolkitConfig, contexts?: string[]): Array<{ flatKey: string; suffix: string }> {
   if (!translations || typeof translations !== 'object') return []
-  const re = pluralFormRegex(key, config)
+  const re = formRegex(key, config, contexts)
   const forms: Array<{ flatKey: string; suffix: string }> = []
   for (const k of getNestedKeys(translations, config.extract.keySeparator ?? '.')) {
     const m = k.match(re)
@@ -85,6 +94,7 @@ export async function runRenameKey (
   // Parse namespace from keys
   const oldParts = parseKeyWithNamespace(oldKey, config)
   const newParts = parseKeyWithNamespace(newKey, config)
+  oldParts.contexts = newParts.contexts = await findContextValues(oldParts, config)
 
   // Check for conflicts in translation files
   const conflicts = await checkConflicts(newParts, config)
@@ -93,7 +103,7 @@ export async function runRenameKey (
     // no-op (allow the command to succeed). This mirrors previous behavior
     // where renaming a missing key doesn't fail just because the target
     // already exists (it avoids blocking repeated/no-op renames).
-    const oldExists = await checkOldKeyExists(parseKeyWithNamespace(oldKey, config), config)
+    const oldExists = await checkOldKeyExists(oldParts, config)
     if (oldExists) {
       return {
         success: false,
@@ -161,6 +171,33 @@ interface KeyParts {
   key: string
   fullKey: string
   explicitNamespace?: boolean
+  /** The context values the code uses with the old key (`male` for `friend_male`) */
+  contexts?: string[]
+}
+
+/**
+ * The context values the code uses with `parts.key`, from the extractor. A context form (`friend_male`) can't be told
+ * from another key (`friend_list`) by its name, so only the values the extractor generates variants for count.
+ */
+async function findContextValues (parts: KeyParts, config: I18nextToolkitConfig): Promise<string[]> {
+  const contextSeparator = config.extract.contextSeparator ?? '_'
+  const pluralSuffix = new RegExp(`${pluralSuffixRegex(config)}$`)
+  const values = new Set<string>()
+  const collector: Plugin = {
+    name: 'rename-key-context-values',
+    onKeySubmitted (k) {
+      if (k.contextBaseKey !== parts.key || k.ns !== parts.namespace) return
+      const rest = k.key.slice(parts.key.length).replace(pluralSuffix, '')
+      if (rest.startsWith(contextSeparator) && rest.length > contextSeparator.length) values.add(rest.slice(contextSeparator.length))
+    }
+  }
+  const silent: Logger = { info () {}, warn () {}, error () {} }
+  try {
+    await findKeys({ ...config, plugins: [...(config.plugins ?? []), collector] }, silent)
+  } catch {
+    // nothing to scan: rename without context forms
+  }
+  return [...values]
 }
 
 function parseKeyWithNamespace (key: string, config: I18nextToolkitConfig): KeyParts {
@@ -218,7 +255,7 @@ async function checkConflicts (newParts: KeyParts, config: I18nextToolkitConfig)
         }
 
         // Check for plural form conflicts like "key2_one", "key2_other"
-        for (const { flatKey } of findPluralForms(existingTranslations, newParts.key, config)) {
+        for (const { flatKey } of findForms(existingTranslations, newParts.key, config, newParts.contexts)) {
           conflicts.push(`${locale}:${flatKey}`)
         }
       }
@@ -245,7 +282,7 @@ async function checkOldKeyExists (oldParts: KeyParts, config: I18nextToolkitConf
         if (val !== undefined) return true
 
         // Check for plural forms like "key_one", "key_other"
-        if (findPluralForms(translations, oldParts.key, config).length > 0) return true
+        if (findForms(translations, oldParts.key, config, oldParts.contexts).length > 0) return true
       }
     } catch {
       // file missing — continue to next locale
@@ -407,7 +444,7 @@ function replaceKeyWithRegex (
     }
 
     // plural keys like "key_one", "key_other"
-    const flatPluralRegex = pluralFormRegex(oldParts.key, config)
+    const flatPluralRegex = formRegex(oldParts.key, config, oldParts.contexts)
     for (const s of set) {
       if (flatPluralRegex.test(s)) return true
     }
@@ -699,7 +736,7 @@ async function updateTranslationFiles (
     }
 
     // plural keys like "key_one", "key_other"
-    const flatPluralRegex = pluralFormRegex(baseKey, config)
+    const flatPluralRegex = formRegex(baseKey, config, oldParts.contexts)
     for (const s of set) {
       if (flatPluralRegex.test(s)) return true
     }
@@ -752,9 +789,8 @@ async function updateTranslationFiles (
       const oldValue = getNestedValue(oldTranslations, oldParts.key, keySeparator)
 
       // 2) plural matches like `key_one`, `key_other` (top-level or nested)
-      const flatPluralMatches = findPluralForms(oldTranslations, oldParts.key, config)
+      const flatPluralMatches = findForms(oldTranslations, oldParts.key, config, oldParts.contexts)
         .map(m => ({ ...m, value: getNestedValue(oldTranslations, m.flatKey, keySeparator) }))
-      const pluralSeparator = config.extract.pluralSeparator ?? '_'
       const deletePluralForm = (translations: any, flatKey: string) =>
         deleteNestedValue(translations, flatKey, Object.prototype.hasOwnProperty.call(translations, flatKey) ? false : keySeparator)
 
@@ -769,7 +805,7 @@ async function updateTranslationFiles (
           // rename in-place within same file
           for (const m of flatPluralMatches) {
             deletePluralForm(oldTranslations, m.flatKey)
-            setNestedValue(oldTranslations, `${newParts.key}${pluralSeparator}${m.suffix}`, m.value, newKeySeparator)
+            setNestedValue(oldTranslations, `${newParts.key}${m.suffix}`, m.value, newKeySeparator)
           }
           if (!dryRun) {
             const content = serializeTranslationFile(
@@ -802,7 +838,7 @@ async function updateTranslationFiles (
           if (!newTranslations) newTranslations = {}
 
           for (const m of flatPluralMatches) {
-            setNestedValue(newTranslations, `${newParts.key}${pluralSeparator}${m.suffix}`, m.value, newKeySeparator)
+            setNestedValue(newTranslations, `${newParts.key}${m.suffix}`, m.value, newKeySeparator)
           }
 
           if (!dryRun) {

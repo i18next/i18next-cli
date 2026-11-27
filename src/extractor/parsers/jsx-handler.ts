@@ -373,7 +373,8 @@ export class JSXHandler {
                       defaultValue: extractedKey.defaultValue,
                       defaultValueSource: extractedKey.defaultValueSource,
                       explicitDefault: extractedKey.explicitDefault,
-                      locations: extractedKey.locations
+                      locations: extractedKey.locations,
+                      contextBaseKey: extractedKey.key
                     })
                   }
                 }
@@ -399,7 +400,8 @@ export class JSXHandler {
                       defaultValue: extractedKey.defaultValue,
                       defaultValueSource: extractedKey.defaultValueSource,
                       explicitDefault: extractedKey.explicitDefault,
-                      locations: extractedKey.locations
+                      locations: extractedKey.locations,
+                      contextBaseKey: extractedKey.key
                     })
                   }
                 }
@@ -467,6 +469,7 @@ export class JSXHandler {
                   defaultValueSource,
                   explicitDefault,
                   locations,
+                  contextBaseKey: key,
                 })
               }
             }
@@ -628,7 +631,8 @@ export class JSXHandler {
           isOrdinal,
           explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string'),
           locations,
-          keyAcceptingContext
+          keyAcceptingContext,
+          contextBaseKey: keyAcceptingContext !== key ? keyAcceptingContext : undefined
         })
         return
       }
@@ -677,7 +681,8 @@ export class JSXHandler {
           explicitDefault: Boolean(explicitDefaultFromSource || typeof specificDefault === 'string' || typeof otherDefault === 'string'),
           locations,
           // Pass through the base key that accepts context (if any)
-          keyAcceptingContext
+          keyAcceptingContext,
+          contextBaseKey: keyAcceptingContext !== key ? keyAcceptingContext : undefined
         })
       }
     } catch (e) {
