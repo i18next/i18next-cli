@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(rename-key): the context forms the code uses with a key are renamed with it: `friend_male` and `friend_male_one`
+  for `t('friend', { context: 'male' })`, every value of a dynamic context (`isMale ? 'male' : 'female'`) and the
+  context of a `<Trans>`. A key that only starts the same way (`friend_list`) stays, and the conflict check sees the
+  context forms of the new key. Before, only the source was renamed and the next `extract` dropped the translations.
+  Plugins see the key a context variant came from as `contextBaseKey` in `onKeySubmitted`
+  ([#349](https://github.com/i18next/i18next-cli/issues/349))
+
 ## 1.95.5
 
 - fix(rename-key): without `extract.outputFormat`, translation files keep the format of their path, as with `extract`
