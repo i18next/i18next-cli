@@ -1515,6 +1515,69 @@ describe('Linter (core logic)', () => {
     expect(Object.keys(result.files)).toHaveLength(0)
   })
 
+  describe('spread, computed keys and replace (issue #360)', () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract, functions: ['t'] },
+      lint: {},
+    }
+    const lint = async (lines: string[]) => {
+      vol.fromJSON({ '/src/App.tsx': lines.join('\n') })
+      const result = await runLinter(config)
+      return (result.files['/src/App.tsx'] ?? []).map(({ text, line }) => ({ text, line }))
+    }
+
+    it('skips the "not provided" check when a spread, a computed key or a non-literal replace can provide any variable', async () => {
+      expect(await lint([
+        "t('Hello {{name}}', { ...values })",
+        "t('Hello {{name}}', { [field]: value })",
+        "t('Hello {{name}}', { replace: values })",
+        "t('Hello {{name}}', { replace: { ...values } })",
+        "t('Hello {{name}}', { replace: { [field]: value } })",
+      ])).toEqual([])
+    })
+
+    it('takes the keys of a literal replace as the params and reports the keys next to it as unused', async () => {
+      expect(await lint([
+        "t('Hello {{name}}', { replace: { name } })",
+        "t('Hello {{name}}', { replace: { nmae } })",
+        "t('Hello {{name}}', { name, replace: { other } })",
+        "t('Hello {{name}}', { name, replace: values })",
+        // a string replace is not an object, so the options hold the variables
+        "t('Hello {{name}}', { name, replace: 'x' })",
+      ])).toEqual([
+        { text: 'Interpolation parameter "name" was not provided', line: 2 },
+        { text: 'Parameter "nmae" is not used in translation string', line: 2 },
+        { text: 'Interpolation parameter "name" was not provided', line: 3 },
+        { text: 'Parameter "other" is not used in translation string', line: 3 },
+        { text: 'Parameter "name" is not used in translation string', line: 3 },
+        { text: 'Parameter "name" is not used in translation string', line: 4 },
+      ])
+    })
+
+    it('still runs "not used" on every written key', async () => {
+      expect(await lint([
+        "t('Hello {{name}}', { ...values, nmae })",
+        // option keys next to a replace are not variables, inside replace they are
+        "t('Hello {{name}}', { count, replace: { name, count } })",
+      ])).toEqual([
+        { text: 'Parameter "nmae" is not used in translation string', line: 1 },
+        { text: 'Parameter "count" is not used in translation string', line: 2 },
+      ])
+    })
+
+    it('handles the 3-argument form the same way', async () => {
+      expect(await lint([
+        "t('greeting', 'Hello {{name}}', { ...values })",
+        "t('greeting', 'Hello {{name}}', { replace: { name } })",
+        "t('greeting', 'Hello {{name}}', { replace: { nmae } })",
+      ])).toEqual([
+        { text: 'Interpolation parameter "name" was not provided', line: 3 },
+        { text: 'Parameter "nmae" is not used in translation string', line: 3 },
+      ])
+    })
+  })
+
   it('should still flag interpolation errors when t() second argument is an object literal (issue #203 regression)', async () => {
     // Ensures the fix for above does not suppress real errors for object literal params
     const config: I18nextToolkitConfig = {
