@@ -7,28 +7,58 @@ import { loadTranslationFile, serializeTranslationFile, getOutputPath, getNamesp
 import { getNestedKeys, getNestedValue, setNestedValue, naturalLanguageRegexFor, storedKeySeparator } from './utils/nested-object.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 import { styleText } from 'node:util'
+import { findKeys } from './extractor.js'
 
 const pluralSuffixes = ['zero', 'one', 'two', 'few', 'many', 'other']
 
-// The suffix it captures keeps the `ordinal` part of ordinal forms like "key_ordinal_one".
-const pluralFormRegex = (key: string, config: I18nextToolkitConfig): RegExp => {
-  const separator = escapeRegex(config.extract.pluralSeparator ?? '_')
-  return new RegExp(`^${escapeRegex(key)}${separator}((?:ordinal${separator})?(?:${pluralSuffixes.join('|')}))$`)
+/**
+ * Matches the stored forms of `key` and captures what follows the key, separator included:
+ * plural forms (`key_one`), ordinal forms (`key_ordinal_one`) and, when the key is used with a
+ * `context` in the source, context forms with or without a plural suffix (`key_male`,
+ * `key_male_one`). A context value never contains the key separator, so keys nested under
+ * a context form are not matched.
+ */
+const keyFormRegex = (key: string, config: I18nextToolkitConfig, acceptsContext = false): RegExp => {
+  const pluralSeparator = escapeRegex(config.extract.pluralSeparator ?? '_')
+  const pluralForm = `${pluralSeparator}(?:ordinal${pluralSeparator})?(?:${pluralSuffixes.join('|')})`
+  if (!acceptsContext) return new RegExp(`^${escapeRegex(key)}(${pluralForm})$`)
+
+  const keySeparator = config.extract.keySeparator ?? '.'
+  const contextValue = keySeparator === false ? '.+' : `(?:(?!${escapeRegex(keySeparator)}).)+`
+  const contextForm = `${escapeRegex(config.extract.contextSeparator ?? '_')}${contextValue}`
+  return new RegExp(`^${escapeRegex(key)}(${pluralForm}|${contextForm})$`)
 }
 
 /**
- * The stored plural forms of `key`, top-level (`key_one`) or nested next to it
- * (`{ cart: { item_one } }` for `cart.item`), as flattened keys.
+ * The stored plural (and, for a key used with context, context) forms of `key`, top-level
+ * (`key_one`) or nested next to it (`{ cart: { item_one } }` for `cart.item`), as flattened
+ * keys. `rest` is the part after the key, so the renamed form is `newKey + rest`.
  */
-function findPluralForms (translations: any, key: string, config: I18nextToolkitConfig): Array<{ flatKey: string; suffix: string }> {
+function findKeyForms (translations: any, key: string, config: I18nextToolkitConfig, acceptsContext = false): Array<{ flatKey: string; rest: string }> {
   if (!translations || typeof translations !== 'object') return []
-  const re = pluralFormRegex(key, config)
-  const forms: Array<{ flatKey: string; suffix: string }> = []
+  const re = keyFormRegex(key, config, acceptsContext)
+  const forms: Array<{ flatKey: string; rest: string }> = []
   for (const k of getNestedKeys(translations, config.extract.keySeparator ?? '.')) {
     const m = k.match(re)
-    if (m) forms.push({ flatKey: k, suffix: m[1] })
+    if (m) forms.push({ flatKey: k, rest: m[1] })
   }
   return forms
+}
+
+/**
+ * Whether the source calls `parts.key` with a `context` option, in its namespace when the key
+ * names one. Its context variants in the translation files then move with it, the same way
+ * `extract` keeps them.
+ */
+async function keyAcceptsContext (parts: KeyParts, config: I18nextToolkitConfig, logger: Logger): Promise<boolean> {
+  const { allKeys } = await findKeys(config, logger)
+  const defaultNS = config.extract.defaultNS ?? 'translation'
+  const namespace = parts.namespace ?? defaultNS
+  for (const extracted of allKeys.values()) {
+    if (extracted.keyAcceptingContext !== parts.key) continue
+    if (config.extract.defaultNS === false || (extracted.ns ?? defaultNS) === namespace) return true
+  }
+  return false
 }
 
 /**
@@ -86,14 +116,17 @@ export async function runRenameKey (
   const oldParts = parseKeyWithNamespace(oldKey, config)
   const newParts = parseKeyWithNamespace(newKey, config)
 
+  // Context forms (`key_male`) only belong to the key when the source uses it with context.
+  const acceptsContext = await keyAcceptsContext(oldParts, config, logger)
+
   // Check for conflicts in translation files
-  const conflicts = await checkConflicts(newParts, config)
+  const conflicts = await checkConflicts(newParts, config, acceptsContext)
   if (conflicts.length > 0) {
     // If the old key doesn't exist in any translation file, treat this as a
     // no-op (allow the command to succeed). This mirrors previous behavior
     // where renaming a missing key doesn't fail just because the target
     // already exists (it avoids blocking repeated/no-op renames).
-    const oldExists = await checkOldKeyExists(parseKeyWithNamespace(oldKey, config), config)
+    const oldExists = await checkOldKeyExists(parseKeyWithNamespace(oldKey, config), config, acceptsContext)
     if (oldExists) {
       return {
         success: false,
@@ -114,10 +147,10 @@ export async function runRenameKey (
   logger.info(`🔍 Scanning for usages of "${oldKey}"...`)
 
   // Find and update source files
-  const sourceResults = await updateSourceFiles(oldParts, newParts, config, dryRun, namespaceKeyMap, logger)
+  const sourceResults = await updateSourceFiles(oldParts, newParts, config, dryRun, namespaceKeyMap, logger, acceptsContext)
 
   // Update translation files
-  const translationResults = await updateTranslationFiles(oldParts, newParts, config, dryRun, namespaceKeyMap, logger)
+  const translationResults = await updateTranslationFiles(oldParts, newParts, config, dryRun, namespaceKeyMap, logger, acceptsContext)
 
   const totalChanges = sourceResults.reduce((sum, r) => sum + r.changes, 0)
 
@@ -200,7 +233,7 @@ function validateKeys (oldKey: string, newKey: string, config: I18nextToolkitCon
   return { valid: true }
 }
 
-async function checkConflicts (newParts: KeyParts, config: I18nextToolkitConfig): Promise<string[]> {
+async function checkConflicts (newParts: KeyParts, config: I18nextToolkitConfig, acceptsContext: boolean): Promise<string[]> {
   const conflicts: string[] = []
   const keySeparator = config.extract.keySeparator ?? '.'
 
@@ -218,7 +251,7 @@ async function checkConflicts (newParts: KeyParts, config: I18nextToolkitConfig)
         }
 
         // Check for plural form conflicts like "key2_one", "key2_other"
-        for (const { flatKey } of findPluralForms(existingTranslations, newParts.key, config)) {
+        for (const { flatKey } of findKeyForms(existingTranslations, newParts.key, config, acceptsContext)) {
           conflicts.push(`${locale}:${flatKey}`)
         }
       }
@@ -230,7 +263,7 @@ async function checkConflicts (newParts: KeyParts, config: I18nextToolkitConfig)
   return conflicts
 }
 
-async function checkOldKeyExists (oldParts: KeyParts, config: I18nextToolkitConfig): Promise<boolean> {
+async function checkOldKeyExists (oldParts: KeyParts, config: I18nextToolkitConfig, acceptsContext: boolean): Promise<boolean> {
   const keySeparator = config.extract.keySeparator ?? '.'
 
   for (const locale of config.locales) {
@@ -245,7 +278,7 @@ async function checkOldKeyExists (oldParts: KeyParts, config: I18nextToolkitConf
         if (val !== undefined) return true
 
         // Check for plural forms like "key_one", "key_other"
-        if (findPluralForms(translations, oldParts.key, config).length > 0) return true
+        if (findKeyForms(translations, oldParts.key, config, acceptsContext).length > 0) return true
       }
     } catch {
       // file missing — continue to next locale
@@ -302,7 +335,8 @@ async function updateSourceFiles (
   config: I18nextToolkitConfig,
   dryRun: boolean,
   namespaceKeyMap: Map<string, Set<string>>,
-  logger: Logger
+  logger: Logger,
+  acceptsContext: boolean
 ): Promise<Array<{ path: string; changes: number }>> {
   const defaultIgnore = ['node_modules/**']
   const userIgnore = Array.isArray(config.extract.ignore)
@@ -328,7 +362,7 @@ async function updateSourceFiles (
 
   for (const file of sourceFiles) {
     const code = await readFile(file, 'utf-8')
-    const { newCode, changes } = await replaceKeyInSource(code, oldParts, newParts, config, namespaceKeyMap)
+    const { newCode, changes } = await replaceKeyInSource(code, oldParts, newParts, config, namespaceKeyMap, acceptsContext)
 
     if (changes > 0) {
       if (!dryRun) {
@@ -351,10 +385,11 @@ async function replaceKeyInSource (
   oldParts: KeyParts,
   newParts: KeyParts,
   config: I18nextToolkitConfig,
-  namespaceKeyMap: Map<string, Set<string>>
+  namespaceKeyMap: Map<string, Set<string>>,
+  acceptsContext: boolean
 ): Promise<{ newCode: string; changes: number }> {
   // Simpler and robust regex-based replacement that covers tests' patterns
-  return replaceKeyWithRegex(code, oldParts, newParts, config, namespaceKeyMap)
+  return replaceKeyWithRegex(code, oldParts, newParts, config, namespaceKeyMap, acceptsContext)
 }
 
 function replaceKeyWithRegex (
@@ -362,7 +397,8 @@ function replaceKeyWithRegex (
   oldParts: KeyParts,
   newParts: KeyParts,
   config: I18nextToolkitConfig,
-  namespaceKeyMap: Map<string, Set<string>>
+  namespaceKeyMap: Map<string, Set<string>>,
+  acceptsContext: boolean
 ): { newCode: string; changes: number } {
   let changes = 0
   let newCode = code
@@ -407,7 +443,7 @@ function replaceKeyWithRegex (
     }
 
     // plural keys like "key_one", "key_other"
-    const flatPluralRegex = pluralFormRegex(oldParts.key, config)
+    const flatPluralRegex = keyFormRegex(oldParts.key, config, acceptsContext)
     for (const s of set) {
       if (flatPluralRegex.test(s)) return true
     }
@@ -674,7 +710,8 @@ async function updateTranslationFiles (
   config: I18nextToolkitConfig,
   dryRun: boolean,
   namespaceKeyMap: Map<string, Set<string>>,
-  logger: Logger
+  logger: Logger,
+  acceptsContext: boolean
 ): Promise<Array<{ path: string; updated: boolean }>> {
   const results: Array<{ path: string; updated: boolean }> = []
   const keySeparator = config.extract.keySeparator ?? '.'
@@ -699,7 +736,7 @@ async function updateTranslationFiles (
     }
 
     // plural keys like "key_one", "key_other"
-    const flatPluralRegex = pluralFormRegex(baseKey, config)
+    const flatPluralRegex = keyFormRegex(baseKey, config, acceptsContext)
     for (const s of set) {
       if (flatPluralRegex.test(s)) return true
     }
@@ -752,9 +789,8 @@ async function updateTranslationFiles (
       const oldValue = getNestedValue(oldTranslations, oldParts.key, keySeparator)
 
       // 2) plural matches like `key_one`, `key_other` (top-level or nested)
-      const flatPluralMatches = findPluralForms(oldTranslations, oldParts.key, config)
+      const flatPluralMatches = findKeyForms(oldTranslations, oldParts.key, config, acceptsContext)
         .map(m => ({ ...m, value: getNestedValue(oldTranslations, m.flatKey, keySeparator) }))
-      const pluralSeparator = config.extract.pluralSeparator ?? '_'
       const deletePluralForm = (translations: any, flatKey: string) =>
         deleteNestedValue(translations, flatKey, Object.prototype.hasOwnProperty.call(translations, flatKey) ? false : keySeparator)
 
@@ -769,7 +805,7 @@ async function updateTranslationFiles (
           // rename in-place within same file
           for (const m of flatPluralMatches) {
             deletePluralForm(oldTranslations, m.flatKey)
-            setNestedValue(oldTranslations, `${newParts.key}${pluralSeparator}${m.suffix}`, m.value, newKeySeparator)
+            setNestedValue(oldTranslations, `${newParts.key}${m.rest}`, m.value, newKeySeparator)
           }
           if (!dryRun) {
             const content = serializeTranslationFile(
@@ -802,7 +838,7 @@ async function updateTranslationFiles (
           if (!newTranslations) newTranslations = {}
 
           for (const m of flatPluralMatches) {
-            setNestedValue(newTranslations, `${newParts.key}${pluralSeparator}${m.suffix}`, m.value, newKeySeparator)
+            setNestedValue(newTranslations, `${newParts.key}${m.rest}`, m.value, newKeySeparator)
           }
 
           if (!dryRun) {
