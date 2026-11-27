@@ -247,5 +247,139 @@ describe('runRenameKey (plurals', () => {
       expect(ns2.key_one).toBeUndefined()
       expect(ns2.key_other).toBeUndefined()
     })
+    it('should move a { ns } call with custom pluralSeparator forms to the default namespace', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          nsSeparator: ':',
+          defaultNS: 'ns1',
+          pluralSeparator: '-'
+        }
+      }
+      await writeFile(join(testDir, 'test.ts'), "t('key', { ns: 'ns2', count: 1 })")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/ns2.json'),
+        JSON.stringify({ 'key-one': 'item', 'key-other': 'items' })
+      )
+      await writeFile(join(testDir, 'locales/en/ns1.json'), JSON.stringify({}))
+
+      const result = await runRenameKey(config, 'ns2:key', 'key')
+
+      expect(result.success).toBe(true)
+      expect(await readFile(join(testDir, 'test.ts'), 'utf-8')).toBe("t('key', {count: 1})")
+      const ns1 = JSON.parse(await readFile(join(testDir, 'locales/en/ns1.json'), 'utf-8'))
+      expect(ns1).toEqual({ 'key-one': 'item', 'key-other': 'items' })
+    })
+
+    it('should rename ordinal plural forms', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json')
+        }
+      }
+      await writeFile(join(testDir, 'test.ts'), "t('place', { count: 1, ordinal: true })")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/translation.json'),
+        JSON.stringify({ place_ordinal_one: '{{count}}st', place_ordinal_two: '{{count}}nd', place_ordinal_few: '{{count}}rd', place_ordinal_other: '{{count}}th' })
+      )
+
+      const result = await runRenameKey(config, 'place', 'rank')
+
+      expect(result.success).toBe(true)
+      expect(JSON.parse(await readFile(join(testDir, 'locales/en/translation.json'), 'utf-8'))).toEqual({
+        rank_ordinal_one: '{{count}}st',
+        rank_ordinal_two: '{{count}}nd',
+        rank_ordinal_few: '{{count}}rd',
+        rank_ordinal_other: '{{count}}th'
+      })
+    })
+
+    it('should rename plural forms nested under the key path', async () => {
+      const config = {
+        locales: ['en', 'de'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json')
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('cart.item', { count: 1 })")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await mkdir(join(testDir, 'locales/de'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/translation.json'),
+        JSON.stringify({ cart: { item_one: 'item', item_other: 'items', total: 'Total' } })
+      )
+      await writeFile(
+        join(testDir, 'locales/de/translation.json'),
+        JSON.stringify({ cart: { item_one: 'Artikel', item_other: 'Artikel' } })
+      )
+
+      const result = await runRenameKey(config, 'cart.item', 'basket.product')
+
+      expect(result.success).toBe(true)
+      expect(await readFile(join(testDir, 'test.ts'), 'utf-8')).toBe("t('basket.product', { count: 1 })")
+      expect(JSON.parse(await readFile(join(testDir, 'locales/en/translation.json'), 'utf-8'))).toEqual({
+        cart: { total: 'Total' },
+        basket: { product_one: 'item', product_other: 'items' }
+      })
+      expect(JSON.parse(await readFile(join(testDir, 'locales/de/translation.json'), 'utf-8'))).toEqual({
+        basket: { product_one: 'Artikel', product_other: 'Artikel' }
+      })
+    })
+
+    it('should detect conflicts with nested plural forms of the target key', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json')
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('cart.item', { count: 1 })")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/translation.json'),
+        JSON.stringify({ cart: { item_one: 'item', item_other: 'items', product_one: 'product', product_other: 'products' } })
+      )
+
+      const result = await runRenameKey(config, 'cart.item', 'cart.product')
+
+      expect(result.success).toBe(false)
+      expect(result.conflicts).toEqual(['en:cart.product_one', 'en:cart.product_other'])
+    })
+
+    it('should rename plural forms that use a custom pluralSeparator', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json'),
+          pluralSeparator: '-'
+        }
+      }
+
+      await writeFile(join(testDir, 'test.ts'), "t('item', { count: 1 })")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/translation.json'),
+        JSON.stringify({ 'item-one': 'item', 'item-other': 'items' })
+      )
+
+      const result = await runRenameKey(config, 'item', 'product')
+
+      expect(result.success).toBe(true)
+      expect(JSON.parse(await readFile(join(testDir, 'locales/en/translation.json'), 'utf-8'))).toEqual({
+        'product-one': 'item',
+        'product-other': 'items'
+      })
+    })
   })
 })
