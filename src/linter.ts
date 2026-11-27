@@ -132,6 +132,8 @@ async function lintInterpolationParams (ast: any, code: string, config: I18nextT
     /** A string key, checked itself when it has no translation (a natural-language key) */
     key?: string
     searchText: string
+    /** Start of the first argument, a file-relative character index once the spans are normalised */
+    start?: number
     paramKeys: string[]
     /** Written keys i18next ignores, next to a `replace` that is not a string */
     unusedKeys: string[]
@@ -260,6 +262,7 @@ async function lintInterpolationParams (ast: any, code: string, config: I18nextT
         const searchText = isSelector ? code.slice(arg0.span.start, arg0.span.end) : (arg0.raw ?? `"${arg0.value}"`)
         callSites.push({
           node,
+          start: arg0.span?.start,
           defaultString: isThreeArgForm ? (translationArg as any).value : undefined,
           key: isSelector ? undefined : keyOrStr,
           searchText,
@@ -274,15 +277,20 @@ async function lintInterpolationParams (ast: any, code: string, config: I18nextT
 
   walk(ast, [])
 
-  // 187 fix — process call sites in source order, advancing lastSearchIndex so that
-  // each occurrence of the same string literal finds its own line, not always the first.
+  // The line comes from the node's span, like for hardcoded strings (#283): a text search
+  // would stop at any earlier occurrence of the key (a string, a comment, a skipped call),
+  // and the ignore directives are matched by line. When a span is unavailable, fall back
+  // to a search in source order, advancing lastSearchIndex so that each occurrence of the
+  // same string literal finds its own line (#187).
   let lastSearchIndex = 0
-  for (const { node, defaultString, key, searchText, paramKeys, unusedKeys, fromReplace, unknownParams } of callSites) {
-    const position = code.indexOf(searchText, lastSearchIndex)
-    if (position === -1) continue
-    lastSearchIndex = position + searchText.length
-
-    const issueLineNumber = getLineNumber(position)
+  for (const { node, start, defaultString, key, searchText, paramKeys, unusedKeys, fromReplace, unknownParams } of callSites) {
+    let issueLineNumber = typeof start === 'number' ? lineColumnFromOffset(code, start)?.line : undefined
+    if (issueLineNumber === undefined) {
+      const position = code.indexOf(searchText, lastSearchIndex)
+      if (position === -1) continue
+      lastSearchIndex = position + searchText.length
+      issueLineNumber = getLineNumber(position)
+    }
     let strings = defaultString !== undefined ? [defaultString] : await valuesOfCall(node)
     if (!strings.length && key !== undefined) strings = [key]
     const keys = [...new Set(strings.flatMap(str => analyze ? messageArgs(analyze, str) : interpolationNames(str, config.extract)))]
@@ -829,9 +837,9 @@ export class Linter extends EventEmitter<LinterEventMap> {
 
         // Normalise AST spans to file-relative character indices so the ignore
         // directive can resolve the line range of the JSX element it precedes,
-        // and lintTransIndices reports the line of a <Trans>.
-        // (findHardcodedStrings/lintInterpolationParams locate issues via text
-        // search and don't read spans.)
+        // lintTransIndices reports the line of a <Trans>, and findHardcodedStrings
+        // and lintInterpolationParams report the line of each node (both fall
+        // back to a text search when a span is unavailable).
         try {
           normalizeSpansToCharIndices(ast, code)
         } catch {

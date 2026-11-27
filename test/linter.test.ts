@@ -1456,6 +1456,30 @@ describe('Linter (core logic)', () => {
     expect(lines).toEqual([4, 5, 6])
   })
 
+  it('reports interpolation issues on the line of the call, not of an earlier string or comment with the same text (issue #361)', async () => {
+    const config: I18nextToolkitConfig = {
+      ...mockConfig,
+      extract: { ...mockConfig.extract, functions: ['t'] },
+      lint: {},
+    }
+
+    const sampleCode = [
+      '// i18next-instrument-ignore-next-line',
+      "const label = 'Hello {{name}}' // t('Hello {{name}}') is used below",  // line 2
+      "export const a = () => t('Hello {{name}}', { nmae: 'x' })",           // line 3
+      '// i18next-instrument-ignore-next-line',
+      "export const b = () => t('Hello {{name}}', { other: 'y' })",          // line 5, ignored
+    ].join('\n')
+    vol.fromJSON({ '/src/App.tsx': sampleCode })
+
+    const result = await runLinter(config)
+
+    expect(result.files['/src/App.tsx'].map(({ text, line }) => ({ text, line }))).toEqual([
+      { text: 'Interpolation parameter "name" was not provided', line: 3 },
+      { text: 'Parameter "nmae" is not used in translation string', line: 3 },
+    ])
+  })
+
   it('should not flag params as unused when using i18next {{param, format}} formatting syntax', async () => {
     // Reproduces issue #202: checkInterpolationParams produces false positives for {{param, format}} syntax
     const config: I18nextToolkitConfig = {
