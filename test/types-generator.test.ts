@@ -98,6 +98,41 @@ describe('types-generator', () => {
   // for example: `expect(vol.existsSync('src/@types/i18next.d.ts')).toBe(true)`
   })
 
+  describe('key and interpolation options', () => {
+    const silentLogger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() })
+    const generate = async (extract: Record<string, unknown>) => {
+      vol.fromJSON({ '/locales/en/translation.json': JSON.stringify({ title: 'Hi {name}' }) })
+      await runTypesGenerator({ ...mockConfig, extract: { ...mockConfig.extract, ...extract } }, { logger: silentLogger() })
+      return vol.promises.readFile(resolve(process.cwd(), mockConfig.types!.output), 'utf-8')
+    }
+
+    it('writes custom strings into CustomTypeOptions, so keys and variables are read like at runtime', async () => {
+      const content = await generate({ keySeparator: '/', nsSeparator: '::', pluralSeparator: '-', contextSeparator: '|', interpolationPrefix: '{', interpolationSuffix: '}' })
+
+      expect(content).toContain("keySeparator: '/';")
+      expect(content).toContain("nsSeparator: '::';")
+      expect(content).toContain("pluralSeparator: '-';")
+      expect(content).toContain("contextSeparator: '|';")
+      expect(content).toContain("interpolationPrefix: '{';")
+      expect(content).toContain("interpolationSuffix: '}';")
+    })
+
+    it('writes false for disabled separators', async () => {
+      const content = await generate({ keySeparator: false, nsSeparator: false })
+
+      expect(content).toContain('keySeparator: false;')
+      expect(content).toContain('nsSeparator: false;')
+    })
+
+    it("leaves out options that are not set, null, or i18next's defaults", async () => {
+      const content = await generate({ keySeparator: '.', nsSeparator: null, pluralSeparator: '_', interpolationPrefix: '{{', interpolationSuffix: undefined })
+
+      for (const name of ['keySeparator', 'nsSeparator', 'pluralSeparator', 'contextSeparator', 'interpolationPrefix', 'interpolationSuffix']) {
+        expect(content).not.toContain(name)
+      }
+    })
+  })
+
   describe('messageFormat icu / mf2', () => {
     const silentLogger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 
