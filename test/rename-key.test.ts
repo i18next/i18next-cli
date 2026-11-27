@@ -610,6 +610,50 @@ const d = t(\`old.key\`)`
     })
   })
 
+  describe('translation file formats', () => {
+    it('should keep the file format of the output path when outputFormat is not set', async () => {
+      const config = {
+        locales: ['en', 'de'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.ts')
+        }
+      }
+
+      await writeFile(join(testDir, 'app.ts'), "t('hello')")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await mkdir(join(testDir, 'locales/de'), { recursive: true })
+      await writeFile(join(testDir, 'locales/en/translation.ts'), 'export default {\n  "hello": "Hello"\n} as const;\n')
+      await writeFile(join(testDir, 'locales/de/translation.ts'), 'export default {\n  "hello": "Hallo"\n} as const;\n')
+
+      const result = await runRenameKey(config, 'hello', 'greeting')
+
+      expect(result.success).toBe(true)
+      expect(await readFile(join(testDir, 'locales/en/translation.ts'), 'utf-8'))
+        .toBe('export default {\n  "greeting": "Hello"\n} as const;\n')
+      expect(await readFile(join(testDir, 'locales/de/translation.ts'), 'utf-8'))
+        .toBe('export default {\n  "greeting": "Hallo"\n} as const;\n')
+    })
+
+    it('should write YAML back to .yaml files when outputFormat is not set', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.yaml')
+        }
+      }
+
+      await writeFile(join(testDir, 'app.ts'), "t('hello')")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(join(testDir, 'locales/en/translation.yaml'), 'hello: Hello\n')
+
+      await runRenameKey(config, 'hello', 'greeting')
+
+      expect(await readFile(join(testDir, 'locales/en/translation.yaml'), 'utf-8')).toBe('greeting: Hello\n')
+    })
+  })
+
   describe('string default value argument', () => {
     it('should rename t("key", "Default") calls with or without options', async () => {
       const config = {

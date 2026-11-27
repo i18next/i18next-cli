@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { I18nextToolkitConfig, Logger, RenameKeyResult } from './types.js'
 import { ConsoleLogger } from './utils/logger.js'
-import { loadTranslationFile, serializeTranslationFile, getOutputPath, getNamespaceFromOutputPath } from './utils/file-utils.js'
+import { loadTranslationFile, serializeTranslationFile, getOutputPath, getNamespaceFromOutputPath, inferFormatFromPath } from './utils/file-utils.js'
 import { getNestedValue, setNestedValue, naturalLanguageRegexFor, storedKeySeparator } from './utils/nested-object.js'
 import { shouldShowFunnel, recordFunnelShown } from './utils/funnel-msg-tracker.js'
 import { styleText } from 'node:util'
@@ -773,7 +773,7 @@ async function updateTranslationFiles (
           if (!dryRun) {
             const content = serializeTranslationFile(
               oldTranslations,
-              config.extract.outputFormat,
+              config.extract.outputFormat ?? inferFormatFromPath(oldFullPath),
               config.extract.indentation
             )
             await writeFile(oldFullPath, content, 'utf-8')
@@ -787,7 +787,7 @@ async function updateTranslationFiles (
           if (!dryRun) {
             const contentOld = serializeTranslationFile(
               oldTranslations,
-              config.extract.outputFormat,
+              config.extract.outputFormat ?? inferFormatFromPath(oldFullPath),
               config.extract.indentation
             )
             await writeFile(oldFullPath, contentOld, 'utf-8')
@@ -808,7 +808,7 @@ async function updateTranslationFiles (
           if (!dryRun) {
             const contentNew = serializeTranslationFile(
               newTranslations,
-              config.extract.outputFormat,
+              config.extract.outputFormat ?? inferFormatFromPath(newFullPath),
               config.extract.indentation
             )
             await writeFile(newFullPath, contentNew, 'utf-8')
@@ -829,7 +829,7 @@ async function updateTranslationFiles (
           if (!dryRun) {
             const content = serializeTranslationFile(
               oldTranslations,
-              config.extract.outputFormat,
+              config.extract.outputFormat ?? inferFormatFromPath(oldFullPath),
               config.extract.indentation
             )
             await writeFile(oldFullPath, content, 'utf-8')
@@ -845,7 +845,7 @@ async function updateTranslationFiles (
           if (!dryRun) {
             const contentOld = serializeTranslationFile(
               updatedOld,
-              config.extract.outputFormat,
+              config.extract.outputFormat ?? inferFormatFromPath(oldFullPath),
               config.extract.indentation
             )
             await writeFile(oldFullPath, contentOld, 'utf-8')
@@ -863,7 +863,7 @@ async function updateTranslationFiles (
           if (!dryRun) {
             const contentNew = serializeTranslationFile(
               newTranslations,
-              config.extract.outputFormat,
+              config.extract.outputFormat ?? inferFormatFromPath(newFullPath),
               config.extract.indentation
             )
             await writeFile(newFullPath, contentNew, 'utf-8')
