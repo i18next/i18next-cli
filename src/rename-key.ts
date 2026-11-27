@@ -367,6 +367,9 @@ function replaceKeyWithRegex (
   let changes = 0
   let newCode = code
   const nsSeparator = config.extract.nsSeparator ?? ':'
+  // The namespace parseKeyWithNamespace gives a key without a prefix: compare against this, not the raw
+  // option, or a move out of or into the default namespace changes no call when defaultNS is not set.
+  const defaultNS = config.extract.defaultNS || 'translation'
 
   const configuredFunctions = config.extract.functions || ['t', '*.t']
 
@@ -422,7 +425,7 @@ function replaceKeyWithRegex (
     if (
       oldParts.namespace && newParts.namespace &&
       oldParts.namespace !== newParts.namespace &&
-      config.extract.defaultNS === newParts.namespace &&
+      defaultNS === newParts.namespace &&
       hasKeyInNamespace(oldParts.namespace)
     ) {
       const nsRegexToDefault = new RegExp(
@@ -475,7 +478,7 @@ function replaceKeyWithRegex (
           }
         } else {
           // moving across namespaces
-          if (config.extract.defaultNS === newParts.namespace) {
+          if (defaultNS === newParts.namespace) {
             // moving INTO the default namespace -> remove the ns property
             if (obj) {
               updated = updated.replace(/\{[^}]*\}(?=\s*\)$)/, `{${obj}}`)
@@ -563,14 +566,13 @@ function replaceKeyWithRegex (
     //        add the ns property into the options object: t('key', { ... })
     //        -> t('key', { ..., ns: 'newNs' }).
     //
+    // eslint-disable-next-line no-lone-blocks
     {
-      const effectiveDefaultNS = config.extract.defaultNS ?? 'translation'
-
       // 4.5a) Moving FROM defaultNS to another namespace: add ns to options object.
       if (
         oldParts.namespace && newParts.namespace &&
         oldParts.namespace !== newParts.namespace &&
-        config.extract.defaultNS === oldParts.namespace &&
+        defaultNS === oldParts.namespace &&
         hasKeyInNamespace(oldParts.namespace)
       ) {
         const regexOptionsNoNs = new RegExp(
@@ -592,7 +594,7 @@ function replaceKeyWithRegex (
 
       // 4.5b) Same-namespace rename where call already has options object (no ns):
       //        t('key', { user: 'name' }) -> t('key2', { user: 'name' })
-      if (oldParts.namespace === newParts.namespace && oldParts.namespace === effectiveDefaultNS) {
+      if (oldParts.namespace === newParts.namespace && oldParts.namespace === defaultNS) {
         const regexKeyWithOptions = new RegExp(
           `${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1${defaultValueArg}\\s*,\\s*\\{([^}]*)\\}\\s*\\)`,
           'g'
@@ -614,7 +616,7 @@ function replaceKeyWithRegex (
     if (
       oldParts.namespace && newParts.namespace &&
       oldParts.namespace !== newParts.namespace &&
-      config.extract.defaultNS === oldParts.namespace &&
+      defaultNS === oldParts.namespace &&
       hasKeyInNamespace(oldParts.namespace)
     ) {
       const regexKeyWithParen = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1${defaultValueArg}\\s*\\)`, 'g')
@@ -629,14 +631,14 @@ function replaceKeyWithRegex (
     //
     // 6) Bare calls without options: fn('key') -> fn('newKey')
     //    Apply this replacement only when the old key's namespace is the
-    //    *effective* default namespace (config.extract.defaultNS ?? 'translation').
+    //    default namespace (`defaultNS` above).
     //    This preserves previous behaviour: default-namespace bare-calls are
     //    considered "key form" and should be rewritten even when the translation
     //    file exists but the specific key isn't present.
     //
+    // eslint-disable-next-line no-lone-blocks
     {
-      const effectiveDefaultNS = config.extract.defaultNS ?? 'translation'
-      if (oldParts.namespace === effectiveDefaultNS) {
+      if (oldParts.namespace === defaultNS) {
         const regexKeyNoOptions = new RegExp(`${prefix}\\s*\\(\\s*(['"\`])${escapeRegex(oldParts.key)}\\1${defaultValueArg}\\s*\\)`, 'g')
         newCode = newCode.replace(regexKeyNoOptions, (match, q) => {
           changes++

@@ -1513,4 +1513,29 @@ const d = t(\`old.key\`)`
       expect(ns1.key2).toBe('Value')
     })
   })
+
+  it('moves calls out of and back into the default namespace when defaultNS is not set (#348)', async () => {
+    const config = {
+      locales: ['en'],
+      extract: {
+        input: [join(testDir, '*.ts')],
+        output: join(testDir, 'locales/{{language}}/{{namespace}}.json')
+      }
+    }
+
+    await writeFile(join(testDir, 'test.ts'), "t('title', { defaultValue: 'Title' })\nt('title')\n")
+    await mkdir(join(testDir, 'locales/en'), { recursive: true })
+    await writeFile(join(testDir, 'locales/en/translation.json'), JSON.stringify({ title: 'Title' }))
+    await writeFile(join(testDir, 'locales/en/other.json'), JSON.stringify({}))
+
+    expect((await runRenameKey(config, 'title', 'other:title')).success).toBe(true)
+    let updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+    expect(updatedCode).toContain("t('title', { defaultValue: 'Title', ns: 'other' })")
+    expect(updatedCode).toContain("t('title', { ns: 'other' })")
+
+    expect((await runRenameKey(config, 'other:title', 'translation:title')).success).toBe(true)
+    updatedCode = await readFile(join(testDir, 'test.ts'), 'utf-8')
+    expect(updatedCode).toContain("t('title', {defaultValue: 'Title'})")
+    expect(updatedCode).toContain("t('title')\n")
+  })
 })
