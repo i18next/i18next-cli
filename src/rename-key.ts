@@ -25,6 +25,10 @@ const formRegex = (key: string, config: I18nextToolkitConfig, contexts: string[]
   return new RegExp(`^${escapeRegex(key)}(?=.)(${context}(?:${pluralSuffixRegex(config)})?)$`)
 }
 
+// The input globs with Windows backslashes as forward slashes: glob reads a backslash as an escape.
+const sourcePatterns = (config: I18nextToolkitConfig): string[] =>
+  (Array.isArray(config.extract.input) ? config.extract.input : [config.extract.input]).map(pattern => pattern.replace(/\\/g, '/'))
+
 /**
  * The stored plural and context forms of `key`, top-level (`key_one`) or nested next to it
  * (`{ cart: { item_one } }` for `cart.item`), as flattened keys.
@@ -193,7 +197,7 @@ async function findContextValues (parts: KeyParts, config: I18nextToolkitConfig)
   }
   const silent: Logger = { info () {}, warn () {}, error () {} }
   try {
-    await findKeys({ ...config, plugins: [...(config.plugins ?? []), collector] }, silent)
+    await findKeys({ ...config, extract: { ...config.extract, input: sourcePatterns(config) }, plugins: [...(config.plugins ?? []), collector] }, silent)
   } catch {
     // nothing to scan: rename without context forms
   }
@@ -346,14 +350,7 @@ async function updateSourceFiles (
     ? config.extract.ignore
     : config.extract.ignore ? [config.extract.ignore] : []
 
-  // Normalize input patterns for cross-platform compatibility
-  const inputPatterns = Array.isArray(config.extract.input)
-    ? config.extract.input
-    : [config.extract.input]
-
-  const normalizedPatterns = inputPatterns.map(pattern =>
-    pattern.replace(/\\/g, '/')
-  )
+  const normalizedPatterns = sourcePatterns(config)
 
   // glob accepts array of patterns; do not force cwd to avoid accidental path rewriting
   const sourceFiles = await glob(normalizedPatterns, {

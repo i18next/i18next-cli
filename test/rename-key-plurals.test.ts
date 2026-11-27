@@ -454,6 +454,15 @@ describe('runRenameKey (plurals', () => {
       expect(await readFile(join(testDir, 'test.tsx'), 'utf-8')).toContain('i18nKey="buddy"')
     })
 
+    it('finds the context forms with a backslash in the input pattern, as path.join writes it on Windows', async () => {
+      await setup("t('friend', { context: 'male' })\n", { friend_male: 'a boyfriend' })
+      const windowsConfig = { ...config(), extract: { ...config().extract, input: [`${testDir}\\*.ts`] } }
+
+      expect((await runRenameKey(windowsConfig, 'friend', 'buddy')).success).toBe(true)
+
+      expect(await readTranslations()).toEqual({ buddy_male: 'a boyfriend' })
+    })
+
     it('reports a conflict with an existing context form of the new key', async () => {
       await setup("t('friend', { context: 'male' })\n", { friend_male: 'a boyfriend', buddy_male: 'a pal' })
 
