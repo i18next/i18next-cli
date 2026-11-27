@@ -469,13 +469,7 @@ function replaceKeyWithRegex (
         let updated = match.replace(new RegExp(`(['"\`])${escapeRegex(oldParts.key)}\\1`), `${keyQ}${newParts.key}${keyQ}`)
 
         if (oldParts.namespace === newParts.namespace) {
-          // same namespace: keep ns value untouched, but keep other props
-          if (obj) {
-            updated = updated.replace(/\{[^}]*\}(?=\s*\)$)/, `{${obj}}`)
-          } else {
-            // no other props -> keep the options with ns only
-            // ensure we don't remove the ns prop accidentally; leave as-is
-          }
+          // same namespace: only the key changes, the options (ns included) stay as written
         } else {
           // moving across namespaces
           if (defaultNS === newParts.namespace) {

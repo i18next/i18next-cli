@@ -1538,4 +1538,21 @@ const d = t(\`old.key\`)`
     expect(updatedCode).toContain("t('title', {defaultValue: 'Title'})")
     expect(updatedCode).toContain("t('title')\n")
   })
+
+  it('keeps ns in a call with other options when the namespace stays the same (#347)', async () => {
+    const config = {
+      locales: ['en'],
+      extract: {
+        input: [join(testDir, '*.ts')],
+        output: join(testDir, 'locales/{{language}}/{{namespace}}.json')
+      }
+    }
+
+    await writeFile(join(testDir, 'test.ts'), "t('title', { ns: 'common', defaultValue: 'Title' })\n")
+    await mkdir(join(testDir, 'locales/en'), { recursive: true })
+    await writeFile(join(testDir, 'locales/en/common.json'), JSON.stringify({ title: 'Title' }))
+
+    expect((await runRenameKey(config, 'common:title', 'common:heading')).success).toBe(true)
+    expect(await readFile(join(testDir, 'test.ts'), 'utf-8')).toContain("t('heading', { ns: 'common', defaultValue: 'Title' })")
+  })
 })
