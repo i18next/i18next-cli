@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(rename-key): without `extract.outputFormat`, translation files keep the format of their path, as with `extract`
+  and `sync`. A `.ts` file was rewritten as plain JSON (no longer a module, so the next `extract` could not read it and
+  dropped its values) and a `.yaml` file as JSON. Thanks @mokshupadhyay
+  ([#344](https://github.com/i18next/i18next-cli/issues/344), [#351](https://github.com/i18next/i18next-cli/pull/351))
+- fix(rename-key): plural forms nested under the key path (`{ "cart": { "item_one" } }` for `cart.item`, as `extract`
+  writes them by default), forms with a custom `pluralSeparator` and ordinal forms (`place_ordinal_one`) are renamed
+  too, also in `{ ns }` calls, and the conflict check sees them. Before, only the source was renamed and the
+  translations stayed under the old key, so the next `extract` dropped them. Thanks @mokshupadhyay
+  ([#345](https://github.com/i18next/i18next-cli/issues/345), [#352](https://github.com/i18next/i18next-cli/pull/352))
+- fix(rename-key): a rename inside a namespace keeps `ns` in a call with other options:
+  `t('title', { ns: 'common', defaultValue: 'Title' })` lost its `ns` and looked the key up in the default namespace
+  ([#347](https://github.com/i18next/i18next-cli/issues/347))
+- fix(rename-key): moving a key out of the default namespace (or into it) also changes the calls when `defaultNS` is
+  not set. The translation was moved, but every call stayed as it was, although the command reported a source change
+  ([#348](https://github.com/i18next/i18next-cli/issues/348))
+- fix(extract): under a `keyPrefix`, plural forms get the key as written in the call as default (`items_one: "items"`),
+  like other keys, instead of the key with the prefix (`"cart.items"`). Existing values are kept
+  ([#350](https://github.com/i18next/i18next-cli/issues/350))
+- fix(init, status, lint): with `en-*` locale folders and no plain `en` (e.g. `de-DE`, `en-US`, `fr-FR`), the detected
+  config takes the `en-*` locale as the primary language instead of the first one in alphabetical order, so
+  `init --yes` no longer writes `de-DE` as the primary. Thanks @mokshupadhyay
+  ([#346](https://github.com/i18next/i18next-cli/issues/346), [#353](https://github.com/i18next/i18next-cli/pull/353))
+
 ## 1.95.4
 
 - fix(lint): the summary line ("Linter found N potential issues.") comes after the report instead of before it, so a
