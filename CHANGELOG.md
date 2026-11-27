@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 1.95.6
 
 - fix(rename-key): the context forms the code uses with a key are renamed with it: `friend_male` and `friend_male_one`
   for `t('friend', { context: 'male' })`, every value of a dynamic context (`isMale ? 'male' : 'female'`) and the
