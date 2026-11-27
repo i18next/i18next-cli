@@ -10,8 +10,11 @@ import { styleText } from 'node:util'
 
 const pluralSuffixes = ['zero', 'one', 'two', 'few', 'many', 'other']
 
-const pluralFormRegex = (key: string, config: I18nextToolkitConfig): RegExp =>
-  new RegExp(`^${escapeRegex(key)}${escapeRegex(config.extract.pluralSeparator ?? '_')}(${pluralSuffixes.join('|')})$`)
+// The suffix it captures keeps the `ordinal` part of ordinal forms like "key_ordinal_one".
+const pluralFormRegex = (key: string, config: I18nextToolkitConfig): RegExp => {
+  const separator = escapeRegex(config.extract.pluralSeparator ?? '_')
+  return new RegExp(`^${escapeRegex(key)}${separator}((?:ordinal${separator})?(?:${pluralSuffixes.join('|')}))$`)
+}
 
 /**
  * The stored plural forms of `key`, top-level (`key_one`) or nested next to it

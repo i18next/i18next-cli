@@ -274,6 +274,32 @@ describe('runRenameKey (plurals', () => {
       expect(ns1).toEqual({ 'key-one': 'item', 'key-other': 'items' })
     })
 
+    it('should rename ordinal plural forms', async () => {
+      const config = {
+        locales: ['en'],
+        extract: {
+          input: [join(testDir, '*.ts')],
+          output: join(testDir, 'locales/{{language}}/{{namespace}}.json')
+        }
+      }
+      await writeFile(join(testDir, 'test.ts'), "t('place', { count: 1, ordinal: true })")
+      await mkdir(join(testDir, 'locales/en'), { recursive: true })
+      await writeFile(
+        join(testDir, 'locales/en/translation.json'),
+        JSON.stringify({ place_ordinal_one: '{{count}}st', place_ordinal_two: '{{count}}nd', place_ordinal_few: '{{count}}rd', place_ordinal_other: '{{count}}th' })
+      )
+
+      const result = await runRenameKey(config, 'place', 'rank')
+
+      expect(result.success).toBe(true)
+      expect(JSON.parse(await readFile(join(testDir, 'locales/en/translation.json'), 'utf-8'))).toEqual({
+        rank_ordinal_one: '{{count}}st',
+        rank_ordinal_two: '{{count}}nd',
+        rank_ordinal_few: '{{count}}rd',
+        rank_ordinal_other: '{{count}}th'
+      })
+    })
+
     it('should rename plural forms nested under the key path', async () => {
       const config = {
         locales: ['en', 'de'],
