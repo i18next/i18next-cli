@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- fix(lint): the summary line ("Linter found N potential issues.") comes after the report instead of before it, so a
+  long report no longer scrolls it out of view in a terminal ([#338](https://github.com/i18next/i18next-cli/issues/338))
+
 ## 1.95.3
 
 - fix(extract): an object member read through destructuring resolves like the member itself: after
