@@ -102,7 +102,8 @@ describe('locize funnel tags', () => {
         [resolve(process.cwd(), 'locales/fr/translation.json')]: JSON.stringify({ key: { a: 'A', b: 'B', c: 'C', d: 'D' } }),
       })
 
-      await runStatus(config)
+      // exits 1: the keys are in no `en` file, and the primary language fails on absent keys
+      await runStatus(config).catch(() => {})
 
       expect(funnelLine()).toBeUndefined()
     })

@@ -246,9 +246,18 @@ describe('status (detailed view)', () => {
       [resolve(process.cwd(), 'src/empty2.ts')]: 'console.log(\'no keys\')',
     })
 
-    await runStatus(mockConfig, { detail: 'jp' })
+    const processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('Process exit called')
+    })
+    try {
+      await runStatus(mockConfig, { detail: 'jp' })
+    } catch (e) {
+      // expected: process.exit(1) throws in the test
+    }
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('is not defined in your configuration'))
+    // nothing was checked for a locale that is not configured, so a typo must not pass
+    expect(processExitSpy).toHaveBeenCalledWith(1)
   })
 })
 
@@ -310,7 +319,13 @@ describe('status (namespace filtering)', () => {
       [resolve(process.cwd(), 'locales/de/common.json')]: JSON.stringify({ keyA: 'Wert A', keyB: 'Wert B' }),
     })
 
-    await runStatus(mockConfig, { namespace: 'common' })
+    // `fr` has no translations for `common`, so the command fails
+    try {
+      await runStatus(mockConfig, { namespace: 'common' })
+    } catch (e) {
+      // expected: process.exit(1) throws in the test
+    }
+    expect(processExitSpy).toHaveBeenCalledWith(1)
 
     // The summary for the 'common' namespace should show two keys and full translation coverage
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Status for Namespace'))
@@ -369,7 +384,13 @@ describe('status (namespace filtering)', () => {
       },
     }
 
-    await runStatus(config)
+    // the keys are absent from the primary language `ar`, so the command fails
+    try {
+      await runStatus(config)
+    } catch (e) {
+      // expected: process.exit(1) throws in the test
+    }
+    expect(processExitSpy).toHaveBeenCalledWith(1)
 
     // English should be 100% complete (2/2 keys) because English only needs 'one' and 'other' forms
     // Each language is evaluated based on its own plural rules, not the primary language's rules
@@ -910,7 +931,13 @@ describe('status (fallbackNS)', () => {
       },
     }
 
-    await runStatus(config)
+    // `ok` is in no file, so the command fails
+    try {
+      await runStatus(config)
+    } catch (e) {
+      // expected: process.exit(1) throws in the test
+    }
+    expect(processExitSpy).toHaveBeenCalledWith(1)
 
     expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('fallbackNS "shared" is listed in ignoreNamespaces'))
   })
@@ -1129,6 +1156,210 @@ describe('status (scoped pass/fail per requested locale, issue #271)', () => {
       // expected: process.exit(1) throws in the test
     }
 
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+})
+
+describe('status (scoped pass/fail per requested namespace)', () => {
+  let consoleLogSpy: any
+  let processExitSpy: any
+
+  // `shop` is fully translated in `de`, `translation` is not
+  const config: I18nextToolkitConfig = {
+    locales: ['en', 'de'],
+    extract: {
+      input: ['src/**/*.{ts,tsx}'],
+      output: 'locales/{{language}}/{{namespace}}.json',
+    },
+  }
+
+  beforeEach(async () => {
+    vol.reset()
+    vi.clearAllMocks()
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async () => {
+      return Object.keys(vol.toJSON()).filter(p => p.includes('/src/'))
+    })
+    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('Process exit called')
+    })
+
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/file.ts')]: `
+        import { t } from 'i18next'
+        t('title')
+        t('shop:buy')
+      `,
+      [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify({ title: 'Title' }),
+      [resolve(process.cwd(), 'locales/en/shop.json')]: JSON.stringify({ buy: 'Buy' }),
+      [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({ title: '' }),
+      [resolve(process.cwd(), 'locales/de/shop.json')]: JSON.stringify({ buy: 'Kaufen' }),
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('does NOT exit 1 when the requested namespace is complete, even if another namespace is not', async () => {
+    await runStatus(config, { namespace: 'shop' })
+
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('100% (1/1'))
+    expect(processExitSpy).not.toHaveBeenCalled()
+  })
+
+  it('does NOT exit 1 in the detailed view when the requested namespace is complete for the locale', async () => {
+    await runStatus(config, { detail: 'de', namespace: 'shop' })
+
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('All keys are translated for "de"'))
+    expect(processExitSpy).not.toHaveBeenCalled()
+  })
+
+  it('exits 1 when the requested namespace is incomplete', async () => {
+    try {
+      await runStatus(config, { detail: 'de', namespace: 'translation' })
+    } catch (e) {
+      // expected: process.exit(1) throws in the test
+    }
+
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('exits 1 when the requested namespace is not used in the code', async () => {
+    try {
+      await runStatus(config, { detail: 'de', namespace: 'shpo' })
+    } catch (e) {
+      // expected: process.exit(1) throws in the test
+    }
+
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Namespace "shpo" was not found'))
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('exits 1 for the primary language when a key of the requested namespace is absent', async () => {
+    vol.fromJSON({ [resolve(process.cwd(), 'locales/en/shop.json')]: JSON.stringify({}) })
+    try {
+      await runStatus(config, { namespace: 'shop' })
+    } catch (e) {
+      // expected: process.exit(1) throws in the test
+    }
+
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+})
+
+describe('status (unknown names, unreadable files and the failure line)', () => {
+  let consoleErrorSpy: any
+  let processExitSpy: any
+
+  // everything is translated, so only the problem under test can fail the command
+  const config: I18nextToolkitConfig = {
+    locales: ['en', 'de'],
+    extract: {
+      input: ['src/**/*.{ts,tsx}'],
+      output: 'locales/{{language}}/{{namespace}}.json',
+    },
+  }
+
+  const run = async (options?: Parameters<typeof runStatus>[1]) => {
+    try {
+      await runStatus(config, options)
+    } catch (e) {
+      // expected: process.exit(1) throws in the test
+    }
+  }
+
+  beforeEach(async () => {
+    vol.reset()
+    vi.clearAllMocks()
+    const { glob } = await import('glob')
+    vi.mocked(glob).mockImplementation(async () => {
+      return Object.keys(vol.toJSON()).filter(p => p.includes('/src/'))
+    })
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('Process exit called')
+    })
+
+    vol.fromJSON({
+      [resolve(process.cwd(), 'src/file.ts')]: `
+        import { t } from 'i18next'
+        t('title')
+        t('shop:buy')
+      `,
+      [resolve(process.cwd(), 'locales/en/translation.json')]: JSON.stringify({ title: 'Title' }),
+      [resolve(process.cwd(), 'locales/en/shop.json')]: JSON.stringify({ buy: 'Buy' }),
+      [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({ title: 'Titel' }),
+      [resolve(process.cwd(), 'locales/de/shop.json')]: JSON.stringify({ buy: 'Kaufen' }),
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('does not exit when everything is translated', async () => {
+    await run()
+    await run({ detail: 'de' })
+    await run({ namespace: 'shop' })
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled()
+    expect(processExitSpy).not.toHaveBeenCalled()
+  })
+
+  it('exits 1 for a locale that is not configured', async () => {
+    await run({ detail: 'fr' })
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Locale "fr" is not defined in your configuration'))
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(expect.stringContaining('Incomplete translations detected'))
+    expect(processExitSpy).toHaveBeenCalledTimes(1)
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('exits 1 for a namespace that is not used in the code', async () => {
+    await run({ namespace: 'nope' })
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Namespace "nope" was not found'))
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(expect.stringContaining('Incomplete translations detected'))
+    expect(processExitSpy).toHaveBeenCalledTimes(1)
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('prints the error and exits 1 for an unknown namespace in the detailed view too', async () => {
+    await run({ detail: 'de', namespace: 'nope' })
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Namespace "nope" was not found'))
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('Summary:'))
+    expect(processExitSpy).toHaveBeenCalledTimes(1)
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('exits 1 when a translation file cannot be parsed', async () => {
+    vol.fromJSON({ [resolve(process.cwd(), 'locales/de/shop.json')]: '{ "buy": "Kaufen", ' })
+    await run()
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.any(Error))
+    expect(processExitSpy).toHaveBeenCalledTimes(1)
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('prints "Incomplete translations detected" when it exits 1 for missing translations', async () => {
+    vol.fromJSON({ [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({ title: '' }) })
+    await run()
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Error: Incomplete translations detected.'))
+    expect(processExitSpy).toHaveBeenCalledTimes(1)
+    expect(processExitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('names the locale in that line when the check is scoped to one', async () => {
+    vol.fromJSON({ [resolve(process.cwd(), 'locales/de/translation.json')]: JSON.stringify({ title: '' }) })
+    await run({ detail: 'de' })
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Error: Incomplete translations detected for "de".'))
     expect(processExitSpy).toHaveBeenCalledWith(1)
   })
 })
