@@ -619,6 +619,7 @@ function swcExpressionToReactNode (expr: JSXExpression): string | ReactElement |
       return null
 
     case 'TsAsExpression':
+    case 'TsSatisfiesExpression':
       return swcExpressionToReactNode(expr.expression)
     case 'ParenthesisExpression':
       return swcExpressionToReactNode(expr.expression)
@@ -654,18 +655,24 @@ function swcExpressionToReactNode (expr: JSXExpression): string | ReactElement |
       // TODO: This might actually be an error - not sure that react-i18next can handle at runtime
       return { [expr.value]: expr.value } as unknown as ReactElement
     case 'ObjectExpression': {
-      const keys = expr.properties.map((prop) => {
+      const entries = expr.properties.map((prop): [string, string] | null => {
         if (prop.type === 'KeyValueProperty' && (prop.key.type === 'Identifier' || prop.key.type === 'StringLiteral')) {
-          return prop.key.value
+          // react-i18next writes the value of `format` as the formatter name: `{{ total, format: 'number' }}` is
+          // `{{total, number}}`. A format that is not a literal is only known at run time and stays `format`.
+          if (prop.key.value === 'format') {
+            if (prop.value.type === 'StringLiteral') return ['format', prop.value.value]
+            if (prop.value.type === 'TemplateLiteral' && isSimpleTemplateLiteral(prop.value)) return ['format', prop.value.quasis[0].cooked!]
+          }
+          return [prop.key.value, prop.key.value]
         } else if (prop.type === 'Identifier') {
-          return prop.value
+          return [prop.value, prop.value]
         } else {
         // Too complex to represent! TODO: Flag an error
           return null
         }
-      }).filter(k => k !== null)
+      }).filter(e => e !== null)
       // Not a valid React element, but props for Trans interpolation
-      return Object.fromEntries(keys.map(k => [k, k])) as unknown as ReactElement
+      return Object.fromEntries(entries) as unknown as ReactElement
     }
   }
 

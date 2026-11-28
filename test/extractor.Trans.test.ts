@@ -523,6 +523,97 @@ describe('extractor: advanced Trans features', () => {
     })
   })
 
+  describe('format in an interpolation object', () => {
+    const extractFrom = async (sampleCode: string) => {
+      vol.fromJSON({ '/src/App.tsx': sampleCode })
+      const results = await extract(mockConfig)
+      return results.find(r => pathEndsWith(r.path, '/locales/en/translation.json'))?.newTranslations
+    }
+
+    it('should keep the formatter name of a literal format, with and without i18nKey', async () => {
+      expect(await extractFrom(`
+        <>
+          <Trans i18nKey="cart.total">Total: <strong>{{ total, format: 'number' }}</strong></Trans>
+          <Trans>Ordered on {{ date, format: "datetime" }}</Trans>
+        </>
+      `)).toEqual({
+        cart: { total: 'Total: <strong>{{total, number}}</strong>' },
+        'Ordered on {{date, datetime}}': 'Ordered on {{date, datetime}}',
+      })
+    })
+
+    it('should read a template literal without expressions, and formatter options', async () => {
+      expect(await extractFrom(`
+        <>
+          <Trans i18nKey="template">Total: {{ total, format: \`number\` }}</Trans>
+          <Trans i18nKey="options">Total: {{ total, format: 'currency(USD)' }}</Trans>
+        </>
+      `)).toEqual({
+        template: 'Total: {{total, number}}',
+        options: 'Total: {{total, currency(USD)}}',
+      })
+    })
+
+    it('should look through a TypeScript assertion or parentheses around the object', async () => {
+      expect(await extractFrom(`
+        <>
+          <Trans i18nKey="asAny">Total: {{ total, format: 'number' } as any}</Trans>
+          <Trans i18nKey="satisfies">Total: {{ total, format: 'number' } satisfies object}</Trans>
+          <Trans i18nKey="parens">Total: {({ total, format: 'number' })}</Trans>
+        </>
+      `)).toEqual({
+        asAny: 'Total: {{total, number}}',
+        satisfies: 'Total: {{total, number}}',
+        parens: 'Total: {{total, number}}',
+      })
+    })
+
+    it('should keep the formatter name next to count', async () => {
+      expect(await extractFrom(`
+        <>
+          <Trans i18nKey="items" count={count}>You have {{ count, format: 'number' }} items</Trans>
+          <Trans i18nKey="inline">You have {{ count, format: 'number' }} items</Trans>
+        </>
+      `)).toEqual({
+        items_one: 'You have {{count, number}} items',
+        items_other: 'You have {{count, number}} items',
+        inline_one: 'You have {{count, number}} items',
+        inline_other: 'You have {{count, number}} items',
+      })
+    })
+
+    it('should write no formatter for an empty format', async () => {
+      expect(await extractFrom('<Trans i18nKey="empty">Total: {{ total, format: \'\' }}</Trans>'))
+        .toEqual({ empty: 'Total: {{total}}' })
+    })
+
+    it('should treat format on its own as a variable named format', async () => {
+      expect(await extractFrom(`
+        <>
+          <Trans i18nKey="shorthand">Type: {{ format }}</Trans>
+          <Trans i18nKey="literal">Type: {{ format: 'pdf' }}</Trans>
+        </>
+      `)).toEqual({
+        shorthand: 'Type: {{format}}',
+        literal: 'Type: {{format}}',
+      })
+    })
+
+    it('should leave a format that is only known at run time as it is', async () => {
+      expect(await extractFrom(`
+        <>
+          <Trans i18nKey="identifier">Total: {{ total, format: fmt }}</Trans>
+          <Trans i18nKey="shorthand">Total: {{ total, format }}</Trans>
+          <Trans i18nKey="template">Total: {{ total, format: \`\${style}(USD)\` }}</Trans>
+        </>
+      `)).toEqual({
+        identifier: 'Total: {{total, format}}',
+        shorthand: 'Total: {{total, format}}',
+        template: 'Total: {{total, format}}',
+      })
+    })
+  })
+
   it('should ignore boundary whitespace-only JSXText nodes so component indexes start at first meaningful child', async () => {
     const sampleCode = `
       <Trans i18nKey={'ticket_received_msg'} count={1}>
