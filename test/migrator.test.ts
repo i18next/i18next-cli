@@ -1,5 +1,7 @@
 import { vol } from 'memfs'
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { runMigrator } from '../src/migrator'
 import { resolve } from 'path'
 
@@ -159,5 +161,125 @@ describe('migrator', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(
       expect.stringContaining(`${basePath}.js`)
     )
+  })
+})
+
+// These tests run the migrator against real files: the module reads process.cwd() when it loads,
+// so it is imported after the chdir, and the mocks above that fake the file system are lifted.
+describe('migrator: mapping of the i18next-parser options', () => {
+  const cwd = process.cwd()
+  let dir: string
+  let warnings: string[]
+  // The file system mock above also covers this module, so take the real one
+  let fs: typeof import('node:fs/promises')
+
+  const migrate = async (legacy: string) => {
+    await fs.writeFile(join(dir, 'i18next-parser.config.mjs'), legacy)
+    process.chdir(dir)
+    vi.resetModules()
+    vi.doUnmock('fs/promises')
+    vi.doUnmock('node:url')
+    const { runMigrator } = await import('../src/migrator')
+    await runMigrator()
+    const out = await fs.readFile(join(dir, 'i18next.config.ts'), 'utf-8')
+    // The generated file is `defineConfig(<json>);`
+    const config = JSON.parse(out.slice(out.indexOf('defineConfig(') + 13, out.lastIndexOf(');')))
+    return { out, extract: config.extract }
+  }
+
+  beforeEach(async () => {
+    fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+    dir = await fs.mkdtemp(join(tmpdir(), 'i18next-cli-migrate-'))
+    warnings = []
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation((msg: string) => { warnings.push(String(msg)) })
+  })
+
+  afterEach(async () => {
+    process.chdir(cwd)
+    vi.restoreAllMocks()
+    await fs.rm(dir, { recursive: true, force: true })
+  })
+
+  it('maps keepRemoved: true to removeUnusedKeys: false', async () => {
+    const { extract } = await migrate('export default { keepRemoved: true }')
+    expect(extract.removeUnusedKeys).toBe(false)
+    expect(warnings.some(w => w.includes('preservePatterns'))).toBe(false)
+  })
+
+  it('leaves removeUnusedKeys alone without keepRemoved', async () => {
+    const { extract } = await migrate('export default { locales: ["en"] }')
+    expect(extract).not.toHaveProperty('removeUnusedKeys')
+  })
+
+  it('maps a keepRemoved pattern list to removeUnusedKeys: false and warns with the patterns', async () => {
+    const { extract } = await migrate("export default { keepRemoved: ['^errors_', /^dyn_/] }")
+    expect(extract.removeUnusedKeys).toBe(false)
+    const warning = warnings.find(w => w.includes('preservePatterns'))
+    expect(warning).toContain('^errors_')
+    expect(warning).toContain('/^dyn_/')
+    expect(warning).toContain('globs')
+  })
+
+  it('copies pluralSeparator and indentation', async () => {
+    const { extract } = await migrate("export default { pluralSeparator: '-', indentation: 4 }")
+    expect(extract.pluralSeparator).toBe('-')
+    expect(extract.indentation).toBe(4)
+    expect(extract).not.toHaveProperty('disablePlurals')
+  })
+
+  it('maps pluralSeparator: false to disablePlurals: true', async () => {
+    const { extract } = await migrate('export default { pluralSeparator: false }')
+    expect(extract.disablePlurals).toBe(true)
+    expect(extract).not.toHaveProperty('pluralSeparator')
+  })
+
+  it('collects functions, componentFunctions and namespaceFunctions from all lexer entries', async () => {
+    const { extract } = await migrate(`export default { lexers: {
+      js: [{ lexer: 'JsxLexer', functions: ['t', '__'], componentFunctions: ['Trans'], namespaceFunctions: ['useTranslation'] }],
+      ts: ['JavascriptLexer'],
+      tsx: [{ lexer: 'JsxLexer', functions: ['__', 'translate'], componentFunctions: ['Translation'], namespaceFunctions: ['withTranslation'] }, 'JsxLexer'],
+      hbs: ['HandlebarsLexer'],
+      default: [{ lexer: 'JavascriptLexer', functions: ['i18n'] }],
+    } }`)
+    expect(extract.functions).toEqual(['t', '__', 'translate', 'i18n', '*.t'])
+    expect(extract.transComponents).toEqual(['Trans', 'Translation'])
+    expect(extract.useTranslationNames).toEqual(['useTranslation', 'withTranslation'])
+  })
+
+  it('keeps the defaults when the lexers carry no options', async () => {
+    const { extract } = await migrate("export default { lexers: { js: ['JsxLexer'], default: ['JavascriptLexer'] } }")
+    expect(extract.functions).toEqual(['t', '*.t'])
+    expect(extract.transComponents).toEqual(['Trans'])
+    expect(extract).not.toHaveProperty('useTranslationNames')
+  })
+
+  it('writes sort: false so the files keep their order', async () => {
+    expect((await migrate('export default {}')).extract.sort).toBe(false)
+  })
+
+  it('keeps sort: true when the parser config had it', async () => {
+    expect((await migrate('export default { sort: true }')).extract.sort).toBe(true)
+  })
+
+  it.each([
+    ['customValueTemplate', "{ customValueTemplate: { message: 'Hello' } }"],
+    ['resetDefaultValueLocale', "{ resetDefaultValueLocale: 'en' }"],
+    ['defaultValue', '{ defaultValue: (locale, ns, key) => key }'],
+    ['failOnUpdate', '{ failOnUpdate: true }'],
+    ['createOldCatalogs', '{ createOldCatalogs: true }'],
+  ])('warns once about %s', async (option, legacy) => {
+    await migrate(`export default ${legacy}`)
+    expect(warnings.filter(w => w.includes(`"${option}"`))).toHaveLength(1)
+  })
+
+  it('suggests extract --ci for failOnUpdate', async () => {
+    await migrate('export default { failOnUpdate: true }')
+    expect(warnings.find(w => w.includes('failOnUpdate'))).toContain('extract --ci')
+  })
+
+  it('does not warn about options that are not used', async () => {
+    await migrate('export default { createOldCatalogs: false, defaultValue: "", failOnUpdate: false }')
+    expect(warnings.filter(w => /customValueTemplate|resetDefaultValueLocale|defaultValue|failOnUpdate|createOldCatalogs/.test(w))).toEqual([])
   })
 })
