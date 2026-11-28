@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parsed now exit 1 instead of 0, and the "Incomplete translations detected" line prints again (lost since 1.80.6).
   Thanks @mokshupadhyay ([#364](https://github.com/i18next/i18next-cli/issues/364),
   [#366](https://github.com/i18next/i18next-cli/pull/366))
+- fix(migrate-config): an i18next-parser config's `keepRemoved` (as `removeUnusedKeys: false`), `pluralSeparator`
+  (`false` as `disablePlurals: true`), `indentation`, key order (`sort: false` unless it sorted) and the lexers'
+  functions, components and hooks (next to `t`, `Trans` and `useTranslation`) are carried over, and the options without
+  an equivalent get a warning, so the first `extract` after the migration no longer deletes translations. Thanks
+  @mokshupadhyay ([#367](https://github.com/i18next/i18next-cli/issues/367),
+  [#368](https://github.com/i18next/i18next-cli/pull/368))
 
 ## 1.95.7
 
