@@ -83,6 +83,25 @@ async function loadLegacyConfig (configPath: string): Promise<any> {
 }
 
 /**
+ * Collects a list option (`functions`, `componentFunctions`, `namespaceFunctions`) from every
+ * lexer entry of an i18next-parser config. Lexers are arrays per extension, and each entry is
+ * either a lexer name ('JsxLexer'), a custom lexer (class or function) or an options object.
+ */
+function collectLexerOption (lexers: any, option: string): string[] {
+  const found = new Set<string>()
+  if (!lexers || typeof lexers !== 'object') return []
+  for (const entries of Object.values(lexers)) {
+    for (const entry of Array.isArray(entries) ? entries : [entries]) {
+      const values = entry && typeof entry === 'object' ? (entry as any)[option] : undefined
+      if (Array.isArray(values)) {
+        for (const value of values) if (typeof value === 'string') found.add(value)
+      }
+    }
+  }
+  return [...found]
+}
+
+/**
  * Migrates a legacy i18next-parser configuration file to the new
  * i18next-cli configuration format.
  *
@@ -155,6 +174,10 @@ export async function runMigrator (customConfigPath?: string) {
   }
 
   // --- Start Migration Logic ---
+  const lexerFunctions = collectLexerOption(oldConfig.lexers, 'functions')
+  const lexerComponents = collectLexerOption(oldConfig.lexers, 'componentFunctions')
+  const lexerHooks = collectLexerOption(oldConfig.lexers, 'namespaceFunctions')
+
   const newConfig = {
     locales: oldConfig.locales || ['en'],
     extract: {
@@ -166,9 +189,18 @@ export async function runMigrator (customConfigPath?: string) {
       keySeparator: oldConfig.keySeparator,
       nsSeparator: oldConfig.namespaceSeparator,
       contextSeparator: oldConfig.contextSeparator,
-      // A simple mapping for functions
-      functions: oldConfig.lexers?.js?.functions || ['t', '*.t'],
-      transComponents: oldConfig.lexers?.js?.components || ['Trans'],
+      // `pluralSeparator: false` means "do not generate plural keys" in i18next-parser
+      pluralSeparator: oldConfig.pluralSeparator === false ? undefined : oldConfig.pluralSeparator,
+      disablePlurals: oldConfig.pluralSeparator === false ? true : undefined,
+      indentation: oldConfig.indentation,
+      // i18next-parser keeps the keys that are no longer in the code with `keepRemoved: true` or
+      // a pattern list; i18next-cli removes them by default
+      removeUnusedKeys: oldConfig.keepRemoved === true || Array.isArray(oldConfig.keepRemoved) ? false : undefined,
+      // i18next-parser never sorts unless asked to; i18next-cli sorts by default
+      sort: oldConfig.sort === true,
+      functions: lexerFunctions.length > 0 ? lexerFunctions : ['t', '*.t'],
+      transComponents: lexerComponents.length > 0 ? lexerComponents : ['Trans'],
+      useTranslationNames: lexerHooks.length > 0 ? lexerHooks : undefined,
     },
     types: {
       input: ['locales/{{language}}/{{namespace}}.json'], // Sensible default
@@ -196,9 +228,25 @@ export default defineConfig(${JSON.stringify(newConfig, null, 2)});
   console.log(`New configuration file created at: ${newConfigPath}`)
   console.warn('\nPlease review the generated file and adjust paths for "types.input" if necessary.')
 
-  // Warning for deprecated features
-  if (oldConfig.keepRemoved) {
-    console.warn('Warning: The "keepRemoved" option is deprecated. Consider using the "preservePatterns" feature for dynamic keys.')
+  // Warnings for options that have no equivalent
+  if (Array.isArray(oldConfig.keepRemoved)) {
+    console.warn(`Warning: "keepRemoved" is a list of patterns (${oldConfig.keepRemoved.map(String).join(', ')}). It was migrated to "removeUnusedKeys: false"; convert the patterns to "extract.preservePatterns" (globs, not regexes) to keep only those keys.`)
+  }
+  if (oldConfig.customValueTemplate) {
+    console.warn('Warning: "customValueTemplate" is not supported in i18next-cli and was not migrated.')
+  }
+  if (oldConfig.resetDefaultValueLocale) {
+    console.warn('Warning: "resetDefaultValueLocale" is not supported in i18next-cli and was not migrated.')
+  }
+  if (typeof oldConfig.defaultValue === 'function') {
+    console.warn('Warning: a function "defaultValue" is not supported in i18next-cli and was not migrated.')
+  }
+  if (oldConfig.failOnUpdate) {
+    console.warn('Warning: "failOnUpdate" is not supported in i18next-cli. Use "extract --ci" instead.')
+  }
+  // i18next-parser creates the _old catalogs unless this is set to false
+  if (oldConfig.createOldCatalogs !== false) {
+    console.warn('Warning: "createOldCatalogs" is not supported in i18next-cli: no "_old" catalogs are written, and existing "_old" files get emptied.')
   }
 
   // Warning for compatibilityJSON v3
