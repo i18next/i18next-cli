@@ -187,7 +187,9 @@ interface StatusReport {
  * Exit behaviour (unchanged): exits 1 when any key is either empty or absent.
  * The output now distinguishes between the two states so developers can tell
  * whether they have a structural problem (absent) or simply pending translation
- * work (empty).
+ * work (empty). It also exits 1 when the requested locale is not configured,
+ * when the requested namespace is not used in the code, and when the report
+ * cannot be generated (e.g. a translation file that cannot be parsed).
  *
  * @param config - The i18next toolkit configuration object.
  * @param options - Options object, may contain a `detail` property with a locale string.
@@ -197,6 +199,8 @@ export async function runStatus (config: I18nextToolkitConfig, options: StatusOp
   config.extract.primaryLanguage ||= config.locales[0] || 'en'
   config.extract.secondaryLanguages ||= config.locales.filter((l: string) => l !== config?.extract?.primaryLanguage)
   const spinner = yoctoSpinner({ text: 'Analyzing project localization status...\n' }).start()
+  // decided inside the `try`, acted on after it, so that the exit is never taken for a failure of the report
+  let failed = false
   try {
     const report = await generateStatusReport(config)
     spinner.success('Analysis complete.')
@@ -209,42 +213,52 @@ export async function runStatus (config: I18nextToolkitConfig, options: StatusOp
     const scopedLocale = options.detail && config.locales.includes(options.detail)
       ? options.detail
       : undefined
+    // Likewise `--namespace` reports that namespace only, so only its keys decide
+    const counts = (localeData: LocaleStatus) => scopedCounts(localeData, options.namespace)
 
     let hasMissing = false
-    if (scopedLocale) {
+    if ((options.detail && !scopedLocale) || (options.namespace && !report.keysByNs.has(options.namespace))) {
+      // A locale that is not configured, or a namespace the code does not use: nothing
+      // was checked, so a typo must not pass a CI check. The report printed the error.
+      failed = true
+    } else if (scopedLocale) {
       if (scopedLocale === config.extract.primaryLanguage) {
         // The primary language fails only on absent keys (used in code but
         // missing from the file); empty placeholders are deliberate.
-        hasMissing = !!report.primary && report.primary.totalAbsent > 0
+        hasMissing = !!report.primary && counts(report.primary).absent > 0
       } else {
         const localeData = report.locales.get(scopedLocale)
-        hasMissing = !!localeData && localeData.totalTranslated < localeData.totalKeys
+        hasMissing = !!localeData && counts(localeData).translated < counts(localeData).total
       }
     } else {
       for (const [, localeData] of report.locales.entries()) {
-        if (localeData.totalTranslated < localeData.totalKeys) {
+        if (counts(localeData).translated < counts(localeData).total) {
           hasMissing = true
           break
         }
       }
       // The primary language fails the check only on absent keys (used in code but
       // missing from the translation file); empty placeholders are tolerated.
-      if (!hasMissing && report.primary && report.primary.totalAbsent > 0) {
+      if (!hasMissing && report.primary && counts(report.primary).absent > 0) {
         hasMissing = true
       }
     }
     if (hasMissing) {
       // Name the locale when the check is scoped so the failure reason is clear
       // (the displayed summary already explains what is missing for it).
-      spinner.error(scopedLocale
+      // Not `spinner.error`: the spinner stopped at `spinner.success` and prints nothing after that.
+      console.error(styleText('red', scopedLocale
         ? `Error: Incomplete translations detected for "${scopedLocale}".`
-        : 'Error: Incomplete translations detected.')
-      process.exit(1)
+        : 'Error: Incomplete translations detected.'))
+      failed = true
     }
   } catch (error) {
+    // e.g. a translation file that cannot be parsed
     spinner.error('Failed to generate status report.')
     console.error(error)
+    failed = true
   }
+  if (failed) process.exit(1)
 }
 
 /**
@@ -731,6 +745,17 @@ function funnelGap (config: I18nextToolkitConfig, locale: string, data: { totalK
 }
 
 /**
+ * The counts of a locale's report, or of one namespace in it when the report is filtered by `--namespace`.
+ */
+function scopedCounts (localeData: LocaleStatus, namespace?: string) {
+  if (!namespace) {
+    return { total: localeData.totalKeys, translated: localeData.totalTranslated, empty: localeData.totalEmpty, absent: localeData.totalAbsent, identical: localeData.totalIdentical }
+  }
+  const nsData = localeData.namespaces.get(namespace)
+  return { total: nsData?.totalKeys ?? 0, translated: nsData?.translatedKeys ?? 0, empty: nsData?.emptyKeys ?? 0, absent: nsData?.absentKeys ?? 0, identical: nsData?.identicalKeys ?? 0 }
+}
+
+/**
  * Main display router that calls the appropriate display function based on options.
  *
  * Routes to one of three display modes:
@@ -774,6 +799,11 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
     return
   }
 
+  if (namespaceFilter && !localeData.namespaces.has(namespaceFilter)) {
+    console.error(styleText('red', `Error: Namespace "${namespaceFilter}" was not found in your source code.`))
+    return
+  }
+
   console.log(styleText('bold', `\nKey Status for "${styleText('cyan', locale)}":`))
 
   const totalKeysForLocale = localeData.totalKeys
@@ -814,12 +844,14 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
     })
   }
 
-  const missingCount = totalKeysForLocale - localeData.totalTranslated
+  // the summary is the one the exit code follows: of the namespace when the report is filtered by one
+  const scoped = scopedCounts(localeData, namespaceFilter)
+  const missingCount = scoped.total - scoped.translated
   if (missingCount > 0) {
     if (isPrimary) {
       console.log(styleText(['red', 'bold'], `\nSummary: Found ${missingCount} key(s) used in code but absent from the "${locale}" translation files. Run "i18next-cli extract" to add them.`))
     } else {
-      const summaryBreakdown = buildBreakdown(localeData.totalEmpty, localeData.totalAbsent, config.status?.checkIdentical === 'error' ? localeData.totalIdentical : 0, primaryLanguage)
+      const summaryBreakdown = buildBreakdown(scoped.empty, scoped.absent, config.status?.checkIdentical === 'error' ? scoped.identical : 0, primaryLanguage)
       console.log(styleText(['yellow', 'bold'], `\nSummary: Found ${missingCount} incomplete translations for "${locale}" — ${summaryBreakdown}.`))
     }
   } else if (isPrimary) {
@@ -827,8 +859,8 @@ async function displayDetailedLocaleReport (report: StatusReport, config: I18nex
   } else {
     console.log(styleText(['green', 'bold'], `\nSummary: 🎉 All keys are translated for "${locale}".`))
   }
-  if (localeData.totalIdentical > 0 && config.status?.checkIdentical !== 'error') {
-    console.log(styleText('yellow', `${localeData.totalIdentical} value(s) are identical to "${primaryLanguage}" and may still need translating. Values that stay the same go into status.ignoreKeys.`))
+  if (scoped.identical > 0 && config.status?.checkIdentical !== 'error') {
+    console.log(styleText('yellow', `${scoped.identical} value(s) are identical to "${primaryLanguage}" and may still need translating. Values that stay the same go into status.ignoreKeys.`))
   }
 
   // Untranslated keys in a secondary locale are the gap Locize fills; absent

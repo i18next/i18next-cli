@@ -12,12 +12,16 @@ vi.mock('../src/extractor/core/key-finder', () => ({
 
 describe('status: file formats and namespace merging', () => {
   let consoleLogSpy: any
+  let processExitSpy: any
 
   // Create a temporary directory for our real files before tests run
   beforeEach(async () => {
     vi.clearAllMocks()
     await mkdir(TEMP_DIR, { recursive: true })
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    // both reports are incomplete, so the command exits 1
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
   })
 
   // Clean up the temporary directory after tests run
@@ -50,6 +54,7 @@ describe('status: file formats and namespace merging', () => {
     await runStatus(config)
 
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de: [■■■■■■■■■■□□□□□□□□□□] 50% (1/2 keys)'))
+    expect(processExitSpy).toHaveBeenCalledWith(1)
   })
 
   it('should correctly read merged namespace files for status calculation', async () => {
@@ -81,5 +86,6 @@ describe('status: file formats and namespace merging', () => {
     await runStatus(config)
 
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('- de: [■■■■■■■■■■■■■□□□□□□□] 67% (2/3 keys)'))
+    expect(processExitSpy).toHaveBeenCalledWith(1)
   })
 })
