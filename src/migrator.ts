@@ -198,9 +198,12 @@ export async function runMigrator (customConfigPath?: string) {
       removeUnusedKeys: oldConfig.keepRemoved === true || Array.isArray(oldConfig.keepRemoved) ? false : undefined,
       // i18next-parser never sorts unless asked to; i18next-cli sorts by default
       sort: oldConfig.sort === true,
-      functions: lexerFunctions.length > 0 ? lexerFunctions : ['t', '*.t'],
-      transComponents: lexerComponents.length > 0 ? lexerComponents : ['Trans'],
-      useTranslationNames: lexerHooks.length > 0 ? lexerHooks : undefined,
+      // i18next-parser lays the lexers over its defaults, which still apply to file types without their own
+      // options, so `t`, `Trans` and the hooks stay in: an extra name only finds more calls, a missing one
+      // makes the first `extract` delete their translations
+      functions: [...new Set(['t', ...lexerFunctions])],
+      transComponents: [...new Set(['Trans', ...lexerComponents])],
+      useTranslationNames: lexerHooks.length > 0 ? [...new Set(['useTranslation', 'getT', 'useT', ...lexerHooks])] : undefined,
     },
     types: {
       input: ['locales/{{language}}/{{namespace}}.json'], // Sensible default

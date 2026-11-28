@@ -244,7 +244,16 @@ describe('migrator: mapping of the i18next-parser options', () => {
     } }`)
     expect(extract.functions).toEqual(['t', '__', 'translate', 'i18n', '*.t'])
     expect(extract.transComponents).toEqual(['Trans', 'Translation'])
-    expect(extract.useTranslationNames).toEqual(['useTranslation', 'withTranslation'])
+    expect(extract.useTranslationNames).toEqual(['useTranslation', 'getT', 'useT', 'withTranslation'])
+  })
+
+  it('keeps t, Trans and the hooks next to custom lexer names, as i18next-parser does for other file types', async () => {
+    const { extract } = await migrate(`export default { lexers: {
+      js: [{ lexer: 'JsxLexer', functions: ['translate'], componentFunctions: ['T'], namespaceFunctions: ['useMyTranslation'] }],
+    } }`)
+    expect(extract.functions).toEqual(['t', 'translate', '*.t'])
+    expect(extract.transComponents).toEqual(['Trans', 'T'])
+    expect(extract.useTranslationNames).toEqual(['useTranslation', 'getT', 'useT', 'useMyTranslation'])
   })
 
   it('keeps the defaults when the lexers carry no options', async () => {
