@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   comment with the same key no longer takes the line, and `i18next-instrument-ignore-next-line` applies to the right
   call. Thanks @mokshupadhyay ([#361](https://github.com/i18next/i18next-cli/issues/361),
   [#362](https://github.com/i18next/i18next-cli/pull/362))
+- fix(skill): the `i18next-localization` skill has the agent add locize-agents' `CONVENTIONS.md` to the project's
+  `AGENTS.md` or `CLAUDE.md`; that repository no longer has a `CLAUDE.md` or `AGENTS.md` to copy.
 
 ## 1.95.7
 

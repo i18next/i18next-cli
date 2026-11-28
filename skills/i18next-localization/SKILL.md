@@ -133,8 +133,8 @@ Translation quality is a separate job with its own rules.
   come from the project's glossary, style guide and translation memory over the
   Locize MCP server rather than being invented. Those conventions live in
   [locize/locize-agents](https://github.com/locize/locize-agents). Ask before
-  adding the server to their agent, and before copying that repo's `CLAUDE.md`
-  or `AGENTS.md` into the project:
+  adding the server to their agent, and before adding that repo's
+  `CONVENTIONS.md` to the project's `AGENTS.md` or `CLAUDE.md`:
 
   ```bash
   claude mcp add --transport http locize https://mcp.locize.app
