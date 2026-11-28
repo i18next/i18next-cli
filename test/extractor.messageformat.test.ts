@@ -96,6 +96,36 @@ describe('extract with messageFormat icu / mf2', () => {
     expect(ru).toEqual({ welcome: '', items: '', friend: '', 'Hello {{name}}': '' })
   })
 
+  it('writes the literal format of a <Trans> interpolation object as the ICU / MF2 formatter', async () => {
+    const code = `
+      <>
+        <Trans i18nKey="total">Total: <strong>{{ total, format: 'number' }}</strong></Trans>
+        <Trans>Ordered on {{ date, format: 'date' }}</Trans>
+        <Trans i18nKey="asAny">Total: {{ total, format: 'number' } as any}</Trans>
+        <Trans i18nKey="items" count={count}>{{ count, format: 'number' }} items</Trans>
+        <Trans i18nKey="empty">Total: {{ total, format: '' }}</Trans>
+        <Trans i18nKey="shorthand">Type: {{ format }}</Trans>
+        <Trans i18nKey="literal">Type: {{ format: 'pdf' }}</Trans>
+        <Trans i18nKey="runtime">Total: {{ total, format: fmt }}</Trans>
+      </>
+    `
+    expect((await run(code)).en).toEqual({
+      total: 'Total: <strong>{total, number}</strong>',
+      'Ordered on {{date, date}}': 'Ordered on {date, date}',
+      asAny: 'Total: {total, number}',
+      items: '{count, number} items',
+      empty: 'Total: {total}',
+      shorthand: 'Type: {format}',
+      literal: 'Type: {format}',
+      runtime: 'Total: {total, format}',
+    })
+    expect((await run(code, 'mf2')).en).toMatchObject({
+      total: 'Total: <strong>{$total :number}</strong>',
+      empty: 'Total: {$total}',
+      literal: 'Type: {$format}',
+    })
+  })
+
   it('writes <Trans> children with MF2 placeholders', async () => {
     const { en } = await run('<Trans i18nKey="welcome">Welcome, <strong>{{name}}</strong>!</Trans>', 'mf2')
     expect(en).toEqual({ welcome: 'Welcome, <strong>{$name}</strong>!' })
