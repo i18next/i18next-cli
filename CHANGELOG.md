@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#362](https://github.com/i18next/i18next-cli/pull/362))
 - fix(skill): the `i18next-localization` skill has the agent add locize-agents' `CONVENTIONS.md` to the project's
   `AGENTS.md` or `CLAUDE.md`; that repository no longer has a `CLAUDE.md` or `AGENTS.md` to copy.
+- fix(extract): a literal `format` in a `<Trans>` interpolation object is written as react-i18next builds it
+  (`{{ total, format: 'number' }}` gives `{{total, number}}`, `{total, number}` with ICU, not `{{total, format}}`), and a
+  child wrapped in `satisfies` is read like one wrapped in `as`. The default value is now formatted, and a key without
+  `i18nKey` matches the one react-i18next looks up. Such keys change on the next `extract`, and their old entries,
+  which never rendered, are removed. Thanks @mokshupadhyay ([#363](https://github.com/i18next/i18next-cli/issues/363),
+  [#365](https://github.com/i18next/i18next-cli/pull/365))
+- fix(status): `--namespace` scopes the exit code and the summary to that namespace, like the locale argument since
+  1.64.2. A locale that is not configured, a namespace the code does not use and a translation file that cannot be
+  parsed now exit 1 instead of 0, and the "Incomplete translations detected" line prints again (lost since 1.80.6).
+  Thanks @mokshupadhyay ([#364](https://github.com/i18next/i18next-cli/issues/364),
+  [#366](https://github.com/i18next/i18next-cli/pull/366))
 
 ## 1.95.7
 
